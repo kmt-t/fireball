@@ -1,77 +1,50 @@
-"""CTL model for profiler stack overflow and trap unwinding contracts."""
+"""CTL model for profile log encoding and event ordering."""
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
+from pyModelChecking.CTL import AG, AtomicProposition, Not
 
 BACKS = ["components/tier3_plugins/guest_profiler.md"]
 
 
 def build_model(*, guards: bool = True) -> Kripke:
-    states = [
-        "idle",
-        "parent_open",
-        "overflowed_child_open",
-        "overflowed_child_exit",
-        "parent_closed",
-        "trap_received",
-        "trap_closed",
-        "parent_closed_early",
-        "trap_stuck",
-    ]
+    states = ["idle", "enter_logged", "exit_logged", "complete", "bad_encoding", "bad_order"]
     transitions = [
-        ("idle", "parent_open"),
-        ("parent_open", "overflowed_child_open"),
-        ("parent_open", "parent_closed"),
-        ("overflowed_child_open", "overflowed_child_exit"),
-        ("overflowed_child_exit", "parent_open"),
-        ("parent_open", "trap_received"),
-        ("overflowed_child_open", "trap_received"),
-        ("trap_received", "trap_closed"),
-        ("parent_closed", "parent_closed"),
-        ("trap_closed", "trap_closed"),
-        ("parent_closed_early", "parent_closed_early"),
-        ("trap_stuck", "trap_stuck"),
+        ("idle", "enter_logged"),
+        ("enter_logged", "exit_logged"),
+        ("exit_logged", "complete"),
+        ("complete", "complete"),
+        ("bad_encoding", "bad_encoding"),
+        ("bad_order", "bad_order"),
     ]
     if not guards:
-        transitions.extend(
-            [
-                ("overflowed_child_exit", "parent_closed_early"),
-                ("trap_received", "trap_stuck"),
-            ]
-        )
+        transitions.extend((("idle", "bad_encoding"), ("idle", "bad_order")))
     labels = {
         "idle": {"idle"},
-        "parent_open": {"parent_open"},
-        "overflowed_child_open": {"overflowed_child_open"},
-        "overflowed_child_exit": {"overflowed_child_exit"},
-        "parent_closed": {"parent_closed"},
-        "trap_received": {"trap_received"},
-        "trap_closed": {"trap_closed", "stack_empty"},
-        "parent_closed_early": {"parent_closed_early"},
-        "trap_stuck": {"trap_received", "trap_stuck"},
+        "enter_logged": {"enter_id_0501", "three_arguments", "tick_u32"},
+        "exit_logged": {"exit_id_0502", "three_arguments", "tick_u32"},
+        "complete": {"complete"},
+        "bad_encoding": {"encoding_error"},
+        "bad_order": {"ordering_error"},
     }
     return Kripke(S=states, S0={"idle"}, R=transitions, L=labels)
 
 
 def properties():
-    early_close = AtomicProposition("parent_closed_early")
-    trap_received = AtomicProposition("trap_received")
-    stack_empty = AtomicProposition("stack_empty")
     return [
         {
-            "name": "overflowed_recursive_exit_preserves_parent_frame",
+            "name": "function_boundary_encoding_matches_dictionary_contract",
             "kind": "safety",
             "logic": "CTL",
-            "formula": AG(Not(early_close)),
-            "violation": early_close,
+            "formula": AG(Not(AtomicProposition("encoding_error"))),
+            "violation": AtomicProposition("encoding_error"),
             "expect": True,
         },
         {
-            "name": "trap_eventually_closes_tracked_frames",
-            "kind": "liveness",
+            "name": "function_enter_exit_order_is_preserved",
+            "kind": "safety",
             "logic": "CTL",
-            "formula": AG(Imply(trap_received, AF(stack_empty))),
-            "violation": AtomicProposition("trap_stuck"),
+            "formula": AG(Not(AtomicProposition("ordering_error"))),
+            "violation": AtomicProposition("ordering_error"),
             "expect": True,
         },
     ]

@@ -303,7 +303,10 @@ def test_printk_14_all_event_lengths_match_shared_dictionary(event, argument_cou
     assert receiver.argument_count(int(event)) == argument_count
     capture = PrintkBuffer()
     sink = PrintkSink(capture, receiver.decode_record)
-    sink.write_event(PrintkLevel.ERROR, event, 0, 0x12345678, 0xAAAAAAAA, 0xBBBBBBBB)
+    assert (
+        sink.write_event(PrintkLevel.ERROR, event, 0, 0x12345678, 0xAAAAAAAA, 0xBBBBBBBB)
+        == 4 + 4 * argument_count
+    )
     expected_messages = {
         PrintkEvent.COOS_HANDOFF_LIMIT: "COOS: handoff limit reached (task=0, count=305419896)",
         PrintkEvent.COOS_TASK_CAPACITY: "COOS: task capacity exceeded (max=0, attempted=305419896)",
@@ -536,22 +539,20 @@ def test_log_17_printk_rejects_invalid_input_before_physical_output(record):
     assert dictionary.format_calls == 0
 
 
-def test_log_17_printk_rejected_output_preserves_unsent_ring_entry():
+def test_log_17_printk_rejected_output_discards_and_counts_ring_entry():
     dictionary = LogDictionary(entries=((1, "payload=%d"),), include_diagnostic_events=False)
     capture = PrintkBuffer(capacity=8)
     sink = PrintkSink(capture, dictionary.decode_record)
     logger = Logger(sink, dictionary, capacity=1)
     assert logger.log_event(LogLevel.INFO, 1, 42) == LogResult.SUCCESS
-    with pytest.raises(AssertionError):
-        logger.flush()
+    assert logger.flush() == 0
     assert capture.bytes_written == 0
     assert capture.drain_output() == b""
-    assert logger.ring.count == 1
-    entry = logger.ring.peek()
-    assert entry is not None and entry.arg0 == 42
+    assert logger.ring.count == 0
+    assert logger.ring.dropped == 1
     # Tier 1 diagnostics still preserve their original failure handling on rejection.
     diagnostics = PrintkSink(capture, LogDictionary().decode_record)
-    diagnostics.write_event(PrintkLevel.ERROR, PrintkEvent.COOS_DUPLICATE_TASK, 99)
+    assert diagnostics.write_event(PrintkLevel.ERROR, PrintkEvent.COOS_DUPLICATE_TASK, 99) == 0
     assert capture.bytes_written == 0
 
 
@@ -608,7 +609,7 @@ def test_log_18_printk_base64_known_vectors(payload: bytes, expected: bytes) -> 
     dictionary = _HostFormatSpy()
     capture = PrintkBuffer()
     sink = PrintkSink(capture, dictionary.decode_record)
-    assert sink.write_base64(memoryview(payload)) == len(payload)
+    assert sink.write_base64(memoryview(payload)) == 4 * ((len(payload) + 2) // 3) + 1
     assert capture.drain_output() == expected
     assert capture.bytes_written == len(expected)
     assert dictionary.format_calls == 0
@@ -623,7 +624,7 @@ def test_log_18_printk_base64_roundtrip_across_chunk_boundaries(size: int) -> No
     capture = PrintkBuffer(capacity=output_size)
     sink = PrintkSink(capture, LogDictionary().decode_record)
     workspace = sink._event_buffer
-    assert sink.write_base64(memoryview(payload)) == size
+    assert sink.write_base64(memoryview(payload)) == 4 * ((size + 2) // 3) + 1
     output = capture.drain_output()
     assert output == b64encode(payload) + b"\n"
     assert len(output) == output_size
@@ -638,12 +639,12 @@ def test_log_18_printk_base64_reads_only_the_borrowed_view() -> None:
     capture = PrintkBuffer()
     sink = PrintkSink(capture, LogDictionary().decode_record)
     payload = bytearray(b"ignored:foobar:ignored")
-    assert sink.write_base64(memoryview(payload)[8:14]) == 6
+    assert sink.write_base64(memoryview(payload)[8:14]) == 9
     assert capture.drain_output() == b"Zm9vYmFy\n"
     assert payload == b"ignored:foobar:ignored"
-    assert sink.write_base64(memoryview(b"fxoxo")[::2]) == 3
+    assert sink.write_base64(memoryview(b"fxoxo")[::2]) == 5
     assert capture.drain_output() == b"Zm9v\n"
-    assert sink.write_base64(memoryview(b"raboof")[::-1]) == 6
+    assert sink.write_base64(memoryview(b"raboof")[::-1]) == 9
     assert capture.drain_output() == b"Zm9vYmFy\n"
 
 
@@ -664,7 +665,7 @@ def test_log_18_printk_base64_shares_workspace_with_synchronous_events() -> None
     sink = PrintkSink(capture, LogDictionary().decode_record)
     workspace = sink._event_buffer
     sink.write_event(PrintkLevel.ERROR, PrintkEvent.COOS_DUPLICATE_TASK, 99)
-    assert sink.write_base64(memoryview(bytes(range(30)))) == 30
+    assert sink.write_base64(memoryview(bytes(range(30)))) == 41
     sink.write_event(PrintkLevel.ERROR, PrintkEvent.COOS_DUPLICATE_TASK, 99)
     assert capture.drain_output() == (
         b"[ERROR] COOS: duplicate task id rejected (task=99)\n"
@@ -687,8 +688,7 @@ def test_log_18_printk_base64_stops_on_rejected_chunk_or_newline(
 ) -> None:
     capture = PrintkBuffer(capacity=capacity)
     sink = PrintkSink(capture, LogDictionary().decode_record)
-    with pytest.raises(AssertionError):
-        sink.write_base64(memoryview(payload))
+    assert sink.write_base64(memoryview(payload)) == len(expected_prefix)
     assert capture.drain_output() == expected_prefix
     assert capture.bytes_written == len(expected_prefix)
 
@@ -700,8 +700,7 @@ def test_log_18_printk_base64_stops_on_partial_write() -> None:
 
     capture = PartialSink()
     sink = PrintkSink(capture, LogDictionary().decode_record)
-    with pytest.raises(AssertionError):
-        sink.write_base64(memoryview(b"foobar"))
+    assert sink.write_base64(memoryview(b"foobar")) == 1
     assert capture.drain_output() == b"Z"
     assert capture.bytes_written == 1
 
@@ -712,7 +711,7 @@ def test_log_18_printk_base64_does_not_consume_queued_dictionary_logs() -> None:
     sink = PrintkSink(capture, dictionary.decode_record)
     logger = Logger(sink, dictionary, capacity=1)
     assert logger.log_event(LogLevel.WARN, 0xABCDEF, 7, 0xAB, 0xFFFFFFFF, 0) == LogResult.SUCCESS
-    assert sink.write_base64(memoryview(b"foobar")) == 6
+    assert sink.write_base64(memoryview(b"foobar")) == 9
     assert dictionary.format_calls == 0
     assert logger.ring.count == 1
     assert logger.flush() == 1
@@ -734,7 +733,7 @@ def test_log_18_printk_base64_emits_bounded_physical_writes() -> None:
 
     capture = ChunkCapture()
     sink = PrintkSink(capture, LogDictionary().decode_record)
-    assert sink.write_base64(memoryview(b"f" * 31)) == 31
+    assert sink.write_base64(memoryview(b"f" * 31)) == 45
     assert capture.write_sizes == [20, 20, 4, 1]
     assert capture.drain_output() == b"ZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZg==\n"
 
@@ -743,8 +742,7 @@ def test_log_18_printk_base64_empty_payload_requires_newline_acceptance() -> Non
     capture = PrintkBuffer(capacity=1)
     assert capture.write(memoryview(b"x")) == 1
     sink = PrintkSink(capture, LogDictionary().decode_record)
-    with pytest.raises(AssertionError):
-        sink.write_base64(memoryview(b""))
+    assert sink.write_base64(memoryview(b"")) == 0
     assert capture.drain_output() == b"x"
     assert capture.bytes_written == 1
 
@@ -762,3 +760,91 @@ def test_log_18_printk_base64_rejects_non_byte_views_before_output() -> None:
             sink.write_base64(view)
     assert capture.drain_output() == b""
     assert capture.bytes_written == 0
+
+
+@pytest.mark.parametrize("written", (0, 1, 7, 8))
+def test_log_short_write_discards_without_retry(written: int) -> None:
+    class ShortWriter:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def write(self, data: memoryview) -> int:
+            self.calls += 1
+            return written
+
+    writer = ShortWriter()
+    dictionary = LogDictionary(entries=((1, "value=%d"),), include_diagnostic_events=False)
+    logger = Logger(writer, dictionary, capacity=3)
+    for value in range(3):
+        logger.log_event(LogLevel.INFO, 1, value)
+    discarded = logger.flush()
+    assert discarded == (3 if written == 8 else 0)
+    assert logger.ring.count == 0
+    assert logger.ring.dropped == (3 if written < 8 else 0)
+    assert writer.calls == 3
+    assert logger.flush() == 0
+    assert writer.calls == 3
+
+
+@pytest.mark.parametrize("optimized", (False, True))
+def test_runtime_ticks_wrap_in_normal_and_optimized_python(optimized: bool) -> None:
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    script = """
+import json
+import sys
+sys.path.insert(0, "tier1_core")
+from tier2_runtime.observability.events import RuntimeEvent, RuntimeEventKind
+from tier2_runtime.observability.logger import Logger, LogDictionary, LogLevel, decode_log_records
+from tier3_plugins.logger.logger import RuntimeEventLogger
+class Writer:
+    def __init__(self):
+        self.data = bytearray()
+    def write(self, data):
+        self.data.extend(data)
+        return len(data)
+w = Writer()
+d = LogDictionary()
+l = Logger(w, d, min_level=LogLevel.DEBUG)
+p = RuntimeEventLogger(l)
+for tick in (0, 2**32 - 1, 2**32, 5 * 10**9):
+    p.on_runtime_event(RuntimeEvent(kind=RuntimeEventKind.FUNCTION_ENTER, runtime_id=1, module_id=2, function_id=3, guest_pc=4, tick=tick, call_id=5))
+l.flush()
+print(json.dumps(tuple(decode_log_records(bytes(w.data), d))))
+"""
+    command = [sys.executable]
+    if optimized:
+        command.append("-O")
+    command.extend(("-c", script))
+    result = subprocess.run(
+        command,
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    messages = json.loads(result.stdout)
+    assert [int(message.split("tick=")[1]) for message in messages] == [
+        0,
+        2**32 - 1,
+        0,
+        5 * 10**9 % 2**32,
+    ]
+
+
+def test_log_17_partial_text_write_discards_and_counts_record() -> None:
+    class PartialSink(PrintkBuffer):
+        def write(self, data: memoryview) -> int:
+            return super().write(data[:1])
+
+    dictionary = LogDictionary(entries=((1, "payload=%d"),), include_diagnostic_events=False)
+    capture = PartialSink()
+    logger = Logger(PrintkSink(capture, dictionary.decode_record), dictionary, capacity=1)
+    assert logger.log_event(LogLevel.INFO, 1, 42) == LogResult.SUCCESS
+    assert logger.flush() == 0
+    assert capture.drain_output() == b"["
+    assert logger.ring.count == 0
+    assert logger.ring.dropped == 1

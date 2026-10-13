@@ -22,7 +22,7 @@ class RuntimeEventLogger:
             int(event.kind),
             event.function_id,
             event.guest_pc,
-            event.tick,
+            event.tick & 0xFFFF_FFFF,
         )
 
     def on_runtime_batch(self, batch: RuntimeEventBatch) -> None:

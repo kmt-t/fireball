@@ -97,6 +97,12 @@ STANDARD_DIAGNOSTIC_EVENTS: tuple[tuple[int, str], ...] = (
     (LOG_EVT_TRAP_INVALID_WASM_BINARY, "TRAP: invalid WASM binary (pc=0x%08X)"),
 )
 
+PROFILE_LOG_BASE = 0x0500
+PROFILE_LOG_DICTIONARY: tuple[tuple[int, str], ...] = (
+    (0x0501, "PROFILE: enter function=%d call=%d tick=%d"),
+    (0x0502, "PROFILE: exit function=%d call=%d tick=%d"),
+)
+
 RUNTIME_EVENT_LOG_BASE = 0x0400
 RUNTIME_EVENT_DICTIONARY: tuple[tuple[int, str], ...] = (
     (0x0401, "RUNTIME: event=%d function=%d pc=0x%08X tick=%d"),
@@ -134,6 +140,7 @@ class LogDictionary:
                 len(PRINTK_DICTIONARY)
                 + len(STANDARD_DIAGNOSTIC_EVENTS)
                 + len(RUNTIME_EVENT_DICTIONARY)
+                + len(PROFILE_LOG_DICTIONARY)
             )
             if not include_diagnostic_events:
                 extra_count = 0
@@ -148,6 +155,8 @@ class LogDictionary:
                 for entry in STANDARD_DIAGNOSTIC_EVENTS:
                     built_entries.append(entry)
                 for entry in RUNTIME_EVENT_DICTIONARY:
+                    built_entries.append(entry)
+                for entry in PROFILE_LOG_DICTIONARY:
                     built_entries.append(entry)
             built_entries.sort(key=lambda entry: entry[0])
             previous_id: int | None = None
@@ -394,9 +403,11 @@ class Logger(LoggerPort):
                 assert entry is not None
                 record_size = self._encode_entry(entry)
                 written = self.transport.write(self._wire_view[:record_size])
-                assert written == record_size
+                if written == record_size:
+                    flushed += 1
+                else:
+                    self.ring.dropped += 1
                 self.ring.discard_oldest()
-                flushed += 1
                 batch_count += 1
             if interrupt_pending is not None and interrupt_pending():
                 break

@@ -29,9 +29,9 @@
 | TEST-LOG-15 | 辞書IDによる転送長と境界の復元 | 引数0〜4個の辞書を送受信側で同一内容から生成する | 異なる長さを連続送信し、独立した期待バイト列と全展開結果を照合する | 各長さは4、8、12、16、20バイトとなる。未使用スロットの非0値は送信されず、使用引数の0値は省略されない。`%%`は引数数に含めない。送信経路で書式を走査しない | runtime_logging.md 4.2、`test_log_15_variable_records_share_build_time_argument_counts` |
 | TEST-LOG-16 | 境界を決定できない入力の拒否 | 未登録IDと欠損レコードを用意する | 送信側の状態と受信側の拒否を検査する | 未登録IDは投入前にassertで拒否され、リング・Sinkに副作用がない。受信側は未知ID、不正レベル、ヘッダ欠損、引数欠損でassertとなる | runtime_logging.md 4.2、`test_log_16_invalid_records_are_rejected_without_guessing_boundaries` |
 
-| TEST-LOG-17 | printk書込み時の復号 | 同一辞書をロガーとprintkへ注入する | ログ投入後にflushし、物理Sinkの出力とリング状態を照合する。不正レコードと出力拒否も検査する | 投入時は展開せず、書込み時に改行付きUTF-8テキストを出力する。戻り値は入力長となる。0〜4引数、全レベル、`%%`、日本語を照合する。不正入力は出力前にassertとなり、出力拒否時は未送信エントリを保持する | runtime_logging.md 4.2、`test_log_17_printk_decodes_at_write_boundary` |
+| TEST-LOG-17 | printk書込み時の復号 | 同一辞書をロガーとprintkへ注入する | ログ投入後にflushし、物理Sinkの出力とリング状態を照合する。不正レコードと出力拒否も検査する | 投入時は展開せず、書込み時に改行付きUTF-8テキストを出力する。完全出力時の戻り値は入力レコード長となる。0〜4引数、全レベル、`%%`、日本語を照合する。不正入力は出力前にassertとなり、出力拒否と部分書込みでは停止せず、エントリを取り出して累積欠落数を増やす | runtime_logging.md 4.2、`test_log_17_printk_decodes_at_write_boundary` |
 
-| TEST-LOG-18 | printkのBase64バイナリ送信 | 共有printk Sinkと任意のバイナリを用意する | `write_base64`の戻り値、全出力バイト、復元結果、作業領域を照合する。出力拒否と部分書込みも検査する | 標準Base64の文字集合と末尾パディングを使い、末尾LFを1個付ける。空データはLFだけとなる。入力0〜2バイトの端数、15バイトのチャンク境界、全256バイト値を復元できる。途中パディングや改行はなく、固定領域を再利用する。出力失敗はassertで停止する | [`printk.md`](docs/components/tier1_core/printk.md) 2.3、`test_log_18_printk_base64_known_vectors` |
+| TEST-LOG-18 | printkのBase64バイナリ送信 | 共有printk Sinkと任意のバイナリを用意する | `write_base64`の物理書込みバイト数、全出力バイト、復元結果、作業領域を照合する。出力拒否と部分書込みも検査する | 標準Base64の文字集合と末尾パディングを使い、末尾LFを1個付ける。空データはLFだけとなる。入力0〜2バイトの端数、15バイトのチャンク境界、全256バイト値を復元できる。途中パディングや改行はなく、固定領域を再利用する。実際の書込みバイト数を返し、出力済みの接頭部を残して再送しない | [`printk.md`](docs/components/tier1_core/printk.md) 2.3、`test_log_18_printk_base64_known_vectors` |
 
 ### 実装上の注意点に対応する検証
 <!-- traceability: {GOTCHA-LOG-01} {GOTCHA-LOG-02} {GOTCHA-LOG-03} {GOTCHA-LOG-04} {DeterministicRingBuffer} {InterruptibleFlush} -->

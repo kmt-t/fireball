@@ -32,11 +32,12 @@ inline std::size_t printk_event(const printk_writer& writer, std::span<std::uint
   return printk_write(writer, wire.first(4 + 4 * arguments.size()));
 }
 
-inline bool printk_base64(const printk_writer& writer, std::span<std::uint8_t, 20> wire,
+inline std::size_t printk_base64(const printk_writer& writer, std::span<std::uint8_t, 20> wire,
                           const std::uint8_t* data, std::size_t bytes, std::ptrdiff_t stride) {
   constexpr std::string_view alphabet =
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   std::size_t used = 0;
+  std::size_t written_total = 0;
   for (std::size_t i = 0; i < bytes;) {
     const auto remaining = bytes - i;
     const auto a = *data;
@@ -50,12 +51,14 @@ inline bool printk_base64(const printk_writer& writer, std::span<std::uint8_t, 2
     i += consumed;
     if (i < bytes) data += static_cast<std::ptrdiff_t>(consumed) * stride;
     if (used == wire.size() || i == bytes) {
-      if (printk_write(writer, wire.first(used)) != used) return false;
+      const auto written = printk_write(writer, wire.first(used));
+      written_total += written;
+      if (written != used) return written_total;
       used = 0;
     }
   }
   wire[0] = '\n';
-  return printk_write(writer, wire.first(1)) == 1;
+  return written_total + printk_write(writer, wire.first(1));
 }
 
 // Numeric diagnostics are formatted where their state lives. Python sees only output bytes.

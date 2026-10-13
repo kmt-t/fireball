@@ -24,7 +24,7 @@ BASE64.argtypes = (
     ctypes.c_size_t,
     ctypes.c_ssize_t,
 )
-BASE64.restype = ctypes.c_int
+BASE64.restype = ctypes.c_size_t
 EVENT = _library.fb_printk_event
 EVENT.argtypes = (
     ctypes.POINTER(NativePrintkWriter),

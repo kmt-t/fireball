@@ -1,7 +1,7 @@
 
 >>> Running WASM workload suite: test_wasi_guest.py
 ....................................................
-52 passed in 2.35s
+52 passed in 2.49s
 
 >>> Running WASM workload suite: test_driver_stubs_guest.py
 ...........
@@ -48,5 +48,5 @@ address: 256 Core assertions executed, 0 skipped ()
 .left-to-right (native): 95 Core assertions executed, 0 skipped
 .Official Core Spec selection: 37/37 files, 15230 assertions, 0 skipped ()
 
-38 passed in 2.05s
-WASM workload suites: 3/3 passed (0 failed, 5.41s)
+38 passed in 2.36s
+WASM workload suites: 3/3 passed (0 failed, 5.85s)

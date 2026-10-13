@@ -5,91 +5,91 @@ Python optimization level (parent and children): 0
 
 [TIER 1 CORE]
 ------------------------------------------------------------------------------------
-  [PASS] COOS Rendezvous & Handoff                  (test_coos.py            )   358.22 ms
-         18 passed in 0.16s
-  [PASS] Round-Robin Scheduler                      (test_scheduler.py       )   357.62 ms
-         22 passed in 0.16s
-  [PASS] System Containers & Views                  (test_containers.py      )  1377.38 ms
-         35 passed in 1.18s
+  [PASS] COOS Rendezvous & Handoff                  (test_coos.py            )   327.02 ms
+         18 passed in 0.15s
+  [PASS] Round-Robin Scheduler                      (test_scheduler.py       )   354.63 ms
+         22 passed in 0.17s
+  [PASS] System Containers & Views                  (test_containers.py      )  1466.04 ms
+         35 passed in 1.27s
 
 [TIER 1 INTERFACE]
 ------------------------------------------------------------------------------------
-  [PASS] IPC Router & Shared Memory                 (test_ipc_router.py      )   569.39 ms
+  [PASS] IPC Router & Shared Memory                 (test_ipc_router.py      )   572.97 ms
          124 passed in 0.38s
 
 [TIER 2 RUNTIME]
 ------------------------------------------------------------------------------------
-  [PASS] System Logging & Ring Buffer               (test_logging.py         )   423.84 ms
-         77 passed in 0.22s
-  [PASS] WASM Reference Parser & Segments           (test_wasm_reader.py     )  2856.81 ms
-         53 passed in 2.65s
+  [PASS] System Logging & Ring Buffer               (test_logging.py         )   492.47 ms
+         84 passed in 0.30s
+  [PASS] WASM Reference Parser & Segments           (test_wasm_reader.py     )  2845.27 ms
+         53 passed in 2.64s
 
 [TIER 3 PLUGINS]
 ------------------------------------------------------------------------------------
-  [PASS] JIT Candidate Scoring                      (test_jit_scoring.py     )   353.73 ms
-         6 passed in 0.16s
+  [PASS] JIT Candidate Scoring                      (test_jit_scoring.py     )   331.74 ms
+         6 passed in 0.15s
 
 [TIER 2 RUNTIME]
 ------------------------------------------------------------------------------------
-  [PASS] WASM Interpreter & Instructions            (test_interpreter.py     )   515.45 ms
-         86 passed in 0.31s
-  [PASS] CPS Interpreter Python/Native Compatibility (test_cps_interpreter.py )  3738.30 ms
-         24 passed in 3.54s
-  [PASS] Python/C++ ABI Native Layout               (test_interpreter_abi.py )   460.22 ms
-         6 passed in 0.27s
-  [PASS] WASM Differential Oracle (wasmtime)        (test_wasm_differential.py)   487.42 ms
-         24 passed in 0.28s
-  [PASS] Syscall & WASI Environment                 (test_syscall.py         )   431.36 ms
-         54 passed in 0.23s
-  [PASS] Virtual MMIO Controller                    (test_vmmio.py           )   303.05 ms
+  [PASS] WASM Interpreter & Instructions            (test_interpreter.py     )   520.13 ms
+         89 passed in 0.31s
+  [PASS] CPS Interpreter Python/Native Compatibility (test_cps_interpreter.py )  3822.84 ms
+         24 passed in 3.61s
+  [PASS] Python/C++ ABI Native Layout               (test_interpreter_abi.py )   449.95 ms
+         6 passed in 0.26s
+  [PASS] WASM Differential Oracle (wasmtime)        (test_wasm_differential.py)   483.85 ms
+         24 passed in 0.27s
+  [PASS] Syscall & WASI Environment                 (test_syscall.py         )   434.99 ms
+         54 passed in 0.24s
+  [PASS] Virtual MMIO Controller                    (test_vmmio.py           )   309.88 ms
          25 passed in 0.13s
-  [PASS] Fault Recovery Strategies                  (test_recovery.py        )   293.17 ms
-         12 passed in 0.12s
-  [PASS] vSoC Multitasking & Pipeline               (test_vsoc.py            )   664.92 ms
-         34 passed in 0.45s
-  [PASS] vDMA Transfer Contracts                    (test_vdma.py            )  2041.18 ms
-         307 passed in 1.81s
-  [PASS] Runtime Static Composition                 (test_runtime_composer.py)   377.57 ms
-         25 passed in 0.18s
+  [PASS] Fault Recovery Strategies                  (test_recovery.py        )   304.63 ms
+         12 passed in 0.13s
+  [PASS] vSoC Multitasking & Pipeline               (test_vsoc.py            )   670.25 ms
+         34 passed in 0.46s
+  [PASS] vDMA Transfer Contracts                    (test_vdma.py            )  2134.31 ms
+         307 passed in 1.91s
+  [PASS] Runtime Static Composition                 (test_runtime_composer.py)   411.99 ms
+         25 passed in 0.19s
 
 [TIER 3 PLUGINS]
 ------------------------------------------------------------------------------------
-  [PASS] Debug Manager Core                         (test_debugger.py        )   438.26 ms
-         34 passed in 0.24s
-  [PASS] GDB RSP Remote Session                     (test_gdb_remote.py      )  1379.72 ms
-         2 passed in 1.18s
-  [PASS] Guest Profiler                             (test_guest_profiler.py  )   309.02 ms
-         9 passed in 0.13s
-  [PASS] Runtime Event Logger                       (test_runtime_event_logger.py)   293.42 ms
-         1 passed in 0.12s
+  [PASS] Debug Manager Core                         (test_debugger.py        )   477.77 ms
+         34 passed in 0.26s
+  [PASS] GDB RSP Remote Session                     (test_gdb_remote.py      )  1402.09 ms
+         2 passed in 1.19s
+  [PASS] Guest Profiler                             (test_guest_profiler.py  )   317.96 ms
+         7 passed in 0.13s
+  [PASS] Runtime Event Logger                       (test_runtime_event_logger.py)   338.14 ms
+         1 passed in 0.14s
 
 [TIER 3 PLATFORM]
 ------------------------------------------------------------------------------------
-  [PASS] Physical Memory Software Contract          (test_memory.py          )   334.12 ms
+  [PASS] Physical Memory Software Contract          (test_memory.py          )   345.40 ms
          18 passed in 0.15s
-  [PASS] HAL Drivers & ShmPool                      (test_hal.py             )   450.34 ms
-         23 passed in 0.26s
-  [PASS] libfireball Host-Call Contract             (test_libfireball.py     )   677.15 ms
+  [PASS] HAL Drivers & ShmPool                      (test_hal.py             )   463.49 ms
+         23 passed in 0.27s
+  [PASS] libfireball Host-Call Contract             (test_libfireball.py     )   673.56 ms
          54 passed in 0.48s
 
 [TIER 3 PLUGINS]
 ------------------------------------------------------------------------------------
-  [PASS] Executable Memory Patch Transactions       (test_exec_memory.py     )   344.21 ms
+  [PASS] Executable Memory Patch Transactions       (test_exec_memory.py     )   344.88 ms
          3 passed in 0.15s
-  [PASS] JIT Extension Hotspot History & 3-Bank Cache (test_jit_runtime.py     )  1893.39 ms
-         121 passed in 1.67s
-  [PASS] x64 Assembly Stencil Trace JIT             (test_x64_jit.py         )   417.91 ms
+  [PASS] JIT Extension Hotspot History & 3-Bank Cache (test_jit_runtime.py     )  1858.75 ms
+         121 passed in 1.65s
+  [PASS] x64 Assembly Stencil Trace JIT             (test_x64_jit.py         )   418.18 ms
          16 passed in 0.21s
-  [PASS] JIT Differential (wasmtime / Tier 2 / Tier 3) (test_jit_differential.py)  7804.99 ms
-         12 passed in 7.59s
+  [PASS] JIT Differential (wasmtime / Tier 2 / Tier 3) (test_jit_differential.py)  7681.66 ms
+         12 passed in 7.47s
 
 [CROSS-CUTTING]
 ------------------------------------------------------------------------------------
-  [PASS] Implementation Gotchas & Invariants        (test_gotchas.py         )   417.80 ms
-         26 passed in 0.20s
-  [PASS] Entry Point (main.py)                      (test_entrypoint.py      )  1710.21 ms
-         16 passed in 1.52s
+  [PASS] Implementation Gotchas & Invariants        (test_gotchas.py         )   409.28 ms
+         26 passed in 0.19s
+  [PASS] Entry Point (main.py)                      (test_entrypoint.py      )  2743.36 ms
+         25 passed in 2.56s
 
 ====================================================================================
- Unit Test Summary: 30/30 Passed, 0 Failed (32081.20 ms total)
+ Unit Test Summary: 30/30 Passed, 0 Failed (33408.05 ms total)
 ====================================================================================

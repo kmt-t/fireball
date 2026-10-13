@@ -1,7 +1,7 @@
 .................................
-33 passed in 0.29s
-....
-4 passed in 0.20s
+33 passed in 0.28s
+..
+2 passed in 0.19s
 ...................................................................................................
 99 passed in 0.55s
 .
@@ -15,49 +15,49 @@
     [PASS] Scenario 1 (Loader & Memory) succeeded seamlessly.
 .
 1 passed in 0.17s
-    -> [SUCCESS] Scenario 1: Loader, Memory & Data Segments passed in 363.16 ms
+    -> [SUCCESS] Scenario 1: Loader, Memory & Data Segments passed in 378.46 ms
 
 >>> Running Scenario 2: WASI System Call & I/O Dispatch (scenario2_wasi_syscall_io.py)...
 [*] Running Scenario 2: WASI System Call & I/O Integration...
     [PASS] Scenario 2 (WASI & Syscalls) succeeded seamlessly.
 .
 1 passed in 0.17s
-    -> [SUCCESS] Scenario 2: WASI System Call & I/O Dispatch passed in 358.71 ms
+    -> [SUCCESS] Scenario 2: WASI System Call & I/O Dispatch passed in 369.41 ms
 
 >>> Running Scenario 3: Recursion & Indirect Table Dispatch (scenario3_recursion_and_tables.py)...
 [*] Running Scenario 3: Recursion & Indirect Table Dispatch...
     [PASS] Scenario 3 (Recursion & Table Dispatch) succeeded seamlessly.
 .
-1 passed in 0.20s
-    -> [SUCCESS] Scenario 3: Recursion & Indirect Table Dispatch passed in 407.61 ms
+1 passed in 0.21s
+    -> [SUCCESS] Scenario 3: Recursion & Indirect Table Dispatch passed in 413.02 ms
 
 >>> Running Scenario 4: Hybrid JIT Compilation & Hotspot (scenario4_hybrid_jit_loop.py)...
 [*] Running Scenario 4: Hybrid JIT Compilation & Differential Check...
     [PASS] Scenario 4 (Hybrid JIT) verified with 9 hot JIT traces.
 .
 1 passed in 0.31s
-    -> [SUCCESS] Scenario 4: Hybrid JIT Compilation & Hotspot passed in 520.98 ms
+    -> [SUCCESS] Scenario 4: Hybrid JIT Compilation & Hotspot passed in 524.69 ms
 
 >>> Running Scenario 5: Multi-Function UnifiedPC & Sparse JIT Lookup (scenario5_multimodule_unified_pc.py)...
 [*] Running Scenario 5: Multi-Function UnifiedPC & sparse JIT lookup...
     -> Compiled JIT traces belong to functions: {0, 1, 2}
     [PASS] Scenario 5 (Multi-Function UnifiedPC) verified with 7 traces.
 .
-1 passed in 0.33s
-    -> [SUCCESS] Scenario 5: Multi-Function UnifiedPC & Sparse JIT Lookup passed in 531.18 ms
+1 passed in 0.35s
+    -> [SUCCESS] Scenario 5: Multi-Function UnifiedPC & Sparse JIT Lookup passed in 546.22 ms
 
 >>> Running Scenario 6: COOS Cooperative Multitasking (scenario6_coos_multitask_yield.py)...
 [PASS] Scenario 6: native LOOP threshold handoffs, fresh-memory interleaving and results.
 .
 1 passed in 0.17s
-    -> [SUCCESS] Scenario 6: COOS Cooperative Multitasking passed in 371.92 ms
+    -> [SUCCESS] Scenario 6: COOS Cooperative Multitasking passed in 360.72 ms
 
 >>> Running Scenario 7: GDB Remote Debugger Socket Session (scenario7_gdb_socket_debugger.py)...
 [*] Running Scenario 7: GDB Remote Debugger Socket Connection...
     [PASS] Scenario 7 (GDB Socket Debugger Session) succeeded seamlessly.
 .
 1 passed in 1.14s
-    -> [SUCCESS] Scenario 7: GDB Remote Debugger Socket Session passed in 1353.10 ms
+    -> [SUCCESS] Scenario 7: GDB Remote Debugger Socket Session passed in 1393.33 ms
 
 >>> Running Scenario 8: Storage Coverage & GDB Debugger (scenario8_comprehensive_storage_coverage.py)...
 [*] Running Scenario 8: Comprehensive Storage (Globals/Locals/Memory) & GDB Debugger...
@@ -68,7 +68,7 @@
     [PASS] Scenario 8 (Comprehensive Storage & Debugger Integration) verified completely.
 .
 1 passed in 1.15s
-    -> [SUCCESS] Scenario 8: Storage Coverage & GDB Debugger passed in 1344.56 ms
+    -> [SUCCESS] Scenario 8: Storage Coverage & GDB Debugger passed in 1374.16 ms
 
 >>> Running Scenario 9: IPC Router & Structured Logging (scenario9_ipc_router_and_logging.py)...
 [*] Running Scenario 9: Tier 1 Interface IPC Router & Structured Logging...
@@ -80,8 +80,8 @@
     [Section 2.2] Buffered Logging & Explicit Flush -> 2 Entries Flushed [PASS]
     [PASS] Scenario 9 routing/logging examples; idle_hook and overwrite remain unverified.
 .
-1 passed in 0.14s
-    -> [SUCCESS] Scenario 9: IPC Router & Structured Logging passed in 329.79 ms
+1 passed in 0.15s
+    -> [SUCCESS] Scenario 9: IPC Router & Structured Logging passed in 335.17 ms
 
 >>> Running Scenario 10: vMMIO Virtual Devices & Translation (scenario10_vmmio_virtual_devices.py)...
 [*] Running Scenario 10: Tier 2 Runtime vMMIO Virtual Devices & Page Table...
@@ -99,8 +99,8 @@
     [Phase 4.4] WASM Guest Unregistered vMMIO Address -> Trap Raised [PASS]
     [PASS] Scenario 10 (vMMIO Virtual Devices & Address Translation) verified completely.
 .
-1 passed in 0.15s
-    -> [SUCCESS] Scenario 10: vMMIO Virtual Devices & Translation passed in 352.27 ms
+1 passed in 0.16s
+    -> [SUCCESS] Scenario 10: vMMIO Virtual Devices & Translation passed in 366.12 ms
 
 >>> Running Scenario 11: HAL & WASI Dummy Drivers (scenario11_hal_and_wasi_drivers.py)...
 [*] Running Scenario 11: HAL Drivers & uvwasi Reference Stack...
@@ -110,11 +110,11 @@
     [Phase B.2] WASI In-Memory VFS (fd_seek & fd_read config.ini) [PASS]
     [Phase B.3] WASI In-Memory VFS (fd_write mutation) [PASS]
     [Phase B.4] WASI random_get (Entropy Pool Fill) [PASS]
-    [Phase B.5] WASI clock_time_get (Monotonic ns=3445157437068) [PASS]
+    [Phase B.5] WASI clock_time_get (Monotonic ns=47076359252437) [PASS]
     [PASS] Scenario 11 direct stdio/Timer/backend checks; guest/peripheral paths unverified.
 .
-1 passed in 0.15s
-    -> [SUCCESS] Scenario 11: HAL & WASI Dummy Drivers passed in 332.77 ms
+1 passed in 0.17s
+    -> [SUCCESS] Scenario 11: HAL & WASI Dummy Drivers passed in 381.20 ms
 
 >>> Running Scenario 12: WASI 0.3p URI Resolver (scenario12_wasi03p_uri_resolver.py)...
 [*] Running Scenario 12: WASI 0.3p Hierarchical URI Resolver, Capability Query & IPC Commands...
@@ -126,13 +126,13 @@
     [IPC CMD:STREAM_WRITE_BUFFER] Written 22 bytes -> IPC-CMD-SHM-STREAM-OK!
     [IPC ReadOnlyFlatMapView DISPATCH] Written 22 bytes -> IPC-CMD-SHM-STREAM-OK!
     [HAL Task IPC Rendezvous] Successfully received and dispatched command via HAL task (count=3)
-    [IPC 64-bit KV Array DISPATCH] Successfully verified AoS entries: <ipc_router.SharedEntries object at 0x723864b98fa0>
+    [IPC 64-bit KV Array DISPATCH] Successfully verified AoS entries: <ipc_router.SharedEntries object at 0x799a29625c90>
     [PASS] Scenario 12 host URI/capability/HAL checks; guest adapter remains unverified.
 .
-1 passed in 0.15s
-    -> [SUCCESS] Scenario 12: WASI 0.3p URI Resolver passed in 341.33 ms
+1 passed in 0.16s
+    -> [SUCCESS] Scenario 12: WASI 0.3p URI Resolver passed in 339.88 ms
 
 ================================================================================
- Integration Test Summary: 12/12 Passed, 0 Failed (6608.00 ms total)
+ Integration Test Summary: 12/12 Passed, 0 Failed (6782.85 ms total)
 ================================================================================
 Integration test groups: 5/5 passed

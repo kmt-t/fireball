@@ -104,7 +104,7 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
 ロガーとprintkは同一ビルドの辞書IDと引数数を共有する。
 復号、未知ID・欠損入力の拒否、物理出力、戻り値はTier 1の[`printk.md`](docs/components/tier1_core/printk.md)を正本とする。
 送信側は未登録IDをリングへの投入前に拒否する。
-出力先が受理しない場合、ロガーは未送信エントリを保持してassertで停止する。
+出力先の受理量によらず、ロガーは試行したエントリを取り出す。符号化長に満たない書込みは1件の欠落として既存の累積`dropped`へ加算する。停止、再送、ロールバックは行わない。
 ホスト側ツールも同じ辞書の引数数からレコード境界を決める。未知IDから境界を推測して復号を継続しない。
 Tier 1診断イベントの辞書エントリと引数数も、構成時に共有する同一辞書へ含める。
 
@@ -138,6 +138,19 @@ Tier 1診断イベントの辞書エントリと引数数も、構成時に共�
 `0x03xx` 帯はWASM検証とインタープリタ実行時のトラップ専用である。イベント ID は、トラップ原因コード（`interpreter.md` の `trap_code`）に `0x0300` を加算した値とする（`GOTCHA-LOG-04`）。トラップ原因コードとログ辞書エントリは機械的に1対1で対応する。原因コードを追加しても、ログ辞書エントリの登録漏れは生じない。Pysimのパーサは不正入力をtrapで拒否し、この辞書追加だけではログ送信の副作用を追加しない。
 
 `unified_pc` はCode section payload先頭からトラップ命令先頭までの32ビットオフセットである。関数インデックスは符号化しないため、PC値だけではモジュールを特定しない。ログレコードはmodule IDを含まないため、複数モジュールを含む診断では、出力側が別途Runtimeまたはモジュール文脈を保持する必要がある。
+
+Runtimeイベントのtickは符号化時に`tick & 0xFFFF_FFFF`として32ビットへ循環させる。既存の4引数割り当ては変更しない。復号したtickの差分は`(end - start) & 0xFFFF_FFFF`で求める。pysim既定時計は`time.monotonic_ns`の1 GHzであり、一周は4.294967296秒となる。差分を正しく測れる区間は一周未満に限る。他の時計はその周波数を併記し、一周を`2**32 / frequency_hz`秒とする。
+
+### 4.2.2 プロファイルログイベント
+
+Tier 3 Guest Profilerは関数入退出を次の固定辞書IDへ変換する。`0x0500`台はプロファイルイベント用に割り当てる。
+
+| イベントID | 分類 | レベル | フォーマット文字列 | 引数構成 |
+| :--- | :--- | :--- | :--- | :--- |
+| `0x0501` | PROFILE | `DEBUG` | `PROFILE: enter function=%d call=%d tick=%d` | `function_id`, `call_id`, `tick & 0xFFFF_FFFF` |
+| `0x0502` | PROFILE | `DEBUG` | `PROFILE: exit function=%d call=%d tick=%d` | `function_id`, `call_id`, `tick & 0xFFFF_FFFF` |
+
+各エントリは3引数、16バイトのレコードである。tickは32ビット循環値とし、差分は`(end - start) & 0xFFFF_FFFF`で求める。既定時計の周波数は`runtime_observability.md`の1 GHzで、一周は4.294967296秒である。一周以上の区間を正しく測定できない。デバッグバスは到達を保証せず、ホスト集計結果には欠落区間が含まれる可能性がある。
 
 ### 4.3 COOS Idle Hook 連携 (Flush Protocol)
 <!-- traceability: {GLOBAL_IdleDetection} -->
@@ -213,7 +226,7 @@ sequenceDiagram
 | :--- | :--- |
 | 機能概要 | リングバッファに蓄積されたログを物理トランスポートへ一括出力する。 |
 | シグネチャ | `flush(batch_size: u32, interrupt_pending: optional<callback>) -> u32` |
-| 戻り値 | 同期書込みが完了したログ件数。各書込みの返却バイト数は符号化長と一致しなければならない。 |
+| 戻り値 | 書込みを試行して取り出したログ件数。完全に書き込めた件数との差は累積欠落数の増分となる。 |
 | 補足 | COOSの`set_idle_hook`で登録する。同期書込みを`batch_size`件以内でまとめ、その完了後に割り込みを確認する。保留中なら次バッチを開始せず、残余エントリを保持してスケジューラへ戻る。{InterruptibleFlush} <!-- definition: {InterruptibleFlush} --> |
 
 ### 5.2 内部呼出し境界

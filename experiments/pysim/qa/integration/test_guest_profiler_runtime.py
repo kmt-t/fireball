@@ -19,6 +19,7 @@ from tier2_runtime.interpreter.interpreter import (
     WasmNumber,
 )
 from tier2_runtime.observability.events import RuntimeExecutionError
+from tier2_runtime.observability.logger import LogDictionary, Logger, LogLevel
 from tier2_runtime.runtime.composer import (
     RuntimeComposer,
     RuntimeCompositionConfig,
@@ -26,6 +27,11 @@ from tier2_runtime.runtime.composer import (
     RuntimePluginSelection,
 )
 from tier2_runtime.runtime.recovery import Result
+from tier3_plugins.profiler.aggregate import (
+    ProfileReport,
+    aggregate_profile,
+    decode_profile_records,
+)
 from tier3_plugins.profiler.guest_profiler import GuestProfiler
 
 _GUEST_WAT = """(module
@@ -80,12 +86,24 @@ class _GuestState:
     stack_depths: tuple[int, int, int, int]
 
 
+class _ProfileWire:
+    def __init__(self) -> None:
+        self.data = bytearray()
+
+    def write(self, data: memoryview) -> int:
+        self.data.extend(data)
+        return len(data)
+
+
 def _run_guest_history(
     jit_enabled: bool,
-    profiler: GuestProfiler,
     enabled: bool,
     resources: ExitStack,
-) -> tuple[_GuestState, ...]:
+) -> tuple[tuple[_GuestState, ...], ProfileReport | None]:
+    wire = _ProfileWire()
+    dictionary = LogDictionary()
+    log_engine = Logger(wire, dictionary, min_level=LogLevel.DEBUG)
+    profiler = GuestProfiler(log_engine)
     engine = (
         make_runtime_engine(jit_compiler=TraceCompiler())
         if jit_enabled
@@ -128,7 +146,7 @@ def _run_guest_history(
         ("fail", (), (), 6, 51, 1),
         ("sum", (5,), (71,), 15, 56, 3),
     )
-    for call_number, (name, args, values, stored_sum, total, calls) in enumerate(history, start=1):
+    for call_number, (name, args, values, stored_sum, total, _calls) in enumerate(history, start=1):
         result = runtime.call(module.export_func_index(name), args)
         call = executor.last_call
         assert call is not None and call.finished
@@ -142,8 +160,6 @@ def _run_guest_history(
         expected_memory[64:68] = stored_sum.to_bytes(4, "little")
         assert memory == expected_memory, f"call {call_number}: guest memory"
         assert tuple(interpreter.globals) == (total,), f"call {call_number}: guest global"
-        assert profiler.open_frame_count == 0, f"call {call_number}: unclosed profile frame"
-        assert profiler.overflowed_frame_count == 0
         states.append(
             _GuestState(
                 values=tuple(call.results) if call.results is not None else (),
@@ -158,55 +174,28 @@ def _run_guest_history(
                 ),
             )
         )
-        if enabled and profiler.lost_events == 0:
-            stats = profiler.stats_for(module.export_func_index(name))
-            assert stats.call_count == calls, f"call {call_number}: profile call count"
     assert (engine.stat_jit_invocations > 0) == jit_enabled
-    return tuple(states)
+    log_engine.flush()
+    report = aggregate_profile(decode_profile_records(bytes(wire.data), dictionary))
+    return tuple(states), report if enabled else None
 
 
 @pytest.mark.parametrize(
     "jit_enabled", (False, True), ids=("interpreter", "interpreter-with-jit-plugin")
 )
-@pytest.mark.parametrize("stack_capacity", (64, 0), ids=("normal", "overflow"))
-def test_real_guest_profile_preserves_results_state_and_trap_history(
-    jit_enabled: bool, stack_capacity: int
-) -> None:
-    """TEST-PROF-08/09: 実native実行と実Profilerを結線し、無効構成とも比較する。"""
-    profiler = GuestProfiler(stack_capacity=stack_capacity)
-    disabled_profiler = GuestProfiler()
+def test_real_guest_profile_logs_aggregate_call_counts_and_times(jit_enabled: bool) -> None:
+    """Runtime events pass through the guest logger and host aggregator."""
     with ExitStack() as resources:
-        observed = _run_guest_history(jit_enabled, profiler, True, resources)
-        unobserved = _run_guest_history(jit_enabled, disabled_profiler, False, resources)
-    assert observed == unobserved, (
-        "profiling must preserve results, trap, PC, stack depths and guest state"
-    )
-    assert disabled_profiler.open_frame_count == 0
-    assert disabled_profiler.lost_events == 0 and disabled_profiler.estimated_events == 0
-    assert profiler.unmatched_events == 0
-    if stack_capacity == 0:
-        assert profiler.lost_events == 5
-        assert profiler.estimated_events > 0
-        return
-    normal_ticks, trap_ticks = 1, 2
-    # export順でなくWATの関数宣言順: inc=0, sum=1, fail=2。
-    for function, calls, ticks, estimated in (
-        (0, 1, normal_ticks, False),
-        (1, 3, 3 * normal_ticks, False),
-        (2, 1, trap_ticks, True),
-    ):
-        stats = profiler.stats_for(function)
-        assert (stats.call_count, stats.inclusive_ticks, stats.self_ticks, stats.estimated) == (
-            calls,
-            ticks,
-            ticks,
-            estimated,
-        ), f"function {function}: profile summary"
-    assert profiler.lost_events == 0
-    assert profiler.estimated_events == 2
-    assert profiler.edge_calls(1, 2) == 0, (
-        "separate public calls must not become a parent-child edge"
-    )
+        observed, report = _run_guest_history(jit_enabled, True, resources)
+        unobserved, no_report = _run_guest_history(jit_enabled, False, resources)
+    assert observed == unobserved, "profiling must preserve guest results and state"
+    assert report is not None and no_report is None
+    assert tuple(
+        (row.function_id, row.call_count, row.inclusive_ticks, row.self_ticks)
+        for row in report.functions
+    ) == ((0, 1, 1, 1), (1, 3, 3, 3), (2, 1, 2, 2))
+    assert len(report.edges) == 0
+    assert report.unmatched_exits == 0
 
 
 if __name__ == "__main__":

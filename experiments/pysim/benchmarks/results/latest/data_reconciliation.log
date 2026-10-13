@@ -1,0 +1,7 @@
+PASS normal library hash experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so
+PASS normal library hash experiments/pysim/tier3_plugins/jit/libtrace_compiler.so
+PASS release library hash experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so
+PASS release library hash experiments/pysim/tier3_plugins/jit/libtrace_compiler.so
+PASS release library hash build/wamr-benchmark/libiwasm.so
+PASS latest JSON/library hash reconciliation
+PASS benchmark/test counts reconcile

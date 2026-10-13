@@ -6,7 +6,7 @@
 #define FB_PRINTK_EXPORT __attribute__((visibility("default")))
 #endif
 
-extern "C" FB_PRINTK_EXPORT int fb_printk_base64(
+extern "C" FB_PRINTK_EXPORT std::size_t fb_printk_base64(
     const fireball::printk_writer* writer, std::uint8_t* workspace,
     const std::uint8_t* data, std::size_t bytes, std::ptrdiff_t stride) {
   return fireball::printk_base64(*writer, std::span<std::uint8_t, 20>(workspace, 20),

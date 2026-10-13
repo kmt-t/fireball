@@ -1,5 +1,5 @@
 ================================================================================
- Spec-Integrator: Source Verification (Anti-Sabotage & Language Rules)
+ Spec-Integrator: Source Verification (Automated Gate & Language Rules)
 ================================================================================
 
 >>> Checking group 'cpp' (7 file(s))...
@@ -11,9 +11,10 @@
 >>> Checking group 'python_formal' (25 file(s))...
   ✔ Group 'python_formal': All checks passed.
 
->>> Checking group 'python_pysim' (231 file(s))...
+>>> Checking group 'python_pysim' (235 file(s))...
   ✔ Group 'python_pysim': All checks passed.
 
 ================================================================================
 ✅ ALL SOURCE CHECKS PASSED (0 warnings).
 [PASS] verification matrix: 26 specs, 15 concepts, 22 formal models, 25 test specs, 12 scenarios, 4 integration suites, 3 WASM workload suites, pairwise complete
+Firmware SLOC: 3704/20000, 7 files (inc/, src/)

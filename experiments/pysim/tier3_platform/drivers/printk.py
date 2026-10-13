@@ -73,7 +73,6 @@ class PrintkSink:
         """Decode one record at output time; report consumed input bytes to Logger."""
         output = (self._decode_record(data) + "\n").encode("utf-8")
         written = self._sink.write(memoryview(output))
-        assert written == 0 or written == len(output), "partial printk text write"
         return len(data) if written == len(output) else 0
 
     def write_raw(self, data: memoryview) -> int:
@@ -108,9 +107,7 @@ class PrintkSink:
             )
         finally:
             lease.release()
-        assert self._callback_error is None, str(self._callback_error)
-        assert status == 1, "incomplete printk base64 write"
-        return len(data)
+        return status
 
     def write_event(
         self,
@@ -120,8 +117,8 @@ class PrintkSink:
         arg1: int = 0,
         arg2: int = 0,
         arg3: int = 0,
-    ) -> None:
-        """C++ emits the shared event record; the platform decodes at output time."""
+    ) -> int:
+        """Emit one event and return its encoded record size, or zero if incomplete."""
         argument_count = printk_argument_count(event)
         assert 0 <= arg0 <= 0xFFFF_FFFF
         assert 0 <= arg1 <= 0xFFFF_FFFF
@@ -133,7 +130,7 @@ class PrintkSink:
         self._arguments[3] = arg3
         self._callback_error = None
         workspace = (ctypes.c_uint8 * PRINTK_MAX_RECORD_SIZE).from_buffer(self._event_buffer)
-        EVENT(
+        written = EVENT(
             ctypes.byref(self._record_writer),
             workspace,
             int(level),
@@ -142,3 +139,4 @@ class PrintkSink:
             self._arguments,
         )
         assert self._callback_error is None, str(self._callback_error)
+        return written

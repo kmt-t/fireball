@@ -422,7 +422,7 @@ source_verification:
       extensions: [".hxx", ".cxx", ".c", ".h", ".cpp"]
       formatters: ["clang-format"]
       checks:
-        - id: "anti_sabotage"
+        - id: "gate_checks"
           enabled: true
           rules: ["todo_comment", "empty_function", "dummy_return"]
         - id: "cpp_rules"
@@ -437,7 +437,7 @@ source_verification:
       checks:
         - id: "ruff"
           enabled: true
-        - id: "anti_sabotage"
+        - id: "gate_checks"
           enabled: true
           rules: ["forbid_typing_any", "dummy_pass", "todo_comment"]
         - id: "execute"
@@ -451,7 +451,7 @@ source_verification:
       checks:
         - id: "ruff"
           enabled: true
-        - id: "anti_sabotage"
+        - id: "gate_checks"
           enabled: true
           rules: ["forbid_typing_any", "mutation_guards_required", "vacuous_property"]
         - id: "execute_formal"
@@ -465,7 +465,7 @@ source_verification:
       checks:
         - id: "ruff"
           enabled: true
-        - id: "anti_sabotage"
+        - id: "gate_checks"
           enabled: true
           rules: ["forbid_typing_any", "forbid_object_type", "forbid_non_none_union", "forbid_builtin_containers", "forbid_raise", "forbid_rtti", "forbid_in_operator", "forbid_test_backdoor", "forbid_required_nullable_arguments", "forbid_string_members", "dummy_pass", "todo_comment"]
           builtin_container_exclude_paths:

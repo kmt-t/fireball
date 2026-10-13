@@ -1,7 +1,7 @@
-# 最新ベンチマークの再実行コマンド
+# 最新ベンチマークの再実行コマンド（2026-10-14）
 
 リポジトリのルートで実行する。依存環境とWASI-SDK、公式Core選択セットは配置済みとする。
-通常ビルドとreleaseビルドの結果を別ファイルへ保存する。
+通常ビルドとreleaseビルドの結果を別ファイルへ保存する。統合スイートは同一条件で3回実行し、レポートは実行間の中央値とmin/maxを記載する。releaseの0xFC計測も3回実行する。
 
 ## WAMRの固定構成
 
@@ -24,9 +24,13 @@ cmake --build build/wamr-benchmark -j 4
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --release
 UV_CACHE_DIR=/tmp/uv-cache bash experiments/pysim/native/tier3_plugins/jit/build_native.sh --release
-taskset -c 2 .venv/bin/python experiments/pysim/benchmarks/interpreter/bench_fc.py > /tmp/fc.json
+taskset -c 2 .venv/bin/python experiments/pysim/benchmarks/interpreter/bench_fc.py > experiments/pysim/benchmarks/results/latest/fc.json
+taskset -c 2 .venv/bin/python experiments/pysim/benchmarks/interpreter/bench_fc.py > experiments/pysim/benchmarks/results/latest/fc_run2.json
+taskset -c 2 .venv/bin/python experiments/pysim/benchmarks/interpreter/bench_fc.py > experiments/pysim/benchmarks/results/latest/fc_run3.json
 .venv/bin/python experiments/pysim/benchmarks/aobench/compare_wamr.py \
-  --wamr-build build/wamr-benchmark --cpu 2 --trials 3 --output /tmp/aobench_wamr.json
+  --wamr-build build/wamr-benchmark --cpu 2 --trials 3 \
+  --output experiments/pysim/benchmarks/results/latest/aobench_wamr.json \
+  > experiments/pysim/benchmarks/results/latest/aobench_wamr.log
 ```
 
 ## 通常ビルドへの復元と計測
@@ -37,10 +41,15 @@ UV_CACHE_DIR=/tmp/uv-cache bash experiments/pysim/native/tier2_runtime/interpret
 UV_CACHE_DIR=/tmp/uv-cache bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
 UV_CACHE_DIR=/tmp/uv-cache bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --qa
 UV_CACHE_DIR=/tmp/uv-cache bash experiments/pysim/native/tier3_plugins/jit/build_native.sh --qa --block-counters
-.venv/bin/python experiments/pysim/benchmarks/run_all.py > /tmp/unified.log
-taskset -c 2 .venv/bin/python experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py > /tmp/call_dispatch.json
-.venv/bin/python experiments/pysim/benchmarks/memory/bench_runtime_memory.py --output /tmp/runtime_memory.json
-.venv/bin/python experiments/pysim/benchmarks/memory/bench_resource_inventory.py --output /tmp/resource_inventory.json
+.venv/bin/python experiments/pysim/benchmarks/run_all.py > /tmp/unified-run1.log
+.venv/bin/python experiments/pysim/benchmarks/run_all.py > /tmp/unified-run2.log
+.venv/bin/python experiments/pysim/benchmarks/run_all.py > /tmp/unified-run3.log
+taskset -c 2 .venv/bin/python experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py \
+  > experiments/pysim/benchmarks/results/latest/call_dispatch.json
+.venv/bin/python experiments/pysim/benchmarks/memory/bench_runtime_memory.py \
+  --output experiments/pysim/benchmarks/results/latest/runtime_memory.json
+.venv/bin/python experiments/pysim/benchmarks/memory/bench_resource_inventory.py \
+  --output experiments/pysim/benchmarks/results/latest/resource_inventory.json
 ```
 
 ## フル検証
@@ -61,4 +70,4 @@ build/codex-ci/fireball
 ```
 
 コンパイル時のassert無効化に対するcopy/fill回帰テストは単体スイートに含む。
-計測ファイルを読んだ時点のsource・library hashは`metadata.json`へ記録する。
+計測ファイルを読んだ時点のsource・library hashは`metadata.json`へ記録する。統合スイート3回分の出力は`unified.log`に連結する。JSONと各ゲートログを含む証跡のSHA-256は`SHA256SUMS`に固定する。

@@ -2,7 +2,7 @@
 docs/components/tier2_runtime/formal/logging_flush_model.py
 pyModelChecking による Logging コンポーネントの
 (1) log_event() が呼び出し側を決してブロックしないこと（overwrite-on-full, GOTCHA-LOG-02）
-(2) 保留中のログは COOS Idle Hook によるフラッシュで必ず出力されること
+(2) 保留中のログは COOS Idle Hook によるフラッシュで必ず取り出されること
 (3) 同期書込みバッチ完了後に割り込みを確認し、次バッチを保留して協調復帰すること（GOTCHA-LOG-03）
 (4) 同一辞書の引数数に従う転送長と復号境界、および未知ID・欠損入力の拒否
 (5) printkの物理出力前にレコードを復号すること
@@ -58,6 +58,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_blocked_caller", "s_blocked_caller"),
         ("s_never_flushed", "s_never_flushed"),
         ("s_irq_blocked", "s_irq_blocked"),
+        ("s_write_accounting_error", "s_write_accounting_error"),
     ]
     if not guards:
         # ガード無効時（変異検査）:
@@ -68,7 +69,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         # 3. interrupt_pending 検査を外すと、割込発生中(s_irq_preempt)でもハンドラ実行に
         # 進めずブロックされたまま停留する経路が生じる（irq_pending の当該状態自体から
         # 分岐させないと、Imply(irq_pending, AF(irq_handled)) の前提が発火しない）
-        R = [*R, ("s_irq_preempt", "s_irq_blocked")]
+        R = [*R, ("s_irq_preempt", "s_irq_blocked"), ("s_idle_flushing", "s_write_accounting_error")]
 
     L = {
         "s_idle_empty": {"flushed"},
@@ -81,6 +82,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_blocked_caller": {"blocked"},  # 違反状態
         "s_never_flushed": {"never_flushed"},  # 違反状態
         "s_irq_blocked": {"irq_blocked"},  # 違反状態
+        "s_write_accounting_error": {"write_accounting_error"},  # 違反状態
     }
     # 同一ビルドの辞書を共有する前提で、各引数数の送受信境界を列挙する。
     # 変異時は辞書と異なる引数数の送信も許し、次レコード位置のずれを検出する。
@@ -121,6 +123,16 @@ def build_model(*, guards: bool = True) -> Kripke:
                 R.append((state, state))
             else:
                 R.extend((("s_idle_empty", state), (state, "s_idle_empty")))
+    # 受理量0〜要求長を列挙し、取り出しと欠落計数を同じ遷移で観測する。
+    for written in range(9):
+        state = f"s_write_{written}"
+        S.append(state)
+        R.extend((("s_printk_decoded", state), (state, "s_flush_done")))
+        L[state] = {"write_attempted"}
+        if written < 8:
+            L[state].add("dropped_one")
+        else:
+            L[state].add("fully_written")
     return Kripke(S=S, S0=S0, R=R, L=L)
 
 
@@ -134,6 +146,14 @@ def properties():
     irq_pending = AtomicProposition("irq_pending")
     irq_handled = AtomicProposition("irq_handled")
     return [
+        {
+            "name": "short_writes_discard_and_count_loss",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(AtomicProposition("write_accounting_error"))),
+            "violation": AtomicProposition("write_accounting_error"),
+            "expect": True,
+        },
         {
             "name": "base64_bounded_chunks_without_intermediate_padding",
             "kind": "safety",

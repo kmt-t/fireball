@@ -1,0 +1,87 @@
+[
+  {
+    "condition": "sp < current.stack_base + 2",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1603
+  },
+  {
+    "condition": "sp < current.stack_base + 2",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1617
+  },
+  {
+    "condition": "sp < current.stack_base + 4",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1650
+  },
+  {
+    "condition": "sp < current.stack_base + 2",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1683
+  },
+  {
+    "condition": "sp < current.stack_base + 4",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1701
+  },
+  {
+    "condition": "sp == current.stack_base",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1720
+  },
+  {
+    "condition": "sp < current.stack_base + 2",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1732
+  },
+  {
+    "condition": "sp == current.stack_base",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1746
+  },
+  {
+    "condition": "sp < current.stack_base + ValueWords + 1",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1803
+  },
+  {
+    "condition": "sp < current.stack_base + width",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1230
+  },
+  {
+    "condition": "sp == current.stack_base",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1475
+  },
+  {
+    "condition": "sp == current.stack_base",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1503
+  },
+  {
+    "condition": "sp < current.stack_base + argument_words",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1558
+  },
+  {
+    "condition": "sp < current.stack_base + 4",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1626
+  },
+  {
+    "condition": "sp < current.stack_base + 2",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1658
+  },
+  {
+    "condition": "sp < current.stack_base + 3",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1886
+  },
+  {
+    "condition": "sp < current.stack_base + 3",
+    "classification": "loader-validated operand lower bound",
+    "before_line": 1936
+  }
+]

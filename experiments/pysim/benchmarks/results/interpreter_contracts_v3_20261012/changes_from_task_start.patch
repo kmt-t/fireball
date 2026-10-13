@@ -1,0 +1,1821 @@
+--- a/experiments/pysim/benchmarks/BENCHMARK_REPORT.md
++++ b/experiments/pysim/benchmarks/BENCHMARK_REPORT.md
+@@ -291,3 +291,23 @@
+ ## 詳細記録
+ 
+ 各プロセスの全サンプル、出力ハッシュ、build識別子は[block-search cache後のAO-Benchログ](results/aobench_interpreter_jit_wamr_20261011_block_search_cache.txt)に記録した。キャッシュA/B前のQA診断カウンターと計測識別子は[card-state gate後の再計測ログ](results/aobench_interpreter_jit_wamr_20261011_card_gate.txt)にある。gate前の同条件計測は[gate前ログ](results/aobench_interpreter_jit_wamr_20261011_final_current.txt)、直前のloader更新後計測は[loader更新後ログ](results/aobench_interpreter_jit_wamr_20261011_post_loader.txt)、過去値は[2026-10-07の計測ログ](results/aobench_interpreter_jit_wamr_20261007.txt)にある。
++
++## Interpreter命令幅の固定化（2026-10-12）
++
++<!-- traceability: {ThreadedInterpreter} {GLOBAL_StrictMemoryLimit} -->
++
++命令幅レコードをlittle-endianの固定2byte（u16）へ変更した。65535byteを超える命令は読み込みで拒否する。AO-Benchの全510命令で1byteずつ増え、定数プールは1,946Bから2,456Bへ増えた。増加は510B（26.21%）である。ロード後のアリーナ使用量25,756Bは現行の131,072B上限内だった。このホストの論理容量はMCUの物理予算適合を証明しない。関数別の内訳は[`pool_step0.json`](results/interpreter_contracts_v3_20261012/pool_step0.json)へ保存した。
++
++## Interpreter 契約整理 第2弾第3版（2026-10-12）
++
++固定u16幅化の後に診断と通常計時を分離し、その結果を得てから入口容量検査・境界経路分離・内部契約整理を実施した。資源不足時は関数入口で容量trapを優先する。容量が足りる場合のWASM trapの種類と順序は維持する。途中のJIT trace入口ではオペランド容量を再検査しない。 <!-- traceability: {DirectBytecodeExecution} -->
++
++| 解像度 | Interpreter ms | JIT ms | WAMR Fast ms | Interpreter / WAMR |
++|---|---:|---:|---:|---:|
++| 64×36 | 19.688 | 23.040 | 4.809 | 4.094 |
++| 128×72 | 74.324 | 87.105 | 19.394 | 3.832 |
++| 192×108 | 161.723 | 194.998 | 43.693 | 3.701 |
++| 256×144 | 280.272 | 339.050 | 76.822 | 3.648 |
++| 320×180 | 443.025 | 533.076 | 118.918 | 3.725 |
++
++release、O3、NDEBUG、ThinLTO、CPU 2固定、yieldしきい値4096、3独立プロセス、各3 warmup・7 timed callsとした。全解像度で3実行系の出力SHA-256が一致した。Step 0直後の320×180 467.904 msに対し最終443.025 msとなり、5.32%短縮した。最終プロセス中央値の範囲は437.812〜446.205 msである。WAMRとの差は残る。Step 1では基本ブロック検索21.833%、runtime_call全体8.727%、callee構築部分4.546%と推定した。1回当たり時間はサンプリング割合からの償却推定である。診断カウンタの追加は復元した。計数表、オーバーヘッド比較、個別時間、コマンド、ビルドSHA、失敗した文書ゲートは[詳細報告](results/interpreter_contracts_v3_20261012/REPORT.md)と[最終生データ](results/interpreter_contracts_v3_20261012/aobench_final.json)に保存した。
+--- a/experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx
++++ b/experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx
+@@ -534,9 +534,14 @@
+   }
+   jit_wasm_block source_storage{};
+   const auto *source = block_metadata_for_trace(*trace_header(value), source_storage);
+-  if (source == nullptr || source->code.data == nullptr) {
+-    return true;
+-  }
++  assert(source != nullptr);
++  if constexpr (!std::is_void_v<Measurement>) {
++    if (source->code.data == nullptr) {
++      // QA metadata-only fixtures can establish same-depth forward chaining.
++      return true;
++    }
++  }
++  assert(source->code.data != nullptr);
+   const auto terminator = source->offset + source->byte_span;
+   if (terminator >= source->code.bytes) {
+     return true;
+@@ -569,9 +574,14 @@
+   }
+   jit_wasm_block source_storage{};
+   const auto *source = block_metadata_for_trace(*trace_header(value), source_storage);
+-  if (source == nullptr || source->code.data == nullptr) {
+-    return false;
+-  }
++  assert(source != nullptr);
++  if constexpr (!std::is_void_v<Measurement>) {
++    if (source->code.data == nullptr) {
++      // A depth change requires proof that the source terminator is BR.
++      return false;
++    }
++  }
++  assert(source->code.data != nullptr);
+   const auto terminator = source->offset + source->byte_span;
+   return terminator < source->code.bytes && source->code.data[terminator] == 0x0C;
+ }
+--- a/experiments/pysim/native/tier3_plugins/jit/stencils_x64.hxx
++++ b/experiments/pysim/native/tier3_plugins/jit/stencils_x64.hxx
+@@ -5,6 +5,7 @@
+ #include "stencils.hxx"
+ 
+ #include <array>
++#include <cassert>
+ #include <cstddef>
+ #include <cstdint>
+ 
+@@ -47,10 +48,8 @@
+   }
+ 
+   constexpr stencil_branch_fixup_view branch_fixup(std::size_t index) const {
++    assert(index < branch_count && branch_range_valid());
+     const auto table_index = branch_offset + index;
+-    if (index >= branch_count || !branch_range_valid()) {
+-      return {};
+-    }
+     if (image == stencil_image::generated) {
+       const auto &branch = generated::stencil_branch_fixups[table_index];
+       return {branch.instruction_offset, branch.instruction_size, branch.target_offset};
+--- a/experiments/pysim/native/tier3_plugins/jit/trace_compiler.cxx
++++ b/experiments/pysim/native/tier3_plugins/jit/trace_compiler.cxx
+@@ -1687,7 +1687,8 @@
+     if (!read_unsigned_leb(code, cursor, code_bytes, case_count)) {
+       return -1;
+     }
+-    const auto max_operand_words = (rel_payload.size() - 5u) / sizeof(std::uint32_t);
++    const auto max_operand_words =
++        (rel_payload.size() - sizeof(std::uint16_t)) / sizeof(std::uint32_t);
+     if (max_operand_words < 2u || case_count > max_operand_words - 2u || !append_word(case_count)) {
+       return 0;
+     }
+@@ -1705,19 +1706,13 @@
+ 
+   const auto interpreter_immediate_words = interpreter_operand_words;
+   const auto instruction_width = cursor - source_ip;
+-  const auto width_record_bytes =
+-      instruction_width < 0xFFu ? std::size_t{1} : 1u + sizeof(instruction_width);
++  constexpr auto width_record_bytes = sizeof(std::uint16_t);
++  assert(instruction_width > 0 && instruction_width <= UINT16_MAX);
+   if (rel_payload_bytes > rel_payload.size() - width_record_bytes) {
+     return 0;
+   }
+-  if (instruction_width < 0xFFu) {
+-    rel_payload[rel_payload_bytes++] = static_cast<std::uint8_t>(instruction_width);
+-  } else {
+-    rel_payload[rel_payload_bytes++] = 0xFFu;
+-    if (!append_word(instruction_width)) {
+-      return 0;
+-    }
+-  }
++  rel_payload[rel_payload_bytes++] = static_cast<std::uint8_t>(instruction_width);
++  rel_payload[rel_payload_bytes++] = static_cast<std::uint8_t>(instruction_width >> 8);
+ 
+   if (!builder.append_terminal_runtime_api(slot, source_ip, rel_payload.data(),
+                                            rel_payload_bytes)) {
+@@ -1848,8 +1843,7 @@
+         }
+       }
+       source_end_offsets[instruction_index] = cursor;
+-      const auto encoded_width = cursor - instruction_ip;
+-      interpreter_rel_bytes += encoded_width < 0xFFu ? 1u : 5u;
++      interpreter_rel_bytes += sizeof(std::uint16_t);
+       continue;
+     }
+ 
+@@ -1902,8 +1896,7 @@
+       instruction.operand = operand;
+     }
+     source_end_offsets[instruction_index] = cursor;
+-    const auto encoded_width = cursor - instruction_ip;
+-    interpreter_rel_bytes += encoded_width < 0xFFu ? 1u : 5u;
++    interpreter_rel_bytes += sizeof(std::uint16_t);
+   }
+   if (cursor != end) {
+     return -1;
+--- a/experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.cxx
++++ b/experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.cxx
+@@ -310,30 +310,17 @@
+ }
+ 
+ std::uint32_t instruction_width(const std::uint8_t *rel) {
+-  if (*rel != 0xFFu) {
+-    return *rel;
+-  }
+-  std::uint32_t width;
+-  std::memcpy(&width, rel + 1, sizeof(width));
+-  assert(width >= 0xFFu);
++  std::uint16_t width;
++  std::memcpy(&width, rel, sizeof(width));
+   return width;
+ }
+ 
+ void advance_instruction_ip(const std::uint8_t *&ip, const std::uint8_t *&rel) {
+-  if (*rel != 0xFFu) {
+-    ip += *rel++;
+-    return;
+-  }
+-  std::uint32_t width;
+-  std::memcpy(&width, rel + 1, sizeof(width));
+-  assert(width >= 0xFFu);
+-  ip += width;
+-  rel += 1 + sizeof(width);
+-}
+-
+-void consume_instruction_width(const std::uint8_t *&rel) {
+-  rel += *rel == 0xFFu ? 1 + sizeof(std::uint32_t) : 1;
+-}
++  ip += instruction_width(rel);
++  rel += sizeof(std::uint16_t);
++}
++
++void consume_instruction_width(const std::uint8_t *&rel) { rel += sizeof(std::uint16_t); }
+ 
+ std::uint32_t instruction_offset(const execution_context &current, const std::uint8_t *ip) {
+   assert(current.code != nullptr && ip >= current.code && ip <= current.code + current.code_size);
+@@ -355,10 +342,9 @@
+   return static_cast<std::int64_t>(value);
+ }
+ 
+-bool pop_u64(execution_context &current, std::uint32_t *&sp, std::uint64_t &value) {
+-  if (sp < current.stack_base + 2) {
+-    return false;
+-  }
++bool pop_u64([[maybe_unused]] execution_context &current, std::uint32_t *&sp,
++             std::uint64_t &value) {
++  assert(sp >= current.stack_base + 2);
+   const auto low = sp[-2];
+   const auto high = sp[-1];
+   sp -= 2;
+@@ -366,10 +352,9 @@
+   return true;
+ }
+ 
+-bool push_u64(execution_context &current, std::uint32_t *&sp, std::uint64_t value) {
+-  if (current.stack_limit - sp < 2) {
+-    return false;
+-  }
++bool push_u64([[maybe_unused]] execution_context &current, std::uint32_t *&sp,
++              std::uint64_t value) {
++  assert(!(current.stack_limit - sp < 2));
+   *sp++ = static_cast<std::uint32_t>(value);
+   *sp++ = static_cast<std::uint32_t>(value >> 32);
+   return true;
+@@ -488,9 +473,7 @@
+                                                        std::uint32_t ip) {
+   const auto &frame = active_frame(current);
+   assert(frame.function_view->control_map != nullptr);
+-  if (ip >= current.code_size) {
+-    return nullptr;
+-  }
++  assert(ip < current.code_size);
+   return &frame.function_view->control_map[ip];
+ }
+ 
+@@ -509,9 +492,7 @@
+             std::uint32_t &next_ip) {
+   const auto *control_end = current.control_stack->frames + current.control_stack->size;
+   const auto frame_count = static_cast<std::uint32_t>(control_end - current.control_frame_base);
+-  if (depth > frame_count) {
+-    return false;
+-  }
++  assert(depth <= frame_count);
+   const auto &call_frame = active_frame(current);
+   const auto outer_result_arity = call_frame.function_view->result_arity;
+   const auto target_index = frame_count - depth - 1;
+@@ -522,18 +503,15 @@
+   if (depth < frame_count) {
+     const auto &target = current.control_frame_base[target_index];
+     target_entry = control_entry(current, target.start);
+-    if (target_entry == nullptr || target_entry->match_end == kSentinel) {
+-      return false;
+-    }
++    assert(target_entry != nullptr && target_entry->match_end != kSentinel);
+     assert(target.start < current.code_size);
+     target_is_loop = current.code[target.start] == 0x03u;
+     saved_height = target.stack_height;
+     result_arity = target_is_loop ? 0u : target_entry->result_arity;
+   }
+-  if (result_arity > 2 || saved_height > sp || result_arity > current.stack_limit - saved_height ||
+-      result_arity > sp - saved_height) {
+-    return false;
+-  }
++  assert(result_arity <= 2);
++  assert(saved_height >= current.stack_base && saved_height <= sp);
++  assert(result_arity <= static_cast<std::uint32_t>(sp - saved_height));
+   const auto result0 = result_arity >= 1 ? sp[-static_cast<std::ptrdiff_t>(result_arity)] : 0;
+   const auto result1 = result_arity >= 2 ? sp[-1] : 0;
+   sp = saved_height;
+@@ -573,19 +551,15 @@
+   }
+ }
+ 
+-bool pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &value) {
+-  if (sp == current.stack_base) {
+-    return false;
+-  }
++bool pop([[maybe_unused]] execution_context &current, std::uint32_t *&sp, std::uint32_t &value) {
++  assert(sp > current.stack_base);
+   value = sp[-1];
+   --sp;
+   return true;
+ }
+ 
+-bool push(execution_context &current, std::uint32_t *&sp, std::uint32_t value) {
+-  if (sp >= current.stack_limit) {
+-    return false;
+-  }
++bool push([[maybe_unused]] execution_context &current, std::uint32_t *&sp, std::uint32_t value) {
++  assert(!(sp >= current.stack_limit));
+   *sp++ = value;
+   return true;
+ }
+@@ -1035,9 +1009,7 @@
+   auto &current = *context;
+   const auto source_ip = instruction_offset(current, instruction_ip);
+   const auto *entry = control_entry(current, source_ip);
+-  if (entry == nullptr || entry->match_end == kSentinel) {
+-    return trap(current, kTrapUnreachable);
+-  }
++  assert(entry != nullptr && entry->match_end != kSentinel);
+   if (current.control_stack->size >= FIREBALL_NATIVE_CONTROL_STACK_CAPACITY) {
+     return trap(current, kTrapControlFrameCapacity);
+   }
+@@ -1057,9 +1029,7 @@
+   std::uint32_t depth = 0;
+   std::uint32_t condition = 0;
+   depth = read_u32(rel);
+-  if (!pop(current, sp, condition)) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  (void)pop(current, sp, condition);
+   if (condition == 0) {
+     advance_instruction_ip(instruction_ip, rel);
+     const auto next_ip = instruction_offset(current, instruction_ip);
+@@ -1092,21 +1062,17 @@
+ 
+ bool apply_local_get(execution_context *context, std::uint32_t *&sp, std::uint32_t *&local_base,
+                      const fireball_call_frame_native &frame, std::uint32_t index) {
+-  auto &current = *context;
++  [[maybe_unused]] auto &current = *context;
+   assert(sp >= current.stack_base && sp <= current.stack_limit);
+   assert(frame.function_view != nullptr);
+   const auto &function = *frame.function_view;
+   if (function.local_slot_count == function.local_count) {
+     assert(index < function.local_count);
+-    if (sp == current.stack_limit) {
+-      return trap(current, kTrapOperandStackCapacity);
+-    }
++    assert(!(sp == current.stack_limit));
+     *sp++ = local_base[index];
+   } else {
+     const auto [offset, width] = local_span(frame, index);
+-    if (current.stack_limit - sp < width) {
+-      return trap(current, kTrapOperandStackCapacity);
+-    }
++    assert(!(current.stack_limit - sp < width));
+     if (width == 1) {
+       *sp++ = local_base[offset];
+     } else {
+@@ -1227,9 +1193,7 @@
+ 
+   const auto width = module->global_widths[index];
+   assert(width == 1u || width == 2u);
+-  if (current.stack_limit - sp < width) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  assert(!(current.stack_limit - sp < width));
+   const auto value = module->globals[index];
+   *sp++ = static_cast<std::uint32_t>(value);
+   if (width == 2u) {
+@@ -1252,9 +1216,7 @@
+ 
+   const auto width = module->global_widths[index];
+   assert(width == 1u || width == 2u);
+-  if (sp < current.stack_base + width) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  assert(!(sp < current.stack_base + width));
+   auto value = static_cast<std::uint64_t>(sp[-static_cast<std::ptrdiff_t>(width)]);
+   if (width == 2u) {
+     value |= static_cast<std::uint64_t>(sp[-1]) << 32;
+@@ -1270,10 +1232,9 @@
+                   [[maybe_unused]] const std::uint8_t *&rel) {
+   auto &current = *context;
+   const auto *entry = control_entry(current, instruction_offset(current, instruction_ip));
+-  const auto width = entry == nullptr ? 0u : entry->operand_width;
+-  if (width == 0 || sp < current.stack_base + width) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  assert(entry != nullptr && (entry->operand_width == 1 || entry->operand_width == 2));
++  const auto width = entry->operand_width;
++  assert(sp >= current.stack_base + width);
+   sp -= width;
+   advance_instruction_ip(instruction_ip, rel);
+   return true;
+@@ -1284,10 +1245,9 @@
+                     [[maybe_unused]] const std::uint8_t *&rel) {
+   auto &current = *context;
+   const auto *entry = control_entry(current, instruction_offset(current, instruction_ip));
+-  const auto width = entry == nullptr ? 0u : entry->operand_width;
+-  if ((width != 1 && width != 2) || sp < current.stack_base + 1 + width * 2) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  assert(entry != nullptr && (entry->operand_width == 1 || entry->operand_width == 2));
++  const auto width = entry->operand_width;
++  assert(sp >= current.stack_base + 1 + width * 2);
+   const auto condition = sp[-1];
+   --sp;
+   if (condition == 0) {
+@@ -1354,9 +1314,7 @@
+   }
+ 
+   std::uint32_t selector = 0;
+-  if (!pop(current, sp, selector)) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  (void)pop(current, sp, selector);
+ 
+   const auto selected_index = selector < case_count ? selector : case_count;
+   std::uint32_t selected_depth = 0;
+@@ -1391,9 +1349,7 @@
+                        [[maybe_unused]] const std::uint8_t *&rel) {
+   auto &current = *context;
+   const auto value = read_s32(rel);
+-  if (!push(current, sp, static_cast<std::uint32_t>(value))) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  (void)push(current, sp, static_cast<std::uint32_t>(value));
+   advance_instruction_ip(instruction_ip, rel);
+   return true;
+ }
+@@ -1405,7 +1361,8 @@
+   auto &current = *context;
+   std::uint32_t trap_code = 0;
+   if (!Operation(current, sp, trap_code)) {
+-    return trap(current, trap_code == 0 ? kTrapOperandStackCapacity : trap_code);
++    assert(trap_code != 0);
++    return trap(current, trap_code);
+   }
+   advance_instruction_ip(instruction_ip, rel);
+   return true;
+@@ -1416,9 +1373,7 @@
+                        [[maybe_unused]] const std::uint8_t *&rel) {
+   auto &current = *context;
+   const auto value = read_s64(rel);
+-  if (!push_u64(current, sp, static_cast<std::uint64_t>(value))) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  (void)push_u64(current, sp, static_cast<std::uint64_t>(value));
+   advance_instruction_ip(instruction_ip, rel);
+   return true;
+ }
+@@ -1428,9 +1383,7 @@
+                        [[maybe_unused]] const std::uint8_t *&rel) {
+   std::uint32_t bits = 0;
+   std::memcpy(&bits, instruction_ip + 1, sizeof(bits));
+-  if (!push(*context, sp, static_cast<std::uint32_t>(bits))) {
+-    return trap(*context, kTrapOperandStackCapacity);
+-  }
++  (void)push(*context, sp, static_cast<std::uint32_t>(bits));
+   advance_instruction_ip(instruction_ip, rel);
+   return true;
+ }
+@@ -1440,9 +1393,7 @@
+                        [[maybe_unused]] const std::uint8_t *&rel) {
+   std::uint64_t bits = 0;
+   std::memcpy(&bits, instruction_ip + 1, sizeof(bits));
+-  if (!push_u64(*context, sp, bits)) {
+-    return trap(*context, kTrapOperandStackCapacity);
+-  }
++  (void)push_u64(*context, sp, bits);
+   advance_instruction_ip(instruction_ip, rel);
+   return true;
+ }
+@@ -1458,9 +1409,7 @@
+ template <bool (*Operation)(execution_context &, std::uint32_t *&)>
+ bool runtime_fc_saturating_conversion_decoded(execution_context *context, std::uint32_t *&sp) {
+   auto &current = *context;
+-  if (!Operation(current, sp)) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  (void)Operation(current, sp);
+   return true;
+ }
+ 
+@@ -1498,10 +1447,8 @@
+ bool runtime_i32_unary(execution_context *context, const std::uint8_t *&instruction_ip,
+                        std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+                        [[maybe_unused]] const std::uint8_t *&rel) {
+-  auto &current = *context;
+-  if (sp == current.stack_base) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  [[maybe_unused]] auto &current = *context;
++  assert(!(sp == current.stack_base));
+   sp[-1] = Operation(sp[-1]);
+   advance_instruction_ip(instruction_ip, rel);
+   return true;
+@@ -1527,9 +1474,7 @@
+       return trap(current, kTrapTableIndexOutOfBounds);
+     }
+     const auto &table = module.tables[table_index];
+-    if (sp == current.stack_base) {
+-      return trap(current, kTrapOperandStackCapacity);
+-    }
++    assert(!(sp == current.stack_base));
+     table_slot = sp[-1];
+     if (table_slot >= table.size || table.function_indices == nullptr) {
+       return trap(current, kTrapTableIndexOutOfBounds);
+@@ -1574,6 +1519,14 @@
+     return trap(current, kTrapLocalStackCapacity);
+   }
+ 
++  const auto argument_words = target.param_packed_slot_count + (Indirect ? 1u : 0u);
++  assert(sp >= current.stack_base + argument_words);
++  const auto argument_base = sp - static_cast<std::ptrdiff_t>(argument_words);
++  if (target.max_operand_stack_words >
++      static_cast<std::uint32_t>(current.stack_limit - argument_base)) {
++    return trap(current, kTrapOperandStackCapacity);
++  }
++
+   auto *callee_local_base = current.local_stack_pointer;
+   const auto local_end = callee_local_base + target.local_slot_count;
+   for (std::uint32_t index = target.param_packed_slot_count; callee_local_base + index < local_end;
+@@ -1581,11 +1534,6 @@
+     callee_local_base[index] = 0;
+   }
+ 
+-  const auto argument_words = target.param_packed_slot_count + (Indirect ? 1u : 0u);
+-  if (sp < current.stack_base + argument_words) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
+-  const auto argument_base = sp - static_cast<std::ptrdiff_t>(argument_words);
+   const auto *arguments = argument_base;
+   auto *argument = arguments;
+   for (std::uint32_t index = 0; index < target.param_count; ++index) {
+@@ -1621,10 +1569,8 @@
+ bool runtime_i32_binary(execution_context *context, const std::uint8_t *&instruction_ip,
+                         std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+                         [[maybe_unused]] const std::uint8_t *&rel) {
+-  auto &current = *context;
+-  if (sp < current.stack_base + 2) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  [[maybe_unused]] auto &current = *context;
++  assert(!(sp < current.stack_base + 2));
+   const auto result = Operation(sp[-2], sp[-1]);
+   --sp;
+   sp[-1] = result;
+@@ -1636,9 +1582,7 @@
+                                 std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+                                 [[maybe_unused]] const std::uint8_t *&rel) {
+   auto &current = *context;
+-  if (sp < current.stack_base + 2) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  assert(!(sp < current.stack_base + 2));
+   std::uint32_t result = 0;
+   std::uint32_t trap_code = 0;
+   if (!Operation(sp[-2], sp[-1], result, trap_code)) {
+@@ -1653,10 +1597,8 @@
+ bool runtime_i64_binary(execution_context *context, const std::uint8_t *&instruction_ip,
+                         std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+                         [[maybe_unused]] const std::uint8_t *&rel) {
+-  auto &current = *context;
+-  if (sp < current.stack_base + 4) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  [[maybe_unused]] auto &current = *context;
++  assert(!(sp < current.stack_base + 4));
+   const auto lhs = combine_u64(sp[-4], sp[-3]);
+   const auto rhs = combine_u64(sp[-2], sp[-1]);
+   const auto result = Operation(lhs, rhs);
+@@ -1669,9 +1611,7 @@
+                                 std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+                                 [[maybe_unused]] const std::uint8_t *&rel) {
+   auto &current = *context;
+-  if (sp < current.stack_base + 4) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  assert(!(sp < current.stack_base + 4));
+   const auto lhs = combine_u64(sp[-4], sp[-3]);
+   const auto rhs = combine_u64(sp[-2], sp[-1]);
+   std::uint64_t result = 0;
+@@ -1687,10 +1627,8 @@
+ bool runtime_i64_unary(execution_context *context, const std::uint8_t *&instruction_ip,
+                        std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+                        [[maybe_unused]] const std::uint8_t *&rel) {
+-  auto &current = *context;
+-  if (sp < current.stack_base + 2) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  [[maybe_unused]] auto &current = *context;
++  assert(!(sp < current.stack_base + 2));
+   const auto value = combine_u64(sp[-2], sp[-1]);
+   const auto result = Operation(value);
+   replace_u64_operands<ResultIsBool>(sp, result, 2);
+@@ -1701,10 +1639,8 @@
+ bool runtime_f32_binary(execution_context *context, const std::uint8_t *&instruction_ip,
+                         std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+                         [[maybe_unused]] const std::uint8_t *&rel) {
+-  auto &current = *context;
+-  if (sp < current.stack_base + 2) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  [[maybe_unused]] auto &current = *context;
++  assert(!(sp < current.stack_base + 2));
+   const auto result = Operation(f32_from_bits(sp[-2]), f32_from_bits(sp[-1]));
+   --sp;
+   if constexpr (ResultIsBool) {
+@@ -1719,10 +1655,8 @@
+ bool runtime_f64_binary(execution_context *context, const std::uint8_t *&instruction_ip,
+                         std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+                         [[maybe_unused]] const std::uint8_t *&rel) {
+-  auto &current = *context;
+-  if (sp < current.stack_base + 4) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  [[maybe_unused]] auto &current = *context;
++  assert(!(sp < current.stack_base + 4));
+   const auto lhs = f64_from_bits(combine_u64(sp[-4], sp[-3]));
+   const auto rhs = f64_from_bits(combine_u64(sp[-2], sp[-1]));
+   const auto result = Operation(lhs, rhs);
+@@ -1738,10 +1672,8 @@
+ bool runtime_f32_unary(execution_context *context, const std::uint8_t *&instruction_ip,
+                        std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+                        [[maybe_unused]] const std::uint8_t *&rel) {
+-  auto &current = *context;
+-  if (sp == current.stack_base) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  [[maybe_unused]] auto &current = *context;
++  assert(!(sp == current.stack_base));
+   sp[-1] = f32_to_bits(Operation(f32_from_bits(sp[-1])));
+   advance_instruction_ip(instruction_ip, rel);
+   return true;
+@@ -1750,10 +1682,8 @@
+ bool runtime_f64_unary(execution_context *context, const std::uint8_t *&instruction_ip,
+                        std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+                        [[maybe_unused]] const std::uint8_t *&rel) {
+-  auto &current = *context;
+-  if (sp < current.stack_base + 2) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  [[maybe_unused]] auto &current = *context;
++  assert(!(sp < current.stack_base + 2));
+   const auto value = f64_from_bits(combine_u64(sp[-2], sp[-1]));
+   replace_u64_operands<false>(sp, f64_to_bits(Operation(value)), 2);
+   advance_instruction_ip(instruction_ip, rel);
+@@ -1765,9 +1695,7 @@
+                                  const std::uint8_t *&instruction_ip, std::uint32_t source_ip,
+                                  std::uint32_t next_pc, std::uint32_t offset) {
+   auto &current = *context;
+-  if (sp == current.stack_base) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  assert(!(sp == current.stack_base));
+ 
+   const auto address = sp[-1];
+   if ((address & 0x8000'0000u) != 0) {
+@@ -1781,9 +1709,7 @@
+     return runtime_api_boundary(current, source_ip);
+   }
+ 
+-  if (current.stack_limit - (sp - 1) < ResultWords) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  assert(!(current.stack_limit - (sp - 1) < ResultWords));
+   std::uint64_t value = 0;
+   for (std::uint32_t byte = 0; byte < Width; ++byte) {
+     value |= static_cast<std::uint64_t>(current.linear_memory_host_base[effective_address + byte])
+@@ -1822,9 +1748,7 @@
+                                   const std::uint8_t *&instruction_ip, std::uint32_t source_ip,
+                                   std::uint32_t next_pc, std::uint32_t offset) {
+   auto &current = *context;
+-  if (sp < current.stack_base + ValueWords + 1) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  assert(!(sp < current.stack_base + ValueWords + 1));
+ 
+   auto *address_stack_pointer = sp - ValueWords - 1;
+   const auto address = sp[-static_cast<std::ptrdiff_t>(ValueWords + 1)];
+@@ -1872,12 +1796,8 @@
+   const auto source_ip = instruction_offset(current, instruction_ip);
+   const auto *entry = control_entry(current, source_ip);
+   std::uint32_t condition = 0;
+-  if (entry == nullptr || entry->match_end == kSentinel) {
+-    return trap(current, kTrapUnreachable);
+-  }
+-  if (!pop(current, sp, condition)) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  assert(entry != nullptr && entry->match_end != kSentinel);
++  (void)pop(current, sp, condition);
+   consume_instruction_width(rel);
+   if (condition == 0 && entry->else_offset == kSentinel) {
+     const auto next_ip = entry->match_end + 1;
+@@ -1930,9 +1850,7 @@
+                                     const std::uint8_t *&instruction_ip, std::uint32_t source_ip,
+                                     std::uint32_t next_pc) {
+   auto &current = *context;
+-  if (sp < current.stack_base + 3) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  assert(!(sp < current.stack_base + 3));
+ 
+   auto *destination_stack_pointer = sp - 3;
+   const auto destination = sp[-3];
+@@ -1980,9 +1898,7 @@
+                                     const std::uint8_t *&instruction_ip, std::uint32_t source_ip,
+                                     std::uint32_t next_pc) {
+   auto &current = *context;
+-  if (sp < current.stack_base + 3) {
+-    return trap(current, kTrapOperandStackCapacity);
+-  }
++  assert(!(sp < current.stack_base + 3));
+ 
+   auto *destination_stack_pointer = sp - 3;
+   const auto destination = sp[-3];
+--- a/experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx
++++ b/experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx
+@@ -66,6 +66,9 @@
+     return false;
+   }
+ };
++
++/** @brief Pythonのrun_step経路だけが要求するブロック境界検査を選択する。 */
++struct block_step_aspect {};
+ 
+ // Inlining this boundary makes each handler tail-jump through the opcode table.
+ template <typename Debugger = void>
+@@ -587,17 +590,14 @@
+   auto &current = *context;
+   assert(current.code != nullptr && ip >= current.code && ip <= current.code + current.code_size);
+   const auto ip_offset = instruction_offset(current, ip);
+-  if (ip_offset >= current.code_size) {
+-    current.ip = ip_offset;
+-    current.stack_pointer = sp;
+-    trap(current, kTrapUnreachable);
+-    return;
+-  }
+-  if ((current.runtime_flags & kStopAtBlockBoundaryFlag) != 0 &&
+-      is_requested_block_boundary(current, ip_offset)) {
+-    current.stack_pointer = sp;
+-    block_boundary(current, ip_offset);
+-    return;
++  assert(ip_offset < current.code_size);
++  if constexpr (std::is_same_v<Debugger, block_step_aspect>) {
++    if ((current.runtime_flags & kStopAtBlockBoundaryFlag) != 0 &&
++        is_requested_block_boundary(current, ip_offset)) {
++      current.stack_pointer = sp;
++      block_boundary(current, ip_offset);
++      return;
++    }
+   }
+ 
+   if constexpr (std::is_same_v<Debugger, debugger_aspect>) {
+@@ -793,9 +793,9 @@
+   const auto *trace_exit = reinterpret_cast<const fb_native_jit_trace_exit *>(
+       trace.rel - sizeof(fb_native_jit_trace_exit));
+   assert(trace_exit->block_index == block_index);
+-  if (trace.stack_words > static_cast<std::uint32_t>(context.stack_limit - context.stack_pointer)) {
+-    return 0;
+-  }
++  // The function entry reserved its loader-proven peak, including this trace.
++  assert(trace.stack_words <=
++         static_cast<std::uint32_t>(context.stack_limit - context.stack_pointer));
+   const auto control_base_index =
+       static_cast<std::uint32_t>(context.control_frame_base - context.control_stack->frames);
+   if (trace.frame_depth > FIREBALL_NATIVE_CONTROL_STACK_CAPACITY - control_base_index) {
+@@ -1182,12 +1182,12 @@
+     execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
+     const auto previous_flags = execution_context->runtime_flags;
+     execution_context->runtime_flags |= kStopAfterControlFlag;
+-    (void)dispatch_next(execution_context, raw_code + call->ip, sp, call->rel);
++    (void)dispatch_next<block_step_aspect>(execution_context, raw_code + call->ip, sp, call->rel);
+     execution_context->runtime_flags =
+         previous_flags | (execution_context->runtime_flags & kCpsExitMask);
+   } else {
+     execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
+-    (void)dispatch_next(execution_context, raw_code + call->ip, sp, call->rel);
++    (void)dispatch_next<block_step_aspect>(execution_context, raw_code + call->ip, sp, call->rel);
+   }
+   const auto exit_kind = cps_exit_kind(*execution_context);
+   switch (exit_kind) {
+--- a/experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.hxx
++++ b/experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.hxx
+@@ -92,17 +92,17 @@
+ /** @brief デコード済み定数領域の固定幅値を読み出す。 */
+ std::uint32_t peek_u32(const std::uint8_t *rel);
+ 
+-/** @brief 共有オペランドスタックから値を取り出す。容量違反はfalseを返す。 */
++/** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
+ bool pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &value);
+-/** @brief 共有オペランドスタックへ値を積む。容量違反はfalseを返す。 */
++/** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
+ bool push(execution_context &current, std::uint32_t *&sp, std::uint32_t value);
+ /** @brief デコード済み定数領域の固定幅値を読み出す。 */
+ std::int32_t read_s32(const std::uint8_t *&rel);
+ /** @brief デコード済み定数領域の固定幅値を読み出す。 */
+ std::int64_t read_s64(const std::uint8_t *&rel);
+-/** @brief 共有オペランドスタックから値を取り出す。容量違反はfalseを返す。 */
++/** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
+ bool pop_u64(execution_context &current, std::uint32_t *&sp, std::uint64_t &value);
+-/** @brief 共有オペランドスタックへ値を積む。容量違反はfalseを返す。 */
++/** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
+ bool push_u64(execution_context &current, std::uint32_t *&sp, std::uint64_t value);
+ /** @brief `combine_u64`に対応する実行状態または値を求める。 */
+ std::uint64_t combine_u64(std::uint32_t low, std::uint32_t high);
+@@ -117,13 +117,13 @@
+ double f64_from_bits(std::uint64_t value);
+ /** @brief `f64_to_bits`に対応する実行状態または値を求める。 */
+ std::uint64_t f64_to_bits(double value);
+-/** @brief 共有オペランドスタックから値を取り出す。容量違反はfalseを返す。 */
++/** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
+ bool pop_f32(execution_context &current, std::uint32_t *&sp, float &value);
+-/** @brief 共有オペランドスタックへ値を積む。容量違反はfalseを返す。 */
++/** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
+ bool push_f32(execution_context &current, std::uint32_t *&sp, float value);
+-/** @brief 共有オペランドスタックから値を取り出す。容量違反はfalseを返す。 */
++/** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
+ bool pop_f64(execution_context &current, std::uint32_t *&sp, double &value);
+-/** @brief 共有オペランドスタックへ値を積む。容量違反はfalseを返す。 */
++/** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
+ bool push_f64(execution_context &current, std::uint32_t *&sp, double value);
+ /** @brief 現在実行中の呼び出しフレームを参照する。 */
+ fireball_call_frame_native &active_frame(execution_context &current);
+@@ -163,9 +163,9 @@
+             std::uint32_t &next_ip);
+ /** @brief 静的な前方ジャンプで抜けた制御フレームを取り除く。 */
+ void prune_control_frames_after_static_jump(execution_context &current, std::uint32_t target_ip);
+-/** @brief 共有オペランドスタックから値を取り出す。容量違反はfalseを返す。 */
++/** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
+ bool pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &value);
+-/** @brief 共有オペランドスタックへ値を積む。容量違反はfalseを返す。 */
++/** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
+ bool push(execution_context &current, std::uint32_t *&sp, std::uint32_t value);
+ 
+ // Named opcode operations keep the API catalog readable and independently
+--- a/experiments/pysim/tier2_runtime/interpreter/control_flow.py
++++ b/experiments/pysim/tier2_runtime/interpreter/control_flow.py
+@@ -756,6 +756,7 @@
+                 f"ERR_WASM_UNSUPPORTED_FEATURE: opcode 0x{opcode:02X} at offset {start} is not supported"
+             )
+ 
++        _instruction_width_record_size(off - start)
+         yield Instr(offset=start, opcode=opcode, end_offset=off, operand=operand)
+ 
+ 
+@@ -792,7 +793,11 @@
+ 
+ def _instruction_width_record_size(instruction_width: int) -> int:
+     assert instruction_width > 0
+-    return 1 if instruction_width < 0xFF else 1 + WASM_RAW_WORD_BYTES
++    require_wasm(
++        instruction_width <= 0xFFFF,
++        "ERR_WASM_UNSUPPORTED_FEATURE: instruction width exceeds u16",
++    )
++    return 2
+ 
+ 
+ def _count_interpreter_constant_pool_bytes(code: memoryview) -> int:
+@@ -835,11 +840,9 @@
+         append_word(bits >> 32)
+ 
+     def append_instruction_width(instruction_width: int) -> None:
+-        if instruction_width < 0xFF:
+-            constants.append_byte(instruction_width)
+-            return
+-        constants.append_byte(0xFF)
+-        append_word(instruction_width)
++        assert 0 < instruction_width <= 0xFFFF
++        constants.append_byte(instruction_width & 0xFF)
++        constants.append_byte(instruction_width >> 8)
+ 
+     for block_index, start in enumerate(block_heads):
+         end = block_heads[block_index + 1] if block_index + 1 < len(block_heads) else len(code)
+--- a/experiments/pysim/tier2_runtime/interpreter/interpreter.py
++++ b/experiments/pysim/tier2_runtime/interpreter/interpreter.py
+@@ -676,6 +676,7 @@
+             function_view.module_view = 0
+             function_view.interpreter_constant_pool = constants.native_address
+             function_view.interpreter_constant_byte_count = len(constants)
++            function_view.max_operand_stack_words = function.max_operand_stack_words
+             self._native_function_view = function_view
+         else:
+             assert native_function_view is None
+@@ -1236,11 +1237,17 @@
+ 
+         self._prepare_native_execution(context)
+         raw_args = _encode_public_args(args, self.module.func_type(func_index).params)
+-        try:
+-            frame, locals_arr = self._build_frame(func_index, raw_args, context)
+-        except Trap as trap:
++        built = self._build_frame(func_index, raw_args, context)
++        if built is None:
+             context.release_workspace()
+-            return InterpreterCall(func_index, context, cont=None, finished=True, trap=trap)
++            return InterpreterCall(
++                func_index,
++                context,
++                cont=None,
++                finished=True,
++                trap=Trap(TrapCode.OPERAND_STACK_CAPACITY),
++            )
++        frame, locals_arr = built
+         return InterpreterCall(func_index, context, cont=(0, frame, locals_arr))
+ 
+     def _new_context(self) -> ExecutionContext:
+@@ -1253,7 +1260,7 @@
+ 
+     def _build_frame(
+         self, func_index: int, raw_args: StaticVector[int], context: ExecutionContext
+-    ) -> tuple[CallFrame, _LocalStackWindow]:
++    ) -> tuple[CallFrame, _LocalStackWindow] | None:
+         """
+         Builds the initial frame + locals for a WASM (non-import) function
+         activation. `raw_args` contains the packed parameter values as
+@@ -1272,6 +1279,8 @@
+         assert param_packed_slot_count is not None
+         assert len(raw_args) == param_packed_slot_count
+         assert fn.control_map is not None
++        if fn.max_operand_stack_words > context.stack.capacity - len(context.stack):
++            return None
+         frame = context.begin_call_frame(
+             raw_args,
+             func_index=func_index,
+@@ -1838,12 +1847,10 @@
+                 popped_raw_args.append(value)
+         popped_raw_args.reverse_in_place()
+         resume_cont = (next_ip, frame, locals_arr)
+-        try:
+-            callee_frame, callee_locals = self._build_frame(
+-                callee_func_index, popped_raw_args, call_state.context
+-            )
+-        except Trap as trap:
+-            return trap
++        built = self._build_frame(callee_func_index, popped_raw_args, call_state.context)
++        if built is None:
++            return Trap(TrapCode.OPERAND_STACK_CAPACITY)
++        callee_frame, callee_locals = built
+         callee_frame.native.return_ip = next_ip
+         if not call_state.call_stack.push_back((call_state.func_index, resume_cont)):
+             return Trap(TrapCode.CALL_STACK_CAPACITY)
+--- a/experiments/pysim/tier2_runtime/abi/interpreter_abi.py
++++ b/experiments/pysim/tier2_runtime/abi/interpreter_abi.py
+@@ -169,6 +169,7 @@
+         ("module_view", ctypes.c_void_p),
+         ("interpreter_constant_pool", ctypes.c_void_p),
+         ("interpreter_constant_byte_count", ctypes.c_uint32),
++        ("max_operand_stack_words", ctypes.c_uint32),
+     )
+ 
+ 
+@@ -699,6 +700,7 @@
+ assert FunctionExecutionViewNative.module_view.offset == 80
+ assert FunctionExecutionViewNative.interpreter_constant_pool.offset == 88
+ assert FunctionExecutionViewNative.interpreter_constant_byte_count.offset == 96
++assert FunctionExecutionViewNative.max_operand_stack_words.offset == 100
+ assert ctypes.sizeof(FunctionTypeExecutionViewNative) == 16
+ assert ctypes.sizeof(TableExecutionViewNative) == 16
+ assert ctypes.sizeof(ModuleExecutionViewNative) == 128
+--- a/experiments/pysim/tier2_runtime/abi/interpreter_abi.hxx
++++ b/experiments/pysim/tier2_runtime/abi/interpreter_abi.hxx
+@@ -118,6 +118,8 @@
+   const uint8_t *interpreter_constant_pool;
+   // Byte size of the unaligned pool containing operands and instruction widths.
+   uint32_t interpreter_constant_byte_count;
++  // Loader-proven peak above this function activation's operand-stack entry.
++  uint32_t max_operand_stack_words;
+ } fireball_wasm_function_execution_view_native;
+ 
+ typedef struct fireball_wasm_function_type_execution_view_native {
+@@ -199,11 +201,11 @@
+ 
+ typedef struct fireball_value_stack_native {
+ #ifdef __cplusplus
+-  alignas(FIREBALL_NATIVE_STACK_ALIGNMENT_BYTES)
+-      uint32_t values[FIREBALL_NATIVE_VALUE_STACK_CAPACITY];
++  alignas(
++      FIREBALL_NATIVE_STACK_ALIGNMENT_BYTES) uint32_t values[FIREBALL_NATIVE_VALUE_STACK_CAPACITY];
+ #else
+-  _Alignas(FIREBALL_NATIVE_STACK_ALIGNMENT_BYTES)
+-      uint32_t values[FIREBALL_NATIVE_VALUE_STACK_CAPACITY];
++  _Alignas(
++      FIREBALL_NATIVE_STACK_ALIGNMENT_BYTES) uint32_t values[FIREBALL_NATIVE_VALUE_STACK_CAPACITY];
+ #endif
+   uint32_t size;
+   uint32_t reserved0;
+@@ -232,19 +234,16 @@
+ #endif
+ 
+ using fireball_native_cps_handler = void(FIREBALL_NATIVE_CPS_CALL *)(
+-    fireball_execution_context_native *, const uint8_t *, uint32_t *,
+-    const uint8_t *);
++    fireball_execution_context_native *, const uint8_t *, uint32_t *, const uint8_t *);
+ 
+ // JIT trace entries receive the Interpreter execution state and a trace-local
+ // constant-pool pointer named rel as their fourth argument.
+-using fireball_native_jit_trace_entry =
+-    bool(FIREBALL_NATIVE_CPS_CALL *)(
+-    fireball_execution_context_native *, const uint8_t *, uint32_t *,
+-    const uint8_t *) noexcept;
+-
+-static inline uint32_t fb_native_find_block_index_folded(
+-    const fireball_wasm_module_execution_view_native *module,
+-    [[maybe_unused]] uint32_t head_pc, uint32_t folded_pc) {
++using fireball_native_jit_trace_entry = bool(FIREBALL_NATIVE_CPS_CALL *)(
++    fireball_execution_context_native *, const uint8_t *, uint32_t *, const uint8_t *) noexcept;
++
++static inline uint32_t
++fb_native_find_block_index_folded(const fireball_wasm_module_execution_view_native *module,
++                                  [[maybe_unused]] uint32_t head_pc, uint32_t folded_pc) {
+   assert(module != 0);
+   assert(module->blocks != 0);
+   assert(module->block_count != 0);
+@@ -261,10 +260,11 @@
+ 
+   while (first < last) {
+     const uint32_t middle = first + (last - first) / 2;
+-    if (module->block_index_entries[middle].folded_pc < folded_pc)
++    if (module->block_index_entries[middle].folded_pc < folded_pc) {
+       first = middle + 1;
+-    else
++    } else {
+       last = middle;
++    }
+   }
+ 
+   assert(first < module->block_radix_table[prefix + 1]);
+@@ -275,16 +275,18 @@
+   return block_index;
+ }
+ 
+-static inline void fb_native_record_block_execution(
+-    const fireball_wasm_module_execution_view_native *module,
+-    uint32_t block_index) {
++static inline void
++fb_native_record_block_execution(const fireball_wasm_module_execution_view_native *module,
++                                 uint32_t block_index) {
+ #if FB_CONF_JIT_BLOCK_COUNTERS
+-  if (module == 0 || module->block_execution_counts == 0)
++  if (module == 0 || module->block_execution_counts == 0) {
+     return;
++  }
+   assert(block_index < module->block_count);
+   uint32_t *count = module->block_execution_counts + block_index;
+-  if (*count != UINT32_MAX)
++  if (*count != UINT32_MAX) {
+     ++*count;
++  }
+ #else
+   (void)module;
+   (void)block_index;
+@@ -301,16 +303,12 @@
+ using wasm_module_view_native = ::fireball_wasm_module_view_native;
+ using wasm_run_request_native = ::fireball_wasm_run_request_native;
+ using wasm_run_result_native = ::fireball_wasm_run_result_native;
+-using wasm_function_execution_view_native =
+-    ::fireball_wasm_function_execution_view_native;
++using wasm_function_execution_view_native = ::fireball_wasm_function_execution_view_native;
+ using wasm_function_type_execution_view_native =
+     ::fireball_wasm_function_type_execution_view_native;
+-using wasm_table_execution_view_native =
+-    ::fireball_wasm_table_execution_view_native;
+-using wasm_block_execution_view_native =
+-    ::fireball_wasm_block_execution_view_native;
+-using wasm_module_execution_view_native =
+-    ::fireball_wasm_module_execution_view_native;
++using wasm_table_execution_view_native = ::fireball_wasm_table_execution_view_native;
++using wasm_block_execution_view_native = ::fireball_wasm_block_execution_view_native;
++using wasm_module_execution_view_native = ::fireball_wasm_module_execution_view_native;
+ using call_frame_native = ::fireball_call_frame_native;
+ using call_stack_native = ::fireball_call_stack_native;
+ using value_stack_native = ::fireball_value_stack_native;
+@@ -336,19 +334,16 @@
+ static_assert(__is_trivially_copyable(wasm_run_result_native));
+ static_assert(__is_standard_layout(wasm_function_execution_view_native));
+ static_assert(__is_trivially_copyable(wasm_function_execution_view_native));
+-static_assert(offsetof(wasm_function_execution_view_native, code_pc_offset) ==
+-              12);
++static_assert(offsetof(wasm_function_execution_view_native, code_pc_offset) == 12);
+ static_assert(__is_standard_layout(wasm_function_type_execution_view_native));
+-static_assert(
+-    __is_trivially_copyable(wasm_function_type_execution_view_native));
++static_assert(__is_trivially_copyable(wasm_function_type_execution_view_native));
+ static_assert(__is_standard_layout(wasm_table_execution_view_native));
+ static_assert(__is_trivially_copyable(wasm_table_execution_view_native));
+ static_assert(__is_standard_layout(wasm_module_execution_view_native));
+ static_assert(__is_trivially_copyable(wasm_module_execution_view_native));
+ static_assert(__is_standard_layout(value_stack_native));
+ static_assert(__is_trivially_copyable(value_stack_native));
+-static_assert(alignof(value_stack_native) ==
+-              FIREBALL_NATIVE_STACK_ALIGNMENT_BYTES);
++static_assert(alignof(value_stack_native) == FIREBALL_NATIVE_STACK_ALIGNMENT_BYTES);
+ static_assert(__is_standard_layout(control_frame_native));
+ static_assert(__is_trivially_copyable(control_frame_native));
+ static_assert(__is_standard_layout(control_stack_native));
+@@ -376,8 +371,7 @@
+ static_assert(offsetof(execution_context_native, call_frame_base) == 0x68);
+ static_assert(offsetof(execution_context_native, loop_jump_count) == 0x70);
+ static_assert(offsetof(execution_context_native, loop_jump_threshold) == 0x74);
+-static_assert(offsetof(execution_context_native, linear_memory_host_base) ==
+-              0x78);
++static_assert(offsetof(execution_context_native, linear_memory_host_base) == 0x78);
+ static_assert(offsetof(execution_context_native, linear_memory_size) == 0x80);
+ static_assert(offsetof(execution_context_native, trap_code) == 0x88);
+ static_assert(offsetof(execution_context_native, local_base) == 0x90);
+@@ -390,38 +384,29 @@
+ static_assert(sizeof(wasm_run_result_native) == 24);
+ static_assert(sizeof(wasm_function_type_execution_view_native) == 16);
+ static_assert(sizeof(wasm_function_execution_view_native) == 104);
+-static_assert(offsetof(wasm_function_execution_view_native, local_offsets) ==
+-              24);
++static_assert(offsetof(wasm_function_execution_view_native, local_offsets) == 24);
+ static_assert(offsetof(wasm_function_execution_view_native, local_sizes) == 32);
+ static_assert(offsetof(wasm_function_execution_view_native, local_types) == 40);
+ static_assert(offsetof(wasm_function_execution_view_native, module_view) == 80);
+-static_assert(offsetof(wasm_function_execution_view_native,
+-                       interpreter_constant_pool) == 88);
+-static_assert(offsetof(wasm_function_execution_view_native,
+-                       interpreter_constant_byte_count) == 96);
++static_assert(offsetof(wasm_function_execution_view_native, interpreter_constant_pool) == 88);
++static_assert(offsetof(wasm_function_execution_view_native, interpreter_constant_byte_count) == 96);
++static_assert(offsetof(wasm_function_execution_view_native, max_operand_stack_words) == 100);
+ static_assert(sizeof(wasm_table_execution_view_native) == 16);
+ static_assert(sizeof(wasm_block_execution_view_native) == 28);
+ static_assert(sizeof(fireball_wasm_block_index_entry_native) == 8);
+ static_assert(offsetof(wasm_block_execution_view_native, frame_depth) == 16);
+-static_assert(offsetof(wasm_block_execution_view_native, jit_cache_reference) ==
+-              18);
++static_assert(offsetof(wasm_block_execution_view_native, jit_cache_reference) == 18);
+ static_assert(offsetof(wasm_block_execution_view_native, byte_span) == 20);
+-static_assert(offsetof(wasm_block_execution_view_native,
+-                       interpreter_constant_byte_offset) == 24);
++static_assert(offsetof(wasm_block_execution_view_native, interpreter_constant_byte_offset) == 24);
+ static_assert(sizeof(wasm_module_execution_view_native) == 128);
+ static_assert(offsetof(wasm_module_execution_view_native, globals) == 56);
+ static_assert(offsetof(wasm_module_execution_view_native, global_widths) == 64);
+ static_assert(offsetof(wasm_module_execution_view_native, global_count) == 72);
+-static_assert(offsetof(wasm_module_execution_view_native,
+-                       block_execution_counts) == 96);
+-static_assert(offsetof(wasm_module_execution_view_native,
+-                       block_index_entries) == 104);
+-static_assert(offsetof(wasm_module_execution_view_native, block_radix_table) ==
+-              112);
+-static_assert(offsetof(wasm_module_execution_view_native,
+-                       block_radix_table_count) == 120);
+-static_assert(offsetof(wasm_module_execution_view_native, block_radix_shift) ==
+-              124);
++static_assert(offsetof(wasm_module_execution_view_native, block_execution_counts) == 96);
++static_assert(offsetof(wasm_module_execution_view_native, block_index_entries) == 104);
++static_assert(offsetof(wasm_module_execution_view_native, block_radix_table) == 112);
++static_assert(offsetof(wasm_module_execution_view_native, block_radix_table_count) == 120);
++static_assert(offsetof(wasm_module_execution_view_native, block_radix_shift) == 124);
+ static_assert(sizeof(value_stack_native) == 520);
+ static_assert(offsetof(value_stack_native, values) == 0);
+ static_assert(offsetof(value_stack_native, size) == 512);
+--- a/experiments/pysim/tier2_runtime/wasm/module.py
++++ b/experiments/pysim/tier2_runtime/wasm/module.py
+@@ -557,6 +557,8 @@
+     param_packed_slot_count_cache: int | None = None
+     param_count_cache: int | None = None
+     result_arity_cache: int | None = None
++    # Maximum raw operand words above this function's entry stack position.
++    max_operand_stack_words: int = 0
+ 
+ 
+ @dataclass(slots=True)
+--- a/experiments/pysim/tier2_runtime/wasm/reader.py
++++ b/experiments/pysim/tier2_runtime/wasm/reader.py
+@@ -579,8 +579,10 @@
+         "ended",
+         "function",
+         "locals_types",
++        "max_stack_words",
+         "module",
+         "select_widths",
++        "stack_words",
+         "values",
+     )
+ 
+@@ -596,6 +598,8 @@
+         self.drop_widths: StaticVector[tuple[int, int]] = StaticVector(capacity=len(self.code))
+         self.select_widths: StaticVector[tuple[int, int]] = StaticVector(capacity=len(self.code))
+         self.ended = False
++        self.stack_words = 0
++        self.max_stack_words = 0
+         function_type = module.func_type(function_index)
+         assert function_type.results is not None and len(function_type.results) <= 1
+         function_result = function_type.results[0] if function_type.results else None
+@@ -608,12 +612,16 @@
+             return expected_type
+         require_wasm(len(self.values) > frame.height, "WASM operand stack underflow")
+         actual_type = self.values.pop_back()
++        self.stack_words -= 2 if actual_type == I64 or actual_type == F64 else 1
++        assert self.stack_words >= 0
+         if expected_type is not None and actual_type is not None:
+             require_wasm(actual_type == expected_type, "WASM operand type mismatch")
+         return actual_type
+ 
+     def push(self, value_type: int) -> None:
+         self.values.append(value_type)
++        self.stack_words += 2 if value_type == I64 or value_type == F64 else 1
++        self.max_stack_words = max(self.max_stack_words, self.stack_words)
+ 
+     def pop_label(self, depth: int) -> int | None:
+         require_wasm(0 <= depth < len(self.controls), "WASM branch depth out of range")
+@@ -632,7 +640,9 @@
+ 
+     def trim(self, height: int) -> None:
+         while len(self.values) > height:
+-            self.values.pop_back()
++            value_type = self.values.pop_back()
++            self.stack_words -= 2 if value_type == I64 or value_type == F64 else 1
++        assert self.stack_words >= 0
+ 
+ 
+ _StackAnalysisHandler = Callable[[_StackTypeAnalysisState, int, int, int], None]
+@@ -1138,6 +1148,7 @@
+     require_wasm(state.ended, "function body is missing END")
+     state.function.select_widths = ReadOnlyFlatMapStorage.create(state.select_widths)
+     state.function.drop_widths = ReadOnlyFlatMapStorage.create(state.drop_widths)
++    state.function.max_operand_stack_words = state.max_stack_words
+ 
+ 
+ def _parse_with_allocator(data: memoryview, allocator: BumpAllocator) -> Module:
+--- a/experiments/pysim/qa/tier2_runtime/test_wasm_reader.py
++++ b/experiments/pysim/qa/tier2_runtime/test_wasm_reader.py
+@@ -27,6 +27,55 @@
+ from tier2_runtime.wasm.validation import InvalidWasm
+ 
+ _TEST_FILE = Path(__file__).resolve()
++
++
++@pytest.mark.parametrize("width", (254, 255, 256, 65535))
++def test_instruction_width_is_fixed_u16(width: int) -> None:
++    from tier2_runtime.interpreter.control_flow import build_interpreter_constant_pool
++
++    # For these counts the label-count LEB takes one, two, or three bytes.
++    count = width - (3 if width < 131 else 4 if width < 16388 else 5)
++    count_bytes = _encode_leb128_u32(count)
++    code = b"\x0e" + count_bytes + bytes(count + 1)
++    assert len(code) == width
++    pool, _ = build_interpreter_constant_pool(memoryview(code), (0,))
++    assert bytes(pool)[-2:] == width.to_bytes(2, "little")
++    assert len(pool) == (count + 2) * 4 + 2
++
++
++def test_loader_rejects_instruction_width_above_u16_and_rolls_back() -> None:
++    count = 65531
++    binary = wat_to_wasm(
++        '(module (func (export "main") (block (i32.const 0) (br_table '
++        + "0 " * (count + 1)
++        + "))))"
++    )
++    allocator = BumpAllocator(capacity=4 * 1024 * 1024)
++    allocator.allocate(8)
++    watermark = allocator.offset
++    with pytest.raises(InvalidWasm) as caught:
++        parse(memoryview(binary), allocator)
++    assert caught.value.code == TrapCode.INVALID_WASM_BINARY
++    assert allocator.offset == watermark
++
++
++def test_loader_records_maximum_operand_stack_in_raw_words() -> None:
++    module = parse(
++        wat_to_wasm(
++            """(module
++          (func (result i64)
++            i32.const 1 i64.const 2 f64.const 3 drop drop drop i64.const 4)
++          (func (param i32) (result i64)
++            local.get 0
++            if (result i64)
++              i64.const 1
++            else
++              f64.const 3 drop i32.const 4 i64.const 5 drop drop i64.const 6
++            end)
++          (func))"""
++        )
++    )
++    assert tuple(fn.max_operand_stack_words for fn in module.functions) == (5, 3, 0)
+ 
+ 
+ def test_load_61_type_analysis_dispatch_is_immutable() -> None:
+--- a/experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py
++++ b/experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py
+@@ -3265,7 +3265,7 @@
+     assert len(records) == 3
+ 
+ 
+-def test_jitr_trace_execution_count_excludes_pre_entry_stack_fallback():
++def test_jitr_trace_execution_count_excludes_pre_entry_control_fallback():
+     """TEST-JITR-75: a resident trace declined before execution keeps count zero."""
+     module = parse(
+         wat_to_wasm("""(module (func (export "f") (result i32)
+@@ -3277,7 +3277,14 @@
+     block = module.blocks[0]
+     trace = compile_runtime_block(manager, block)
+     assert trace is not None
+-    trace.stack_words = 0xFFFF
++    metadata_provider = manager.cache.metadata_provider
++    assert metadata_provider is not None
++
++    def require_unavailable_control_frames(candidate: JITTrace) -> None:
++        metadata_provider(candidate)
++        candidate._native.frame_depth = 0xFFFF
++
++    manager.cache.metadata_provider = require_unavailable_control_frames
+     assert manager.cache.insert(trace)
+     assert engine.call(Interpreter(module), 0, []) == [5]
+     assert trace.exec_count == 0
+--- a/experiments/pysim/qa/tier2_runtime/interpreter/test_cps_interpreter.py
++++ b/experiments/pysim/qa/tier2_runtime/interpreter/test_cps_interpreter.py
+@@ -6,6 +6,9 @@
+ from pathlib import Path
+ 
+ import pytest
++import tier2_runtime.interpreter.interpreter as interpreter_module
++from qa.shared.helpers import make_native_interpreter, wat_to_wasm
++from tier2_runtime.wasm.reader import parse
+ 
+ _TEST_FILE = Path(__file__).resolve()
+ _PYSIM_DIR = _TEST_FILE.parents[3]
+@@ -154,26 +157,47 @@
+ )
+ @pytest.mark.parametrize("stack_capacity, free_words", [(0, 0), (1, 1), (4, 0), (4, 1), (4, 2)])
+ def test_native_const_capacity_traps_without_partial_push(
+-    constant: bytes, raw_words: tuple[int, ...], stack_capacity: int, free_words: int
++    constant: bytes,
++    raw_words: tuple[int, ...],
++    stack_capacity: int,
++    free_words: int,
++    monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
+     """TEST-INTP-10: Const capacity failure is a specific trap with no partial or adjacent writes."""
+     initial_size = stack_capacity - free_words
+-    code = b"\x01\x01" + constant + b"\x0b"  # Trap after two CPS continuations.
+-    outcome, context, before, after = _run_guarded_const(code, stack_capacity, initial_size)
+-    if free_words < len(raw_words):
+-        assert outcome == (2, 2, initial_size, TrapCode.OPERAND_STACK_CAPACITY)
+-        assert context.ip == 2
+-        assert context.stack_pointer == context.stack_base + initial_size * 4
+-        assert after == before, "failed push must preserve every existing and sentinel word"
+-    else:
++    if free_words >= len(raw_words):
++        # A raw host entry must already satisfy the function's capacity contract.
++        code = b"\x01\x01" + constant + b"\x0b"
++        outcome, context, before, after = _run_guarded_const(code, stack_capacity, initial_size)
+         assert outcome == (1, len(code), initial_size + len(raw_words), 0)
+-        assert context.ip == len(code)
+         assert context.stack_pointer == context.stack_base + (initial_size + len(raw_words)) * 4
+         expected = list(before)
+         expected[initial_size : initial_size + len(raw_words)] = raw_words
+-        assert after == tuple(expected), (
+-            "successful push must write exactly its declared word width"
+-        )
++        assert after == tuple(expected)
++        return
++
++    # Capacity failure is now tested at the real validated function entry.
++    expressions = {
++        b"\x41\x7f": "i32.const -1",
++        b"\x42\x7f": "i64.const -1",
++        b"\x43\x00\x00\x00\x80": "f32.const -0",
++        b"\x44\x00\x00\x00\x00\x00\x00\x00\x80": "f64.const -0",
++    }
++    expression = expressions[constant]
++    result_type = expression.split(".")[0]
++    module = parse(wat_to_wasm(f"(module (func (result {result_type}) nop nop {expression}))"))
++    context = interpreter_module.ExecutionContext(module)
++    context.stack._capacity = stack_capacity
++    context.stack.set_size(initial_size)
++    for index in range(stack_capacity):
++        context.stack.write_raw_at(index, 0xA5A50000 + index)
++    before = tuple(context.stack.raw_at(index) for index in range(stack_capacity))
++    monkeypatch.setattr(interpreter_module.Interpreter, "_new_context", lambda self: context)
++    call = make_native_interpreter(module).start(0, ())
++    assert call.finished and call.trap is not None
++    assert call.trap.code == TrapCode.OPERAND_STACK_CAPACITY
++    assert not context.call_frame_stack
++    assert tuple(context.stack.raw_at(index) for index in range(stack_capacity)) == before
+ 
+ 
+ ALL_TESTS = sorted(
+--- a/experiments/pysim/qa/tier2_runtime/interpreter/test_interpreter.py
++++ b/experiments/pysim/qa/tier2_runtime/interpreter/test_interpreter.py
+@@ -147,21 +147,42 @@
+     assert function.interpreter_constant_pool is not None
+     loaded_constant_pool = function.interpreter_constant_pool
+     assert module.blocks
+-    assert tuple(loaded_constant_pool) == (1, 0, 0, 0, 2, 1, 2, 0, 0, 0, 0, 2, 1, 1)
++    assert tuple(loaded_constant_pool) == (
++        1,
++        0,
++        0,
++        0,
++        2,
++        0,
++        1,
++        0,
++        2,
++        0,
++        0,
++        0,
++        0,
++        0,
++        2,
++        0,
++        1,
++        0,
++        1,
++        0,
++    )
+     assert tuple(block.interpreter_constant_byte_offset for block in module.blocks) == (
+         0,
+-        7,
+-        12,
+-        13,
++        10,
++        16,
++        18,
+     )
+     Interpreter(module)
+     assert function.control_map is loaded_control_map
+     assert function.interpreter_constant_pool is loaded_constant_pool
+     assert tuple(block.interpreter_constant_byte_offset for block in module.blocks) == (
+         0,
+-        7,
+-        12,
+-        13,
++        10,
++        16,
++        18,
+     )
+ 
+     from qa.shared.helpers import make_native_interpreter
+@@ -179,6 +200,40 @@
+     assert function_view.interpreter_constant_pool == loaded_constant_pool.native_address
+ 
+ 
++@pytest.mark.parametrize(
++    "expression, result_type, expected_trap",
++    (
++        ("unreachable", "i32", InterpreterTrapCode.UNREACHABLE),
++        ("i32.const 1 i32.const 0 i32.div_s", "i32", InterpreterTrapCode.INTEGER_DIVIDE_BY_ZERO),
++        ("i64.const 1 i64.const 0 i64.rem_u", "i64", InterpreterTrapCode.INTEGER_DIVIDE_BY_ZERO),
++        (
++            "i32.const -2147483648 i32.const -1 i32.div_s",
++            "i32",
++            InterpreterTrapCode.INTEGER_OVERFLOW,
++        ),
++        ("f64.const nan i32.trunc_f64_s", "i32", InterpreterTrapCode.INVALID_CONVERSION),
++        ("f64.const 2147483648 i32.trunc_f64_s", "i32", InterpreterTrapCode.INVALID_CONVERSION),
++        ("i32.const 65535 i32.load", "i32", InterpreterTrapCode.MEMORY_OUT_OF_BOUNDS),
++    ),
++)
++@pytest.mark.parametrize("native", (False, True))
++def test_wasm_runtime_traps_keep_code_and_stop_following_effects(
++    expression: str, result_type: str, expected_trap: InterpreterTrapCode, native: bool
++) -> None:
++    module = parse(
++        wat_to_wasm(
++            "(module (memory 1) (global (mut i32) (i32.const 0)) "
++            f"(func (result {result_type}) {expression} i32.const 99 global.set 0))"
++        )
++    )
++    interpreter = make_native_interpreter(module) if native else Interpreter(module)
++    call = interpreter.start(0, ())
++    while not call.finished:
++        interpreter.step(call)
++    assert call.trap is not None and call.trap.code == expected_trap
++    assert interpreter.globals[0] == 0
++
++
+ def test_intp_73_wide_frame_uses_compact_per_local_layout():
+     """TEST-INTP-73: each local uses its precomputed packed word span."""
+     module = parse(
+@@ -217,14 +272,13 @@
+         memoryview(code), (0, 3, 6, 10, 13, 18, 27)
+     )
+ 
+-    assert list(block_offsets) == [0, 9, 18, 31, 40, 41, 42]
++    assert list(block_offsets) == [0, 10, 20, 34, 44, 46, 48]
+     assert list(constants) == list(
+         bytes.fromhex(
+-            "02 00 00 00 04 00 00 00 03 "
+-            "01 00 00 00 02 00 00 00 03 "
+-            "01 00 00 00 00 00 00 00 01 "
+-            "00 00 00 04 80 00 00 00 00 "
+-            "00 00 00 03 05 09 01"
++            "02 00 00 00 04 00 00 00 03 00 "
++            "01 00 00 00 02 00 00 00 03 00 "
++            "01 00 00 00 00 00 00 00 01 00 00 00 04 00 "
++            "80 00 00 00 00 00 00 00 03 00 05 00 09 00 01 00"
+         )
+     )
+ 
+@@ -861,7 +915,9 @@
+ 
+     # 1. TEST-INTP-18/75: independent call descriptors and local storage follow the native ABI.
+     context = ExecutionContext(module)
+-    frame, locals_arr = interp._build_frame(0, StaticVector.of((15,), capacity=64), context)
++    built = interp._build_frame(0, StaticVector.of((15,), capacity=64), context)
++    assert built is not None
++    frame, locals_arr = built
+     assert frame.code == module.code_for(0)
+     assert frame.control_map is not None
+     assert frame.control_map is module.functions[0].control_map
+@@ -1481,6 +1537,50 @@
+ # Test Runner
+ # ===========================================================================
+ 
++
++@pytest.mark.parametrize("native", [False, True])
++@pytest.mark.parametrize("callee", [False, True])
++def test_function_entry_capacity_precedes_traps_and_side_effects(native: bool, callee: bool):
++    """Function admission may replace an earlier WASM trap only when capacity is insufficient."""
++    wide = " ".join(["i64.const 0"] * 33 + ["drop"] * 33)
++    body = f"i32.const 99 global.set 0 local.get 0 if unreachable else {wide} end"
++    functions = f"(func (param i32) {body})"
++    index = 0
++    if callee:
++        functions += "(func (param i32) local.get 0 call 0)"
++        index = 1
++    module = parse(wat_to_wasm(f"(module (global (mut i32) (i32.const 0)) {functions})"))
++    engine = make_native_interpreter(module) if native else Interpreter(module)
++    call = engine.start(index, (1,))
++    while not call.finished:
++        call = engine.step(call)
++    assert call.trap is not None
++    assert call.trap.code == InterpreterTrapCode.OPERAND_STACK_CAPACITY
++    assert engine.globals[0] == 0
++    assert not call.context.call_frame_stack
++
++
++@pytest.mark.parametrize("native", [False, True])
++@pytest.mark.parametrize("count", [31, 32])
++def test_callee_capacity_uses_entry_sp_after_arguments(native: bool, count: int):
++    """Caller live values occupy capacity; parameters become locals before callee admission."""
++    wide = " ".join(["i64.const 0"] * count + ["drop"] * count)
++    module = parse(
++        wat_to_wasm(f"""(module
++      (func (param i64) {wide})
++      (func (result i64) i64.const 7 i64.const 1 call 0))""")
++    )
++    engine = make_native_interpreter(module) if native else Interpreter(module)
++    call = engine.start(1, ())
++    while not call.finished:
++        call = engine.step(call)
++    if count == 31:
++        assert call.trap is None and tuple(call.results or ()) == (7,)
++    else:
++        assert call.trap is not None
++        assert call.trap.code == InterpreterTrapCode.OPERAND_STACK_CAPACITY
++
++
+ ALL_TESTS = sorted(
+     (v for k, v in globals().items() if k.startswith("test_") and callable(v)),
+     key=lambda fn: fn.__code__.co_firstlineno,
+--- a/docs/components/tier2_runtime/jit_abi.md
++++ b/docs/components/tier2_runtime/jit_abi.md
+@@ -79,7 +79,7 @@
+ 
+ ネイティブdispatchには `execution_context`、値スタック基点、ローカルスタック基点、実行拡張、yield境界で使うコンパイル予算だけを渡す。命令位置、コードと制御スタックの情報、スタック位置と容量、local base、関数番号、yieldしきい値は `execution_context` と現在のCallFrameから取得し、別の呼出し構造体へ複製しない。戻り値はstatusとABIエラーだけを持ち、命令位置、スタック位置、trap codeは `execution_context` を唯一の格納先とする。実行拡張は `owner`、本体実行入口、観測入口で構成する。観測入口はInterpreterが対象ブロックを実行した後に候補判定と履歴記録を一度に行う。候補マスクと履歴配列をInterpreterへ渡さず、複製もしない。
+ 
+-CallFrameは関数実行view、ローカル基点、制御フレーム基点、関数番号、復帰PC、JIT境界PCだけを持つ40バイトの固定構造体である。コード・ローカル配置・引数・結果の静的値はfunction viewから得る。`rel`はCallFrameに保存せず、Interpreterは基本ブロック開始時に定数offsetから求める。関数呼出しスタックは32個の記述子を保持する固定長配列である。定数バッファ参照、関数参照、モジュール参照はWASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{META_NoStdVector}`
++CallFrameは関数実行view、ローカル基点、制御フレーム基点、関数番号、復帰PC、JIT境界PCだけを持つ40バイトの固定構造体である。コード・ローカル配置・引数・結果の静的値はfunction viewから得る。function viewはLoaderが求めた`max_operand_stack_words`を32bit語単位で保持する。x64では既存の末尾paddingを使うため、view全体は104バイトを維持する。関数入口で引数を除いたSPを基準にこの最大高を検査し、関数途中のtrace入口には容量の再検査を置かない。`rel`はCallFrameに保存せず、Interpreterは基本ブロック開始時に定数offsetから求める。関数呼出しスタックは32個の記述子を保持する固定長配列である。定数バッファ参照、関数参照、モジュール参照はWASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{META_NoStdVector}`
+ 
+ 実行時のオペランド領域、ローカル値領域、制御ブロック復帰情報領域は、固定容量の構造体と配列として配置する。値領域は`WASM_VALUE_SLOT_BYTES`の境界に配置した型情報を持たない32bit word配列であり、WASMのi32/f32は1 word、i64/f64は2 wordを使う。各関数のローカル値も同じ32bit wordを連続して使う。Loaderは各ローカルの先頭word offset、サイズ、WASM型を関数実行viewへ渡す。JITは関数引数を含むローカル数が16以下の場合を対象とし、`local.get/set/tee`はoperationとWASM値型に対応するstencilへlowerする。local indexはtrace compile時にLoaderのoffset表から解決し、そのcompact word offsetを命令エンコーダがtrace codeへ直接書き込む。offset別stencil variant、local Runtime API、実行時`rel`読出しは使わない。関数引数を含むローカル数が17以上のtraceは直接local stencilの対象外である。実行時の値には型tagを付けない。制御フレームはx86-64で16バイトとし、ブロック開始PCとオペランドstack位置ポインタを保持する。種別・終了PC・結果個数は開始PCからcontrol mapへ引いて復元する。 `{META_NoStdVector}`
+ 
+--- a/docs/components/tier2_runtime/interpreter.md
++++ b/docs/components/tier2_runtime/interpreter.md
+@@ -20,7 +20,7 @@
+ 
+ 組み込み環境の極小メモリ制約（`{GLOBAL_Policy_Memory}`）を遵守する。WASM opcodeはFlashやROM上の関数コードビューから直接フェッチする。中間命令オブジェクト（`Instr`）は生成しない。opcodeから命令オブジェクトを引く表も設けない。これを {DirectBytecodeExecution} と定義する。 <!-- definition: {DirectBytecodeExecution} -->
+ 
+-ネイティブ経路では、Loaderが各BasicBlockのコード範囲を個別にパースし、可変長LEB128即値をデコードしてInterpreter定数プールへ格納する。各命令のデコード済み即値の直後に、その命令の符号化バイト幅を格納する。幅が`0xFF`未満なら1byte、`0xFF`以上なら`0xFF` sentinelとlittle-endianの32bit幅を続ける。固定幅の`f32.const`/`f64.const`即値は元コードから読み、プールへ複製しないが、命令幅はプールへ格納する。プールはアラインメントなしの8bit列であり、BasicBlockごとの開始位置はbyte offsetで記録する。`rel`はプールを指す`const uint8_t*`であり、即値と命令幅を読むたびに進める。ブロック開始時だけBasicBlockの開始位置から`rel`を初期化する。関数呼出しの復帰PCもBasicBlockとして開始位置を持つ。復帰先に実行命令がない場合はゼロ長メタデータを使い、JIT候補にはしない。
++ネイティブ経路では、Loaderが各BasicBlockのコード範囲を個別にパースし、可変長LEB128即値をデコードしてInterpreter定数プールへ格納する。各命令のデコード済み即値の直後に、その命令の符号化バイト幅を格納する。命令幅はlittle-endianの固定2byte（u16）で格納する。65535byteを超える命令はLoaderが`ERR_WASM_UNSUPPORTED_FEATURE`として拒否する。固定幅の`f32.const`/`f64.const`即値は元コードから読み、プールへ複製しないが、命令幅はプールへ格納する。プールはアラインメントなしの8bit列であり、BasicBlockごとの開始位置はbyte offsetで記録する。`rel`はプールを指す`const uint8_t*`であり、即値と命令幅を読むたびに進める。ブロック開始時だけBasicBlockの開始位置から`rel`を初期化する。関数呼出しの復帰PCもBasicBlockとして開始位置を持つ。復帰先に実行命令がない場合はゼロ長メタデータを使い、JIT候補にはしない。
+ 
+ Native dispatcherはdispatch中だけ8-entry固定長block検索cacheを持つ。moduleと絶対`head_pc`が一致した場合に自然順の`module.blocks` indexを再利用し、missでは`fold_mix32`、Loader Radix候補範囲、変換キー順二分探索の順に検索する。衝突時は元PCのtag比較でmissとなる。cacheはLoader所有索引やJITの`jit_cache_reference`を変更しない。Runtime APIが新しい関数フレームを積んだ場合は関数先頭PCをInterpreter dispatcherへ渡し、dispatcherがBasicBlockを解決して制御情報と`rel`を設定する。関数復帰後も、保存した復帰PCをInterpreter dispatcherがBasicBlockへ解決する。block検索cacheはdispatch終了時に破棄し、CallStack ABIへ含めない。
+ 
+@@ -29,6 +29,8 @@
+ 制御構文（`block`, `loop`, `if`）の飛び先は静的解決された軽量制御表（`control_map`）を参照する。この制御表はモジュールロード時に一度だけ構築される。命令実行中にヒープ確保や飛び先探索は行わず、制御表の参照を $O(1)$ で行う（`{GOTCHA-INTP-05}`）。 <!-- definition: {GOTCHA-INTP-05} -->
+ 
+ ## 2. アーキテクチャ分類
++
++Loaderの型解析は関数ごとの最大オペランド高を32bit語単位で記録する。`i64`と`f64`は2語として数える。関数入口は引数をローカルへ移した後のSPに最大高を加え、容量を一度検査する。失敗時は`OPERAND_STACK_CAPACITY`を返し、本体の副作用を実行しない。資源不足時は、従来先に到達したWASM実行時trapより容量trapを優先する。容量が足りる場合のWASM trapの種類と順序は維持する。Python参照実装も同じ入口検査を行う。命令ごとの上限検査と関数途中のJIT trace入口の容量検査は行わず、検証済みスタック遷移を内部契約とする。JIT trace入口の制御フレーム容量検査は維持する。
+ <!-- traceability: {META_3TierSeparation} -->
+ 本コンポーネントは **Tier 2 Runtime** に属する。WASM バイトコードの逐次実行とRuntimeの実行境界を担当する。Tier 3 JIT拡張は選択可能なプラグインとして接続し、固定長トレース記述子を介して共有実行コンテキスト上で協調する。
+ 
+@@ -45,7 +47,7 @@
+ - **`ローカル値領域`（ローカル変数スタック）**: コールチェーン全体で共有する固定容量の、型情報を持たない32ビットワード領域である。型タグ、実行時オブジェクト、関数実行記述子を格納しない。各論理ローカルは必要な1または2ワードだけを占有し、同一フレーム内で幅を混在できる。Loaderは関数ごとにローカルのワードオフセットとワード数を表へ記録する。アクセス先は `local_base + local_offsets[local_index]` から得る。
+ - **制御ブロック復帰情報領域**: `block`/`loop`/`if` の入れ子構造を管理する固定容量領域である。
+ - **関数実行記述子領域**: 関数ごとの実行メタデータを保持する独立した固定容量領域である。各記述子は`ローカル値領域`内のフレーム開始位置を保持し、`ローカル値領域`にはローカル値だけを置く。
+-- **Interpreter定数プール**: Loaderが各BasicBlockを個別にパースして得た可変長LEB128即値と全命令の符号化幅を、関数所有の8bit列へブロック順に格納する固定領域である。固定幅の`f32.const`/`f64.const`即値は含めない。命令幅は即値レコードの後ろに1byteまたは`0xFF` sentinel + 32bit幅で格納する。Interpreterはブロック入口のbyte offsetから`rel`を進めて即値と命令幅を順に読む。PC/即値offset表は置かない。
++- **Interpreter定数プール**: Loaderが各BasicBlockを個別にパースして得た可変長LEB128即値と全命令の符号化幅を、関数所有の8bit列へブロック順に格納する固定領域である。固定幅の`f32.const`/`f64.const`即値は含めない。命令幅は即値レコードの後ろにlittle-endianの固定2byte（u16）で格納する。Interpreterはブロック入口のbyte offsetから`rel`を進めて即値と命令幅を順に読む。PC/即値offset表は置かない。
+ - **BasicBlock定数開始位置**: 各基本ブロックと関数呼出し復帰PCが、対応するInterpreter定数プールのbyte offsetを自身のメタデータに保持する。命令を含まない復帰PCはゼロ長メタデータであり、JIT候補選定から除外する。ブロック入口で`rel`を初期化し、命令単位のoffsetは保持しない。
+ - **`interpreter_config`**: 3本のスタック容量と `FB_CONF_INTERPRETER_YIELD_THRESHOLD` など、Interpreterの不変な構成情報である。LOOP後方分岐の回数しきい値はInterpreterが所有し、RuntimeEngineは変更・上書きしない。
+ 
+@@ -459,6 +461,8 @@
+ | 補足 | デバッガは実行境界から停止・ステップを制御する。 |
+ 
+ #### 実行ステップ (`run_step`)
++
++Pythonのブロック実行経路は要求されたブロック境界を検査する専用のCPSハンドラ表を選ぶ。通常の関数呼び出しは境界検査を含まない表を選ぶ。Debuggerの型引数は既存の選択軸を使い、境界検査用の型タグを加える。実行時に全命令で`kStopAtBlockBoundaryFlag`を読む分岐は通常の関数呼び出しに置かない。
+ <!-- traceability: {META_RecoveryStrategy} -->
+ 
+ | 項目 | 内容 |
+@@ -561,6 +565,10 @@
+ 本コンポーネントのスタック整合性および実行状態遷移を、Python `pyModelChecking` を用いた形式検証モデルで検証する。モデルは抽象状態の遷移だけを検査し、実装コードやWASM値型の意味論を証明するものではない。検証対象の性質と結果を以下に示す。 `{VERIFY_FORMAL}`
+ 
+ #### 7.1.1 スタック領域と関数復帰モデル ([`interpreter_stack_model.py`](docs/components/tier2_runtime/formal/interpreter_stack_model.py))
++
++同モデルは、通常の関数呼び出し継続とPythonの要求ブロック境界停止も区別する。通常モデルでは通常経路の早期停止とstep経路の境界通過が起きない。`guards=False`では両違反を許して反証する。語数モデルは1語値と2語値を積み下ろし、記録した高水位が実ワード数を下回らないことを検査する。変異では全値を1語として記録し、過小評価を検出する。
++
++同モデルの命令幅モデルは、上限を超える命令の読み込み拒否と、幅レコードの固定2byte前進を抽象化する。通常モデルでは両安全性が成立する。`guards=False`では過大幅の受理と固定幅以外の前進を許し、両性質を反証する。具体的な65535byte境界とlittle-endian表現はLoaderの実行テストで検査する。
+ 3つの独立領域（オペランド領域、ローカル値領域、制御ブロック復帰情報領域）の非別名性、関数呼出し記述子とローカル値の抽象的な分離、および関数復帰後の結果値保持を抽象状態モデルで検証する。このモデルはアドレス範囲、容量、オフセット計算、実装コードの境界アクセスを検査しない。x86-64のコンテキストサイズとフィールドオフセットは `{ExecutionContext_Layout}` に従う。
+ - **検証特性 (CTL/LTL)**:
+   - 相互独立性: いずれか1本のスタックの伸長・収縮が、他スタックの境界やオフセットを侵食しない。
+--- a/docs/components/tier2_runtime/formal/interpreter_stack_model.py
++++ b/docs/components/tier2_runtime/formal/interpreter_stack_model.py
+@@ -4,11 +4,14 @@
+ 独立性および関数復帰時の結果値保持の形式検証（証明・変異検査対応）モデル
+ """
+ 
++from itertools import pairwise
++
+ from pyModelChecking import Kripke
+ from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
+ 
+ BACKS = [
+     "components/tier2_runtime/interpreter.md",
++    "components/tier3_plugins/jit_runtime.md",
+ ]
+ 
+ 
+@@ -126,8 +129,149 @@
+     ]
+ 
+ 
++def build_width_model(*, guards: bool = True) -> Kripke:
++    """幅上限の拒否と固定2byteのカーソル前進を抽象化する。"""
++    states = ("load", "accepted", "rejected", "advanced", "bad_width", "bad_advance")
++    edges = [
++        ("load", "accepted"),
++        ("load", "rejected"),
++        ("accepted", "advanced"),
++        ("advanced", "advanced"),
++        ("rejected", "rejected"),
++        ("bad_width", "bad_width"),
++        ("bad_advance", "bad_advance"),
++    ]
++    if not guards:
++        edges.extend((("load", "bad_width"), ("accepted", "bad_advance")))
++    return Kripke(
++        S=states,
++        S0={"load"},
++        R=edges,
++        L={"bad_width": {"oversized_width_accepted"}, "bad_advance": {"non_u16_advance"}},
++    )
++
++
++def width_properties():
++    return (
++        AG(Not(AtomicProposition("oversized_width_accepted"))),
++        AG(Not(AtomicProposition("non_u16_advance"))),
++    )
++
++
++def build_boundary_model(*, guards: bool = True) -> Kripke:
++    """通常継続とPythonの要求境界停止を区別する。"""
++    states = ("entry", "normal", "step", "normal_done", "step_stop", "bad_stop", "bad_pass")
++    edges = [
++        ("entry", "normal"),
++        ("entry", "step"),
++        ("normal", "normal_done"),
++        ("step", "step_stop"),
++        ("normal_done", "normal_done"),
++        ("step_stop", "step_stop"),
++        ("bad_stop", "bad_stop"),
++        ("bad_pass", "bad_pass"),
++    ]
++    if not guards:
++        edges.extend((("normal", "bad_stop"), ("step", "bad_pass")))
++    return Kripke(
++        S=states,
++        S0={"entry"},
++        R=edges,
++        L={
++            "bad_stop": {"normal_stopped_at_requested_boundary"},
++            "bad_pass": {"step_passed_requested_boundary"},
++        },
++    )
++
++
++def boundary_properties():
++    return (
++        AG(Not(AtomicProposition("normal_stopped_at_requested_boundary"))),
++        AG(Not(AtomicProposition("step_passed_requested_boundary"))),
++    )
++
++
++def build_peak_model(*, guards: bool = True) -> Kripke:
++    """型ごとの実ワード数と記録される高水位を別々に更新する。"""
++    actual_stack = []
++    recorded_stack = []
++    maximum = 0
++    states = [(0, 0, 0)]
++    labels = {states[0]: set()}
++    for phase, width in enumerate((1, 2, 2, -2, -2, -1), start=1):
++        if width > 0:
++            actual_stack.append(width)
++            recorded_stack.append(width if guards else 1)
++        else:
++            actual_stack.pop()
++            recorded_stack.pop()
++        actual = sum(actual_stack)
++        maximum = max(maximum, sum(recorded_stack))
++        state = (phase, actual, maximum)
++        states.append(state)
++        labels[state] = {"peak_underestimated"} if maximum < actual else set()
++    edges = list(pairwise(states))
++    edges.append((states[-1], states[-1]))
++    return Kripke(S=states, S0={states[0]}, R=edges, L=labels)
++
++
++def build_admission_model(*, guards: bool = True) -> Kripke:
++    """入口の拒否は本体の副作用を防ぎ、受理後の命令列は予約容量内に収まる。"""
++    states = []
++    edges = []
++    labels = {}
++    initial = set()
++    for entry in (0, 1):
++        for capacity in (4, 5, 6):
++            start = (entry, capacity, 0)
++            initial.add(start)
++            states.append(start)
++            labels[start] = set()
++            enough = entry + 5 <= capacity
++            if guards and not enough:
++                rejected = (entry, capacity, -1)
++                states.append(rejected)
++                labels[rejected] = {"capacity_trap"}
++                edges.extend(((start, rejected), (rejected, rejected)))
++                continue
++            previous = start
++            for phase, height in enumerate((1, 3, 5, 3, 1, 0), 1):
++                state = (entry, capacity, phase)
++                states.append(state)
++                labels[state] = set()
++                if entry + height > capacity:
++                    labels[state].add("write_outside_capacity")
++                if not enough:
++                    labels[state].add("rejected_body_executed")
++                edges.append((previous, state))
++                previous = state
++            edges.append((previous, previous))
++    return Kripke(S=states, S0=initial, R=edges, L=labels)
++
++
+ if __name__ == "__main__":
+     from pyModelChecking.CTL import modelcheck
++
++    for enabled in (True, False):
++        admission = build_admission_model(guards=enabled)
++        for label in ("write_outside_capacity", "rejected_body_executed"):
++            formula = AG(Not(AtomicProposition(label)))
++            assert admission.S0.issubset(modelcheck(admission, formula)) == enabled
++            print(f"[PASS] entry reservation {label} (guards={enabled})")
++        width_model = build_width_model(guards=enabled)
++        for index, formula in enumerate(width_properties()):
++            passed = width_model.S0.issubset(modelcheck(width_model, formula))
++            assert passed == enabled
++            print(f"[PASS] instruction width property {index} (guards={enabled})")
++        boundary_model = build_boundary_model(guards=enabled)
++        for index, formula in enumerate(boundary_properties()):
++            passed = boundary_model.S0.issubset(modelcheck(boundary_model, formula))
++            assert passed == enabled
++            print(f"[PASS] boundary mode property {index} (guards={enabled})")
++        peak_model = build_peak_model(guards=enabled)
++        formula = AG(Not(AtomicProposition("peak_underestimated")))
++        assert peak_model.S0.issubset(modelcheck(peak_model, formula)) == enabled
++        print(f"[PASS] raw-word peak (guards={enabled})")
+ 
+     print("=== Formal Verification: Interpreter Stack Model (guards=True) ===")
+     km = build_model(guards=True)
+--- a/docs/qa/tier2_runtime/runtime_loader_test_spec.md
++++ b/docs/qa/tier2_runtime/runtime_loader_test_spec.md
+@@ -77,7 +77,7 @@
+ 
+ | TEST-LOAD-56 | メモリ命令の整列指定上限 | `i32.load`の整列指定がアクセス幅を超える | `parse(module)` | 4バイト指定を許可し、8バイト指定を拒否する | [WebAssembly Core・memarg検証](https://webassembly.github.io/spec/core/valid/instructions.html#valid-memarg)、pysim `test_load_56_rejects_overaligned_memory_access` |
+ | TEST-LOAD-57 | Runtime API命令を含むtrace範囲 | `i32.const`の後ろに`i32.popcnt`を置く関数 | パース後に関数先頭PCの`BasicBlock`をRadix検索し、関数コードと範囲を比較する | `byte_span`が`i32.const`と末尾の`i32.popcnt`を含み、終端`end`を含まない。ブロックのInterpreter定数pool開始offsetが設定される | `{Loader_BasicBlockIndex}`、pysim `test_load_57_includes_runtime_api_operations_in_trace_span` |
+-| TEST-LOAD-58 | BasicBlock単位のLEB128定数プール構築 | 複数ブロックにLEB128即値、`br_table`、固定幅`f32.const`/`f64.const`を含む関数 | Loaderの各ブロック別プール範囲、連結順、BasicBlockの開始byte offsetを検査する | 各BasicBlockのコード範囲を個別にパースし、可変長LEB128即値と各命令の幅recordを8bit-packed関数プールへブロック順に追加する。`br_table`即値はそのブロックの範囲内に置く。固定幅float payloadとopcodeはプールへ入れないが、float命令の幅は格納する。幅は1byte、または`0xFF` sentinel + little-endian 32bit値とする。PC/即値offset表は生成しない | `{Loader_BasicBlockIndex}`, `interpreter.md`「Interpreter定数プール」 |
++| TEST-LOAD-58 | BasicBlock単位のLEB128定数プール構築 | 複数ブロックにLEB128即値、`br_table`、固定幅`f32.const`/`f64.const`を含む関数 | Loaderの各ブロック別プール範囲、連結順、BasicBlockの開始byte offsetを検査する | 各BasicBlockのコード範囲を個別にパースし、可変長LEB128即値と各命令の固定2byte u16幅recordを8bit-packed関数プールへブロック順に追加する。`br_table`即値はそのブロックの範囲内に置く。固定幅float payloadとopcodeはプールへ入れないが、float命令の幅は格納する。幅は1byte、または`0xFF` sentinel + little-endian 32bit値とする。PC/即値offset表は生成しない | `{Loader_BasicBlockIndex}`, `interpreter.md`「Interpreter定数プール」 |
+ 
+ ### 実装上の注意点に対応する検証
+ <!-- traceability: {Loader_BasicBlockIndex} {GOTCHA-LOAD-01} {GOTCHA-LOAD-02} {GOTCHA-LOAD-04} -->
+@@ -123,3 +123,5 @@
+ - TEST-LOAD-45の多数インポート、TEST-LOAD-46の未登録名が既存名と衝突する条件は、本pysimスイートでは未検証である。
+ - TEST-LOAD-49〜50のJIT候補判定と非候補touch/履歴バイパスは、本Pysimスイートでは検証しない。
+ - 名前・ファイル位置検索の計算量、物理ROMのコピー回数、全WASM命令の完全検証は、上記の局所機能検査では証明しない。
++
++Loaderの命令幅は65535以下に限る。幅65536以上は`ERR_WASM_UNSUPPORTED_FEATURE`で拒否し、確保領域を巻き戻す。型解析は関数ごとの最大オペランド高を生の32bit語単位で記録する。i64/f64は2語として数える。 <!-- traceability: {DirectBytecodeExecution} -->
+--- a/docs/qa/tier2_runtime/interpreter_test_spec.md
++++ b/docs/qa/tier2_runtime/interpreter_test_spec.md
+@@ -32,7 +32,7 @@
+ 
+ | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+ | :--- | :--- | :--- | :--- | :--- | :--- |
+-| TEST-INTP-10 | オペランド領域オーバーフロートラップ | `stack_capacity`を超えるpush | 再帰呼び出し等でオペランド領域を溢れさせる。nativeの4型constを空き0/1/2 word境界で実行する | 概念実装は`WASMTrap("STACK_OVERFLOW")`相当、pysim/nativeは`OPERAND_STACK_CAPACITY`を返す。constの拒否時はPC、stackサイズ、既存wordと隣接sentinelを保持し、未対応opcode扱いにしない | interpreter_concept.py `ExecutionContext.push`、[`test_cps_interpreter.py`](experiments/pysim/qa/tier2_runtime/interpreter/test_cps_interpreter.py) |
++| TEST-INTP-10 | オペランド領域オーバーフロートラップ | `stack_capacity`を超えるpush | 再帰呼び出し等でオペランド領域を溢れさせる。nativeの4型constを空き0/1/2 word境界で実行する | 概念実装は`WASMTrap("STACK_OVERFLOW")`相当、pysim/nativeは`OPERAND_STACK_CAPACITY`を返す。関数入口の拒否時は本体を実行せず、stackサイズと既存wordを保持する。十分な容量のconstは宣言されたword幅だけを書き込み、隣接wordを保持する | interpreter_concept.py `ExecutionContext.push`、[`test_cps_interpreter.py`](experiments/pysim/qa/tier2_runtime/interpreter/test_cps_interpreter.py) |
+ | TEST-INTP-11 | オペランド領域アンダーフロートラップ | 空のオペランド領域でpop | pop操作 | `WASMTrap("STACK_UNDERFLOW")`相当 | interpreter_concept.py `ExecutionContext.pop` |
+ | TEST-INTP-12 | 再帰呼び出し（call）とローカル値領域 | `fact(n)`のような再帰関数 | `execute_function`で呼び出す | 各呼び出しごとに新しいローカル値領域の区画が割り当てられ、ローカル変数が互いに独立する | interpreter_concept.py `test_full_wasm_recursive_factorial` |
+ | TEST-INTP-13 | 戻り値の受け渡し | 関数が1個の結果を返す | `return`実行後の呼び出し元スタック | 呼び出し元のスタックに正しく結果が積まれる | interpreter_concept.py `execute_function` |
+@@ -45,6 +45,7 @@
+ | TEST-INTP-77 | 静的分岐先での制御フレーム整理 | 入れ子の`block`/`loop`と条件分岐を含むWASM | 複数の`end`を越える静的後続PCへ分岐する | 分岐先より後ろで終端を迎える制御フレームを破棄し、分岐先と一致するフレームは`end`処理へ残す | `interpreter.md` 分岐処理 |
+ | TEST-INTP-78 | 間接呼出しの選択先型と副作用 | 型の混在、重複型定義、未初期化、範囲外を含む不変テーブル | Python参照とNativeで間接呼出しを実行する。引数・結果の型、個数、ワード幅を変える | 適合する選択先だけを呼び、未選択の別型は許可する。不一致はtrapコード8となり、本体のglobal更新とhost callbackを実行しない | `interpreter.md` 関数呼出し境界、`indirect_call_concept.py`、`interpreter_indirect_call_model.py` |
+ | TEST-INTP-79 | 左から右の評価順 | 固定revisionの公式`left-to-right.wast` | 全95アサーションをPython参照とNativeで実行する | メモリに残る副作用と結果値が全ケースで期待値と一致し、skipは0件となる | `Wasm32Only`、`test_wasm_core_spec.py` |
++| TEST-INTP-80 | 関数入口のオペランド容量検査 | 混在幅の最大高、callerの生存値、callee引数、先行trapとglobal更新を持つ関数 | Python参照とNativeで十分な容量と不足する容量を実行する | i64/f64を2語として数える。引数を除いた入口SPで一度検査する。不足時は本体の副作用と先行WASM trapより容量trapを優先する。十分な容量ではWASM trapコードと後続副作用の不在を維持する | `interpreter_stack_model.py`、`test_function_entry_capacity_precedes_traps_and_side_effects`、`test_callee_capacity_uses_entry_sp_after_arguments` |
+ 
+ ### ラベルアリティ・スタックプルーニング (`prune_stack`)
+ 
+@@ -100,7 +101,7 @@
+ | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+ | :--- | :--- | :--- | :--- | :--- | :--- |
+ | TEST-INTP-70 | 命令オブジェクト非生成とopcode直接フェッチ | WASM関数実行 | 実行ループのopcodeフェッチを確認 | 関数内カーソルからコードを直接読み出し、中間`Instr`オブジェクトやopcode逆引き表を使わない。Runtime・Debuggerへ渡すPCは関数開始PCと`ctx.ip`から得る | `interpreter.md` `DirectBytecodeExecution` |
+-| TEST-INTP-71 | BasicBlock単位の定数プール走査と`rel`初期化 | 複数ブロックにLEB128即値と固定幅float定数を持ち、呼出し後に即値命令を実行する関数 | Loader生成後のブロック別開始byte offsetを確認し、NativeInterpreterで命令と呼出し復帰を実行する | 各ブロックのLEB128即値と各命令の幅recordが個別に生成され、呼出し復帰を含むブロック入口でのみ対応する`rel`を初期化する。各recordの読出しで`rel`が進む。固定幅`f32.const`/`f64.const` payloadは元コードから読む。命令ごとのPC/即値offset表は持たない | `interpreter.md`「Interpreter定数プール」、TEST-LOAD-58 |
++| TEST-INTP-71 | BasicBlock単位の定数プール走査と`rel`初期化 | 複数ブロックにLEB128即値と固定幅float定数を持ち、呼出し後に即値命令を実行する関数 | Loader生成後のブロック別開始byte offsetを確認し、NativeInterpreterで命令と呼出し復帰を実行する | 各ブロックのLEB128即値と固定2byteのu16命令幅recordが個別に生成され、呼出し復帰を含むブロック入口でのみ対応する`rel`を初期化する。各recordの読出しで`rel`が進む。固定幅`f32.const`/`f64.const` payloadは元コードから読む。命令ごとのPC/即値offset表は持たない | `interpreter.md`「Interpreter定数プール」、TEST-LOAD-58 |
+ | TEST-INTP-72 | 静的制御表によるブロック境界解決 | `block/loop/if` 構文の実行 | 分岐および終了時の遷移を確認 | モジュールロード時に事前計算された静的 `control_map`（`blocks`, `br_tables`）を参照し、実行時の全命令再デコードを行わない | `interpreter.md` |
+ | TEST-INTP-73 | ローカルオフセットとサイズ表のロード時計算 | i32/f32/i64/f64が混在する関数とローカルなしの関数 | ロード後の各ローカルのオフセット・ワード数と `local_slot_count_cache` を確認し、実行する | 各ローカルのサイズが1または2ワードで、オフセットが先行ローカルのサイズの合計、フレーム長が全サイズの合計になる。結果が正しい | GOTCHA-INTP-22 |
+ | TEST-INTP-74 | wide localを含む再帰関数のローカル領域境界 | 16個のi32値を持つ関数と、さらにf64を1個持つ関数 | 8フレーム分の再帰を実行する | i32のみの版は128ワードに収まり成功する。f64を含む版は1フレームあたり18ワードとなり、8フレームで128ワードを超えて容量超過で停止する | GOTCHA-INTP-22 |
+--- a/docs/components/tier3_plugins/jit_runtime.md
++++ b/docs/components/tier3_plugins/jit_runtime.md
+@@ -340,7 +340,7 @@
+ - **制御フレームの整合 (`{GOTCHA-JITR-06}`)**: JITで処理した制御命令の条件値、stack、frame、PCはInterpreter単独実行と一致する。Interpreterへ戻る境界では共有状態と再開位置を確定する。復帰後に実行済みの制御命令を二重実行しない。未実行命令は対応handlerへ渡す。trap/CPS exitは記録済みの終了理由から処理する。 <!-- definition: {GOTCHA-JITR-06} -->
+ - **短小判定の符号 (`{GOTCHA-JITR-07}`)**: ブロックの足切り判定は自身の命令バイト数で行う。後続アドレスとの差分で代用すると、後方分岐ブロックで差分が負になり、高頻度ブロックが永久に除外されてしまう。 <!-- definition: {GOTCHA-JITR-07} -->
+ - **エイジングと常駐状態の分離 (`{GOTCHA-JITR-09}`)**: エイジングスイープは `EXECUTED` のカードだけを変更する。`COMPILED` まで戻すと、常駐トレースのカードが `UNEXECUTED` になり、lookup が常駐コードを見逃す。`HOT` まで戻すと、コンパイル待ち列の要求とカード状態が食い違う。常駐性の正本はキャッシュ、待ち列の正本は待ち列であり、スイープはどちらも書き換えない。 <!-- definition: {GOTCHA-JITR-09} -->
+-- **押し出し量の事前確認**: Interpreter dispatcherは、trace entryを呼ぶ前に、連鎖先を含む最大の `stack_words` が空き容量に収まることを確認する。収まらない場合はそのBasicBlockのtrace entryを呼ばず、対応するInterpreter handlerを実行する。インタープリタは、handler実行時の容量超過を `assert` で停止する。JITだけが容量外へ書き込む状態を作らないためである。
++- **押し出し量の入口契約**: Loaderが記録する関数の最大オペランド高を関数入口で検査する。Interpreter命令列とJIT traceの双方は、この予約済み容量内で検証済みのスタック遷移を実行する。関数途中のtrace入口ではオペランド容量を再検査しない。入口予約の安全性と拒否時の本体不実行は[interpreter_stack_model.py](docs/components/tier2_runtime/formal/interpreter_stack_model.py)で検証する。traceの制御フレーム必要量が空き容量に収まらない場合は、対応するInterpreter handlerへ戻す。
+ - **連鎖の再リンク**: ローテーションの後も、非0のchain targetは常駐トレースbodyの有効なアドレスを指す。cache metadataとネイティブtrace headerの値は一致する。後続が退避された場合は`chain_target_addr`を0にし、共通chain dispatcherから現在のtrace entryへ戻す。未接続targetへ進む場合は共有状態と未実行命令位置をInterpreterへ渡す。
+ 
+ ## 5. インターフェース定義
+--- a/docs/qa/tier3_plugins/jit_runtime_test_spec.md
++++ b/docs/qa/tier3_plugins/jit_runtime_test_spec.md
+@@ -183,7 +183,7 @@
+ | TEST-JITR-76 | 反復実行、飽和、Oldest実行、測定区間のリセット | 実行回数が既知の常駐loop traceがある | QA計測構成で通常統計とホットスポット検出の有効・無効を組み合わせて反復実行し、Oldest実行、QA snapshot再生成、32ビット上限、QA resetを確認する | body実行ごとに1増える。lookupでは増えない。世代交代とQA snapshot更新では値とカウンタの所在を保持する。最大値で飽和し、reset後は0から数える | `test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits` |
+ | TEST-JITR-77 | 直接chainの後続bodyの実行回数 | 2 traceの直線chainがある | QA計測構成で通常統計の有効・無効を組み合わせ、Runtimeからchainを実行する | 先頭と後続の回数がともに1増え、ゲストの結果が一致する | `test_jitr_trace_execution_counts_include_direct_chain_successors` |
+ | TEST-JITR-78 | QAの退役記録と新traceの計数寿命 | 実行済みと未実行のtrace、および収集先がある | QAハーネスでlookup、rotate、置換、flush前後の常駐状態を比較する | lookupでは記録せず値を保持する。脱落したtraceのPCと操作前に保存した回数を一度通知する。未実行の0も通知する。同じPCの新traceは0から始まる | `test_jitr_trace_execution_retirement_records_zero_and_used_traces` |
+-| TEST-JITR-79 | 容量不足で実行されないtraceの除外 | 常駐traceの必要スタック量が空き容量を越える | Runtimeから関数を実行する | Interpreterで正しい結果を得て、traceの回数は0のままとなる | `test_jitr_trace_execution_count_excludes_pre_entry_stack_fallback` |
++| TEST-JITR-79 | 容量不足で実行されないtraceの除外 | 常駐traceの制御フレーム必要量が空き容量を越える | Runtimeから関数を実行する | Interpreterで正しい結果を得て、traceの回数は0のままとなる | `test_jitr_trace_execution_count_excludes_pre_entry_control_fallback` |
+ 
+ `test_jitr_measurements_are_formatted_in_cpp_through_shared_printk`はC++が計測値を整形し、共有printkへ出力することを検査する。
+ 

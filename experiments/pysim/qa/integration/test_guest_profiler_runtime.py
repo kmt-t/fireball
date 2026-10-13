@@ -153,7 +153,6 @@ def _run_guest_history(
                     len(call.context.stack),
                     len(call.context.local_stack),
                     len(call.context.call_frame_stack),
-                    len(call.context.control_frame_stack),
                 ),
             )
         )

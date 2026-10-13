@@ -115,6 +115,110 @@ class CtypesU32Buffer:
         return self.capacity
 
 
+class CtypesU16Buffer:
+    """Fixed-width backing for 16-bit indexes shared with native code."""
+
+    __slots__ = ("_arena_offset", "_arena_size", "_values", "capacity")
+
+    def __init__(self, capacity: int, allocator: BumpAllocator | None = None) -> None:
+        assert capacity >= 0
+        self.capacity = capacity
+        self._values = (ctypes.c_uint16 * capacity)()
+        self._arena_offset: int | None = None
+        self._arena_size = 0
+        if allocator is not None:
+            self._arena_size = ctypes.sizeof(self._values)
+            self._arena_offset = (
+                allocator.allocate(self._arena_size, ctypes.alignment(ctypes.c_uint16))
+                if self._arena_size
+                else None
+            )
+
+    @property
+    def arena_offset(self) -> int | None:
+        return self._arena_offset
+
+    @property
+    def arena_size(self) -> int:
+        return self._arena_size
+
+    @property
+    def native_address(self) -> int:
+        """Address of the stable 16-bit index array."""
+
+        return 0 if self.capacity == 0 else ctypes.addressof(self._values)
+
+    def at(self, index: int) -> int:
+        assert 0 <= index < self.capacity
+        return int(self._values[index])
+
+    def put(self, index: int, value: int) -> None:
+        assert 0 <= index < self.capacity
+        assert 0 <= value <= 0xFFFF
+        self._values[index] = value
+
+    def relocate_arena(self, offset_delta: int) -> None:
+        if self._arena_offset is not None:
+            relocated_offset = self._arena_offset + offset_delta
+            assert relocated_offset >= 0
+            self._arena_offset = relocated_offset
+
+    def __len__(self) -> int:
+        return self.capacity
+
+
+class CtypesU8Buffer:
+    """Fixed-width byte backing shared with native code."""
+
+    __slots__ = ("_arena_offset", "_arena_size", "_values", "capacity")
+
+    def __init__(self, capacity: int, allocator: BumpAllocator | None = None) -> None:
+        assert capacity >= 0
+        self.capacity = capacity
+        self._values = (ctypes.c_uint8 * capacity)()
+        self._arena_offset: int | None = None
+        self._arena_size = 0
+        if allocator is not None:
+            self._arena_size = ctypes.sizeof(self._values)
+            self._arena_offset = (
+                allocator.allocate(self._arena_size, ctypes.alignment(ctypes.c_uint8))
+                if self._arena_size
+                else None
+            )
+
+    @property
+    def arena_offset(self) -> int | None:
+        return self._arena_offset
+
+    @property
+    def arena_size(self) -> int:
+        return self._arena_size
+
+    @property
+    def native_address(self) -> int:
+        """Address of the stable C-compatible byte backing."""
+
+        return 0 if self.capacity == 0 else ctypes.addressof(self._values)
+
+    def at(self, index: int) -> int:
+        assert 0 <= index < self.capacity
+        return int(self._values[index])
+
+    def put(self, index: int, value: int) -> None:
+        assert 0 <= index < self.capacity
+        assert 0 <= value <= 0xFF
+        self._values[index] = value
+
+    def relocate_arena(self, offset_delta: int) -> None:
+        if self._arena_offset is not None:
+            relocated_offset = self._arena_offset + offset_delta
+            assert relocated_offset >= 0
+            self._arena_offset = relocated_offset
+
+    def __len__(self) -> int:
+        return self.capacity
+
+
 def freeze_sequence(items: Iterable[T]) -> tuple[T, ...]:
     """Freeze a bounded setup sequence for an immutable ROM-style view."""
 

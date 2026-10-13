@@ -80,7 +80,6 @@ class AgingResult:
     compiles: int
     purged: int
     rotations: int
-    promotions: int
     jit_share_pct: float | None
     aging_steps: int
     checksum: int
@@ -91,7 +90,7 @@ class JITAgingBenchmark:
 
     def __init__(
         self,
-        hot_functions: int = 8,
+        hot_functions: int = 4,
         cold_functions: int = 200,
         passes: int = 200,
         hot_iterations: int = 8,
@@ -161,7 +160,6 @@ class JITAgingBenchmark:
             compiles=cache.compile_attempts,
             purged=engine.jit_runtime.cache.evictions,
             rotations=cache.rotations,
-            promotions=engine.jit_runtime.cache.promotions,
             jit_share_pct=(100.0 * jit / total if total > 0 else 0.0)
             if engine.collect_runtime_stats
             else None,

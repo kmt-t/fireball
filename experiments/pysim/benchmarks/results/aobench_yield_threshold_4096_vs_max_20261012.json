@@ -1,0 +1,540 @@
+{
+  "started_at": "2026-10-12T16:08:22.809778+09:00",
+  "cpu": "AMD Ryzen 5 5500GT with Radeon Graphics",
+  "cpu_affinity": 2,
+  "python": "3.13.15",
+  "compiler": "Ubuntu clang version 21.1.8 (6ubuntu1)",
+  "native_flags": [
+    "-O3",
+    "-DNDEBUG",
+    "-flto=thin",
+    "-fuse-ld=lld"
+  ],
+  "width": 320,
+  "height": 180,
+  "trials": 3,
+  "warmup": 3,
+  "repeats": 7,
+  "timing": "NativeInterpreter.call() or wasm_runtime_call_wasm(); no load/setup/hash",
+  "host_io": "Fireball Python WASI/HAL/StreamTransport; WAMR C WASI/memfd",
+  "warmup_threshold": "same as timed threshold in each condition",
+  "source_sha256": {
+    "experiments/pysim/native/tier1_core/printk/build_native.sh": "6981fe9317ec3e307bca93f0e95db638d79c6d53858d2133ea6a8bce42537025",
+    "experiments/pysim/native/tier1_core/printk/printk.cxx": "17ae51f5d0eff97cc2d7ec8c9b566e19fb3a87623468f4b9a33012353825aed6",
+    "experiments/pysim/native/tier1_core/printk/printk.hxx": "edca50e1a866d7db53918b5d09f95febe614d7f19285acd570fb5e2d9df662b3",
+    "experiments/pysim/native/tier2_runtime/interpreter/build_native.sh": "cbc4029561dccd6d85871609d511ad1e1186732ec87b5362574328532e95db6c",
+    "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx": "d3cdf6bccc82a2c533e25f09e189b92b03608cbdd8850ee609b0dd48ab0a5acc",
+    "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter_runtime.hxx": "42a42628279f23e15c8d2a5e4c7d82472364658b803c8b575e3294fce8bdcf0f",
+    "experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.cxx": "7a7ebab5c66f5bddd3054afa76d4668e1e75c9ae07c53dbd8d680ab7f8702f70",
+    "experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.hxx": "b22633d788695c1839677381011dd05ca1accb875366ebcaa9e0b5281f73345c",
+    "experiments/pysim/native/tier3_platform/libfireball/libfireball.hxx": "8c40723bbf6501eae10dc0d6747ed16b1bdce03d2ea60ab7b34c6af7b26f7c67",
+    "experiments/pysim/native/tier3_plugins/jit/build_native.sh": "72849bf6a890e2ebb19b44250387af05dc353e74addfdba12c794069038403a9",
+    "experiments/pysim/native/tier3_plugins/jit/common_code.cxx": "5865697cfb2f536f045db90450876d7fd2c0c89c75c220ccf1638fe926cd22bf",
+    "experiments/pysim/native/tier3_plugins/jit/common_code_abi.hxx": "b3f0db4a18af6923b82feb9d18cc7a3f65116317fddbeb6f11e4cf50f0361e02",
+    "experiments/pysim/native/tier3_plugins/jit/executable_memory.cxx": "7835d7ecbd149139b367f16a83e69f05015c19bc06d431518ecf2122174f1b1f",
+    "experiments/pysim/native/tier3_plugins/jit/executable_memory_abi.hxx": "9dddbb96ca592eabb4827ea00f9f406be5c3905bb4756d19004dc06b55981134",
+    "experiments/pysim/native/tier3_plugins/jit/jit_internal.hxx": "0b9ce999e12f207475fad90746d5f8a13cd90cb5233037e6db4de90fc4b76c23",
+    "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "3b125c9f859eb3027170a9e76abab833a198d1decef989203c0241910c9c4293",
+    "experiments/pysim/native/tier3_plugins/jit/jit_runtime.hxx": "68d32608cb7ddefc4aee5313e613ef1f1c3628db188a8a51627c67285c94dec3",
+    "experiments/pysim/native/tier3_plugins/jit/jit_runtime_abi.hxx": "68dbd8d0078736afeda5c785eee30b2f919325d425c1c234b473d49d6db8d7ce",
+    "experiments/pysim/native/tier3_plugins/jit/jit_runtime_apis.cxx": "9eaa99658fb84afd21c6a928386729918f398f051e323aa3d7c7b822245bfd25",
+    "experiments/pysim/native/tier3_plugins/jit/jit_runtime_apis.hxx": "f59356fb3a8a6eea50d19e86c4db7df6862c8a9bd9c685be80558f30882f636d",
+    "experiments/pysim/native/tier3_plugins/jit/jit_types.hxx": "dfc97aa51b32f7ce686a68498ce58820e4ebde4fca0dbae6f4f129a8929b7a61",
+    "experiments/pysim/native/tier3_plugins/jit/lir/x64/common.S": "4b6b42f25a5779388332b5bd7eb7f8508fb5716e7d884b5dde3e35867fdae250",
+    "experiments/pysim/native/tier3_plugins/jit/lir/x64/operations.S": "695154feac68036c4dce08e2a5c9c72ccbb3c23cbd63c2bd8dcda22c8bd065e4",
+    "experiments/pysim/native/tier3_plugins/jit/lir/x64/trace.S": "273e1281a30d36ba4c2168779b61fc753cd85c9fb2ab4f97170f1e2ff66df9e0",
+    "experiments/pysim/native/tier3_plugins/jit/profiling.cxx": "cc2ddddfdd3d04da8a08d1c9ca596ab944a42a28b274eb28f974ecad0e7524ad",
+    "experiments/pysim/native/tier3_plugins/jit/profiling.hxx": "2ddfbbafd49d7855f4e6f64cb2638a93e209fc882f8bdbba804a72f005a48349",
+    "experiments/pysim/native/tier3_plugins/jit/stencils_x64.hxx": "cc1eeaf0a707108e7db6a56502788e55e836734ef1802ab7b149aa9d490f43f9",
+    "experiments/pysim/native/tier3_plugins/jit/trace_compiler.cxx": "9f72625e43b56ee2ec1a992642ec7ecd50c3addc7a7393ef58855901e9f8af9c",
+    "experiments/pysim/native/tier3_plugins/jit/trace_compiler_abi.hxx": "5c03bb77526897adfa9a166a755c8524d40307c790231d424d4298c19ac6c2df",
+    "experiments/pysim/tier1_core/__init__.py": "4e990d5be458f6688c26ee30e9b2baff016f20a0eea8d46b4d46ad00b1b78d28",
+    "experiments/pysim/tier1_core/bump_allocator.py": "35241775a79c0af57659388f682204093f9bd7c93d88f0c6f043a359f8f0ebf3",
+    "experiments/pysim/tier1_core/config.py": "cef7fc01b4ace9562409663e2ad67ef903935d0920821c4818be7409cef24e34",
+    "experiments/pysim/tier1_core/fnv1a.py": "8dcbbc61fbe86393e98a42e76317a72dd5b7d2ad7440abec174022de2908626c",
+    "experiments/pysim/tier1_core/interrupt_event.py": "00e8672cce9cba07c90c69d6f86b031bb4b6cf189f4e1c6c91405a9d3079db94",
+    "experiments/pysim/tier1_core/native_buffer.py": "239cadc96a2f9e7ef4356a4fb8a4ce283765076d349eb02c3d38c9045614fc05",
+    "experiments/pysim/tier1_core/native_printk.py": "dd94368a985c9d0ededc96a817c010ac44053d90c7520bd020a3117265bc0678",
+    "experiments/pysim/tier1_core/printk.py": "debc6c2d24c3bc26000bad7e7537d09334e21805cbc879392cec0b57496b6f0d",
+    "experiments/pysim/tier1_core/scheduler.py": "09370633eaa13fa481773dae4b4e96b7d400650a56f7bf48f199c115c803ac3d",
+    "experiments/pysim/tier1_core/system_containers.py": "5791f1f58a743023a08ed3bd94a7081672e343e0b6b3c5eaf5c6c5690f9a5c27",
+    "experiments/pysim/tier2_runtime/__init__.py": "dbbfed7445a542abf92cc840d9529ef1fa97b9a93d8023beb422d6d86cb7da1f",
+    "experiments/pysim/tier2_runtime/abi/__init__.py": "7d503558d2b751148d2af44ad4332eabbbbd9d549ef86e3364b5a02ee450edae",
+    "experiments/pysim/tier2_runtime/abi/interpreter_abi.hxx": "3bbeabea3deb3b780e457fcbc107a948fae7f6eebacbead552aaeb3de44bbaf1",
+    "experiments/pysim/tier2_runtime/abi/interpreter_abi.py": "4187d8d59b0d4c75fb13067f29f651fb02c9132c12366ac7099c16571089226f",
+    "experiments/pysim/tier2_runtime/abi/native_abi.hxx": "794fadf81f8c584fe9f64a4ff547521c13e0e8fb9f74a68ef5ab48fc0e8e7f1e",
+    "experiments/pysim/tier2_runtime/abi/native_abi.py": "dea7fd46a3131c7de73bcb5e79b2f465dd4d5ebacc8a82b5a0f37745a02a69fd",
+    "experiments/pysim/tier2_runtime/abi/native_stack_abi.py": "68b17932c4eb0a4d5815e62e429d49ec7b4354e5d566c2dfd17ad7289b6d5e32",
+    "experiments/pysim/tier2_runtime/hal/__init__.py": "25a666aa3c0b838af9111230d870844c99a8181f94807ad6a77d4386cecb3c77",
+    "experiments/pysim/tier2_runtime/hal/dispatch.py": "dcdc1b4cfecf78ebff665c691995d4c06f12fdb8e8fe482341c6dd63899b639f",
+    "experiments/pysim/tier2_runtime/interpreter/__init__.py": "7f66de44ec95ea903d694690e14124c121f5f11d96f1393fbc1875270b8631b5",
+    "experiments/pysim/tier2_runtime/interpreter/control_flow.py": "bd680fd90d41f2ec2fff2186d1cbaaed10a0a4d209e9f9955cfab95599bfb754",
+    "experiments/pysim/tier2_runtime/interpreter/errors.py": "53b6aed5a4f9c29261a4a6199553840fac21e667a46c9170a8885a58a1644e04",
+    "experiments/pysim/tier2_runtime/interpreter/execution_context.py": "49d9afc6c39e48094eef3b83dd3d78288d89b30a4d7a162e5b265d148f6e9eba",
+    "experiments/pysim/tier2_runtime/interpreter/execution_plugin.py": "ba05d7b815aa7d1090d6f23b087aed769fb1d399885a745b9066a714f5e3dad9",
+    "experiments/pysim/tier2_runtime/interpreter/handlers.py": "91bfb01da8aa2ff49dae074e5b7e9f3567974143c7af773ff9b7dd42fb800d68",
+    "experiments/pysim/tier2_runtime/interpreter/interpreter.py": "80442c17af9a8952b283e053994f553b97642ec87709d8bf63724f63de90863a",
+    "experiments/pysim/tier2_runtime/interpreter/utilities.py": "c998ee7adbefe602404f765312514a897b42dcfa2c62b0899b5a897e9fa278f8",
+    "experiments/pysim/tier2_runtime/memory/__init__.py": "6a8a5a73076c61836a785d47260156ad32a222bd4d9fbcb0329956a16abf60fe",
+    "experiments/pysim/tier2_runtime/memory/manager.py": "d524fc91530dc548b120605d6c3a17d0f9ec74cfc9d5861d3e2f69d32bb51a14",
+    "experiments/pysim/tier2_runtime/observability/__init__.py": "69cc81b72e4abe9020d72ac77644a352e24231e18b25be86c611d4d5889eda93",
+    "experiments/pysim/tier2_runtime/observability/events.py": "5c96cf8e766e53b797951f3f62cccd5c84b82e3388d4bc109b6e5c9462cf5799",
+    "experiments/pysim/tier2_runtime/observability/logger.py": "9d73498cb6e1be260fc314e2665c78a1f11f171dab05a0f315a6c20570eb5aa4",
+    "experiments/pysim/tier2_runtime/observability/logging_interface.py": "8a240b36ba258ccd4bac1657d4c41311fbbfd55e9adbef1424d758a775ddbc4a",
+    "experiments/pysim/tier2_runtime/runtime/__init__.py": "fa4bd76dc96af1ddc73f6748d26b392294462eafb734f1f29bfcdc353d3567f5",
+    "experiments/pysim/tier2_runtime/runtime/composer.py": "369817ce4682b465df4a90e761cc12b81bbe7381673f27d949fbf49a4a420895",
+    "experiments/pysim/tier2_runtime/runtime/engine.py": "72e0b9cb6d64bbc9e3fdb6e9d7b6377a2e985df8795d8ff64220e3d4f7959e4e",
+    "experiments/pysim/tier2_runtime/runtime/python_api.py": "5c2b3db1be5f25cad0675420f4001219d720b30414a3f61ec4c52eb46b4ef076",
+    "experiments/pysim/tier2_runtime/runtime/recovery.py": "884c1fe67557d7d68d26d3eec216aa62e70150dc59bde2bc46d8e5945559618f",
+    "experiments/pysim/tier2_runtime/syscall/__init__.py": "e06047079b0e590e15bfc46a3427cb84bf07a1bdd67753f32259d42e96c0e433",
+    "experiments/pysim/tier2_runtime/syscall/hostcall.py": "b7c90823032e961e4aa777a950464b1e8852d1429c4bac51df51d112afed6993",
+    "experiments/pysim/tier2_runtime/vmmio/__init__.py": "4602613421366ce273c86a870b97e8ecc486fde7ee0b0d84520761b25d141c22",
+    "experiments/pysim/tier2_runtime/vmmio/controller.py": "7d0954853113034e2b1266e53b733c93d369a0b45a20a6a239a840250d9c9a85",
+    "experiments/pysim/tier2_runtime/vsoc/__init__.py": "c9d6cba6e8ee9861137db7a135c7d362c50124617a8a3562bfdd4b0816cec8f2",
+    "experiments/pysim/tier2_runtime/vsoc/virq.py": "2e0c5863af8f99e45ecc5b7658483e66e40698cab0d1b5f7cbe457aeaa48c9ea",
+    "experiments/pysim/tier2_runtime/wasm/__init__.py": "f79c4ca12ce71de0442d4819ed4104c1154d9798eb8ee42d72413036ebb8c80c",
+    "experiments/pysim/tier2_runtime/wasm/binary.py": "3959f0a686a9400643a696c77b75aa28db974456a99169885ab856949fd1cbbf",
+    "experiments/pysim/tier2_runtime/wasm/builder.py": "d3dfb3e5f28d4c7db420d1d33b8b72ea88f0aa1862641c1b877c731752af5c82",
+    "experiments/pysim/tier2_runtime/wasm/leb128.py": "71c4142722ca69bd1b921751fe77bcb1230975726e24aa3f29617581b44dff83",
+    "experiments/pysim/tier2_runtime/wasm/module.py": "8c28f30dc4cf94ae4222a904e70c848a34fdedc2e32461d82186796d574e65be",
+    "experiments/pysim/tier2_runtime/wasm/opcodes.py": "9cb404b11f75fb29d49c193d74427595a7673591d694fea7e87795fe359a8b4e",
+    "experiments/pysim/tier2_runtime/wasm/reader.py": "4a8b6f5b8b7ac75ef671d3313035569f02d3aab553e307e702cb37109646b064",
+    "experiments/pysim/tier2_runtime/wasm/validation.py": "2ba8d2b58a63220d1e6d35eaef9dcdec973074b92473ff1e6ebe04542c945ada",
+    "experiments/pysim/tier3_plugins/__init__.py": "2f9988c91457b787d6c20e77c716529794822f77f7cde1fbc31af14def1939c4",
+    "experiments/pysim/tier3_plugins/debugger/__init__.py": "f7f5f531063817a4d58ec09b7b47179d758b0db90506d9502eb1491867841a73",
+    "experiments/pysim/tier3_plugins/debugger/debugger.py": "1c8e877f598ab2e132fc01b4b4717de85b93df249c8273cf1cdb62c3cd0632b0",
+    "experiments/pysim/tier3_plugins/debugger/gdb_server.py": "34e18ec6c0bb8d2961d91e4ac7eef5302e4bc7023debc0df2359839343f7194b",
+    "experiments/pysim/tier3_plugins/jit/__init__.py": "e5ea8dbb981b837dd70a9736bf8692d7ac18a5d0e781595ee7afd594576e35eb",
+    "experiments/pysim/tier3_plugins/jit/jit_manager.py": "2d02f19f43014933e5201a5903c5e37ec7fd88c9c6cbe9023e2a1d38ee8d7c66",
+    "experiments/pysim/tier3_plugins/jit/native_abi.py": "f49b37135a1abc118d100a7886499a6546792a3c86420ffea10bf9199ebf1d40",
+    "experiments/pysim/tier3_plugins/logger/__init__.py": "e3b1ccf917e2925cf73ef9cb8965b3c80a5baadecc256ec7dc49dab30daae2e6",
+    "experiments/pysim/tier3_plugins/logger/logger.py": "8c643aff4a41a4022178f77fcdbea748a6b92e973633fb29c6d6c7cd8d65572c",
+    "experiments/pysim/tier3_plugins/profiler/__init__.py": "acd1a7c574d25174bff1dc6a221fd9c452a430b9030391b09f24e7bf88548049",
+    "experiments/pysim/tier3_plugins/profiler/guest_profiler.py": "48f1d0be974c386d94da695a29bf49ba57bff4f5e04a36a5be6b6cec88526e7a",
+    "experiments/pysim/benchmarks/aobench/bench_native_build.py": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+    "experiments/pysim/benchmarks/aobench/bench_wamr.py": "e8297e8f42c076f16e34cd0c9441fd2d38072c769b127b446edcbcac6428cc4b",
+    "experiments/pysim/benchmarks/aobench/compare_wamr.py": "5f22380a85a849f2276744b8156886ebce90c9ffef730e62697e1c4d845f5826",
+    "experiments/pysim/benchmarks/aobench/aobench.wasm": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+    "tools/jit_stencil_gen/generate_assembly.py": "03ebd242a7a8b7a5be31d5ccbc072b0c31febc43b156623cde8c8855ad322d74",
+    "tools/jit_stencil_gen/abi_probe.cxx": "3aa505b7d231c9174f5c41644ae86a58221f5c5bd8c1308d19ef6742bf95c780"
+  },
+  "library_sha256": {
+    "/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so": "9206d765df7fb47f58803bd4dca8e74ba262c20f17aef2fd1ad56173dca1a431",
+    "/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier3_plugins/jit/libtrace_compiler.so": "582a7083479fe28e4d48636d77ef39de38b06534b5a7474463e6237410676cb9",
+    "/tmp/fireball-wamr-fast-o3/libiwasm.so": "2a288b7b4e74de2bc26693cb51c6e34b9160f45b4f037a5e9e4deaa8f708a960"
+  },
+  "measurement_order": [
+    {
+      "trial": 1,
+      "engine": "interpreter",
+      "yield_threshold": 4096
+    },
+    {
+      "trial": 1,
+      "engine": "interpreter",
+      "yield_threshold": 4294967295
+    },
+    {
+      "trial": 1,
+      "engine": "jit",
+      "yield_threshold": 4096
+    },
+    {
+      "trial": 1,
+      "engine": "jit",
+      "yield_threshold": 4294967295
+    },
+    {
+      "trial": 2,
+      "engine": "interpreter",
+      "yield_threshold": 4294967295
+    },
+    {
+      "trial": 2,
+      "engine": "jit",
+      "yield_threshold": 4096
+    },
+    {
+      "trial": 2,
+      "engine": "jit",
+      "yield_threshold": 4294967295
+    },
+    {
+      "trial": 2,
+      "engine": "interpreter",
+      "yield_threshold": 4096
+    },
+    {
+      "trial": 3,
+      "engine": "jit",
+      "yield_threshold": 4096
+    },
+    {
+      "trial": 3,
+      "engine": "jit",
+      "yield_threshold": 4294967295
+    },
+    {
+      "trial": 3,
+      "engine": "interpreter",
+      "yield_threshold": 4096
+    },
+    {
+      "trial": 3,
+      "engine": "interpreter",
+      "yield_threshold": 4294967295
+    }
+  ],
+  "processes": [
+    {
+      "engine": "interpreter",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        472.13583,
+        465.411742,
+        490.416141,
+        472.316738,
+        469.338657,
+        515.089953,
+        573.495512
+      ],
+      "median_ms": 472.316738,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9206d765df7fb47f58803bd4dca8e74ba262c20f17aef2fd1ad56173dca1a431",
+      "jit_library_sha256": "582a7083479fe28e4d48636d77ef39de38b06534b5a7474463e6237410676cb9",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+    },
+    {
+      "engine": "interpreter",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4294967295,
+      "samples_ms": [
+        450.939955,
+        465.255621,
+        453.576099,
+        451.577996,
+        458.544106,
+        462.271308,
+        459.154346
+      ],
+      "median_ms": 458.544106,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9206d765df7fb47f58803bd4dca8e74ba262c20f17aef2fd1ad56173dca1a431",
+      "jit_library_sha256": "582a7083479fe28e4d48636d77ef39de38b06534b5a7474463e6237410676cb9",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+    },
+    {
+      "engine": "jit",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        557.921295,
+        549.02515,
+        565.872565,
+        549.191722,
+        549.106222,
+        552.243801,
+        554.745575
+      ],
+      "median_ms": 552.243801,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9206d765df7fb47f58803bd4dca8e74ba262c20f17aef2fd1ad56173dca1a431",
+      "jit_library_sha256": "582a7083479fe28e4d48636d77ef39de38b06534b5a7474463e6237410676cb9",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+    },
+    {
+      "engine": "jit",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4294967295,
+      "samples_ms": [
+        536.614493,
+        532.390834,
+        521.247042,
+        546.692785,
+        549.336943,
+        548.233462,
+        555.021399
+      ],
+      "median_ms": 546.692785,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9206d765df7fb47f58803bd4dca8e74ba262c20f17aef2fd1ad56173dca1a431",
+      "jit_library_sha256": "582a7083479fe28e4d48636d77ef39de38b06534b5a7474463e6237410676cb9",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+    },
+    {
+      "engine": "interpreter",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4294967295,
+      "samples_ms": [
+        453.268464,
+        457.107884,
+        453.470621,
+        455.49927,
+        450.1401,
+        459.892094,
+        460.394583
+      ],
+      "median_ms": 455.49927,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9206d765df7fb47f58803bd4dca8e74ba262c20f17aef2fd1ad56173dca1a431",
+      "jit_library_sha256": "582a7083479fe28e4d48636d77ef39de38b06534b5a7474463e6237410676cb9",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+    },
+    {
+      "engine": "jit",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        560.676501,
+        550.049474,
+        565.089432,
+        551.961545,
+        549.068582,
+        554.821366,
+        554.724215
+      ],
+      "median_ms": 554.724215,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9206d765df7fb47f58803bd4dca8e74ba262c20f17aef2fd1ad56173dca1a431",
+      "jit_library_sha256": "582a7083479fe28e4d48636d77ef39de38b06534b5a7474463e6237410676cb9",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+    },
+    {
+      "engine": "jit",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4294967295,
+      "samples_ms": [
+        530.704996,
+        539.841809,
+        521.872029,
+        545.516457,
+        535.368616,
+        541.206218,
+        549.252966
+      ],
+      "median_ms": 539.841809,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9206d765df7fb47f58803bd4dca8e74ba262c20f17aef2fd1ad56173dca1a431",
+      "jit_library_sha256": "582a7083479fe28e4d48636d77ef39de38b06534b5a7474463e6237410676cb9",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+    },
+    {
+      "engine": "interpreter",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        468.737704,
+        461.119627,
+        492.28981,
+        463.620848,
+        465.586028,
+        485.182246,
+        475.199713
+      ],
+      "median_ms": 468.737704,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9206d765df7fb47f58803bd4dca8e74ba262c20f17aef2fd1ad56173dca1a431",
+      "jit_library_sha256": "582a7083479fe28e4d48636d77ef39de38b06534b5a7474463e6237410676cb9",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+    },
+    {
+      "engine": "jit",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        572.052206,
+        567.989148,
+        582.024621,
+        566.479359,
+        824.114824,
+        828.029265,
+        607.890348
+      ],
+      "median_ms": 582.024621,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9206d765df7fb47f58803bd4dca8e74ba262c20f17aef2fd1ad56173dca1a431",
+      "jit_library_sha256": "582a7083479fe28e4d48636d77ef39de38b06534b5a7474463e6237410676cb9",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+    },
+    {
+      "engine": "jit",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4294967295,
+      "samples_ms": [
+        535.116255,
+        535.123898,
+        524.527489,
+        542.236563,
+        533.393046,
+        540.142281,
+        544.229665
+      ],
+      "median_ms": 535.123898,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9206d765df7fb47f58803bd4dca8e74ba262c20f17aef2fd1ad56173dca1a431",
+      "jit_library_sha256": "582a7083479fe28e4d48636d77ef39de38b06534b5a7474463e6237410676cb9",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+    },
+    {
+      "engine": "interpreter",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        477.140437,
+        477.609854,
+        481.641473,
+        483.557692,
+        481.186414,
+        492.277548,
+        480.681991
+      ],
+      "median_ms": 481.186414,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9206d765df7fb47f58803bd4dca8e74ba262c20f17aef2fd1ad56173dca1a431",
+      "jit_library_sha256": "582a7083479fe28e4d48636d77ef39de38b06534b5a7474463e6237410676cb9",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+    },
+    {
+      "engine": "interpreter",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4294967295,
+      "samples_ms": [
+        454.660784,
+        452.148752,
+        454.50877,
+        462.032932,
+        464.519807,
+        458.944505,
+        460.677742
+      ],
+      "median_ms": 458.944505,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9206d765df7fb47f58803bd4dca8e74ba262c20f17aef2fd1ad56173dca1a431",
+      "jit_library_sha256": "582a7083479fe28e4d48636d77ef39de38b06534b5a7474463e6237410676cb9",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+    }
+  ],
+  "summary": [
+    {
+      "engine": "interpreter",
+      "median_ms": {
+        "4096": 472.316738,
+        "4294967295": 458.544106
+      },
+      "process_median_range_ms": {
+        "4096": [
+          468.737704,
+          481.186414
+        ],
+        "4294967295": [
+          455.49927,
+          458.944505
+        ]
+      },
+      "max_time_reduction_pct": 2.9159737294764287
+    },
+    {
+      "engine": "jit",
+      "median_ms": {
+        "4096": 554.724215,
+        "4294967295": 539.841809
+      },
+      "process_median_range_ms": {
+        "4096": [
+          552.243801,
+          582.024621
+        ],
+        "4294967295": [
+          535.123898,
+          546.692785
+        ]
+      },
+      "max_time_reduction_pct": 2.682847728217519
+    }
+  ]
+}

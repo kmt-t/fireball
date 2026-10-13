@@ -1,0 +1,15 @@
+{
+  "source_files_match_original": 105,
+  "product_libraries_match_original_sha256": true,
+  "new_git_status_entries": [
+    "?? experiments/pysim/benchmarks/results/interpreter_cost_20261012/"
+  ],
+  "existing_git_status_entries_removed": [],
+  "markdown_tables_checked": 8,
+  "scripts_compile": true,
+  "output_hashes_match_in_120_processes": true,
+  "selected_tests": "11 passed, 163 deselected",
+  "ruff": "passed",
+  "standard_source_gate": "failed: release assertion test and QA counter-dependent tests; lint fixed separately",
+  "standard_document_gate": "unsupported result path outside docs"
+}

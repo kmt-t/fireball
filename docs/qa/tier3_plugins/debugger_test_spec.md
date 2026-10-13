@@ -102,7 +102,7 @@ QAブロックドライバはローダメタデータ取得と既存のブロッ
 | TEST-DBG-09/10 | `test_dbg_09_interior_breakpoint_stops_before_side_effect_and_resumes` | ブロック内の停止命令をCode section payload相対PCで指定し、書いたlocal0=7を使用して結果17へ継続する |
 | TEST-DBG-10 | `test_dbg_10_call_and_return_stop_at_selected_function` | call/call_indirectでcallee先頭、endでcaller次命令へ止まり、結果12を得る |
 | TEST-DBG-10 | `test_dbg_10_branch_stop_retains_control_state` | ifの真偽それぞれの固定PC列と全stackを照合する |
-| TEST-DBG-10 | `test_dbg_10_loop_stop_keeps_local_and_control_frame_history` | 2回のloopのPC・値履歴を照合し、結果0へ継続する |
+| TEST-DBG-10 | `test_dbg_10_loop_stop_keeps_local_and_operand_history` | 2回のloopのPC・値履歴を照合し、結果0へ継続する。実行時制御フレームは保持しない |
 | TEST-DBG-10 | `test_dbg_10_store_does_not_execute_early_or_damage_other_bytes` | 各停止後の全65536byteを照合し、後続storeの先行実行を検出する |
 | TEST-DBG-10 | `test_dbg_10_immediate_is_one_instruction` | 多byte LEB128とi64/f32/f64の固定PC・全生ワードを照合する |
 | TEST-DBG-10 | `test_dbg_10_host_boundary_does_not_replay_the_import` | host importの引数7を1回だけ記録し、後続命令を先行実行しない |

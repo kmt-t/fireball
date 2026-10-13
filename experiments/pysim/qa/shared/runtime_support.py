@@ -121,6 +121,7 @@ def compile_module_block(
     function_index = block.func_index
     function = module.functions[function_index - len(module.imports)]
     assert function.local_layout_cache is not None
+    annotations = function.interpreter_annotation_pool
     block_index = module.block_storage.view().find(fold_mix32(block.head_pc))
     assert block_index is not None
     assert module.blocks[block_index].head_pc == block.head_pc
@@ -138,12 +139,18 @@ def compile_module_block(
             frame_depth=block.frame_depth,
             locals=native_abi.NativeLocalLayout(
                 offsets=native_abi.NativeByteView(layout.offsets_address, layout.count * 2),
-                sizes=native_abi.NativeByteView(layout.sizes_address, layout.count),
                 types=native_abi.NativeByteView(layout.types_address, layout.count),
                 local_count=layout.count,
                 total_words=layout.total_words,
             ),
             block_index=block_index,
+            next_block_index=block.next_block_index,
+            loops_to_block_index=block.loops_to_block_index,
+            interpreter_annotations=native_abi.NativeByteView(
+                0 if annotations is None else annotations.native_address,
+                0 if annotations is None else len(annotations),
+            ),
+            interpreter_annotation_byte_offset=block.interpreter_annotation_byte_offset,
         )
     )
 

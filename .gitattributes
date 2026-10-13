@@ -29,4 +29,8 @@
 *.ico binary
 *.db binary
 
-
+# Preserve captured benchmark evidence byte-for-byte, including patch context.
+experiments/pysim/benchmarks/results/** -text
+experiments/pysim/benchmarks/results/**/*.patch -whitespace
+experiments/pysim/benchmarks/results/latest/*.log -whitespace
+experiments/pysim/benchmarks/results/**/*.csv whitespace=trailing-space,space-before-tab,cr-at-eol

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from system_containers import SequenceView
+from tier2_runtime.wasm.validation import reject_wasm, require_wasm
 
 
 def decode_unsigned(
@@ -19,18 +20,18 @@ def decode_unsigned(
     shift = 0
     max_bytes = (bits + 6) // 7
     for _ in range(max_bytes):
-        assert offset < limit, "truncated unsigned LEB128 integer"
+        require_wasm(offset < limit, "truncated unsigned LEB128 integer")
         byte = data[offset]
         offset += 1
         payload = byte & 0x7F
         remaining_bits = bits - shift
         if remaining_bits < 7:
-            assert payload < (1 << remaining_bits), "unsigned LEB128 integer exceeds width"
+            require_wasm(payload < (1 << remaining_bits), "unsigned LEB128 integer exceeds width")
         result |= payload << shift
         if byte & 0x80 == 0:
             return result, offset
         shift += 7
-    assert False, f"unsigned LEB128 integer exceeds maximum {max_bytes} bytes"
+    reject_wasm(f"unsigned LEB128 integer exceeds maximum {max_bytes} bytes")
 
 
 def decode_signed(
@@ -47,7 +48,7 @@ def decode_signed(
     shift = 0
     max_bytes = (bits + 6) // 7
     for _ in range(max_bytes):
-        assert offset < limit, "truncated signed LEB128 integer"
+        require_wasm(offset < limit, "truncated signed LEB128 integer")
         byte = data[offset]
         offset += 1
         payload = byte & 0x7F
@@ -66,8 +67,8 @@ def decode_signed(
                 result |= -(1 << consumed_bits)
             minimum = -(1 << (bits - 1))
             maximum = (1 << (bits - 1)) - 1
-            assert minimum <= result <= maximum, "signed LEB128 integer exceeds width"
+            require_wasm(minimum <= result <= maximum, "signed LEB128 integer exceeds width")
             return result, offset
-        assert remaining_bits > 7, f"signed LEB128 integer exceeds maximum {max_bytes} bytes"
+        require_wasm(remaining_bits > 7, f"signed LEB128 integer exceeds maximum {max_bytes} bytes")
         shift += 7
-    assert False, f"signed LEB128 integer exceeds maximum {max_bytes} bytes"
+    reject_wasm(f"signed LEB128 integer exceeds maximum {max_bytes} bytes")

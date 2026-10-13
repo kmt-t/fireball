@@ -1,0 +1,84 @@
+{
+  "label": "after",
+  "trial": 1,
+  "compiler": "Ubuntu clang version 21.1.8 (6ubuntu1)",
+  "stencils": {
+    "output_directory": "/tmp/fireball-jit-stencils-after",
+    "roles": [
+      {
+        "role": "trace",
+        "command": [
+          "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+          "/home/t-matsu/workspace/mysrc/fireball/tools/jit_stencil_gen/generate_assembly.py",
+          "/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/native/tier3_plugins/jit/lir/x64/trace.S",
+          "--role",
+          "trace",
+          "--output-dir",
+          "/tmp/fireball-jit-stencils-after",
+          "--header",
+          "stencils.hxx",
+          "--binary",
+          "stencils.bin",
+          "--namespace",
+          "generated"
+        ],
+        "elapsed_ms": 204.82545800041407,
+        "text_bytes": 660,
+        "text_sha256": "3b313cd08b858e336fa9c08fb83e676233c515e285a035a97c33f93eaf43d331",
+        "input_sha256": "4ff608902f3078d2334eec8384a04ff025858109728574824fb9ca5dc925b90b"
+      },
+      {
+        "role": "operations",
+        "command": [
+          "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+          "/home/t-matsu/workspace/mysrc/fireball/tools/jit_stencil_gen/generate_assembly.py",
+          "/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/native/tier3_plugins/jit/lir/x64/operations.S",
+          "--role",
+          "operations",
+          "--output-dir",
+          "/tmp/fireball-jit-stencils-after",
+          "--header",
+          "asm_stencils.hxx",
+          "--binary",
+          "asm_stencils.bin",
+          "--namespace",
+          "asm_generated"
+        ],
+        "elapsed_ms": 213.03870400151936,
+        "text_bytes": 1531,
+        "text_sha256": "25dbeaf611e7f794639a7a883eece4b5fd4cf9d02721493108c91dad0454a6e0",
+        "input_sha256": "181fca74ff12be3d04754d8e60be5a9ea8125ee6a5b45887477eecf466e688fb"
+      },
+      {
+        "role": "common",
+        "command": [
+          "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+          "/home/t-matsu/workspace/mysrc/fireball/tools/jit_stencil_gen/generate_assembly.py",
+          "/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/native/tier3_plugins/jit/lir/x64/common.S",
+          "--role",
+          "common",
+          "--output-dir",
+          "/tmp/fireball-jit-stencils-after",
+          "--header",
+          "common_code.hxx",
+          "--binary",
+          "common_code.bin",
+          "--namespace",
+          "generated"
+        ],
+        "elapsed_ms": 187.90321100095753,
+        "text_bytes": 57,
+        "text_sha256": "8da3962f1cba6c4f1f74fdbc70969d67967b6e54957fdfdae05a67a4aa6b4023",
+        "input_sha256": "4b6b42f25a5779388332b5bd7eb7f8508fb5716e7d884b5dde3e35867fdae250"
+      }
+    ],
+    "total_text_bytes": 2248
+  },
+  "trace_composition": {
+    "fixture": "local.get 0; i32.const 1; i32.add; local.set 0",
+    "trace_count": 10000,
+    "elapsed_ms": 314.3697159976,
+    "us_per_trace": 31.43697159976,
+    "traces_per_second": 31809.679785047563
+  }
+}

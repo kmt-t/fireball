@@ -43,7 +43,7 @@ PySIMのWASMリニアメモリは論理ゲストメモリであり、MCUの物�
 | アリーナへ計上する対象 | 計上方法 |
 | :--- | :--- |
 | WASMの型、関数、インポート、エクスポート、グローバル変数、テーブルの記述情報 | Loaderのレコード件数と参照レイアウトの単価から求める |
-| 関数型索引、局所変数型、局所変数幅、基本ブロックと検索索引 | Loaderが解析したモジュールに対応する領域を確保する |
+| 関数型索引、局所変数型、局所変数幅、基本ブロックと直接参照metadata | Loaderが解析したモジュールに対応する領域を確保する |
 | 実体のグローバル変数と関数テーブル | インスタンス生成時に確保する |
 | ネイティブ実行用のモジュール、関数、型、テーブル、ブロックの借用記述 | 初回実行時にホストABIの構造体サイズから計上する |
 | 実行コンテキスト、値スタック、局所変数スタック、呼出し情報、制御情報 | 呼出しワークスペースを確保し、後続呼出しで再利用する |
@@ -101,7 +101,7 @@ uv run python experiments/pysim/benchmarks/memory/bench_runtime_memory.py \
 
 表の「ゲスト論理リニアメモリ」はWASMの論理サイズである。PySIMではホストbytearrayがbackingとなるが、Cortex-M33の物理RAM量ではない。対象のCortex-M33構成では論理アドレス窓10KB、物理RAM全体32KBを別々に扱う。このホスト測定で64KBと表示される値を物理RAMへ加算してはならない。
 
-Hybrid JITのアリーナ使用量はInterpreter単独と同じだった。この計測はJIT管理領域とアリーナ使用量を対象とし、native compilerのC++ stackは含まない。現行trace compilerは最大1,584バイトの出力を実行コードregion内に構成する。trace compile中のC++ stack peak、追加scratch領域、現行のarena使用量はこの測定では確定していない。
+Hybrid JITのアリーナ使用量はInterpreter単独と同じだった。この計測はJIT管理領域とアリーナ使用量を対象とし、native compilerのC++ stackは含まない。現行trace compilerは最大1,568バイトの出力を実行コードregion内に構成する。trace compile中のC++ stack peak、追加scratch領域、現行のarena使用量はこの測定では確定していない。
 
 現行x64製品JIT runtimeの固定管理構造体は`sizeof`で1,584バイトである。
 3バンク分のentryは840バイトである。
@@ -149,7 +149,7 @@ Python管理オブジェクトとFFIの一時領域はホスト専用であり�
 
 <!-- traceability: {Resource_Estimation_Model} {GLOBAL_StrictMemoryLimit} {JIT_AssemblyStencilCodegen} {JIT_RuntimeAPI} -->
 1トレースのWASM命令数上限は64命令である。
-生成するtrace blobは最大1,584バイトで、48バイトheaderと最大1,536バイトのassembly機械語本体・alignment padding・定数領域を含む。
+生成するtrace blobは最大1,568バイトで、32バイトheaderと最大1,536バイトのassembly機械語本体・alignment padding・定数領域を含む。
 コンパイル中の共有operand stack深さの上限は128 wordである。
 C++フロントエンドは復号済み命令列とoperation symbol列を固定長配列へ一時保持する。
 build時に`operations.S`、`trace.S`、`common.S`をアセンブルし、生成したraw binaryとmetadataをC++ byte array headerへ出力する。trace compile時はC++が選択済みoperationを固定長出力へ合成し、成功接続slotを後続stencilで置き換える。命令列内の条件分岐は合成後の位置に合わせて再配置する。
@@ -157,7 +157,7 @@ Loaderが受理したopcodeに直接assembly stencilがない場合はJIT Runtim
 
 | コンパイル中の領域 | 容量と配置 | 計上場所 |
 | :--- | ---: | :--- |
-| 出力blob（header 48バイト + body・定数領域1,536バイト） | 最大1,584バイト | x64実行コードregion内 |
+| 出力blob（header 32バイト + body・定数領域1,536バイト） | 最大1,568バイト | x64実行コードregion内 |
 | WASM decode staging | 64件×16バイト = 1,024バイト | `compile_wasm_trace`のC++ stack frame内 |
 | operation view列 | x64 ABIで64件×96バイト = 6,144バイト | `trace_builder`のC++ stack frame内 |
 | 定数pool staging | 最大321件×16バイト = 5,136バイト | `trace_builder`のC++ stack frame内 |
@@ -282,3 +282,91 @@ Python参照実装とPySIM native参照実装のSLOCは製品firmwareへ加え�
 ARMv8-MのRAMおよびROM適合は未判定である。
 対象ボード、ARM ABI、JIT配置とMPU境界、リンクmap、全体のstack・IPC・driver構成が未確定である。
 これらを確定した後に、同時生存領域とROM load imageを重複なく計上する。
+
+## 9. Interpreter BasicBlock index metadataの増分（2026-10-13）
+
+<!-- traceability: {Resource_Estimation_Model} {GLOBAL_StrictMemoryLimit} -->
+AO-Bench WASMをLoaderで読み、基本ブロックindexを注釈プールとBasicBlock metadataへ保存する変更の増分を計測した。計測入口とコマンド、ソース識別子は[`REPORT.md`](experiments/pysim/benchmarks/results/block_index_dispatch_20261013/REPORT.md)に記録した。比較対象はu16命令幅を含む変更前Step 0の測定値である。
+
+| 項目 | 変更前 | 変更後 | 増加量 | 増加率 |
+| :--- | ---: | ---: | ---: | ---: |
+| Interpreter注釈プール | 2,456 byte | 2,944 byte | 488 byte | 19.87% |
+| BasicBlock記述 | 2,996 byte（107 × 28） | 3,852 byte（107 × 36） | 856 byte | 28.57% |
+| Loader arena合計 | 25,756 byte | 27,100 byte | 1,344 byte | 5.22% |
+| x64 JIT境界metadata | 24 byte | 24 byte | 0 byte | 0% |
+
+Loader arenaの増加1,344 byteは、注釈プールの488 byteとBasicBlock記述の856 byteの合計と一致する。既定容量131,072 byteに対する使用量は25,756 byteから27,100 byteへ増え、20.68%を使う。差分は容量の約1.03%である。x64 JIT境界metadataの`block_index`は24-byte recordの予約欄を利用するため、record自体のサイズは増えない。
+
+Loader arenaとは別に、x64 runtime ABIではExecutionContextが160 byteから168 byte（+8 byte/実行コンテキスト）、CallFrameが40 byteから48 byte（+8 byte/frame）へ増える。32枠のCallStackは1,288 byteから1,544 byte（+256 byte）となる。FunctionExecutionViewは104 byteから112 byte（+8 byte/function）であり、AO-Benchの6定義関数分では48 byte増える。これらを対象実装のworkspace計上へ加える際は、同時に生存する個数を確定してから加算し、Loader arena増分と混同しない。
+
+この確認はx86_64 PySIM Loader arena上のAO-Bench入力に限る。ExecutionContextやCallFrameなど固定runtime ABI構造体のサイズ、およびARMv8-Mの物理RAM配置はこのarena測定に含めない。物理RAM 32KBへの適合を証明しない。
+
+## 10. 注釈poolと座標型の縮小（2026-10-13）
+
+<!-- traceability: {Resource_Estimation_Model} {GLOBAL_StrictMemoryLimit} {Loader_BasicBlockIndex} -->
+Interpreter注釈を実行時に必要な導出値へ絞り、BasicBlock番号とframe word位置をu16にした。固定長命令の幅recordを除去し、可変LEB命令だけu8幅を保持する。PC索引行はu32 folded PCとu16 block番号を6 byteのbyte列で格納し、構造体paddingを避ける。入力WASMとLoader計測値、コマンドは[`REPORT.md`](experiments/pysim/benchmarks/results/annotation_types_20261013/REPORT.md)に記録した。
+
+| 対象 | AO-Bench変更前 | AO-Bench変更後 | 増減 | 増減率 |
+| :--- | ---: | ---: | ---: | ---: |
+| Interpreter注釈pool | 2,944 byte | 1,712 byte | −1,232 byte | −41.85% |
+| BasicBlock記述 | 3,852 byte（107 × 36） | 3,424 byte（107 × 32） | −428 byte | −11.11% |
+| Block PC索引 | 856 byte（107 × 8） | 642 byte（107 × 6） | −214 byte | −25.00% |
+| Radix表 | 68 byte（17 × 4） | 34 byte（17 × 2） | −34 byte | −50.00% |
+| Loader arena実測 | 27,100 byte | 21,444 byte | −5,656 byte | −20.87% |
+
+| 対象 | profile suite変更前 | profile suite変更後 | 増減 | 増減率 |
+| :--- | ---: | ---: | ---: | ---: |
+| Interpreter注釈pool | 36,090 byte | 20,177 byte | −15,913 byte | −44.09% |
+| BasicBlock記述 | 31,860 byte（885 × 36） | 28,320 byte（885 × 32） | −3,540 byte | −11.11% |
+| Block PC索引 | 7,080 byte（885 × 8） | 5,310 byte（885 × 6） | −1,770 byte | −25.00% |
+| Radix表 | 68 byte（17 × 4） | 34 byte（17 × 2） | −34 byte | −50.00% |
+| Loader arena実測 | 366,520 byte | 287,586 byte | −78,934 byte | −21.54% |
+
+Loader arena全体の減少には、4項目に列挙した記録幅以外の差がAO-Benchで−3,748 byte、profile suiteで−57,677 byte含まれる。前回記録の基準snapshotと今回のLoader割当全体を再比較した残差であり、この依頼の4項目の削減効果へ帰属させない。AO-Benchの現在容量131,072 byteに対する計測使用量は21,444 byte（16.36%）である。profile suiteの現在容量2,000,000 byteに対する計測使用量は287,586 byte（14.38%）である。profile suiteの注釈poolとarenaは、`br_table`にu8制御深さを加えた後の再計測値である。保存済みIJ測定の20,121 byteは以前の注釈形式を測った値であり、現行形式との直接比較には用いない。
+
+JITのx64 trace headerは40 byteから32 byteへ8 byte（20.00%）減り、trace exit metadataは24 byteから20 byteへ4 byte（16.67%）減った。`jit_cache_entry`は32bit `code_offset_t`を保持するため8 byteから12 byteとなる。設定済み72 entry全てを使う場合、descriptor領域は576 byteから864 byteへ288 byte（50%）増える。AO-Benchの6定義関数ではFunctionExecutionViewが112 byteから88 byteへ縮み、合計144 byte減る。現在のABIサイズはloader計測JSONに記録した。JIT管理recordとFunctionExecutionViewはLoader arena外のruntime metadataであり、相互の差分を相殺してLoader arenaの値に混ぜない。これらはx64 host構造の実測であり、ARMv8-Mの配置や物理RAM適合を示さない。
+
+## 11. JIT定数poolの注釈複製削除（2026-10-13）
+
+<!-- traceability: {Resource_Estimation_Model} {GLOBAL_StrictMemoryLimit} -->
+JIT traceのconstant poolからInterpreter annotation bytesの複製を除き、trace単位header相対参照と終端record内のannotation byte offsetへ置き換えた。各Runtime API recordはslot/count/spanをu8化し、source IPは`code_ip_t`、immediateは値の型幅で保持する。計測コマンド、WASM・native libraryのSHA-256、項目別の診断値は[`REPORT.md`](experiments/pysim/benchmarks/results/jit_const_pool_20261013/REPORT.md)に記録した。
+
+| 対象 | AO-Bench変更前 | AO-Bench変更後 | 増減 | 増減率 |
+| :--- | ---: | ---: | ---: | ---: |
+| JIT constant pool累積生成量 | 165,493 byte | 129,234 byte | −36,259 byte | −21.91% |
+| Interpreter注釈複製 | 23,077 byte | 0 byte | −23,077 byte | −100.00% |
+| profile suite constant pool累積生成量 | 8,963 byte | 6,431 byte | −2,532 byte | −28.25% |
+| profile suite Interpreter注釈複製 | 867 byte | 0 byte | −867 byte | −100.00% |
+
+AO-Bench 320×180では、header参照は69,120 byteから33,368 byte、slot/countは35,256 byteから17,368 byte、source IPは35,256 byteから34,736 byte、Runtime API immediateは2,784 byteから1,710 byteへ減った。変更後にrecord span 8,684 byteとtrace annotation offset 33,368 byteを加えた。profile suiteでは同じ項目順に3,052/1,864/1,864/1,316/867 byteから1,188/932/1,864/809/0 byteとなり、span 466 byte、annotation offset 1,172 byteを加えた。
+
+このpool値は一回のAO-Benchまたはcompile-all診断中に生成したtrace bytesの累積であり、同時常駐RAMの実測値ではない。個々のtraceは固定容量cacheへ配置され、容量予約とcompiler staging配列のサイズはこの変更で変わらない。pool縮小はtraceごとの配置量を下げ、固定cache内に保持できるtrace数へ影響する。ピーク同時常駐量をRAM見積もりへ加算する場合は、cache occupancyとevictionを別途計測する。x86_64 PySIMの結果であり、ARMv8-MのRAM/ROM適合は示さない。
+
+## 12. `br_table`注釈と容量計算（2026-10-13）
+
+<!-- traceability: {Resource_Estimation_Model} {GLOBAL_StrictMemoryLimit} {Loader_BasicBlockIndex} -->
+`br_table`の注釈をu16 label countと、defaultを含む各targetのu8制御深さ・u16 BasicBlock番号へ統一した。書き込み量は`2 + 3 × (label_count + 1)` byteであり、Loaderは容量計算値と実書込量の一致をassertする。WASMごとのlabel数、bytecodeから再構成した旧二重書き形式との比較、計測ファイルは[`br_table_measurement.json`](experiments/pysim/benchmarks/results/jit_const_pool_20261013/br_table_measurement.json)と[`REPORT.md`](experiments/pysim/benchmarks/results/jit_const_pool_20261013/REPORT.md)にある。
+
+profile suiteには11個の`br_table`があり、defaultを含むtarget recordは56個である。旧形式のcount・深さをu32で保持する領域とtarget recordを合わせると436 byte、現行形式は190 byteであり、再構成値で246 byte（56.42%）を削減する。AO-Benchには`br_table`がないため、注釈poolは変わらない。前回のIJ測定snapshot 20,121 byteは、旧二重書きlayoutの実測値ではなく、source SHAも異なる。現行sourceで再計測したprofile suite注釈poolは20,177 byteであり、この差分は現在のtarget recordに制御深さを追加した56 byteである。異なるlayoutのsnapshot同士を同じbaselineとして扱わない。
+
+## 13. Interpreter実行metadataとruntime frameの削除（2026-10-13）
+
+<!-- traceability: {Resource_Estimation_Model} {GLOBAL_StrictMemoryLimit} {Loader_BasicBlockIndex} -->
+AO-BenchのNative Interpreterから密な制御表、PC→BasicBlock索引、重複stack/frame metadataを除いた。Native control mapは937 code byte × 16 byteで14,992 byte、Native PC indexとradix tableは676 byte、local size tableは50 byte、実行時ControlStackは520 byteだった。これらの配列領域を解放した。Python `block_storage`と`Module.get_block()`はPython lookup契約のため維持する。
+
+| 対象 | 変更前 | 変更後 | 削減量 |
+| :--- | ---: | ---: | ---: |
+| Native dense control map | 14,992 B | 0 B | 14,992 B |
+| Native PC indexとradix table | 676 B | 0 B | 676 B |
+| local size table | 50 B | 0 B | 50 B |
+| runtime ControlStack | 520 B | 0 B | 520 B |
+| `ExecutionContextABI` | 168 B | 144 B | 24 B |
+| `FunctionExecutionViewNative` | 88 B × 7 | 72 B × 7 | 112 B |
+| `ModuleExecutionViewNative` | 128 B | 104 B | 24 B |
+| 32枠の`CallStackNative` | 1,544 B | 1,288 B | 256 B |
+
+`CallFrameNative`は48 Bから40 Bへ8 B/frame縮小した。32枠分の256 Bは`CallStackNative`行に含む。function view 7件にはAO-Benchの1 importを含む。viewから消した`control_map`と`local_sizes`の2 pointerはfunction viewの−16 B/件に含む。重複計上を避けた構造体・配列の合計は16,654 Bである。`stack_checkpoint`、Native search表、runtime ControlStackは対応するC++/Python ABIから除いた。`current_block_index`は実行中のblock metadataを直接参照するために維持し、通常dispatchはPC検索を行わない。`execution_context.ip`はJIT call/return/resumeに用いるため保持する。
+
+Loader arenaは前回の2-byte annotation layout測定21,444 Bから現在5,741 Bへ15,703 B（73.23%）減った。131,072 B capacityの使用率は16.36%から4.38%になった。前後snapshotのannotation poolは1,712 Bから1,729 Bへ17 B増え、arena allocator alignmentで2 Bの差がある。Native map/index/local size表のgross 15,718 Bとarenaのnet減少との差は、これらの同時差分を含む。削除項目以外の残差を個別の削減効果へ帰属させない。
+
+AO-Benchの前後計測では、320×180のNativeInterpreterは425.064 msから394.635 ms（−7.16%）、Hybrid JITは501.539 msから461.494 ms（−7.98%）になった。全5解像度のNativeInterpreterとJITで遅延増加はなく、出力hashは一致した。前後のsource SHAは異なる複数ファイルを含むため、時間差全体を単一のstorage削除へ帰属させない。x86_64 PySIMのlogical allocator・host ABIの結果であり、ARMv8-Mの物理RAM適合を示さない。実行条件、全hash、build SHA-256、コマンド、全計時値は[`REPORT.md`](experiments/pysim/benchmarks/results/storage_cleanup_20261013/REPORT.md)、生データは[`aobench_after.json`](experiments/pysim/benchmarks/results/storage_cleanup_20261013/aobench_after.json)と[`storage_after.json`](experiments/pysim/benchmarks/results/storage_cleanup_20261013/storage_after.json)に記録した。

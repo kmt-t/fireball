@@ -1,10 +1,9 @@
 #pragma once
-#include <algorithm>
+/** @file
+ * @brief JITキャッシュの固定状態と手続きの宣言。実装はjit_runtime.cxxに置く。
+ */
 #include <array>
-#include <bit>
-#include <cassert>
 #include <limits>
-#include <new>
 #include <type_traits>
 
 #include "../../../tier2_runtime/abi/interpreter_abi.hxx"
@@ -21,1381 +20,263 @@
 #endif
 
 namespace fireball {
-namespace {
-constexpr std::uint32_t header_bytes = FB_CONF_JIT_X64_TRACE_HEADER_BYTES;
-constexpr auto no_pc = std::numeric_limits<std::uint32_t>::max();
-constexpr std::uint32_t bank_count = 3;
-constexpr std::uint32_t max_entries = FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY;
-constexpr std::uint32_t index_capacity = bank_count * max_entries;
-constexpr std::size_t compile_output_bytes =
-    header_bytes + kMaxBodyBytes + kTraceBoundaryMetadataBytes;
-constexpr std::uint16_t no_code_offset =
-    std::numeric_limits<std::uint16_t>::max();
-static_assert(max_entries > 0);
-// 0xFF is the unset BasicBlock reference, so it cannot identify an entry.
-static_assert(index_capacity <= std::numeric_limits<std::uint8_t>::max());
-static_assert(compile_output_bytes <= FB_CONF_JIT_CACHE_BANK_CAPACITY_BYTES);
+constexpr std::uint32_t jit_trace_header_bytes = FB_CONF_JIT_X64_TRACE_HEADER_BYTES;
+constexpr auto jit_invalid_pc = std::numeric_limits<wasm_pc_t>::max();
+constexpr block_index_t jit_invalid_block_index = FIREBALL_INVALID_BLOCK_INDEX;
+constexpr std::uint32_t jit_cache_bank_count = 3;
+constexpr std::uint32_t jit_cache_bank_entry_capacity = FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY;
+constexpr std::uint32_t jit_cache_total_entry_capacity =
+    jit_cache_bank_count * jit_cache_bank_entry_capacity;
+constexpr std::size_t jit_compile_scratch_bytes =
+    jit_trace_header_bytes + kMaxBodyBytes + kTraceBoundaryMetadataBytes;
+constexpr code_offset_t jit_invalid_code_offset = std::numeric_limits<code_offset_t>::max();
+static_assert(jit_cache_bank_entry_capacity > 0);
+static_assert(kMaxTraceInstructions <= std::numeric_limits<jit_body_count_t>::max());
+// 0xFF is the unset BasicBlock reference, so it cannot identify a cache entry.
+static_assert(jit_cache_total_entry_capacity <= std::numeric_limits<std::uint8_t>::max());
+static_assert(jit_compile_scratch_bytes <= FB_CONF_JIT_CACHE_BANK_CAPACITY_BYTES);
 
-struct entry {
-  std::uint32_t pc = no_pc;
-  std::uint16_t code_offset = no_code_offset;
-  std::uint16_t token = 0;
-  bool resident() const { return code_offset != no_code_offset; }
+/** @brief 一つの常駐トレースを識別する12バイトのキャッシュ要素。 */
+struct jit_cache_entry {
+  wasm_pc_t head_pc = jit_invalid_pc;
+  code_offset_t code_offset = jit_invalid_code_offset;
+  std::uint16_t cache_token = 0;
+  /** @brief コード領域を持つ常駐要素かを返す。 */
+  bool resident() const { return code_offset != jit_invalid_code_offset; }
 };
-static_assert(sizeof(entry) == 8);
-struct cache_location {
-  entry *value = nullptr;
-  std::uint32_t bank_id = bank_count;
+static_assert(sizeof(jit_cache_entry) == 12);
+/** @brief キャッシュ要素と物理バンクの非所有参照。 */
+struct jit_trace_location {
+  jit_cache_entry *trace_entry = nullptr;
+  std::uint32_t bank_id = jit_cache_bank_count;
 };
-struct bank {
-  std::array<entry, max_entries> entries{};
-  std::uint32_t count = 0;
-  std::uint32_t used = 0;
-  std::uint32_t write_cursor = 0;
-  std::uint32_t capacity = 0;
+/** @brief 固定容量バンクのPC索引と単調増加する書き込み位置。 */
+struct jit_cache_bank {
+  std::array<jit_cache_entry, jit_cache_bank_entry_capacity> entries{};
+  std::uint32_t entry_count = 0;
+  std::uint32_t resident_bytes = 0;
+  std::uint32_t write_offset_bytes = 0;
+  std::uint32_t capacity_bytes = 0;
   std::uint32_t entry_capacity = 0;
-  std::uint32_t offset = 0;
-
-  std::uint32_t lower_bound(std::uint32_t pc) const {
-    const auto end = entries.begin() + count;
-    const auto found =
-        std::lower_bound(entries.begin(), end, pc,
-                         [](const entry &candidate, std::uint32_t value) {
-                           return candidate.pc < value;
-                         });
-    return static_cast<std::uint32_t>(found - entries.begin());
-  }
-  entry *find(std::uint32_t pc) {
-    const auto index = lower_bound(pc);
-    return index < count && entries[index].pc == pc && entries[index].resident()
-               ? &entries[index]
-               : nullptr;
-  }
-  bool allocate(std::uint8_t *region, std::uint32_t pc, std::uint32_t size,
-                std::uint16_t token, std::uint16_t &code_offset) {
-    const auto index = lower_bound(pc);
-    const auto existing = index < count && entries[index].pc == pc;
-    const auto previous =
-        existing && entries[index].resident() ? &entries[index] : nullptr;
-    const auto old_size = previous == nullptr
-                              ? 0
-                              : reinterpret_cast<const jit_trace_header *>(
-                                    region + previous->code_offset)
-                                    ->blob_bytes;
-    const auto reuse = previous != nullptr && size <= old_size;
-    constexpr auto allocation_alignment = alignof(std::uintptr_t);
-    const auto allocation_size = static_cast<std::uint32_t>(
-        (size + allocation_alignment - 1) & ~(allocation_alignment - 1));
-    const auto added = reuse ? 0 : allocation_size;
-    // A removed or promoted entry leaves a hole. Live-byte accounting cannot
-    // locate the next safe write: retain a monotonic bank write cursor.
-    if (size > capacity || added > capacity - write_cursor ||
-        (!existing && count == entry_capacity))
-      return false;
-    const auto destination =
-        reuse ? previous->code_offset : offset + write_cursor;
-    if (destination > std::numeric_limits<std::uint16_t>::max())
-      return false;
-    code_offset = static_cast<std::uint16_t>(destination);
-    write_cursor += added;
-    if (!existing) {
-      for (auto i = count; i > index; --i)
-        entries[i] = entries[i - 1];
-      ++count;
-    }
-    entries[index] = {pc, code_offset, token};
-    used = used + size - old_size;
-    return true;
-  }
-};
-} // namespace
-
-struct unmeasured_runtime {};
-template <class Measurement> struct runtime_storage_types {
-  using profile = typename Measurement::profile_type;
-};
-template <> struct runtime_storage_types<void> {
-  using profile = jit_profile;
+  std::uint32_t region_offset_bytes = 0;
+  /** @brief 指定PC以上の先頭要素を求める。 */
+  std::uint32_t lower_bound(wasm_pc_t pc) const;
+  /** @brief 完全一致する常駐要素を返し、不在ならnullptrを返す。 */
+  jit_cache_entry *find_entry_by_pc(wasm_pc_t pc);
+  /** @brief 固定容量内にトレースを割り当てる。容量不足はfalseを返す。 */
+  bool allocate(std::uint8_t *region, wasm_pc_t pc, code_offset_t size, std::uint16_t token,
+                code_offset_t &code_offset);
 };
 
+/** @brief 計測を持たない製品構成の空の方策。 */
+struct jit_no_measurements {};
+template <class Measurement> struct jit_runtime_traits {
+  using profile_type = typename Measurement::profile_type;
+  using measurement_type = Measurement;
+};
+template <> struct jit_runtime_traits<void> {
+  using profile_type = jit_profile;
+  using measurement_type = jit_no_measurements;
+};
 template <class Measurement>
-  requires(std::is_void_v<Measurement> ||
-           requires { typename Measurement::profile_type; })
-class jit_runtime final
-    : public std::conditional_t<std::is_void_v<Measurement>, unmeasured_runtime,
-                                Measurement> {
-public:
-  std::array<bank, bank_count> banks{};
-  std::array<std::uint8_t, index_capacity> sorted_index{};
-  std::uint32_t sorted_index_count = 0;
-  std::uint32_t active = 0, warm = 1, oldest = 2;
-  int error = 0;
-  std::uint8_t *states = nullptr;
-  std::uint8_t *dirty = nullptr;
-  std::uint32_t cards = 0, card_shift = 0, dirty_bytes = 0;
-  std::uint32_t *cursor = nullptr;
-  std::uint32_t age_units = 1, age_scan = 1;
-  executable_memory memory{};
-  std::array<jit_history_record, FB_CONF_JIT_HISTORY_CAPACITY>
-      history_records{};
-  std::array<std::uint32_t, FB_CONF_JIT_COMPILE_QUEUE_CAPACITY> queue_items{};
-  jit_history history{};
-  jit_compile_queue queue{};
+concept jit_measurement_policy =
+    std::is_void_v<Measurement> || requires { typename Measurement::profile_type; };
+
+/** @brief 可変の常駐コード、PC索引、chain逆引きと3世代の役割を所有する。 */
+struct jit_cache_state {
+  static constexpr std::uint32_t inbound_bucket_count = 64;
+  static constexpr std::uint8_t no_reference = 0xFFu;
+  std::array<jit_cache_bank, jit_cache_bank_count> banks{};
+  std::array<std::uint8_t, jit_cache_total_entry_capacity> pc_index{};
+  std::array<std::uint8_t, inbound_bucket_count> inbound_chain_heads{};
+  std::array<std::uint8_t, jit_cache_total_entry_capacity> inbound_chain_next{};
+  std::uint32_t pc_index_count = 0;
+  std::uint32_t active_bank_id = 0, warm_bank_id = 1, oldest_bank_id = 2;
+  executable_memory code_memory{};
+};
+
+/** @brief 借用カード領域と、所有する履歴・候補キューを保持する。 */
+template <class Profile> struct jit_hotspot_state {
+  std::uint8_t *card_states = nullptr;
+  std::uint8_t *dirty_cards = nullptr;
+  card_index_t card_count = 0;
+  std::uint8_t card_shift = 0;
+  std::uint32_t dirty_mask_bytes = 0;
+  std::uint32_t *aging_cursor = nullptr;
+  std::uint32_t aging_step_units = 1, aging_scan_bytes = 1;
+  std::uint32_t aging_cursor_storage = 0;
+  std::array<jit_history_record, FB_CONF_JIT_HISTORY_CAPACITY> history_records{};
+  std::array<wasm_pc_t, FB_CONF_JIT_COMPILE_QUEUE_CAPACITY> compile_queue_items{};
+  jit_history observation_history{};
+  jit_compile_queue compile_queue{};
+  Profile configuration{};
+};
+
+/** @brief モジュール、キャッシュ、候補処理を結び付けるJIT実行状態。 */
+template <jit_measurement_policy Measurement> struct jit_runtime final {
+  using profile_type = typename jit_runtime_traits<Measurement>::profile_type;
+  using measurement_type = typename jit_runtime_traits<Measurement>::measurement_type;
+  [[no_unique_address]] measurement_type measurements{};
+  jit_cache_state cache{};
+  jit_hotspot_state<profile_type> hotspots{};
   fb_native_jit_provider provider{};
-  ~jit_runtime() {
-    if constexpr (!std::is_void_v<Measurement>)
-      if (this->owns_memory)
-        fb_jit_memory_close(&memory);
-  }
-  const fireball_wasm_module_execution_view_native *module = nullptr;
-  std::uint32_t workspace_cursor = 0;
-  using profile_type = typename runtime_storage_types<Measurement>::profile;
-  profile_type profile{};
-  const jit_wasm_block *block_at(std::uint32_t index,
-                                 jit_wasm_block &output) const {
-    assert(module != nullptr && index < module->block_count);
-    const auto &b = module->blocks[index];
-    assert(b.function_index < module->function_count);
-    const auto &f = module->functions[b.function_index];
-    auto *execution_count = module->block_execution_counts == nullptr
-                                ? nullptr
-                                : module->block_execution_counts + index;
-    output = {
-        b.head_pc,
-        b.head_pc - f.code_pc_offset,
-        b.byte_span,
-        b.next_pc,
-        b.loops_to,
-        b.frame_depth,
-        0,
-        {f.code, f.code_size},
-        {{reinterpret_cast<const std::uint8_t *>(f.local_offsets),
-          static_cast<std::uint32_t>(f.local_count * sizeof(std::uint16_t))},
-         {f.local_sizes, f.local_count},
-         {f.local_types, f.local_count},
-         f.local_count,
-         f.local_slot_count},
-        execution_count,
-        index};
-    return &output;
-  }
-
-  const jit_wasm_block *block_for_trace(const jit_trace_header &trace,
-                                        jit_wasm_block &output) const {
-    if constexpr (!std::is_void_v<Measurement>) {
-      if (module == nullptr) {
-        if (profile.block_count == 0)
-          return nullptr;
-        const auto *metadata = Measurement::fixture_block(profile, trace.head_pc);
-        assert(metadata != nullptr);
-        return metadata;
-      }
-    }
-    assert(module != nullptr);
-    const auto *metadata = block_at(trace.block_index, output);
-    assert(metadata->head_pc == trace.head_pc);
-    return metadata;
-  }
-
-  bool trackable(std::uint32_t pc) {
-    const auto card = jit_card_index(profile.code_bytes, card_shift, pc);
-    if (!check(card >= 0 && static_cast<std::uint64_t>(card) < cards))
-      return false;
-    return (profile.trackable[card / 8] & (1u << (card % 8))) != 0;
-  }
-  bool suppress(std::uint32_t pc) {
-    const auto card = jit_card_index(profile.code_bytes, card_shift, pc);
-    if (!check(card >= 0 && static_cast<std::uint64_t>(card) < cards))
-      return false;
-    profile.trackable[card / 8] &=
-        static_cast<std::uint8_t>(~(1u << (card % 8)));
-    if constexpr (!std::is_void_v<Measurement>)
-      this->mask_changed();
-    return true;
-  }
+  const fireball_wasm_module_execution_view_native *module_view = nullptr;
+  /** @brief 保存領域内に固定状態を初期化する。 */
+  jit_runtime() = default;
+  /** @brief コード領域と自己参照を持つ実行状態の複製を禁止する。 */
+  jit_runtime(const jit_runtime &) = delete;
+  jit_runtime &operator=(const jit_runtime &) = delete;
+  ~jit_runtime();
+  const jit_wasm_block *make_compiler_block_view(block_index_t index,
+                                                 jit_wasm_block &output) const;
+  const jit_wasm_block *block_metadata_for_trace(const jit_trace_header &trace,
+                                                 jit_wasm_block &output) const;
+  /** @brief 候補マスクで指定PCが履歴記録対象かを調べる。 */
+  bool is_profiled_pc(wasm_pc_t pc);
+  /** @brief コンパイル対象外のPCを候補マスクから外す。 */
+  void exclude_compile_candidate(wasm_pc_t pc);
 
 private:
-  int compile_candidate(std::uint32_t block_index, std::uint32_t pc) {
-    if constexpr (!std::is_void_v<Measurement>) {
-      if (profile.compiler_enabled == 0)
-        return 0;
-    }
-    jit_wasm_block input_storage{};
-    const jit_wasm_block *input = nullptr;
-    if constexpr (std::is_void_v<Measurement>) {
-      assert(module != nullptr);
-      assert(block_index < module->block_count);
-      assert(module->blocks[block_index].head_pc == pc);
-      input = block_at(block_index, input_storage);
-    } else {
-      if (module == nullptr)
-        input = Measurement::fixture_block(profile, pc);
-      else {
-        assert(block_index < module->block_count);
-        assert(module->blocks[block_index].head_pc == pc);
-        input = block_at(block_index, input_storage);
-      }
-    }
-    if (!check(input != nullptr))
-      return -1;
-    auto &active_bank = banks[active];
-    if (active_bank.entry_capacity == 0 ||
-        active_bank.count == active_bank.entry_capacity ||
-        active_bank.capacity - active_bank.write_cursor <
-            compile_output_bytes) {
-      if (!rotate())
-        return -1;
-    }
-    auto &target_bank = banks[active];
-    if (!check(target_bank.capacity - target_bank.write_cursor >=
-               compile_output_bytes))
-      return -1;
-    const auto offset = target_bank.offset + target_bank.write_cursor;
-    auto *output = reinterpret_cast<std::uint8_t *>(memory.base) + offset;
-    if (!memory.patching && !effect(fb_jit_memory_begin(&memory)))
-      return -1;
-    auto status = fb_jit_compile_block(
-        input, output, static_cast<std::uint32_t>(compile_output_bytes),
-        output + header_bytes);
-    if (status == 1) {
-      auto *header = reinterpret_cast<jit_trace_header *>(output);
-      header->common_code_relative =
-          static_cast<std::int32_t>(
-              FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET) -
-          static_cast<std::int32_t>(offset);
-      std::uint16_t installed_offset = no_code_offset;
-      clear_block_references();
-      if (!target_bank.allocate(reinterpret_cast<std::uint8_t *>(memory.base),
-                                pc, header->blob_bytes, 0, installed_offset)) {
-        rebuild_index();
-        status = 0;
-      } else {
-        rebuild_index();
-        if (installed_offset != offset)
-          status = 0;
-      }
-    }
-    if (!effect(fb_jit_memory_commit(&memory)))
-      return -1;
-    if (!check(status == 0 || status == 1))
-      return -1;
-    if (status == 1) {
-      entry compiled{pc, static_cast<std::uint16_t>(offset), 0};
-      if (!try_link(compiled))
-        return -1;
-      for (const auto id : {active, warm}) {
-        auto &source_bank = banks[id];
-        for (std::uint32_t i = 0; i < source_bank.count; ++i) {
-          const auto source = source_bank.entries[i];
-          if (source.resident() && source.pc != compiled.pc &&
-              link_eligible(source, compiled) && !patch(source, &compiled))
-            return -1;
-        }
-      }
-      mark_compiled(compiled.pc);
-      if constexpr (!std::is_void_v<Measurement>)
-        this->trace_inserted(compiled.pc);
-      if constexpr (!std::is_void_v<Measurement>)
-        this->cache_changed();
-      if (!prepare_chains())
-        return -1;
-    }
-    return status;
-  }
+  // Groups code-cache writes into one patch transaction. On x64, permission is
+  // granted once; other targets can still switch protection at this boundary.
+  // Nested writers use the enclosing transaction.
+  struct patch_transaction {
+    jit_runtime *runtime;
+    bool began;
+    /** @brief 外側のトランザクションがなければコード書き込みを開始する。 */
+    explicit patch_transaction(jit_runtime *owner);
+    /** @brief 自分が開始した書き込みだけを確定する。 */
+    void close();
+    ~patch_transaction();
+    /** @brief 二重の確定を生じるトランザクションの複製を禁止する。 */
+    patch_transaction(const patch_transaction &) = delete;
+    patch_transaction &operator=(const patch_transaction &) = delete;
+  };
+  /** @brief 一候補を一度だけコンパイルし、実サイズに従ってActiveへ配置する。 */
+  int compile_one_candidate(block_index_t block_index, wasm_pc_t pc);
 
 public:
-  int compile_pending(std::uint32_t budget) {
-    if (!check(queue.capacity != 0))
-      return -1;
-    std::uint32_t compiled = 0;
-    // The budget bounds processed candidates, including unsupported/skipped
-    // ones.
-    for (std::uint32_t processed = 0; processed < budget && queue.count != 0;
-         ++processed) {
-      const auto item = queue_operation(&queue, 1, 0);
-      if (!check(item >= 0))
-        return -1;
-      std::uint32_t pc = 0;
-      auto block_index = no_pc;
-      if (module != nullptr) {
-        block_index = static_cast<std::uint32_t>(item);
-        if (!check(block_index < module->block_count))
-          return -1;
-        pc = module->blocks[block_index].head_pc;
-      } else {
-        if constexpr (std::is_void_v<Measurement>) {
-          assert(false && "JIT module is required for product compilation");
-          return -1;
-        } else {
-          pc = static_cast<std::uint32_t>(item);
-        }
-      }
-      if (!check(jit_card_index(profile.code_bytes, card_shift, pc) >= 0))
-        return -1;
-      if (card_state(static_cast<std::uint32_t>(pc) >> card_shift) == 3)
-        continue;
-      if (find(pc).value != nullptr) {
-        mark_compiled(pc);
-        continue;
-      }
-      int status = 0;
-      if constexpr (std::is_void_v<Measurement>) {
-        status = compile_candidate(block_index, pc);
-      } else {
-        typename Measurement::compile_scope timing(*this);
-        status = compile_candidate(block_index, pc);
-      }
-      if (status < 0)
-        return -1;
-
-      if (status == 1) {
-        ++compiled;
-        continue;
-      }
-      if (!suppress(pc))
-        return -1;
-    }
-    return static_cast<int>(compiled);
-  }
-  bool record_observed(std::uint32_t block_index, std::uint32_t pc) {
-    if (module != nullptr) {
-      assert(block_index < module->block_count);
-      assert(module->blocks[block_index].head_pc == pc);
-    } else if constexpr (!std::is_void_v<Measurement>) {
-      if (block_index != no_pc && profile.block_count != 0) {
-        assert(block_index < profile.block_count);
-        assert(profile.blocks[block_index].head_pc == pc);
-      }
-    }
-    // Configuration owns the ring invariants; the callback receives an observed
-    // PC. Select the overwritten slot before advancing the head, without
-    // division.
-    auto &h = history;
-    std::uint32_t index;
-    if (h.count == h.capacity) {
-      if constexpr (!std::is_void_v<Measurement>)
-        if (!check(this->history_record_overwritten()))
-          return false;
-      index = h.head;
-      h.head = h.head + 1 == h.capacity ? 0 : h.head + 1;
-    } else {
-      index = h.head + h.count;
-      if (index >= h.capacity)
-        index -= h.capacity;
-      ++h.count;
-    }
-    h.records[index] = {block_index, pc};
-    if constexpr (!std::is_void_v<Measurement>)
-      this->visits_recorded(1);
-    return true;
-  }
-  bool record_observed(std::uint32_t pc)
-    requires(!std::is_void_v<Measurement>)
-  {
-    const auto *metadata = Measurement::fixture_block(profile, pc);
-    if (profile.block_count != 0 && metadata == nullptr)
-      return check(false);
-    const auto block_index =
-        metadata == nullptr ? no_pc : metadata->block_index;
-    return record_observed(block_index, pc);
-  }
-  bool analyze(bool yielded) {
-    if (!check(history.capacity != 0 && queue.capacity != 0))
-      return false;
-    auto &h = history;
-    if constexpr (!std::is_void_v<Measurement>)
-      this->history_analyzed();
-    while (h.count != 0) {
-      const auto value = h.records[h.head];
-      if (!check(jit_card_index(profile.code_bytes, card_shift, value.pc) >= 0))
-        return false;
-      if (module != nullptr) {
-        if (!check(value.block_index < module->block_count &&
-                   module->blocks[value.block_index].head_pc == value.pc))
-          return false;
-      } else if constexpr (!std::is_void_v<Measurement>) {
-        if (profile.block_count != 0 &&
-            !check(value.block_index < profile.block_count &&
-                   profile.blocks[value.block_index].head_pc == value.pc))
-          return false;
-      }
-      h.head = (h.head + 1) % h.capacity;
-      --h.count;
-      const auto card = value.pc >> card_shift;
-      auto state = card_state(card);
-      if (state < 2) {
-        ++state;
-        set_card(card, state);
-        if (state == 1)
-          dirty[card / 8] |= static_cast<std::uint8_t>(1u << (card % 8));
-      }
-      const auto item = module == nullptr ? value.pc : value.block_index;
-      if (state == 2 && queue_operation(&queue, 2, item) == 0) {
-        if (!check(queue_operation(&queue, 0, item) == 1))
-          return false;
-        if (queue.count == queue.capacity && compile_pending(queue.count) < 0)
-          return false;
-      }
-    }
-    if constexpr (!std::is_void_v<Measurement>)
-      this->boundary_analyzed(yielded);
-    return true;
-  }
-
-  bool check(bool valid) {
-    if (!valid)
-      error = 1;
-    return valid;
-  }
-  bool effect(int success) {
-    if (success != 1)
-      error = 2;
-    return success == 1;
-  }
-  void clear_block_references() {
-    if (module == nullptr)
-      return;
-    for (std::uint32_t i = 0; i < sorted_index_count; ++i) {
-      const auto reference = sorted_index[i];
-      const auto value = indexed_entry(reference);
-      assert(value.resident());
-      const auto block_index = header(value)->block_index;
-      assert(block_index < module->block_count);
-      auto &block = module->blocks[block_index];
-      assert(block.head_pc == value.pc);
-      assert(block.jit_cache_reference == reference ||
-             block.jit_cache_reference == 0xFFu);
-      block.jit_cache_reference = 0xFFu;
-    }
-  }
-  entry &indexed_entry(std::uint8_t reference) {
-    const auto bank_id = reference / max_entries;
-    const auto entry_index = reference % max_entries;
-    return banks[bank_id].entries[entry_index];
-  }
-  std::uint32_t indexed_bank(std::uint8_t reference) const {
-    return reference / max_entries;
-  }
-  void rebuild_index() {
-    sorted_index_count = 0;
-    for (std::uint32_t bank_id = 0; bank_id < bank_count; ++bank_id) {
-      const auto &source = banks[bank_id];
-      for (std::uint32_t i = 0; i < source.count; ++i) {
-        if (source.entries[i].resident())
-          sorted_index[sorted_index_count++] =
-              static_cast<std::uint8_t>(bank_id * max_entries + i);
-      }
-    }
-    std::sort(sorted_index.begin(), sorted_index.begin() + sorted_index_count,
-              [this](std::uint8_t left, std::uint8_t right) {
-                const auto left_pc = indexed_entry(left).pc;
-                const auto right_pc = indexed_entry(right).pc;
-                return left_pc != right_pc ? left_pc < right_pc : left < right;
-              });
-    if (module == nullptr)
-      return;
-    for (std::uint32_t i = 0; i < sorted_index_count; ++i) {
-      const auto reference = sorted_index[i];
-      const auto value = indexed_entry(reference);
-      const auto block_index = header(value)->block_index;
-      assert(block_index < module->block_count);
-      auto &block = module->blocks[block_index];
-      assert(block.head_pc == value.pc);
-      assert(block.jit_cache_reference == 0xFFu);
-      block.jit_cache_reference = reference;
-    }
-  }
-  [[gnu::always_inline]] inline cache_location find(std::uint32_t pc) {
-    const auto end = sorted_index.begin() + sorted_index_count;
-    const auto first =
-        std::lower_bound(sorted_index.begin(), end, pc,
-                         [this](std::uint8_t reference, std::uint32_t value) {
-                           return indexed_entry(reference).pc < value;
-                         });
-    cache_location result{};
-    for (auto found = first; found != end && indexed_entry(*found).pc == pc;
-         ++found) {
-      const auto bank_id = indexed_bank(*found);
-      auto &candidate = indexed_entry(*found);
-      assert(result.value == nullptr);
-      result = {&candidate, bank_id};
-    }
-    return result;
-  }
-  std::uint8_t reference(cache_location location) const {
-    assert(location.value != nullptr && location.bank_id < bank_count);
-    const auto index = static_cast<std::uint32_t>(
-        location.value - banks[location.bank_id].entries.data());
-    assert(index < banks[location.bank_id].count);
-    const auto value = location.bank_id * max_entries + index;
-    assert(value < std::numeric_limits<std::uint8_t>::max());
-    return static_cast<std::uint8_t>(value);
-  }
-  cache_location location_from_reference(std::uint8_t reference_value) {
-    assert(reference_value != std::numeric_limits<std::uint8_t>::max());
-    const auto bank_id = indexed_bank(reference_value);
-    assert(bank_id < bank_count);
-    auto &value = indexed_entry(reference_value);
-    assert(value.resident());
-    return {&value, bank_id};
-  }
-  jit_trace_header *header(entry value) const {
-    return reinterpret_cast<jit_trace_header *>(
-        reinterpret_cast<std::uint8_t *>(memory.base) + value.code_offset);
-  }
-  std::uintptr_t entry_address(entry value) const {
-    return reinterpret_cast<std::uintptr_t>(header(value)) + header_bytes;
-  }
-  std::uintptr_t body_address(entry value) const {
-    return entry_address(value);
-  }
-  std::uint32_t next_pc(entry value) const {
-    jit_wasm_block storage{};
-    const auto *metadata = block_for_trace(*header(value), storage);
-    return metadata == nullptr ? no_pc : metadata->next_pc;
-  }
-  std::uint32_t loops_to(entry value) const {
-    jit_wasm_block storage{};
-    const auto *metadata = block_for_trace(*header(value), storage);
-    return metadata == nullptr ? no_pc : metadata->loops_to;
-  }
-  bool eligible(entry value) const {
-    const auto successor = next_pc(value);
-    if (successor == no_pc || successor <= value.pc ||
-        loops_to(value) != no_pc || header(value)->result_words != 0)
-      return false;
-    jit_wasm_block source_storage{};
-    const auto *source = block_for_trace(*header(value), source_storage);
-    if (source == nullptr || source->code.data == nullptr)
-      return true;
-    const auto terminator = source->offset + source->byte_span;
-    if (terminator >= source->code.bytes)
-      return true;
-    switch (source->code.data[terminator]) {
-    case 0x02: // block
-    case 0x03: // loop
-    case 0x04: // if
-    case 0x05: // else
-    case 0x0B: // end
-    case 0x0D: // br_if
-    case 0x0E: // br_table
-    case 0x0F: // return
-      return false;
-    case 0x0C: // Static forward BR has a loader-resolved trace successor.
-      return true;
-    default:
-      return true;
-    }
-  }
-  bool link_eligible(entry value, entry target) const {
-    assert(value.resident() && target.resident());
-    if (!eligible(value) || next_pc(value) != target.pc)
-      return false;
-    if (header(value)->frame_depth == header(target)->frame_depth)
-      return true;
-    jit_wasm_block source_storage{};
-    const auto *source = block_for_trace(*header(value), source_storage);
-    if (source == nullptr || source->code.data == nullptr)
-      return false;
-    const auto terminator = source->offset + source->byte_span;
-    return terminator < source->code.bytes &&
-           source->code.data[terminator] == 0x0C;
-  }
-  const jit_trace_header *
-  chain_target_header(const jit_trace_header &source) const {
-    const auto address = source.chain_target_address;
-    if (address == 0)
-      return nullptr;
-    const auto base = reinterpret_cast<std::uintptr_t>(memory.base);
-    if (address < base + header_bytes)
-      return nullptr;
-    const auto target_header = address - header_bytes;
-    if (target_header < base + FB_CONF_JIT_CACHE_COMMON_CODE_BYTES ||
-        target_header >= base + FB_CONF_JIT_CACHE_REGION_BYTES)
-      return nullptr;
-    return reinterpret_cast<const jit_trace_header *>(target_header);
-  }
-  bool patch(entry source, const entry *target) {
-    assert(source.resident());
-    assert(target == nullptr || target->resident());
-    assert(target == nullptr || link_eligible(source, *target));
-    const auto address = target == nullptr ? 0 : body_address(*target);
-    if (header(source)->chain_target_address == address)
-      return true;
-    if constexpr (!std::is_void_v<Measurement>)
-      this->cache_changed();
-    return effect(patch_trace_chain(&memory, source.code_offset, address));
-  }
-  bool try_link(entry source) {
-    const auto target =
-        eligible(source) ? find(next_pc(source)) : cache_location{};
-    if (target.value != nullptr) {
-      assert(target.bank_id < bank_count);
-      if (target.bank_id != oldest && link_eligible(source, *target.value))
-        return patch(source, target.value);
-      if (target.bank_id == oldest && link_eligible(source, *target.value) &&
-          header(source)->chain_target_address == body_address(*target.value))
-        return true;
-    }
-    return patch(source, nullptr);
-  }
-  std::uint32_t card_state(std::uint32_t card) const {
-    return (states[card / 4] >> ((card % 4) * 2)) & 3;
-  }
-  void set_card(std::uint32_t card, std::uint32_t state) {
-    const auto shift = (card % 4) * 2;
-    states[card / 4] = static_cast<std::uint8_t>(
-        (states[card / 4] & ~(3u << shift)) | (state << shift));
-  }
-  void mark_compiled(std::uint32_t pc) {
-    if (states != nullptr && (pc >> card_shift) < cards)
-      set_card(pc >> card_shift, 3);
-  }
-  int age() {
-    if constexpr (std::is_void_v<Measurement>) {
-      return age_sweep();
-    } else {
-      typename Measurement::aging_scope timing(*this);
-      return age_sweep();
-    }
-  }
-  int age_sweep() {
-    if constexpr (!std::is_void_v<Measurement>)
-      this->aging_started();
-    if (dirty_bytes == 0)
-      return 0;
-    if (!check(cursor != nullptr && *cursor < dirty_bytes))
-      return -1;
-    std::uint32_t units = 0, scanned = 0;
-    int decayed = 0;
-    const auto limit = age_scan < dirty_bytes ? age_scan : dirty_bytes;
-    while (units < age_units && scanned < limit) {
-      const auto bits = dirty[*cursor];
-      if (bits != 0) {
-        for (std::uint32_t bit = 0; bit < 8; ++bit) {
-          const auto card = static_cast<std::uint64_t>(*cursor) * 8 + bit;
-          if ((bits & (1u << bit)) != 0 && card < cards) {
-            const auto index = static_cast<std::uint32_t>(card);
-            // GOTCHA-JITR-09: queue and residency state must survive aging.
-            if (card_state(index) == 1) {
-              set_card(index, 0);
-              ++decayed;
-            }
-            dirty[*cursor] &= static_cast<std::uint8_t>(~(1u << bit));
-          }
-        }
-        ++units;
-      }
-      *cursor = *cursor + 1 == dirty_bytes ? 0 : *cursor + 1;
-      ++scanned;
-    }
-    if constexpr (!std::is_void_v<Measurement>)
-      this->aging_processed(units, scanned);
-    return decayed;
-  }
-  bool purge(std::uint32_t id) {
-    assert(id < bank_count);
-    clear_block_references();
-    auto &b = banks[id];
-    for (std::uint32_t i = 0; i < b.count; ++i) {
-      const auto value = b.entries[i];
-      if (value.resident()) {
-        if constexpr (!std::is_void_v<Measurement>)
-          this->trace_evicted(value.pc);
-        if (states != nullptr && (value.pc >> card_shift) < cards) {
-          set_card(value.pc >> card_shift, 0);
-        }
-      }
-      b.entries[i] = entry{};
-    }
-    b.count = b.used = b.write_cursor = 0;
-    rebuild_index();
-    return true;
-  }
-  bool unlink_inbound(std::uint32_t id) {
-    const auto begin = reinterpret_cast<std::uintptr_t>(memory.base) +
-                       banks[id].offset + header_bytes;
-    const auto end = reinterpret_cast<std::uintptr_t>(memory.base) +
-                     banks[id].offset + banks[id].capacity;
-    for (auto &source_bank : banks) {
-      for (std::uint32_t i = 0; i < source_bank.count; ++i) {
-        const auto source = source_bank.entries[i];
-        if (source.resident()) {
-          const auto target = header(source)->chain_target_address;
-          if (target >= begin && target < end && !patch(source, nullptr))
-            return false;
-        }
-      }
-    }
-    return true;
-  }
-  bool rotate() {
-    if (!unlink_inbound(oldest))
-      return false;
-    if (!purge(oldest))
-      return false;
-    const auto new_active = oldest;
-    oldest = warm;
-    warm = active;
-    active = new_active;
-    if constexpr (std::is_void_v<Measurement>) {
-      if (age() < 0)
-        return false;
-    } else {
-      if (this->auto_age && age() < 0)
-        return false;
-    }
-    if constexpr (!std::is_void_v<Measurement>)
-      this->cache_rotated();
-    if constexpr (!std::is_void_v<Measurement>)
-      this->cache_changed();
-    return prepare_chains();
-  }
-  bool install(entry value, const std::uint8_t *blob, std::uint32_t bytes) {
-    std::uintptr_t ignored_entry = 0;
-    auto block_index = no_pc;
-    if (module != nullptr) {
-      const auto *source = reinterpret_cast<const jit_trace_header *>(blob);
-      block_index = source->block_index;
-      assert(block_index < module->block_count);
-      assert(module->blocks[block_index].head_pc == value.pc);
-    } else if constexpr (!std::is_void_v<Measurement>) {
-      if (profile.block_count != 0) {
-        const auto *fixture = Measurement::fixture_block(profile, value.pc);
-        if (!check(fixture != nullptr))
-          return false;
-        block_index = fixture->block_index;
-      }
-    }
-    return effect(fb_jit_common_install(&memory, value.code_offset, blob, bytes,
-                                        block_index, &ignored_entry));
-  }
-  bool insert(const std::uint8_t *blob, std::uint32_t bytes,
-              std::uint16_t cache_token) {
-    if (!check(blob != nullptr && bytes >= header_bytes &&
-               bytes <= FB_CONF_JIT_CACHE_BANK_CAPACITY_BYTES))
-      return false;
-    const auto *input_header = reinterpret_cast<const jit_trace_header *>(blob);
-    const auto pc = input_header->head_pc;
-    if (!check(input_header->blob_bytes == bytes && pc != no_pc &&
-               banks[warm].find(pc) == nullptr &&
-               banks[oldest].find(pc) == nullptr))
-      return false;
-    auto &current = banks[active];
-    std::uint16_t offset = no_code_offset;
-    clear_block_references();
-    if (!current.allocate(reinterpret_cast<std::uint8_t *>(memory.base), pc,
-                          bytes, cache_token, offset)) {
-      rebuild_index();
-      if (!rotate())
-        return false;
-      clear_block_references();
-      if (!banks[active].allocate(reinterpret_cast<std::uint8_t *>(memory.base),
-                                  pc, bytes, cache_token, offset)) {
-        rebuild_index();
-        return false;
-      }
-    }
-    entry value{pc, offset, cache_token};
-    if (!install(value, blob, bytes))
-      return false;
-    rebuild_index();
-    if (!try_link(value))
-      return false;
-    for (const auto id : {active, warm}) {
-      auto &source_bank = banks[id];
-      for (std::uint32_t i = 0; i < source_bank.count; ++i) {
-        const auto source = source_bank.entries[i];
-        if (source.resident() && source.pc != value.pc &&
-            link_eligible(source, value) && !patch(source, &value))
-          return false;
-      }
-    }
-    mark_compiled(pc);
-    if constexpr (!std::is_void_v<Measurement>)
-      this->trace_inserted(pc);
-    if constexpr (!std::is_void_v<Measurement>)
-      this->cache_changed();
-    return prepare_chains();
-  }
-  [[gnu::always_inline]] inline cache_location lookup(std::uint32_t block_index,
-                                                      std::uint32_t pc) {
-    assert(pc != no_pc);
-    if constexpr (!std::is_void_v<Measurement>)
-      this->lookup_called();
-    fireball_wasm_block_execution_view_native *basic_block = nullptr;
-    if (module != nullptr) {
-      assert(block_index < module->block_count);
-      basic_block = module->blocks + block_index;
-      assert(basic_block->head_pc == pc);
-    }
-    auto location = cache_location{};
-    if (basic_block != nullptr && basic_block->jit_cache_reference != 0xFFu) {
-      location = location_from_reference(basic_block->jit_cache_reference);
-      assert(location.value->pc == pc);
-      assert(header(*location.value)->block_index == block_index);
-    } else {
-      location = find(pc);
-    }
-    if (location.value == nullptr)
-      return {};
-    if (location.bank_id != oldest) {
-      if (basic_block != nullptr && basic_block->jit_cache_reference == 0xFFu)
-        basic_block->jit_cache_reference = reference(location);
-      return location;
-    }
-    auto *found = location.value;
-    const auto value = *found;
-    auto *source_header = header(value);
-    const auto *source_blob =
-        reinterpret_cast<const std::uint8_t *>(source_header);
-    const auto source_bytes = source_header->blob_bytes;
-    const auto old_body_address = body_address(value);
-    clear_block_references();
-    found->code_offset = no_code_offset;
-    found->token = 0;
-    rebuild_index();
-    auto &previous = banks[oldest];
-    previous.used -= source_bytes;
-    for (auto &source_bank : banks) {
-      for (std::uint32_t i = 0; i < source_bank.count; ++i) {
-        const auto source = source_bank.entries[i];
-        if (source.resident() &&
-            header(source)->chain_target_address == old_body_address &&
-            !patch(source, nullptr))
-          return {};
-      }
-    }
-    std::uint16_t promoted_offset = no_code_offset;
-    clear_block_references();
-    if (!banks[active].allocate(reinterpret_cast<std::uint8_t *>(memory.base),
-                                pc, source_bytes, value.token,
-                                promoted_offset)) {
-      rebuild_index();
-      if (!rotate())
-        return {};
-      clear_block_references();
-      if (!check(banks[active].allocate(
-              reinterpret_cast<std::uint8_t *>(memory.base), pc, source_bytes,
-              value.token, promoted_offset))) {
-        rebuild_index();
-        return {};
-      }
-    }
-    entry promoted{pc, promoted_offset, value.token};
-    if (!install(promoted, source_blob, source_bytes))
-      return {};
-    rebuild_index();
-    auto promoted_location = find(pc);
-    assert(promoted_location.value != nullptr &&
-           promoted_location.bank_id == active);
-    if (!try_link(promoted))
-      return {};
-    for (const auto id : {active, warm}) {
-      auto &source_bank = banks[id];
-      for (std::uint32_t i = 0; i < source_bank.count; ++i) {
-        const auto source = source_bank.entries[i];
-        if (source.resident() && source.pc != pc &&
-            link_eligible(source, promoted) && !patch(source, &promoted))
-          return {};
-      }
-    }
-    if constexpr (!std::is_void_v<Measurement>)
-      this->trace_promoted();
-    mark_compiled(pc);
-    if constexpr (!std::is_void_v<Measurement>)
-      this->cache_changed();
-    if (!prepare_chains())
-      return {};
-    return promoted_location;
-  }
-  [[gnu::always_inline]] inline cache_location lookup(std::uint32_t pc) {
-    assert(module == nullptr);
-    return lookup(no_pc, pc);
-  }
-  bool prepare_chains() {
-    const auto began = !memory.patching;
-    if (began && !effect(fb_jit_memory_begin(&memory)))
-      return false;
-    for (auto &bank : banks) {
-      for (std::uint32_t i = 0; i < bank.count; ++i) {
-        auto current_entry = bank.entries[i];
-        if (!current_entry.resident())
-          continue;
-        auto *trace_header = header(current_entry);
-        auto words = trace_header->stack_words;
-        const auto *current = trace_header;
-        std::uint32_t body_count = 1;
-        auto *next = chain_target_header(*current);
-        while (next != nullptr) {
-          assert(body_count < index_capacity);
-          assert(next->frame_depth <= current->frame_depth);
-          if (next->stack_words > words)
-            words = next->stack_words;
-          current = next;
-          ++body_count;
-          next = chain_target_header(*current);
-        }
-        trace_header->chain_body_count =
-            static_cast<std::uint8_t>(body_count);
-        trace_header->chain_words = words;
-      }
-    }
-    return !began || effect(fb_jit_memory_commit(&memory));
-  }
+  /** @brief 処理予算内の候補を消費し、コンパイル成功件数を返す。 */
+  int compile_queued_candidates(std::uint32_t budget);
+  /** @brief 検証済みのブロック識別子とPCを固定履歴リングへ記録する。 */
+  void record_block_visit(block_index_t block_index, wasm_pc_t pc);
+  /** @brief 検証済みのブロック識別子とPCを固定履歴リングへ記録する。 */
+  void record_block_visit(wasm_pc_t pc)
+    requires(!std::is_void_v<Measurement>);
+  /** @brief 履歴を一度ずつ消費し、カード状態とコンパイルキューを更新する。 */
+  void analyze_observation_history(bool yielded);
+  /** @brief 索引変更前にBasicBlockのキャッシュ参照を無効化する。 */
+  void invalidate_block_cache_references();
+  jit_cache_entry &cache_entry_at_reference(std::uint8_t reference);
+  /** @brief 固定参照から物理バンク番号を求める。 */
+  std::uint32_t bank_of_reference(std::uint8_t reference) const;
+  /** @brief 常駐要素からPC索引、逆引き連結表、BasicBlock参照を再構成する。 */
+  void rebuild_cache_indices();
+  /** @brief 後続PCの逆引きバケットを求める。 */
+  static std::uint32_t chain_bucket_for_pc(wasm_pc_t pc);
+  /** @brief 一意なPC索引を検索する。cache missは空の参照を返す。 */
+  jit_trace_location find_cached_trace_by_pc(wasm_pc_t pc);
+  /** @brief 常駐位置を72要素の固定参照へ変換する。 */
+  std::uint8_t cache_reference(jit_trace_location location) const;
+  /** @brief 有効なBasicBlock参照を常駐位置に変換する。 */
+  jit_trace_location trace_location_from_reference(std::uint8_t reference_value);
+  jit_trace_header *trace_header(jit_cache_entry value) const;
+  /** @brief 常駐トレースの実行エントリアドレスを返す。 */
+  std::uintptr_t trace_entry_address(jit_cache_entry value) const;
+  /** @brief Loaderが解決した後続PCを返す。 */
+  wasm_pc_t trace_successor_pc(jit_cache_entry value) const;
+  block_index_t trace_successor_block_index(jit_cache_entry value) const;
+  /** @brief Loaderが解決したループ先PCを返す。 */
+  wasm_pc_t trace_loop_target_pc(jit_cache_entry value) const;
+  /** @brief 静的な前方チェイニングが可能なソースかを判定する。 */
+  bool can_chain_from(jit_cache_entry value) const;
+  /** @brief 後続PCとフレーム境界が連結可能かを判定する。 */
+  bool can_chain_to(jit_cache_entry value, jit_cache_entry target) const;
+  /** @brief 既存の連結先を参照する。未連結ならnullptrを返す。 */
+  const jit_trace_header *chain_target_header(const jit_trace_header &source) const;
+  /** @brief 連結先が変わる場合だけコードヘッダを書き換える。 */
+  void set_chain_target(jit_cache_entry source, const jit_cache_entry *target);
+  /** @brief Active/Warmの後続へ連結する。Oldestへは既存の連結だけを維持する。 */
+  void link_resident_successor(jit_cache_entry source);
+  /** @brief カードの2ビット状態を読み出す。 */
+  std::uint32_t card_state(std::uint32_t card) const;
+  /** @brief カードの2ビット状態を更新する。 */
+  void set_card_state(std::uint32_t card, std::uint32_t state);
+  /** @brief 常駐トレースのカードをコンパイル済みにする。 */
+  void mark_trace_card_compiled(wasm_pc_t pc);
+  /** @brief 計測ポリシーに従って予算付きのカード減衰を実行する。 */
+  int age_hotspot_cards();
+  /** @brief dirty領域を予算内で走査し、履歴候補だけを減衰する。 */
+  int decay_dirty_cards();
+  /** @brief 一バンクを破棄し、カードと参照索引を更新する。 */
+  void retire_cache_bank(std::uint32_t id);
+  /** @brief 破棄対象への生存バンクからの連結を逆引き表で解除する。 */
+  void unlink_retiring_bank(std::uint32_t id);
+  /** @brief Oldestを破棄し、3世代の役割を一段進める。 */
+  void rotate_cache_banks();
+  /** @brief コンパイル済みコードをコピーし、配置依存の参照を解決する。 */
+  void copy_trace_into_cache(jit_cache_entry value, const std::uint8_t *blob, std::uint32_t bytes);
+  /** @brief QA用コードをActiveへ配置する。容量不足なら一度ローテーションする。 */
+  bool insert_trace_fixture(const std::uint8_t *blob, std::uint32_t bytes,
+                            std::uint16_t cache_token)
+    requires(!std::is_void_v<Measurement>);
+  /** @brief 全世代の常駐トレースを移動せずに検索する。 */
+  jit_trace_location lookup_cached_trace(block_index_t block_index, wasm_pc_t pc);
+  /** @brief 全世代の常駐トレースを移動せずに検索する。 */
+  jit_trace_location lookup_cached_trace(wasm_pc_t pc)
+    requires(!std::is_void_v<Measurement>);
+  /** @brief 後続から順に連結全体のスタック上限と実行数を更新する。 */
+  void refresh_chain_requirements();
 };
 } // namespace fireball
 
 namespace fireball {
-namespace {
-constexpr std::int8_t opcode_benefit_value(std::uint8_t op) {
-  switch (op) {
-  case 0x6a:
-  case 0x6b:
-  case 0x71:
-  case 0x72:
-  case 0x73:
-  case 0x74:
-  case 0x75:
-  case 0x76:
-    return 7;
-  case 0x6c:
-  case 0x45:
-  case 0x46:
-  case 0x47:
-  case 0x48:
-  case 0x49:
-  case 0x4a:
-  case 0x4b:
-  case 0x4c:
-  case 0x4d:
-  case 0x4e:
-  case 0x4f:
-  case 0x67:
-  case 0x68:
-  case 0x41:
-  case 0x42:
-  case 0x43:
-  case 0x44:
-  case 0x20:
-  case 0x21:
-  case 0x22:
-    return 6;
-  case 0x6d:
-  case 0x6e:
-  case 0x1a:
-  case 0x1b:
-  case 0x0f:
-  case 0x01:
-  case 0x6f:
-  case 0x70:
-    return 4;
-  case 0x23:
-  case 0x24:
-  case 0x3f:
-    return 4;
-  case 0x0c:
-  case 0x0d:
-    return 5;
-  case 0x28:
-  case 0x2c:
-  case 0x2d:
-  case 0x2e:
-  case 0x2f:
-  case 0x36:
-  case 0x3a:
-  case 0x3b:
-    return 5;
-  case 0x7c:
-  case 0x7d:
-  case 0x7e:
-  case 0x92:
-  case 0x93:
-  case 0x94:
-  case 0x95:
-  case 0xa0:
-  case 0xa1:
-  case 0xa2:
-  case 0xa3:
-    return 3;
-  case 0x02:
-  case 0x03:
-  case 0x05:
-  case 0x0b:
-    return 0;
-  case 0x10:
-  case 0x11:
-  case 0x0e:
-    return -1;
-  case 0x40:
-    return -2;
-  case 0x00:
-    return -8;
-  case 0xfc:
-    return -2;
-  default:
-    break;
-  }
-  if ((op >= 0x28 && op <= 0x3e) || (op >= 0x50 && op <= 0x66) || op == 0x69 ||
-      (op >= 0x79 && op <= 0x7b) || (op >= 0x7f && op <= 0x91) ||
-      (op >= 0x96 && op <= 0x9f) || (op >= 0xa4 && op <= 0xc4))
-    return 3;
-  return -8;
-}
-constexpr auto opcode_benefit_table = [] {
-  std::array<std::uint8_t, 128> table{};
-  for (std::uint32_t op = 0; op < 256; ++op)
-    table[op / 2] |= (opcode_benefit_value(op) & 15) << (4 * (op % 2));
-  return table;
-}();
-bool read_score_leb(const std::uint8_t *code, std::uint32_t end,
-                    std::uint32_t &offset, std::uint32_t &operand) {
-  operand = 0;
-  for (std::uint32_t i = 0; i < 10 && offset < end; ++i) {
-    const auto value = code[offset++];
-    if (i < 5)
-      operand |= static_cast<std::uint32_t>(value & 0x7f) << (i * 7);
-    if ((value & 0x80) == 0)
-      return true;
-  }
-  return false;
-}
-std::int64_t score_block(const jit_wasm_block &b) {
-  std::int64_t score = 0;
-  auto offset = b.offset;
-  const auto end = offset + b.byte_span;
-  if (end > b.code.bytes)
-    return INT64_MIN;
-  std::uint32_t operand = 0;
-  while (offset < end) {
-    const auto op = b.code.data[offset++];
-    const auto benefit = (opcode_benefit_table[op / 2] >> (4 * (op % 2))) & 15;
-    score += benefit < 8 ? benefit : benefit - 16;
-    if (op == 0x02 || op == 0x03 || op == 0x04 || op == 0x0c || op == 0x0d ||
-        op == 0x10 || (op >= 0x20 && op <= 0x24) || op == 0x41 || op == 0x42) {
-      if (!read_score_leb(b.code.data, end, offset, operand))
-        return INT64_MIN;
-    } else if (op == 0x11 || (op >= 0x28 && op <= 0x3e)) {
-      if (!read_score_leb(b.code.data, end, offset, operand) ||
-          !read_score_leb(b.code.data, end, offset, operand))
-        return INT64_MIN;
-    } else if (op == 0x3f || op == 0x40) {
-      if (!read_score_leb(b.code.data, end, offset, operand))
-        return INT64_MIN;
-    } else if (op == 0x43 || op == 0x44) {
-      offset += op == 0x43 ? 4 : 8;
-    } else if (op == 0x0e) {
-      if (!read_score_leb(b.code.data, end, offset, operand))
-        return INT64_MIN;
-      const auto count = operand;
-      if (count >= end - offset)
-        return INT64_MIN;
-      for (std::uint32_t i = 0; i <= count; ++i)
-        if (!read_score_leb(b.code.data, end, offset, operand))
-          return INT64_MIN;
-    } else if (op == 0xfc) {
-      if (!read_score_leb(b.code.data, end, offset, operand))
-        return INT64_MIN;
-      const auto sub = operand;
-      if (sub == 10 && (!read_score_leb(b.code.data, end, offset, operand) ||
-                        !read_score_leb(b.code.data, end, offset, operand)))
-        return INT64_MIN;
-      if (sub == 11 && !read_score_leb(b.code.data, end, offset, operand))
-        return INT64_MIN;
-      if (sub > 7 && sub != 10 && sub != 11)
-        return INT64_MIN;
-    }
-  }
-  return offset == end ? score : INT64_MIN;
-}
-std::uint64_t
-module_code_bytes(const fireball_wasm_module_execution_view_native *view) {
-  std::uint64_t bytes = 0;
-  for (std::uint32_t i = view->imported_function_count;
-       i < view->function_count; ++i) {
-    const auto &f = view->functions[i];
-    const auto end = static_cast<std::uint64_t>(f.code_pc_offset) + f.code_size;
-    if (end > bytes)
-      bytes = end;
-  }
-  return bytes;
-}
-} // namespace
-} // namespace fireball
+/** @brief Loaderが確定したブロックのコンパイル候補スコアを求める。 */
+std::int64_t score_block(const jit_wasm_block &block);
 
-namespace fireball {
-template <class Measurement> struct native_jit_plugin {
-  using Runtime = jit_runtime<Measurement>;
-  static int fb_jit_runtime_flush(Runtime *c) {
-    c->error = 0;
-    for (std::uint32_t id = 0; id < fireball::bank_count; ++id) {
-      auto &b = c->banks[id];
-      for (std::uint32_t i = 0; i < b.count; ++i) {
-        const auto value = b.entries[i];
-        if (value.resident() && c->header(value)->chain_target_address != 0 &&
-            !c->patch(value, nullptr))
-          return 0;
-      }
-      if (!c->purge(id))
-        return 0;
-    }
-    if constexpr (!std::is_void_v<Measurement>)
-      c->cache_changed();
-    return 1;
-  }
-  static int
-  fb_jit_runtime_bind_cards(Runtime *c, std::uint8_t *states,
-                            std::uint32_t state_bytes, std::uint8_t *dirty,
-                            std::uint32_t dirty_bytes, std::uint32_t cards,
-                            std::uint32_t shift, std::uint32_t *cursor,
-                            std::uint32_t units, std::uint32_t scan_bytes) {
-    c->error = 0;
-    if (!c->check(shift < 32 && units > 0 && scan_bytes > 0 &&
-                  cursor != nullptr &&
-                  state_bytes == (static_cast<std::uint64_t>(cards) + 3) / 4 &&
-                  dirty_bytes == (static_cast<std::uint64_t>(cards) + 7) / 8 &&
-                  (cards == 0 || (states != nullptr && dirty != nullptr)) &&
-                  (dirty_bytes == 0 ? *cursor == 0 : *cursor < dirty_bytes)))
-      return 0;
-    c->states = states;
-    c->dirty = dirty;
-    c->cards = cards;
-    c->card_shift = shift;
-    c->dirty_bytes = dirty_bytes;
-    c->cursor = cursor;
-    c->age_units = units;
-    c->age_scan = scan_bytes;
-    c->provider.card_states = states;
-    c->provider.card_count = cards;
-    c->provider.card_shift = shift;
-    return 1;
-  }
-  static int fb_jit_runtime_bind_profile(Runtime *c,
-                                         typename Runtime::profile_type p) {
-    c->error = 0;
-    if (!c->check(p.history_capacity > 0 &&
-                  p.history_capacity <= c->history_records.size() &&
-                  p.queue_capacity > 0 &&
-                  p.queue_capacity <= c->queue_items.size() &&
-                  p.mask_bytes == c->dirty_bytes &&
-                  (c->cards == 0 || p.trackable != nullptr) && p.enabled <= 1 &&
-                  jit_card_count(p.code_bytes, c->card_shift) == c->cards))
-      return 0;
-    if constexpr (!std::is_void_v<Measurement>) {
-      if (!c->check(p.compiler_enabled <= 1 &&
-                    (p.block_count == 0 || p.blocks != nullptr)))
-        return 0;
-      for (std::uint32_t i = 1; i < p.block_count; ++i)
-        if (!c->check(p.blocks[i - 1].head_pc < p.blocks[i].head_pc))
-          return 0;
-    }
-    c->history = {c->history_records.data(), p.history_capacity, 0, 0};
-    c->queue = {c->queue_items.data(), p.queue_capacity, 0};
-    c->profile = p;
-    for (std::uint32_t i = 0; i < p.mask_bytes; ++i)
-      p.trackable[i] = 0;
-    std::uint32_t block_count = 0;
-    if constexpr (!std::is_void_v<Measurement>) {
-      block_count =
-          c->module == nullptr ? p.block_count : c->module->block_count;
-    } else {
-      block_count = c->module->block_count;
-    }
-    for (std::uint32_t i = 0; i < block_count; ++i) {
-      fireball::jit_wasm_block storage{};
-      const fireball::jit_wasm_block *input = nullptr;
-      if constexpr (!std::is_void_v<Measurement>) {
-        input = c->module == nullptr ? p.blocks + i : c->block_at(i, storage);
-      } else {
-        input = c->block_at(i, storage);
-      }
-      if (!c->check(input != nullptr))
-        return 0;
-      const auto &block = *input;
-      const auto card =
-          jit_card_index(p.code_bytes, c->card_shift, block.head_pc);
-      if (!c->check(card >= 0 && static_cast<std::uint64_t>(card) < c->cards))
-        return 0;
-      std::int64_t score = 0;
-      if constexpr (!std::is_void_v<Measurement>) {
-        score = c->module == nullptr ? block.jit_score
-                                     : fireball::score_block(block);
-      } else {
-        score = fireball::score_block(block);
-      }
-      if (block.byte_span != 0 && block.byte_span >= p.min_trace_bytes &&
-          score >= p.candidate_threshold)
-        p.trackable[card / 8] |= static_cast<std::uint8_t>(1u << (card % 8));
-    }
-    if constexpr (!std::is_void_v<Measurement>)
-      c->profile_bound();
-    if constexpr (!std::is_void_v<Measurement>)
-      c->mask_changed();
-    return 1;
-  }
-  static int fb_jit_runtime_compile(Runtime *c, std::uint32_t budget) {
-    c->error = 0;
-    return c->compile_pending(budget);
-  }
-  static int finish_boundary(Runtime *c, int yielded, std::uint32_t budget) {
-    c->error = 0;
-    if (!c->analyze(yielded != 0))
-      return 0;
-    if (c->queue.count != 0 &&
-        (yielded != 0 || c->queue.count == c->queue.capacity) &&
-        c->compile_pending(budget) < 0)
-      return 0;
-    return 1;
-  }
-  static void fb_jit_runtime_close(Runtime *c) { c->~Runtime(); }
-  static int lookup_runtime_trace(std::uintptr_t owner,
-                                  std::uint32_t block_index, std::uint32_t pc,
-                                  fb_native_jit_trace *output) {
-    if (owner == 0 || output == nullptr)
-      return -1;
-    auto &runtime = *reinterpret_cast<Runtime *>(owner);
-    assert(runtime.states != nullptr && runtime.card_shift < 32);
-    const auto card = pc >> runtime.card_shift;
-    if (card >= runtime.cards)
-      return -1;
-    assert(runtime.card_state(card) == 3);
-    const auto start_location = runtime.lookup(block_index, pc);
-    auto *start = start_location.value;
-    if (runtime.error != 0)
-      return -1;
-    if (start == nullptr)
-      return 0;
-    const auto *start_header = runtime.header(*start);
-    assert(start_header->const_rel_offset >=
-           fireball::kTraceBoundaryMetadataBytes);
-    assert(start_header->const_rel_offset <= start_header->blob_bytes);
-    assert(start_header->chain_body_count != 0);
-    if (runtime.error != 0)
-      return -1;
-    const auto *rel = reinterpret_cast<const std::uint8_t *>(
-        reinterpret_cast<const std::uint8_t *>(start_header) +
-        start_header->const_rel_offset);
-    *output = {runtime.entry_address(*start),
-               rel,
-               start_header->frame_depth,
-               start_header->chain_words,
-               start_header->chain_body_count,
-               reinterpret_cast<std::uintptr_t>(start_header)};
-    return 1;
-  }
-  static int observe_runtime_block(std::uintptr_t owner,
-                                   std::uint32_t block_index,
-                                   std::uint32_t pc) {
-    if (owner == 0)
-      return -1;
-    auto &runtime = *reinterpret_cast<Runtime *>(owner);
-    return runtime.profile.enabled != 0 && runtime.trackable(pc) &&
-                   runtime.record_observed(block_index, pc)
-               ? 1
-               : 0;
-  }
+/** @brief ホスト契約を確定するJITプラグインのABI手続き。 */
+template <jit_measurement_policy Measurement> struct jit_provider_adapter {
+  using runtime_type = jit_runtime<Measurement>;
+  /** @brief すべての常駐コードと連結を破棄する。 */
+  static int fb_jit_runtime_flush(runtime_type *runtime);
+  /** @brief カード領域のサイズと減衰設定を入口で検証して結び付ける。 */
+  static int fb_jit_runtime_bind_cards(runtime_type *runtime, std::uint8_t *states,
+                                       [[maybe_unused]] std::uint32_t state_bytes,
+                                       std::uint8_t *dirty, std::uint32_t dirty_bytes,
+                                       std::uint32_t cards, std::uint32_t shift,
+                                       std::uint32_t *cursor, std::uint32_t units,
+                                       std::uint32_t scan_bytes);
+  /** @brief 候補設定を検証し、ブロック単位で候補マスクを構築する。 */
+  static int fb_jit_runtime_bind_profile(runtime_type *runtime,
+                                         typename runtime_type::profile_type p);
+  /** @brief コンパイルキューを指定予算で処理する。 */
+  static int fb_jit_runtime_compile(runtime_type *runtime, std::uint32_t budget);
+  /** @brief 実行境界の履歴を処理し、必要なら候補をコンパイルする。 */
+  static int finish_boundary(runtime_type *runtime, int yielded, std::uint32_t budget);
+  /** @brief 配置されたランタイムの寿命を終了する。 */
+  static void fb_jit_runtime_close(runtime_type *runtime);
+  /** @brief Interpreterへ常駐トレースの実行情報を渡す。 */
+  static int lookup_runtime_trace(std::uintptr_t owner, block_index_t block_index, wasm_pc_t pc,
+                                  fb_native_jit_trace *output);
+  /** @brief 対象ブロックの実行履歴を記録する。 */
+  static int observe_runtime_block(std::uintptr_t owner, block_index_t block_index,
+                                   wasm_pc_t pc);
+  /** @brief Interpreterの終了状態をJITの境界処理へ変換する。 */
   static int finish_runtime_boundary(std::uintptr_t owner, std::uint32_t status,
-                                     std::uint32_t budget) {
-    if (owner == 0)
-      return 0;
-    auto *runtime = reinterpret_cast<Runtime *>(owner);
-    runtime->error = 0;
-    return finish_boundary(runtime, status == 5, budget) == 1 &&
-                   runtime->error == 0
-               ? 1
-               : 0;
-  }
+                                     std::uint32_t budget);
+  /** @brief カード状態と2つのビット領域の必要サイズを返す。 */
+  static std::size_t workspace_size(const fireball_wasm_module_execution_view_native *view);
+  /** @brief 状態と作業領域を実行領域のアラインメントへ切り上げる。 */
+  static std::size_t data_region_size(const fireball_wasm_module_execution_view_native *view);
+  /** @brief ホストの実行領域アラインメントを返す。 */
+  static std::size_t fb_jit_plugin_alignment();
+  /** @brief ランタイム状態、作業領域、コード領域の総サイズを返す。 */
   static std::size_t
-  workspace_size(const fireball_wasm_module_execution_view_native *view) {
-    const auto cards = jit_card_count(fireball::module_code_bytes(view),
-                                      FB_CONF_JIT_CARD_SHIFT);
-    return cards < 0 ? 0 : (cards + 3) / 4 + 2 * ((cards + 7) / 8);
-  }
-  static std::size_t
-  data_region_size(const fireball_wasm_module_execution_view_native *view) {
-    const auto alignment = fireball::executable_region_alignment();
-    const auto bytes = sizeof(Runtime) + workspace_size(view);
-    return (bytes + alignment - 1) & ~(alignment - 1);
-  }
-  static std::size_t fb_jit_plugin_alignment() {
-    return fireball::executable_region_alignment();
-  }
-  static std::size_t fb_jit_plugin_required_bytes(
-      const fireball_wasm_module_execution_view_native *view) {
-    if (view == nullptr)
-      return 0;
-    const auto alignment = fb_jit_plugin_alignment();
-    return data_region_size(view) +
-           ((FB_CONF_JIT_CACHE_REGION_BYTES + alignment - 1) &
-            ~(alignment - 1));
-  }
-  static Runtime *
-  fb_jit_plugin_init(std::uint8_t *region, std::size_t bytes,
-                     const fireball_wasm_module_execution_view_native *view,
-                     std::uint32_t module_id) {
-    if (view == nullptr || region == nullptr ||
-        bytes != fb_jit_plugin_required_bytes(view) ||
-        reinterpret_cast<std::uintptr_t>(region) % fb_jit_plugin_alignment() !=
-            0)
-      return nullptr;
-    auto *c = ::new (region) Runtime{};
-    if constexpr (!std::is_void_v<Measurement>)
-      c->owns_memory = false;
-    c->provider = {reinterpret_cast<std::uintptr_t>(c),
-                   nullptr,
-                   0,
-                   0,
-                   lookup_runtime_trace,
-                   observe_runtime_block,
-                   finish_runtime_boundary};
-    if (!fireball::borrow_executable_region(&c->memory,
-                                            region + data_region_size(view),
-                                            FB_CONF_JIT_CACHE_REGION_BYTES) ||
-        !fireball::initialize_common_code(&c->memory)) {
-      c->~Runtime();
-      return nullptr;
-    }
-    constexpr std::uint32_t offsets[] = {FB_CONF_JIT_CACHE_ACTIVE_OFFSET_BYTES,
-                                         FB_CONF_JIT_CACHE_WARM_OFFSET_BYTES,
-                                         FB_CONF_JIT_CACHE_OLDEST_OFFSET_BYTES};
-    for (std::uint32_t i = 0; i < fireball::bank_count; ++i) {
-      c->banks[i].capacity = FB_CONF_JIT_CACHE_BANK_CAPACITY_BYTES;
-      c->banks[i].entry_capacity = fireball::max_entries;
-      c->banks[i].offset = offsets[i];
-    }
-    c->module = view;
-    const auto code_bytes = fireball::module_code_bytes(view);
-    const auto cards = static_cast<std::uint32_t>(
-        jit_card_count(code_bytes, FB_CONF_JIT_CARD_SHIFT));
-    const auto state_bytes = (cards + 3) / 4;
-    const auto mask_bytes = (cards + 7) / 8;
-    auto *workspace = region + sizeof(Runtime);
-    for (std::size_t i = 0; i < workspace_size(view); ++i)
-      workspace[i] = 0;
-    auto *dirty = workspace + state_bytes;
-    auto *mask = dirty + mask_bytes;
-    typename Runtime::profile_type profile{};
-    static_cast<jit_profile &>(profile) = {mask,
-                                           mask_bytes,
-                                           module_id,
-                                           1,
-                                           9,
-                                           1u << FB_CONF_JIT_CARD_SHIFT,
-                                           code_bytes,
-                                           FB_CONF_JIT_HISTORY_CAPACITY,
-                                           FB_CONF_JIT_COMPILE_QUEUE_CAPACITY};
-    if (!fb_jit_runtime_bind_cards(
-            c, workspace, state_bytes, dirty, mask_bytes, cards,
-            FB_CONF_JIT_CARD_SHIFT, &c->workspace_cursor,
-            FB_CONF_JIT_AGING_STEP_UNITS, FB_CONF_JIT_AGING_STEP_SCAN_BYTES) ||
-        !fb_jit_runtime_bind_profile(c, profile)) {
-      c->~Runtime();
-      return nullptr;
-    }
-    return c;
-  }
-  static const fb_native_jit_provider *fb_jit_plugin_provider(Runtime *c) {
-    return c == nullptr ? nullptr : &c->provider;
-  }
+  fb_jit_plugin_required_bytes(const fireball_wasm_module_execution_view_native *view);
+  /** @brief 借用領域にランタイムを構築し、コード領域と候補設定を初期化する。 */
+  static runtime_type *fb_jit_plugin_init(std::uint8_t *region, [[maybe_unused]] std::size_t bytes,
+                                          const fireball_wasm_module_execution_view_native *view,
+                                          std::uint32_t module_id);
+  static const fb_native_jit_provider *fb_jit_plugin_provider(runtime_type *runtime);
 };
 } // namespace fireball

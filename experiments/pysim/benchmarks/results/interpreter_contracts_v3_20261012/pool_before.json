@@ -1,0 +1,32 @@
+[
+  {
+    "function_index": 0,
+    "instructions": 6,
+    "pool_bytes": 18
+  },
+  {
+    "function_index": 1,
+    "instructions": 12,
+    "pool_bytes": 32
+  },
+  {
+    "function_index": 2,
+    "instructions": 67,
+    "pool_bytes": 219
+  },
+  {
+    "function_index": 3,
+    "instructions": 69,
+    "pool_bytes": 265
+  },
+  {
+    "function_index": 4,
+    "instructions": 102,
+    "pool_bytes": 394
+  },
+  {
+    "function_index": 5,
+    "instructions": 254,
+    "pool_bytes": 1018
+  }
+]

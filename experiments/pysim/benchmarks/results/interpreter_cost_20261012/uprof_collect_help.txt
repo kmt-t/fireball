@@ -1,0 +1,666 @@
+/opt/AMDuProf_5.3-521/bin/AMDuProfCLI
+AMDUPROFCLI-COLLECT(1)         AMDuProfCLI Manual        AMDUPROFCLI-COLLECT(1)
+
+NAME
+       AMDuProfCLI  collect  -  Collect the performance profile data for target
+       application, processes or the system.
+
+SYNOPSIS
+       AMDuProfCLI collect [<options>] <program> [<args>]
+
+DESCRIPTION
+       This collect command runs the given program and collects the performance
+       profile data. This data can then be analyzed using 'AMDuProfCLI  report'
+       command or GUI tool 'AMDuProf'.
+
+OPTIONS
+       <program>
+              The launch application to be profiled.
+
+       <args> The list of arguments for the launch application.
+
+       -h, --help
+              Displays this help information.
+
+       -o, --output-dir <directory-path>
+              Base directory path where profile data will be saved.
+
+              Note: This option is optional. If not specified, defaults to current working directory.
+
+              o If <directory-path> exists: Creates an auto-named session subdirectory inside it
+              o If <directory-path> does not exist: Creates the path and stores session data directly in it
+
+              Note: For MPI profiling/tracing, an auto-named session subdirectory is always created inside <directory-path>.
+
+       --config <collect-config>
+              Predefined profile configurations to collect samples.
+
+              Use command 'info --list collect-configs' for the list of supported configurations.
+
+              Multiple occurrences of --config are allowed.
+
+       -e, --event <EVENT> or <predefined event>
+              A  predefined  event  can be directly used with -e, --event which
+              has predefined arguments.  Use command 'info  --list  predefined-
+              events' for the list of supported predefined events.
+
+              Alternatively,  for  providing  more  granular parameters specify
+              Timer, PMU, IBS event or a predefined event with arguments in the
+              form of comma separated key=value pairs. Supported keys are:
+
+              •  event=<timer | ibs-fetch | ibs-op> or <PMU-event>
+
+              •  umask=<unit-mask>
+
+              •  user=<0 | 1> (Supported for  Core  PMC  events  (all  AMD  Zen
+                 processors) and IBS events (AMD Zen6 and later processors))
+
+              •  os=<0 | 1> (Supported for Core PMC events (all AMD Zen proces‐
+                 sors) and IBS events (AMD Zen6 and later processors))
+
+              •  cmask=<count-mask> (Value should be in the range 0x0 to 0x7f)
+
+              •  inv=<0 | 1>
+
+              •  interval=<sampling-interval>
+
+              •  frequency=<n>  (Supported  only for Core PMC events. Frequency
+                 should be provided in Hz)
+
+              •  ibsop-count-control=<0 | 1> (Choose IBS  OP  sampling  by  cy‐
+                 cle(0) count or dispatch(1) count.)
+
+              •  ibsop-l3miss=<0 | 1> (Don't filter out any IBS OP samples (0),
+                 or filter out all IBS OP samples except loads/stores that miss
+                 in  the  L3  cache  (1),  supported only on AMD Zen4 and later
+                 processors)
+
+              •  ibsfetch-l3miss=<0 | 1> (Don't filter out any IBS  FETCH  sam‐
+                 ples  (0),  or  filter  out all IBS FETCH samples except those
+                 that miss in the L3 cache (1), supported only on AMD Zen4  and
+                 later processors)
+
+              •  ibsop-stream-store=<0  |  1> (Don't filter out any IBS OP sam‐
+                 ples (0), or filter out all IBS OP  samples  except  streaming
+                 stores (1), supported only on AMD Zen6 and later processors.)
+
+              •  ibsop-ldlat=<LATENCY>  (Filter  IBS  OP  samples by data cache
+                 miss latency threshold in CPU cycles. LATENCY must be an inte‐
+                 ger which is multiple of 128 and between  128  to  2048.  Sup‐
+                 ported on AMD Zen5 and later processors.)
+
+              •  ibsfetch-ldlat=<LATENCY>  (Filter  IBS  FETCH  samples by data
+                 cache miss latency threshold in CPU cycles. LATENCY must be an
+                 integer which is multiple of 128 and between 128 to 1920. Sup‐
+                 ported on AMD Zen6 and later processors.)
+
+              Note: No need to provide umask with predefined event.
+
+              Specify whether to collect callgraph for an event using the  fol‐
+              lowing option:
+
+              •  call-graph
+
+              Use  command 'info --list predefined-events' for the list of sup‐
+              ported predefined events.  Use command 'info  --list  pmu-events'
+              for the list of supported PMU-events.
+
+              When these arguments are not passed, then the default values are:
+
+              •  umask=0
+
+              •  user=1
+
+              •  os=1
+
+              •  cmask=0x0
+
+              •  inv=0
+
+              •  ibsop-count-control=1
+
+              •  ibsop-l3miss=0
+
+              •  ibsfetch-l3miss=0
+
+              •  ibsop-stream-store=0
+
+              •  interval=1.0 ms (for timer event)
+
+              •  interval=250000 (for ibs-fetch, ibs-op, PMU-event)
+
+              Multiple occurrences of --event (-e) are allowed.
+
+       --trace <TARGET>
+              To  trace  a target domain. TARGET can be one or more of the fol‐
+              lowing:
+
+              •  osrt - to enable tracing of  os  runtime.  Use  command  'info
+                 --list trace-events' for the list of trace events.
+
+              •  func  - to enable tracing of functions. Use '--func', '--func-
+                 size' and '--func-threshold' to configure additional options.
+
+              •  memory - to enable tracing of dynamic memory allocations.  Use
+                 '--memory-threshold' to configure threshold.
+
+              •  mpi  -  to enable tracing of MPI application. Use '--mpi-impl'
+                 and '--mpi-scope' to configure additional options.
+
+              •  openmp  -  to  enable  tracing  of  OpenMP  application.   Use
+                 '--openmp-impl'  and  '--openmp-scope' to configure additional
+                 options.  Note:
+
+                 1.  Applicable to per process profiling. Not applicable to:
+
+                     •  System wide profiling
+
+                     •  Java app profiling
+
+                     •  Attach process profiling
+
+                 2.  For 'ompt' - application should be compiled with LLVM-8 or
+                     later, AOCC-2.1 or later, ICC-19.1 or later.  For 'omplib'
+                     - application should be  compiled  with  GCC-7  or  later.
+                     Supported base languages are: C, C++, Fortran.
+
+              •  gpu  -  To  trace a target application on GPU. By default, the
+                 domain is set to 'hip and hsa'.
+
+       --mpi-impl <mpich|openmpi>
+              Provide MPI implementation type: 'openmpi'  for  tracing  OpenMPI
+              library, 'mpich' for tracing MPICH and it's derivative libraries.
+              Default  selection  is  'mpich'.   Note:  Use  this  option  with
+              '--trace mpi' option.
+
+       --mpi-scope <lwt|full>
+              Provide tracing scope: 'lwt' for light-weight tracing, 'full' for
+              complete tracing. Default scope type is 'full'.  Note:  Use  this
+              option with '--trace mpi' option.
+
+       --openmp-impl <ompt|omplib>
+              Provide  OpenMP implementation type: 'ompt' for tracing of OpenMP
+              libraries supporting OMPT interface (e.g. LLVM,  AOCC),  'omplib'
+              for  tracing  GCC  OpenMP  library.  Default selection is 'ompt'.
+              Note: Use this option with '--trace openmp' option.
+
+       --openmp-scope <full|basic>
+              Provide tracing scope: 'full' for complete tracing,  'basic'  for
+              basic  tracing,  where  synchronization related OpenMP events are
+              not traced to reduce the disk space usage. Default  selection  is
+              'basic'.   Note:  Use  this  option with '--trace openmp' option.
+              Note: This option is only applicable with '--openmp-impl ompt'.
+
+       --osrt-event <event1,event2...>
+              Provide event names.  Use command 'info --list trace-events'  for
+              the  list  of  trace events.  Note: Use this option with '--trace
+              osrt' option.
+
+       --osrt-threshold <event:threshold>
+              Provide event name and threshold value.  Note:  Use  this  option
+              with '--trace osrt' option.
+
+       --func-size <size>
+              Proivde  minimum function size to trace. Default function size is
+              128 bytes.  Note: Use this option with '--trace func' option.
+
+       --func-threshold <threshold>
+              Provide the threshold value in nsec. If function execution  takes
+              less  than threshold then function will not be traced.  Note: Use
+              this option with '--trace func' option.
+
+       --func <module:function-pattern>
+              Specify functions to trace from the library or executable or ker‐
+              nel.
+
+              •  Function-pattern can be a function name or partial name ending
+                 with '*'. Use only '*' to trace all the functions of a module.
+
+              •  Module can be library or executable. To trace the kernel func‐
+                 tions, replace the module with "kernel".
+
+       --exclude-func <module:function-pattern>
+              Specify functions to exclude from the library  or  executable  or
+              kernel.
+
+              •  Function-pattern can be a function name or partial name ending
+                 with '*'. Use only '*' to trace all the functions of a module.
+
+              •  Module can be library or executable. To trace the kernel func‐
+                 tions, replace the module with "kernel".
+
+       --memory-threshold <threshold>
+              Provide the threshold value in bytes.  Note: Use this option with
+              '--trace memory' option.
+
+       --ip-block <block>
+              Specify  this  option to collect GPU Profile data for specific IP
+              Block. List Of IP Block:
+
+              •  SQ
+
+              •  SQC
+
+              •  TA
+
+              •  TD
+
+              •  TCP
+
+              •  TCC
+
+              •  SPI
+
+              •  CPC
+
+              •  CPF
+
+       -p, --pid <PID,..>
+              Profile existing processes(processes to  attach  to).Process  IDs
+              are separated by comma.
+
+       --tid <TID,..>
+              Profile  existing  threads(threads  to attach to). Thread IDs are
+              separated by comma.
+
+       -m, --mmap-pages <size>
+              Set kernel mmapped data buffer to size. Size can be specified  in
+              pages   Or  with  a  suffix  Bytes(B/b),  Kilo  bytes(K/k),  Mega
+              bytes(M/m), Giga Bytes(G/g).
+
+       -a, --system-wide
+              System Wide Profile (SWP).Otherwise profile only the launched ap‐
+              plication or the Process IDs attached with -p option.
+
+       -c, --cpu <core,..>
+              Comma separated list of CPUs to profile. Ranges of CPUs  also  be
+              specified with -: 0-3. This option is not supported with MPI Pro‐
+              filing.
+
+       --call-graph <F:N>
+              Enable  Call  stack sampling. Specify F to collect/ignore missing
+              frames due to omission of frame pointers by compiler:
+
+              o fp   : Use Frame pointers to collect call stack information.
+
+              •  fpo | dwarf : Collect process call stack during sample collec‐
+                 tion and use DWARF information to reconstruct the call stack.
+
+              When F = fpo | dwarf; N must be within [16 - 32768] and specifies
+              the max stack-size (in bytes) to collect per call  stack  sample.
+              If N is not multiple of 8, then it is aligned down to the nearest
+              value multiple of 8.The default value is 1024 bytes.
+
+              Note: Passing a large N value will generate a very large raw data
+              file.
+
+              When  F  =  fp;  the value for N is not applicable and ignored if
+              passed.
+
+       -g     Same as passing '--call-graph fp'
+
+       --call-graph-depth <num>
+              Set callstack unwind depth. Depth must be within the range  [2  -
+              1024].  Default  depth  is  32.  This  option  is  applicable for
+              Hotspots and Threading configurations, for any  other  configura‐
+              tions this option will be ignored.
+
+       --call-graph-mode <fp|fpo|dwarf>
+              Callstack collection mode. Default mode is fp.
+
+              o fp   : Use Frame pointers to collect call stack information.
+
+              •  fpo | dwarf : Collect process call stack during sample collec‐
+                 tion and use DWARF information to reconstruct the call stack.
+
+       --call-graph-size <size>
+              Callstack Size. Default size is 1024 bytes.
+
+             When mode = fpo | dwarf; size must be within [16 - 32768] and specifies the max stack-size (in bytes) to collect per call stack sample.
+
+             When mode = fp; the size is not applicable and ignored if passed.
+
+       -d, --duration <num>
+              Profile duration in seconds.
+
+       --interval <num>
+              Sampling interval for PMC events.  Note: This interval will over‐
+              ride the sampling interval specified with individual events.
+
+       --frequency <n>, --freq <n>, -F <n>
+              Enable data collection at the specified frequency 'n' (in Hz) for
+              Core PMC events.  Note: This frequency will override the sampling
+              frequency specified with individual events.
+
+       --timer-interval <num>
+              Sampling   interval   (in  msec)  for  Time-based  profiling  and
+              hotspots.
+
+       --no-inherit
+              Do not profile the children of the launched application.
+
+       -b, --terminate
+              Terminate the launched application after profile data  collection
+              ends.  Only  the launched application process will be killed. Its
+              children, if any, may continue to execute.
+
+       --affinity <core-id,..>
+              Comma separated list of CPUs. In Per-Process  profile,  processor
+              affinity  is set for the launched application. This option is not
+              supported with MPI Profiling.
+
+       --start-delay <n>
+              Start Delay ('n' in seconds). Start profiling after the specified
+              duration. When 'n' is 0, it has no impact.
+
+       --start-paused
+              Profiling paused indefinitely. The target application resumes the
+              profiling using the profile control  APIs.  Refer  AMDProfileCon‐
+              troller.h for profile control APIs.
+
+       -w, --working-dir <dir>
+              Specify  the  working  directory. Default will be the path of the
+              launched application.
+
+       --mpi  Use this option to get the MPI  profiling  information.  For  MPI
+              tracing, check --trace option.
+
+       --kvm-guest <pid>
+              Specify  the  PID  of  qemu-kvm process to be profiled to collect
+              guest side performance profile.
+
+       --guest-kallsyms <path>
+              Specify the path of guest  /proc/kallsyms  copied  on  the  local
+              host. uProf reads it to get the guest kernel symbols.
+
+       --guest-modules <path>
+              Specify the path of guest /proc/modules copied to the local host.
+              uProf reads it to get the guest kernel module information.
+
+       --guest-search-path <path>
+              Specify  the  path of  guest vmlinux and kernel sources copied on
+              local host. uProf reads it to resolve guest kernel module  infor‐
+              mation.
+
+       --log-path <path-to-log-dir>
+              Specify the path to where log file should be created. If this op‐
+              tion is not provided, by default the log file will be created ei‐
+              ther in path set by AMDUPROF_LOGDIR environment variable or $TEMP
+              path.   The  log  file name will be of the format $USER-AMDuProf‐
+              CLI.log.
+
+       --log-level <LEVEL>
+              LEVEL refers to the verbosity  of  the  log  messages  generated.
+              Level  values  are clamped between 1 and 5, and the default value
+              of level is 2. where level 1 to 5 is described are follows
+
+              •  1 - Errors
+
+              •  2 - Warnings
+
+              •  3 - Info
+
+              •  4 - Debugging
+
+              •  5 - Tracing Note: Levels are accumulated, for example  select‐
+                 ing level 4 means enabling all the levels 1 to 4.
+
+       --log LEVEL,ts,PATH
+              This is a shorthand option for all relevant log settings
+
+              o      LEVEL  refers  to  the  verbosity of log messages, same as
+                     --log-level option.
+
+              o      ts refers to the addition of timestamp to  each  log  mes‐
+                     sage.
+
+              o      PATH refers to the path where log files will be generated.
+                     Note:  --log option must be passed with at least one argu‐
+                     ment.
+
+       --enable-logts
+              Use this option to capture the timestamp of the log records.
+
+       --limit-data <n>
+              Use this option to stop the profiling  once  the  collected  data
+              file  size  (in  MBs)  crosses the limit. When used with (--over‐
+              write) option, the limit is before the collection is  terminated.
+              Size  can  be  specified  with  a  suffix  Mega  bytes(M/m), Giga
+              Bytes(G/g) and Seconds(secs).
+
+       --env-var <key1=value1:key2=value2:...>
+              Use this option to set the environment variables.
+
+       --branch-filter
+              Use this option to capture LBR data. Specify branch filter type:
+
+              •  u : user branches
+
+              •  k : kernel branches
+
+              •  any : any branch type
+
+              •  any_call : any call branch
+
+              •  any_ret : any return branch
+
+              •  ind_call : indirect calls
+
+              •  ind_jmp : indirect jumps
+
+              •  cond : conditional branches
+
+              •  call : direct calls
+
+              When above filters not set  then  default  filter  type  will  be
+              'any'.
+
+                     NOTE:
+                     1. Applicable to per process and attach process profiling. Not applicable to:
+                        - Java app profiling
+                     2. Will work only with pmc events
+
+       --metric <metric-type>
+              Specify  the metric type to collect Supported metric types:- mem‐
+              ory
+
+       --profiling-signal <realtime-signal>
+              Specify the realtime signal to be used  when  timer  expires  for
+              hotspots config.
+
+       --collect-sys-modules
+              By default, threading config doesn't collect the callstack beyond
+              the  first  standard library function called by application.  Use
+              this option to disable it  and  collect  the  complete  callstack
+              which includes the standard library functions.
+
+       --collect-thread
+              Provide the comma separated list of thread names to filter-in the
+              threads  for  hotspots and threading analysis when application is
+              launched with AMDuProfCLI.
+
+       --python
+              Profile a Python script. Supported Python version:  3.10.   Note:
+              Using  -g with --python may produce inaccurate call stacks if the
+              Python interpreter binaries were not compiled with  frame  point‐
+              ers.
+
+WORKFLOW
+       Collect  -  Running the application program and collect the profile data
+       AMDuProfCLI.exe collect --config tbp -o /tmp/cpuprof-tbp AMDTClassicMat‐
+       Mul-bin
+
+       Report - Process the profile data to aggregate and  correlate  and  view
+              and   analyze  the  performance  data  to  identify  bottlenecks.
+              AMDuProfCLI.exe report -i /tmp/cpuprof-tbp/<SESSION-DIR>
+
+PREDEFINED SAMPLING CONFIGURATION
+       For CPU Profiling, since there are numerous micro-architecture  specific
+       events  are available to monitor, the tool itself groups the related and
+       interesting events to monitor - which is called Predefined Sampling Con‐
+       figuration. For example, Assess Performance is one  such  configuration,
+       which  is  used to get the overall assessment of performance and to find
+       potential issues for investigation.
+
+CUSTOM SAMPLING CONFIGURATION
+       A Custom Sampling Configuration is the one in which the user can  define
+       a  sampling configuration with events of interest using -e (--event) op‐
+       tion.
+
+ENVIRONMENT
+       AMDUPROF_LOGDIR
+              If $AMDUPROF_LOGDIR is set, its value is used as the path to cre‐
+              ate log file.
+
+EXAMPLES
+       AMDTClassicMatMul-bin can be found at  <uProf-dir>/Examples/AMDTClassic‐
+       MatMul/bin
+
+       1.  Launch 'AMDTClassicMatMul-bin' and collect 'Hotspots' and callstack:
+
+               $ AMDuProfCLI collect --config hotspots -g -o /tmp/cpuprof-hotspots AMDTClassicMatMul-bin
+
+       2.  Launch 'AMDTClassicMatMul-bin' and collect 'TBP' samples:
+
+               $ AMDuProfCLI collect --config tbp -o /tmp/cpuprof-tbp AMDTClassicMatMul-bin
+
+       3.  Launch  'AMDTClassicMatMul-bin'  and  collect  'Threading' and call‐
+           stack:
+
+               $ AMDuProfCLI collect --config threading -g -o /tmp/cpuprof-threading AMDTClassicMatMul-bin
+
+       4.  Launch 'AMDTClassicMatMul-bin' and do 'Assess  Performance'  profile
+           for 10 seconds:
+
+               $ AMDuProfCLI collect --config assess -o /tmp/cpuprof-assess -d 10 AMDTClassicMatMul-bin
+
+       5.  Launch  'AMDTClassicMatMul-bin'  and  collect  'IBS'  samples in SWP
+           mode:
+
+               $ AMDuProfCLI collect --config ibs -a -o /tmp/cpuprof-ibs-swp AMDTClassicMatMul-bin
+
+       6.  Collect 'TBP' samples in SWP mode for 10 seconds:
+
+               $ AMDuProfCLI collect --config tbp -a -o /tmp/cpuprof-tbp-swp -d 10
+
+       7.  Launch 'AMDTClassicMatMul-bin' and collect 'TBP' with callstack sam‐
+           pling (unwind FPO optimized stack):
+
+               $ AMDuProfCLI collect --config tbp --call-graph-mode fpo --call-graph-size 512 -o /tmp/cpuprof-tbp AMDTClassicMatMul-bin
+
+       8.  Launch 'AMDTClassicMatMul-bin' and collect samples for  PMCx076  and
+           PMCx0C0 events:
+
+               $ AMDuProfCLI collect -e event=pmcx76,interval=250000 -e event=pmcxc0,user=1,os=0,interval=250000 -o /tmp/cpuprof-pmc AMDTClassicMatMul-bin
+
+       9.  Launch  'AMDTClassicMatMul-bin'  and collect samples for IBS OP with
+           interval 50000:
+
+               $ AMDuProfCLI collect -e event=ibs-op,interval=50000 -o /tmp/cpuprof-ibs AMDTClassicMatMul-bin
+
+       10. Attach to a thread and collect TBP samples for 10 seconds:
+
+               $ AMDuProfCLI collect --config tbp -o /tmp/cpuprof-tbp-attach -d 10 --tid <TID>
+
+       11. Collect basic OpenMP trace info of an  OpenMP  application  compiled
+           with GCC OpenMP library:
+
+               $ AMDuProfCLI collect --trace openmp --openmp-impl omplib -o /tmp/cpuprof-omp <path-to-openmp-exe>
+
+       12. Launch 'AMDTClassicMatMul-bin' and collect memory accesses for false
+           cache sharing:
+
+               $ AMDuProfCLI collect --config memory -o /tmp/cpuprof-mem AMDTClassicMatMul-bin
+
+       13. Collect MPI profiling information:
+
+               $ mpirun -np 4 ./AMDuProfCLI collect --config assess --mpi --output-dir /tmp/cpuprof-mpi /tmp/namd <parameters>
+
+       14. Collect  samples for PMCx076 and PMCx0C0 but collect call graph info
+           only for PMCx0C0:
+
+               $ AMDuProfCLI collect -e event=pmcx76,interval=250000 -e event=pmcxc0,interval=250000,call-graph -o /tmp/cpuprof-pmc AMDTClassicMatMul-bin
+
+       15. Launch 'AMDTClassicMatMul-bin' and collect  samples  for  predefined
+           event RETIRED_INST and L1_DC_ACCESSES_ALL events:
+
+               $ AMDuProfCLI collect -e event=RETIRED_INST,interval=250000 -e event=L1_DC_ACCESSES_ALL,user=1,os=0,interval=250000 -o /tmp/cpuprof-pmc AMDTClassicMatMul-bin
+
+       16. Launch  'AMDTClassicMatMul-bin'  and  collect  pthread runtime trace
+           with default threshold:
+
+               $ AMDuProfCLI collect --trace osrt --osrt-event pthread -o /tmp/cpuprof-os AMDTClassicMatMul-bin
+
+       17. Launch 'AMDTClassicMatMul-bin' and collect syscall which are  taking
+           more than or equal to 1ms:
+
+               $ AMDuProfCLI collect --trace osrt --osrt-event syscall --osrt-threshold syscall:1000000 -o /tmp/cpuprof-os AMDTClassicMatMul-bin
+
+       18. Launch  'AMDTClassicMatMul-bin'  and  collect the GPU Traces for hip
+           and hsa domain:
+
+               $ AMDuProfCLI collect --trace gpu -o /tmp/cpuprof-gpu AMDTClassicMatMul-bin
+
+       19. Launch 'AMDTClassicMatMul-bin' and collect  'TBP'  samples  and  GPU
+           Traces for hip and hsa domain:
+
+               $ AMDuProfCLI collect --config tbp --trace gpu -o /tmp/cpuprof-gpu AMDTClassicMatMul-bin
+
+       20. Launch 'AMDTClassicMatMul-bin' and collect 'GPU' samples:
+
+               $ AMDuProfCLI collect --config gpu -o /tmp/gpuprof-gpu AMDTClassicMatMul-bin
+
+       21. Launch  'AMDTClassicMatMul-bin'  and  collect 'GPU' samples for 'SQ'
+           Block:
+
+               $ AMDuProfCLI collect --config gpu --ip-block SQ -o /tmp/gpuprof-gpu AMDTClassicMatMul-bin
+
+       22. Launch 'AMDTClassMatMul-bin' and do  branch  analysis  with  default
+           filter type:
+
+               $ AMDuProfCLI collect --branch-filter -o /tmp/cpuprof-ebp-branch AMDTClassicMatMul-bin
+
+       23. Launch 'AMDTClassMatMul-bin' and collect samples for event PMCXC0:
+
+               $ AMDuProfCLI collect -e event=pmcxc0,interval=250000 --branch-filter u,k,any -o /tmp/cpuprof-ebp-branch AMDTClassicMatMul-bin
+
+       24. Launch  'AMDTClassicMatMul-bin' and collect 'TBP' samples and memory
+           bandwidth samples:
+
+               $ AMDuProfCLI collect --config tbp --metric memory -o /tmp/cpuprof-tbp-memory AMDTClassicMatMul-bin
+
+       25. Launch 'AMDTClassicMatMul-bin' and collect trace data for all  func‐
+           tions in 'AMDTClassicMatMul-bin'.
+
+               $ AMDuProfCLI collect --trace func --func AMDTClassicMatMul-bin:* -o /tmp/cpuprof-os AMDTClassicMatMul-bin
+
+       26. Launch  'AMDTClassicMatMul-bin' and collect trace data for all func‐
+           tions in 'AMDTClassicMatMul-bin' which  has  size  greater  than  or
+           equals to 64.
+
+               $ AMDuProfCLI collect --trace func --func-size 64 --func-threshold 10000 --func AMDTClassicMatMul-bin:* -o /tmp/cpuprof-os AMDTClassicMatMul-bin
+
+       27. Launch  'AMDTClassicMatMul-bin'  and  collect the threading analysis
+           for threads whose name is "MatrixMultiply".
+
+               $ AMDuProfCLI collect --config threading -g --collect-thread MatrixMultiply -o /tmp/cpuprof-os AMDTClassicMatMul-bin
+
+       28. Launch 'AMDTClassicMatMul-bin' and collect  the  threading  analysis
+           for threads whose name starts with "Matrix".
+
+               $ AMDuProfCLI collect --config threading -g --collect-thread Matrix* -o /tmp/cpuprof-os AMDTClassicMatMul-bin
+
+       29. Launch  'AMDTClassicMatMul.py'  and collect 'Hotspots' and callstack
+           in Python scripts:
+
+               $ AMDuProfCLI collect --config hotspots -g -o /tmp/cpuprof-python-hotspots --python python AMDTClassicMatMul.py
+
+       30. Attach to a process and collect  python  samples  for  the  attached
+           python process:
+
+               $ AMDuProfCLI collect --config hotspots -o /tmp/cpuprof-python-hotspots --python --pid <PID>
+
+SEE ALSO
+       AMDuProfCLI report(1), AMDuProfCLI timechart(1), AMDuProfCLI info(1).
+
+AMDuProfCLI                       21 Nov 2025            AMDUPROFCLI-COLLECT(1)

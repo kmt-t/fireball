@@ -574,10 +574,12 @@ class InterpreterExecutionControl:
         if pc != call.current_pc():
             module = call.context.module
             assert module is not None
-            assert module.get_block(pc) is not None, "debug PC must target an indexed block head"
+            block_index = module.get_block_index(pc)
+            assert block_index is not None, "debug PC must target an indexed block head"
             function_index = module.function_index_for_pc(pc)
             assert function_index == frame.func_index
             function_pc_offset = module.function_pc_offset(frame.func_index)
+            call.context.current_block_index = block_index
             call._ip = pc - function_pc_offset
             call.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
         self._control.breakpoint_count = len(debugger._breakpoints)

@@ -1,0 +1,173 @@
+{
+  "method": "Loader parse with arena allocation; no timing instrumentation",
+  "abi_sizes_bytes": {
+    "BasicBlock": 32,
+    "FunctionExecutionViewNative": 88,
+    "ModuleExecutionViewNative": 128,
+    "ExecutionContextABI": 168,
+    "CallFrameNative": 48,
+    "CallStackNative": 1544,
+    "JitTraceExitNative": 20
+  },
+  "jit_cache_records": {
+    "trace_header_bytes_before_after": [
+      40,
+      32
+    ],
+    "trace_exit_bytes_before_after": [
+      24,
+      20
+    ],
+    "bytes_saved_per_trace": 12,
+    "jit_cache_entry_bytes_before_after": [
+      8,
+      12
+    ],
+    "jit_cache_entry_count": 72,
+    "jit_cache_entry_bytes_before_after_total": [
+      576,
+      864
+    ],
+    "jit_cache_entry_total_delta_bytes": 288,
+    "function_execution_view_bytes_before_after": [
+      112,
+      88
+    ],
+    "aobench_defined_function_count": 6,
+    "aobench_function_execution_view_delta_bytes": -144
+  },
+  "modules": [
+    {
+      "wasm_path": "experiments/pysim/benchmarks/aobench/aobench.wasm",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "baseline_after_block_index_change": {
+        "annotation_pool_bytes": 2944,
+        "function_annotation_pool_bytes": [
+          28,
+          60,
+          366,
+          394,
+          588,
+          1508
+        ],
+        "basic_block_record_bytes_each": 36,
+        "basic_block_records_bytes": 3852,
+        "block_index_entry_bytes_each": 8,
+        "block_index_entries_bytes": 856,
+        "radix_entry_bytes_each": 4,
+        "radix_table_bytes": 68,
+        "loader_arena_bytes": 27100
+      },
+      "measured_current": {
+        "functions_defined": 6,
+        "functions_imported": 1,
+        "basic_block_count": 107,
+        "code_bytes": 937,
+        "annotation_pool_bytes": 1712,
+        "function_annotation_pool_bytes": [
+          15,
+          30,
+          187,
+          223,
+          355,
+          902
+        ],
+        "basic_block_record_bytes_each": 32,
+        "basic_block_records_bytes": 3424,
+        "block_index_entries": 107,
+        "block_index_entry_bytes_each": 6,
+        "block_index_entries_bytes": 642,
+        "radix_entries": 17,
+        "radix_entry_bytes_each": 2,
+        "radix_table_bytes": 34,
+        "loader_arena_bytes": 21444,
+        "loader_arena_capacity_bytes": 131072
+      },
+      "delta_current_minus_baseline": {
+        "annotation_pool_bytes": -1232,
+        "basic_block_records_bytes": -428,
+        "block_index_entries_bytes": -214,
+        "radix_table_bytes": -34,
+        "loader_arena_bytes": -5656
+      },
+      "loader_arena_delta_not_explained_by_itemized_fields": -3748,
+      "annotation_pool_saved_percent": 41.84782608695652,
+      "block_index_entries_saved_percent": 25.0,
+      "loader_arena_saved_percent": 20.870848708487085
+    },
+    {
+      "wasm_path": "experiments/pysim/benchmarks/profile/guest/suite.wasm",
+      "wasm_sha256": "15be324af0ae7708c3b25515b88173fb52a02dd750b1518a5f69704ea23511f6",
+      "baseline_after_block_index_change": {
+        "annotation_pool_bytes": 36090,
+        "function_annotation_pool_bytes": [
+          1175,
+          730,
+          2549,
+          715,
+          724,
+          1511,
+          366,
+          1859,
+          795,
+          970,
+          586,
+          314,
+          1366,
+          204,
+          1411,
+          456,
+          1162,
+          847,
+          733,
+          1891,
+          11,
+          16,
+          15,
+          11,
+          11,
+          15,
+          11,
+          25
+        ],
+        "basic_block_record_bytes_each": 36,
+        "basic_block_records_bytes": 31860,
+        "block_index_entry_bytes_each": 8,
+        "block_index_entries_bytes": 7080,
+        "radix_entry_bytes_each": 4,
+        "radix_table_bytes": 68,
+        "loader_arena_bytes": 366520
+      },
+      "measured_current": {
+        "functions_defined": 28,
+        "functions_imported": 0,
+        "basic_block_count": 885,
+        "code_bytes": 14419,
+        "annotation_pool_bytes": 20121,
+        "function_annotation_pool_bytes": null,
+        "basic_block_record_bytes_each": 32,
+        "basic_block_records_bytes": 28320,
+        "block_index_entries": 885,
+        "block_index_entry_bytes_each": 6,
+        "block_index_entries_bytes": 5310,
+        "radix_entries": 17,
+        "radix_entry_bytes_each": 2,
+        "radix_table_bytes": 34,
+        "loader_arena_bytes": 287530,
+        "loader_arena_capacity_bytes": 2000000
+      },
+      "delta_current_minus_baseline": {
+        "annotation_pool_bytes": -15969,
+        "basic_block_records_bytes": -3540,
+        "block_index_entries_bytes": -1770,
+        "radix_table_bytes": -34,
+        "loader_arena_bytes": -78990
+      },
+      "loader_arena_delta_not_explained_by_itemized_fields": -57677,
+      "annotation_pool_saved_percent": 44.2477140482128,
+      "block_index_entries_saved_percent": 25.0,
+      "loader_arena_saved_percent": 21.551347811852015,
+      "function_annotation_pool_bytes_note": "Per-function historical values were not retained in the report snapshot; aggregate byte count is preserved."
+    }
+  ]
+}

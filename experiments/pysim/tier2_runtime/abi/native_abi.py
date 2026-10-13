@@ -31,13 +31,10 @@ class NativeStepCall(ctypes.Structure):
         ("stack_bytes", ctypes.c_uint64),
         ("locals", ctypes.c_void_p),
         ("locals_bytes", ctypes.c_uint64),
-        ("control_stack", ctypes.c_void_p),
-        ("control_bytes", ctypes.c_uint64),
         ("stack_size", ctypes.c_uint32),
         ("stack_capacity", ctypes.c_uint32),
         ("ip", ctypes.c_uint32),
-        ("local_slots", ctypes.c_uint32),
-        ("control_frame_base", ctypes.c_void_p),
+        ("local_slots", ctypes.c_uint16),
         ("rel", ctypes.c_void_p),
     )
 
@@ -84,13 +81,10 @@ def run_step(
     stack_bytes: int,
     locals_address: int,
     locals_bytes: int,
-    control_address: int,
-    control_bytes: int,
     stack_size: int,
     stack_capacity: int,
     ip: int,
     local_slots: int,
-    control_frame_base: int,
     *,
     call: NativeStepCall,
     result: NativeResult,
@@ -105,13 +99,10 @@ def run_step(
     call.stack_bytes = stack_bytes
     call.locals = locals_address
     call.locals_bytes = locals_bytes
-    call.control_stack = control_address
-    call.control_bytes = control_bytes
     call.stack_size = stack_size
     call.stack_capacity = stack_capacity
     call.ip = ip
     call.local_slots = local_slots
-    call.control_frame_base = control_frame_base
     call.rel = rel
     status = entry(ctypes.byref(call), ctypes.byref(result))
     assert status == 1, (

@@ -1,0 +1,61 @@
+{
+  "method": "parse AO-Bench through the current Loader with a 131072-byte BumpAllocator",
+  "wasm_path": "experiments/pysim/benchmarks/aobench/aobench.wasm",
+  "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+  "loader_source_sha256": {
+    "experiments/pysim/tier2_runtime/wasm/module.py": "d0b361df8014f7e6180d4c294a1c890a1abeb7a35b92018c37a0dd75afbf64c7",
+    "experiments/pysim/tier2_runtime/interpreter/control_flow.py": "e9280f22ed3016c30b37967a06041c690dfb93201989189fec0f3a4e08f4fe18",
+    "experiments/pysim/tier2_runtime/abi/interpreter_abi.hxx": "d2851e53b245711392f8039bbffb1f926e3dee012f28bf3f4fbadb8b4bfb0053",
+    "experiments/pysim/tier2_runtime/abi/interpreter_abi.py": "d210ab62a58ada6d8e37aaaef73f7bf9d1841d53e3c2ed7f9f6e4ff4ab020a34"
+  },
+  "module": {
+    "defined_functions": 6,
+    "imported_functions": 1,
+    "code_bytes": 937,
+    "basic_blocks": 107,
+    "locals": 50,
+    "annotation_pool_bytes": 1729,
+    "loader_arena_capacity_bytes": 131072,
+    "loader_arena_bytes_after": 5741,
+    "loader_arena_bytes_before": 21444,
+    "loader_arena_bytes_removed": 15703,
+    "loader_arena_reduction_percent": 73.22794254803209
+  },
+  "storage_comparison": {
+    "native_control_map_bytes_before": 14992,
+    "native_control_map_bytes_after": 0,
+    "native_pc_index_bytes_before": 676,
+    "native_pc_index_bytes_after": 0,
+    "local_sizes_bytes_before": 50,
+    "local_sizes_bytes_after": 0,
+    "python_block_storage": "retained for Module.get_block()"
+  },
+  "abi_x86_64": {
+    "ExecutionContextABI_bytes_before": 168,
+    "ExecutionContextABI_bytes_after": 144,
+    "FunctionExecutionViewNative_bytes_before": 88,
+    "FunctionExecutionViewNative_bytes_after": 72,
+    "FunctionExecutionViewNative_records": 7,
+    "ModuleExecutionViewNative_bytes_before": 128,
+    "ModuleExecutionViewNative_bytes_after": 104,
+    "BasicBlock_bytes_each": 32,
+    "CallFrameNative_bytes_before": 48,
+    "CallFrameNative_bytes_after": 40,
+    "CallStackNative_bytes_before": 1544,
+    "CallStackNative_bytes_after": 1288,
+    "CallStackNative_capacity": 32,
+    "ControlStackNative_bytes_before": 520,
+    "ControlStackNative_bytes_after": 0
+  },
+  "calculated_bytes_removed": {
+    "native_control_map": 14992,
+    "native_pc_index": 676,
+    "control_stack": 520,
+    "execution_context": 24,
+    "function_views": 112,
+    "module_view": 24,
+    "call_stack": 256,
+    "local_sizes": 50,
+    "total": 16654
+  }
+}

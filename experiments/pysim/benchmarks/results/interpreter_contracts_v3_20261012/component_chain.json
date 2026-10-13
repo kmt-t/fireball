@@ -1,0 +1,78 @@
+{
+  "component": "interpreter",
+  "tier": "tier2_runtime",
+  "specification": "docs/components/tier2_runtime/interpreter.md",
+  "formal": [
+    "docs/components/tier2_runtime/formal/interpreter_control_flow_model.py",
+    "docs/components/tier2_runtime/formal/interpreter_indirect_call_model.py",
+    "docs/components/tier2_runtime/formal/interpreter_stack_model.py",
+    "docs/components/tier2_runtime/formal/vsoc_state_model.py",
+    "docs/specs/formal/wasm_bulk_memory_model.py"
+  ],
+  "concept": [
+    "docs/components/tier2_runtime/concepts/bulk_memory_concept.py",
+    "docs/components/tier2_runtime/concepts/indirect_call_concept.py",
+    "docs/components/tier2_runtime/concepts/interpreter_concept.py"
+  ],
+  "test_spec": [
+    "docs/qa/tier2_runtime/interpreter_test_spec.md"
+  ],
+  "wit": [
+    "docs/components/tier2_runtime/wit/runtime_vsoc_contract.wit"
+  ],
+  "benchmark": [
+    "experiments/pysim/benchmarks/interpreter/bench_fc.py"
+  ],
+  "contract_only": false,
+  "missing_evidences": [],
+  "format_checks": {
+    "specification": {
+      "document": "docs/components/tier2_runtime/interpreter.md",
+      "format": "docs/components/FORMAT.md",
+      "format_exists": true,
+      "required_sections": [
+        "コンセプト",
+        "アーキテクチャ分類",
+        "静的モデル",
+        "動的モデル",
+        "インターフェース定義",
+        "制約達成の方策",
+        "形式検証・テスト仕様との対応",
+        "設計判断と参考実装"
+      ],
+      "actual_sections": [
+        "コンセプト",
+        "アーキテクチャ分類",
+        "静的モデル",
+        "動的モデル",
+        "インターフェース定義",
+        "制約達成の方策",
+        "形式検証・テスト仕様との対応",
+        "設計判断と参考実装"
+      ],
+      "section_order_matches": true,
+      "missing_sections": [],
+      "unexpected_sections": []
+    },
+    "test_spec:interpreter_test_spec": {
+      "document": "docs/qa/tier2_runtime/interpreter_test_spec.md",
+      "format": "docs/qa/FORMAT.md",
+      "format_exists": true,
+      "required_sections": [
+        "目的と対象範囲",
+        "テストケース一覧",
+        "テスト検証実績と網羅状況",
+        "未検証・スコープ外"
+      ],
+      "actual_sections": [
+        "目的と対象範囲",
+        "テストケース一覧",
+        "テスト検証実績と網羅状況",
+        "未検証・スコープ外"
+      ],
+      "section_order_matches": true,
+      "missing_sections": [],
+      "unexpected_sections": []
+    }
+  }
+}

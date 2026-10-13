@@ -1,0 +1,1403 @@
+{
+  "source_sha256": "d03d4cf4b6f95008f236472b01817e7574d8f33143187b83527b20185662a6a8",
+  "release_library_sha256": "f778fcaeabcf03eea632333837620605af3d100244028457ed2da19998877251",
+  "diagnostic_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+  "build_command": "taskset -c 2 /home/t-matsu/workspace/mysrc/fireball/.venv/bin/python /home/t-matsu/workspace/mysrc/fireball/experiments/pysim/benchmarks/results/runtime_call_20261013/measure_call_diagnostic.py --width 320",
+  "rows": [
+    {
+      "engine": "interpreter",
+      "width": 64,
+      "height": 36,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        16.622305,
+        19.017101,
+        16.971827,
+        17.400306,
+        16.674383,
+        17.210903,
+        16.475472
+      ],
+      "median_ms": 16.971827,
+      "frame_bytes": 2340,
+      "frame_sha256": "d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 1
+    },
+    {
+      "engine": "interpreter",
+      "width": 64,
+      "height": 36,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        16.311806,
+        16.145957,
+        16.658794,
+        18.668531,
+        16.546013,
+        16.726509,
+        15.957916
+      ],
+      "median_ms": 16.546013,
+      "frame_bytes": 2340,
+      "frame_sha256": "d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 2
+    },
+    {
+      "engine": "interpreter",
+      "width": 64,
+      "height": 36,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        17.235338,
+        16.605293,
+        17.341245,
+        16.709859,
+        17.075139,
+        16.809635,
+        16.908209
+      ],
+      "median_ms": 16.908209,
+      "frame_bytes": 2340,
+      "frame_sha256": "d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        },
+        {
+          "runtime_call_entries": 210578,
+          "defined_call_frames": 210577,
+          "argument_words_copied": 622400,
+          "local_words_zeroed": 202782
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 3
+    },
+    {
+      "engine": "interpreter",
+      "width": 128,
+      "height": 72,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        66.848101,
+        67.146436,
+        66.701537,
+        66.450839,
+        66.796714,
+        64.469885,
+        65.292649
+      ],
+      "median_ms": 66.701537,
+      "frame_bytes": 9288,
+      "frame_sha256": "e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 1
+    },
+    {
+      "engine": "interpreter",
+      "width": 128,
+      "height": 72,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        66.076722,
+        80.31911,
+        65.893641,
+        65.621022,
+        64.897353,
+        65.752557,
+        64.594518
+      ],
+      "median_ms": 65.752557,
+      "frame_bytes": 9288,
+      "frame_sha256": "e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 2
+    },
+    {
+      "engine": "interpreter",
+      "width": 128,
+      "height": 72,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        65.304211,
+        66.662304,
+        66.035986,
+        66.19357,
+        66.832782,
+        66.798929,
+        65.603129
+      ],
+      "median_ms": 66.19357,
+      "frame_bytes": 9288,
+      "frame_sha256": "e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        },
+        {
+          "runtime_call_entries": 852748,
+          "defined_call_frames": 852747,
+          "argument_words_copied": 2521882,
+          "local_words_zeroed": 821356
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 3
+    },
+    {
+      "engine": "interpreter",
+      "width": 192,
+      "height": 108,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        151.865441,
+        146.801437,
+        146.483144,
+        153.627727,
+        149.964075,
+        147.965999,
+        147.901559
+      ],
+      "median_ms": 147.965999,
+      "frame_bytes": 20844,
+      "frame_sha256": "9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 1
+    },
+    {
+      "engine": "interpreter",
+      "width": 192,
+      "height": 108,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        153.23311,
+        147.942405,
+        146.959112,
+        150.352369,
+        153.395474,
+        151.020115,
+        151.099913
+      ],
+      "median_ms": 151.020115,
+      "frame_bytes": 20844,
+      "frame_sha256": "9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 2
+    },
+    {
+      "engine": "interpreter",
+      "width": 192,
+      "height": 108,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        157.056269,
+        152.231513,
+        150.193753,
+        147.278938,
+        147.805469,
+        149.251416,
+        148.671084
+      ],
+      "median_ms": 149.251416,
+      "frame_bytes": 20844,
+      "frame_sha256": "9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        },
+        {
+          "runtime_call_entries": 1922018,
+          "defined_call_frames": 1922017,
+          "argument_words_copied": 5684884,
+          "local_words_zeroed": 1850970
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 3
+    },
+    {
+      "engine": "interpreter",
+      "width": 256,
+      "height": 144,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        303.11369,
+        261.909948,
+        265.641987,
+        266.755624,
+        259.895161,
+        263.487119,
+        268.304652
+      ],
+      "median_ms": 265.641987,
+      "frame_bytes": 37008,
+      "frame_sha256": "f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 1
+    },
+    {
+      "engine": "interpreter",
+      "width": 256,
+      "height": 144,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        275.770864,
+        266.771884,
+        260.535045,
+        263.459457,
+        261.396982,
+        261.633402,
+        260.025414
+      ],
+      "median_ms": 261.633402,
+      "frame_bytes": 37008,
+      "frame_sha256": "f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 2
+    },
+    {
+      "engine": "interpreter",
+      "width": 256,
+      "height": 144,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        269.174744,
+        261.335958,
+        262.26466,
+        266.977017,
+        262.219706,
+        262.503745,
+        261.604569
+      ],
+      "median_ms": 262.26466,
+      "frame_bytes": 37008,
+      "frame_sha256": "f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        },
+        {
+          "runtime_call_entries": 3421799,
+          "defined_call_frames": 3421798,
+          "argument_words_copied": 10121155,
+          "local_words_zeroed": 3296043
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 3
+    },
+    {
+      "engine": "interpreter",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        410.399814,
+        408.330966,
+        416.042827,
+        410.235688,
+        412.194711,
+        418.643216,
+        411.148771
+      ],
+      "median_ms": 411.148771,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 1
+    },
+    {
+      "engine": "interpreter",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        414.287132,
+        413.091052,
+        419.920828,
+        413.077848,
+        408.758142,
+        412.261966,
+        421.298086
+      ],
+      "median_ms": 413.091052,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 2
+    },
+    {
+      "engine": "interpreter",
+      "width": 320,
+      "height": 180,
+      "warmup": 3,
+      "repeats": 7,
+      "yield_threshold": 4096,
+      "samples_ms": [
+        418.665227,
+        419.008166,
+        417.350615,
+        411.836644,
+        411.485959,
+        413.140826,
+        416.154776
+      ],
+      "median_ms": 416.154776,
+      "frame_bytes": 57780,
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+      "interpreter_library_sha256": "9f5d177d0515a6454df37091a3b4ef8b0c765a1ae9008e252c631907f0fb727e",
+      "jit_library_sha256": "b590c0b5cfdf68187c586d139eb1ee6a951e4507359e3086a666c02226beae54",
+      "python": "3.13.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+      "affinity": [
+        2
+      ],
+      "frame_counters": [
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        },
+        {
+          "runtime_call_entries": 5354466,
+          "defined_call_frames": 5354465,
+          "argument_words_copied": 15838692,
+          "local_words_zeroed": 5157834
+        }
+      ],
+      "diagnostic_build": true,
+      "trial": 3
+    }
+  ]
+}

@@ -159,7 +159,7 @@ Float32経路とQ8.8固定小数点経路を同じ入力で実行する。WASI `
 
 `experiments/pysim/benchmarks/` 配下には、リニアメモリアクセス、vMMIO アドレス変換、assembly stencil trace JITコンパイラ、JIT キャッシュ代謝（3面ローテーション）、JIT カードエイジング（キャッシュ圧迫下のコールド関数混入）、および 3D レイトレーシング Ambient Occlusion (AO-Bench) の全 6 系統のベンチマークスイートが用意されています。
 
-実測測定値、ホットスポット解析、JIT トレースチェイニング診断、および C++23 実機実装への性能予測の詳細レポートは、以下を参照してください：
+最新の実測値と測定条件は次のレポートに記載する。出力一致の検査と資源計測も同じレポートを参照する。
 
 👉 **[PySIM 統合ベンチマーク詳細レポート (`benchmarks/BENCHMARK_REPORT.md`)](benchmarks/BENCHMARK_REPORT.md)**
 
@@ -242,7 +242,7 @@ uv run --offline --no-sync python experiments/pysim/benchmarks/aobench/aobench.p
 
 Runtime APIが必要な操作はtrace内のAPI stencilから共通コード領域にあるAPI tableを呼ぶ。Runtime APIが通常継続を返すと後続のJIT operationを実行する。trapや明示的な境界exitが記録された場合だけ共通abort経路を通る。Interpreter handlerは同じRuntime APIを呼び、テンプレートadapterがCPS継続へ接続する。API呼出しはインタープリタへのフォールバックではない。
 
-Interpreter handlerとJIT trace entryはいずれも`ctx`, `ip*`, `sp*`, `rel*`の4引数を受け取る。Interpreterは基本ブロック入口で定数プールcursorを設定し、JITはtrace headerの相対offsetからtrace末尾定数poolのcursorを設定する。JITのRuntime API recordを読むたびに`rel`を進め、pool末尾の相対値からtrace headerへ戻る。ローカル基点は実行コンテキストから取得する。Python側は`ctypes`で固定レイアウトのレコードとC ABI関数を扱い、C++コードはCPython APIに依存しない。Linux共有ライブラリには`-g`を付け、AMD uProfとIntel VTuneでC++ソース位置を解決できるようにする。
+Interpreter handlerとJIT trace entryはいずれも`ctx`, `ip*`, `sp*`, `rel*`の4引数を受け取る。Interpreterは基本ブロック入口で注釈プールcursorを設定し、JITはtrace headerの相対offsetからtrace末尾の定数pool cursorを設定する。JITのRuntime API recordを読むたびに`rel`を進め、pool末尾の相対値からtrace headerへ戻る。ローカル基点は実行コンテキストから取得する。Python側は`ctypes`で固定レイアウトのレコードとC ABI関数を扱い、C++コードはCPython APIに依存しない。Linux共有ライブラリには`-g`を付け、AMD uProfとIntel VTuneでC++ソース位置を解決できるようにする。
 
 JIT chainはtrace末尾から共通コード領域のchain dispatcherへ入り、そこから次trace bodyへtail-jumpする経路を指す。C++ handler後にC++ dispatcherが常駐traceを起動する遷移はchainではない。QAの`native_dispatch_trace_transitions`はC++ handlerからJIT traceへのdispatcher遷移数である。診断カウンタ、内部状態ダンプ、dispatch snapshotはQAハーネスが所有する。診断実行はQA専用ライブラリを使う。製品Runtimeは診断API・状態を持たない。ホットスポット検出は製品JIT拡張の責務であり、実行履歴は一つの固定リングへ直接記録する。
 ```bash

@@ -18,7 +18,7 @@ from _bootstrap import configure_import_paths
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from bump_allocator import BumpAllocator
-from tier2_runtime.abi.native_abi import NativeResult, RUN_DISPATCH
+from tier2_runtime.abi.native_abi import RUN_DISPATCH, NativeResult
 from tier2_runtime.interpreter.interpreter import (
     InterpreterBindings,
     InterpreterCall,
@@ -44,9 +44,7 @@ def _encode_s32(value: int) -> bytes:
     while True:
         byte = value & 0x7F
         value >>= 7
-        done = (value == 0 and (byte & 0x40) == 0) or (
-            value == -1 and (byte & 0x40) != 0
-        )
+        done = (value == 0 and (byte & 0x40) == 0) or (value == -1 and (byte & 0x40) != 0)
         encoded.append(byte if done else byte | 0x80)
         if done:
             return bytes(encoded)
@@ -61,9 +59,7 @@ def _build_module(iterations: int, block_repetitions: int) -> tuple[bytes, int]:
     # static blocks after its exit path. The workload returns the accumulator
     # to zero, then branches directly to the function end over those cold blocks.
     hot_prefix = (
-        b"\x41"
-        + _encode_s32(iterations)
-        + b"\x21\x00"  # i32.const iterations; local.set 0
+        b"\x41" + _encode_s32(iterations) + b"\x21\x00"  # i32.const iterations; local.set 0
     )
     loop_head_ip = len(hot_prefix) + 2  # the loop label targets its body
     loop = (
@@ -168,9 +164,7 @@ def main() -> None:
     hot_block = module.get_block(hot_pc)
     assert hot_block is not None and hot_block.head_pc == hot_pc
 
-    no_cache_library, no_cache_dispatcher = _dispatcher_from_library(
-        args.no_cache_library
-    )
+    no_cache_library, no_cache_dispatcher = _dispatcher_from_library(args.no_cache_library)
     del no_cache_library  # The function pointer keeps its library owner alive.
     cached, uncached = _measure(
         module,

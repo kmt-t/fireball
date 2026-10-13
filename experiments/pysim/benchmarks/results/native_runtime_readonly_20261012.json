@@ -1,0 +1,123 @@
+{
+  "scope": "Linux x86-64 DSO static tables; ARM physical ROM/RAM and JIT writable code buffers are not measured here",
+  "libraries": [
+    {
+      "library": "experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so",
+      "sha256": "f8791cc9dbc593765597485c4f91bd1ed511bef4a2dbe52316c47fa653910645",
+      "sections": {
+        ".rodata": {
+          "index": 9,
+          "address": 15152,
+          "bytes": 640,
+          "elf_flags": "AM",
+          "mapped_permissions": [
+            "r--p"
+          ]
+        },
+        ".data.rel.ro": {
+          "index": 18,
+          "address": 239744,
+          "bytes": 4288,
+          "elf_flags": "WA",
+          "mapped_permissions": [
+            "r--p"
+          ]
+        },
+        ".data": {
+          "index": 22,
+          "address": 248592,
+          "bytes": 8,
+          "elf_flags": "WA"
+        },
+        ".bss": {
+          "index": 25,
+          "address": 248728,
+          "bytes": 1,
+          "elf_flags": "WA"
+        }
+      },
+      "immutable_tables": [
+        {
+          "symbol": "(anonymous namespace)::kOpcodeHandlers<(anonymous namespace)::debugger_aspect>",
+          "bytes": 2048,
+          "mapped_permissions": [
+            "r--p"
+          ]
+        },
+        {
+          "symbol": "(anonymous namespace)::kOpcodeHandlers<void>",
+          "bytes": 2048,
+          "mapped_permissions": [
+            "r--p"
+          ]
+        },
+        {
+          "symbol": "(anonymous namespace)::kOpcodeAttributes",
+          "bytes": 256,
+          "mapped_permissions": [
+            "r--p"
+          ]
+        }
+      ]
+    },
+    {
+      "library": "experiments/pysim/tier3_plugins/jit/libtrace_compiler.so",
+      "sha256": "8c0ec53b318c8a22d4d71662f6ba6678c414f153955c81a1986f07cf4b96fa84",
+      "sections": {
+        ".rodata": {
+          "index": 9,
+          "address": 6896,
+          "bytes": 8464,
+          "elf_flags": "AMS",
+          "mapped_permissions": [
+            "r--p"
+          ]
+        },
+        ".data.rel.ro": {
+          "index": 18,
+          "address": 142016,
+          "bytes": 1472,
+          "elf_flags": "WA",
+          "mapped_permissions": [
+            "r--p"
+          ]
+        },
+        ".data": {
+          "index": 22,
+          "address": 148048,
+          "bytes": 8,
+          "elf_flags": "WA"
+        },
+        ".bss": {
+          "index": 25,
+          "address": 148208,
+          "bytes": 1,
+          "elf_flags": "WA"
+        }
+      },
+      "immutable_tables": [
+        {
+          "symbol": "fireball::jit_api::kJitRuntimeApiSlots",
+          "bytes": 268,
+          "mapped_permissions": [
+            "r--p"
+          ]
+        },
+        {
+          "symbol": "fireball::jit_api::kJitRuntimeApiFunctionTable",
+          "bytes": 1472,
+          "mapped_permissions": [
+            "r--p"
+          ]
+        },
+        {
+          "symbol": "fireball::opcode_benefit_table",
+          "bytes": 128,
+          "mapped_permissions": [
+            "r--p"
+          ]
+        }
+      ]
+    }
+  ]
+}

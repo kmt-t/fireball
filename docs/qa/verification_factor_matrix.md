@@ -33,7 +33,7 @@
 | Tier 3 Plugins | `debugger` | `debugger_concept.py` | N/A（RSP の境界テストで直接検証） | `debugger_test_spec.md` | `test_debugger.py`, `test_gdb_remote.py` | [`test_lldb_debugger.py`](experiments/pysim/qa/integration/test_lldb_debugger.py) | — | 7, 8 | required |
 | Tier 2 Runtime | `hal_dispatch` | N/A（WIT/ディスパッチ契約） | `hal_dispatch_contract_model.py` | `hal_dispatch_test_spec.md` | `test_hal.py`, `test_syscall.py` | [`test_driver_stubs.py`](experiments/pysim/qa/integration/test_driver_stubs.py) | `test_wasi_guest.py`, `test_driver_stubs_guest.py` | 10, 11 | contract_only |
 | Tier 2 Runtime | `jit_abi` | N/A（ABI 契約） | N/A（ABI の実レイアウトテストで検証） | N/A（ABI配置の検査条件は`jit_abi.md`を正本とする） | `test_interpreter_abi.py`, `test_x64_jit.py` | — | — | 4, 5, 8 | contract_only |
-| Tier 2 Runtime | `interpreter` | `interpreter_concept.py`, `bulk_memory_concept.py` | `interpreter_stack_model.py`, `interpreter_control_flow_model.py`, `wasm_bulk_memory_model.py` | `interpreter_test_spec.md`, `wasm_instruction_set_test_spec.md` | `test_interpreter.py`, `test_wasm_differential.py`, `test_gotchas.py` | — | `test_wasm_core_spec.py` | 1〜12 | required |
+| Tier 2 Runtime | `interpreter` | `interpreter_concept.py`, `indirect_call_concept.py`, `bulk_memory_concept.py` | `interpreter_stack_model.py`, `interpreter_control_flow_model.py`, `interpreter_indirect_call_model.py`, `wasm_bulk_memory_model.py` | `interpreter_test_spec.md`, `wasm_instruction_set_test_spec.md` | `test_interpreter.py`, `test_wasm_differential.py`, `test_gotchas.py` | — | `test_wasm_core_spec.py` | 1〜12 | required |
 | Tier 2 Runtime | `runtime_loader` | `loader_concept.py` | `loader_verification_model.py` | `runtime_loader_test_spec.md` | `test_wasm_reader.py` | — | — | 1, 3, 5, 8, 12 | required |
 | Tier 2 Runtime | `runtime_logging` | `logging_concept.py` | `logging_flush_model.py` | `runtime_logging_test_spec.md` | `test_logging.py` | — | — | 9 | required |
 | Tier 2 Runtime | `runtime_memory` | `runtime_memory_concept.py` | `runtime_memory_model.py` | `runtime_memory_test_spec.md` | `test_memory.py`, `test_vmmio.py` | — | — | 1, 4, 8, 10 | required |
@@ -95,6 +95,7 @@
 | concept | [service_concept.py](docs/components/tier1_interface/concepts/service_concept.py) |
 | concept | [debugger_concept.py](docs/components/tier3_plugins/concepts/debugger_concept.py) |
 | concept | [interpreter_concept.py](docs/components/tier2_runtime/concepts/interpreter_concept.py) |
+| concept | [indirect_call_concept.py](docs/components/tier2_runtime/concepts/indirect_call_concept.py) |
 | concept | [bulk_memory_concept.py](docs/components/tier2_runtime/concepts/bulk_memory_concept.py) |
 | concept | [loader_concept.py](docs/components/tier2_runtime/concepts/loader_concept.py) |
 | concept | [logging_concept.py](docs/components/tier2_runtime/concepts/logging_concept.py) |
@@ -111,6 +112,7 @@
 | formal | [hal_dispatch_contract_model.py](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) |
 | formal | [interpreter_stack_model.py](docs/components/tier2_runtime/formal/interpreter_stack_model.py) |
 | formal | [interpreter_control_flow_model.py](docs/components/tier2_runtime/formal/interpreter_control_flow_model.py) |
+| formal | [interpreter_indirect_call_model.py](docs/components/tier2_runtime/formal/interpreter_indirect_call_model.py) |
 | formal | [wasm_bulk_memory_model.py](docs/specs/formal/wasm_bulk_memory_model.py) |
 | formal | [guest_profiler_model.py](docs/components/tier3_plugins/formal/guest_profiler_model.py) |
 | formal | [loader_verification_model.py](docs/components/tier2_runtime/formal/loader_verification_model.py) |

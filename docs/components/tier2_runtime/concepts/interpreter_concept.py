@@ -1,10 +1,11 @@
 """
 docs/components/tier2_runtime/concepts/interpreter_concept.py
-Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter with Independent Runtime Stacks
+Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter with Static Branch Metadata
 - Complete WASM MVP opcode set matching docs/specs/wasm_instruction_set.md
-- OperandStack, LocalStack, and ControlFrame use independent value regions;
-  CallFrame descriptors live separately and retain their LocalStack base offset
-  (interpreter.md §3, ADR-INTERP-04)
+- OperandStack and LocalStack use independent value regions; CallFrame
+  descriptors retain their LocalStack and OperandStack base offsets
+- Loader-resolved branch targets and operand restore points replace runtime
+  ControlFrame storage (interpreter.md §3)
 - Direct-Threaded __fastcall Continuation Passing Style (CPS) dispatch with a shared operand stack
 - Full stack pruning (Label Arity handling) on br / br_if / br_table
 - 64-bit integer arithmetic, memory loads/stores (8/16/32/64-bit), and type conversions
@@ -41,40 +42,16 @@ class CallFrame:
         self,
         frame_offset: int,
         func_idx: int,
+        operand_base: int,
     ):
         self.frame_offset = frame_offset
         self.func_idx = func_idx
+        self.operand_base = operand_base
 
     @property
     def local_base(self) -> int:
         """Return the first raw LocalStack word belonging to this function."""
         return self.frame_offset
-
-
-class ControlFrame:
-    """
-    Control block/loop/if frame resident in its own dedicated ControlFrame
-    region, never interleaved with the operand or local stack (ADR-INTERP-03):
-    a JIT trace that resolves a loop/block exit never pops one of these, so
-    letting it share the operand stack's growing region would let that
-    leave the operand stack's own addressing corrupted.
-    `{ThreadedInterpreter}`
-    """
-
-    def __init__(
-        self,
-        parent_offset: int,
-        label_pc: int,
-        saved_sp: int,
-        result_arity: int,
-        is_loop: bool,
-    ):
-        self.parent_offset = parent_offset
-        self.label_pc = label_pc
-        self.saved_sp = saved_sp
-        self.result_arity = result_arity
-        self.is_loop = is_loop
-        self.exec_trace: Callable | None = None
 
 
 class ExecutionContext:
@@ -95,7 +72,6 @@ class ExecutionContext:
         self.local_stack: list[int] = [0] * local_capacity
         self.local_offset: int = 0
         self.call_frame_stack: list[CallFrame] = []
-        self.control_frame_stack: list[ControlFrame] = []
         self.globals: list[int] = [0] * 32
         self.memory: bytearray = bytearray(memory_size)
         self.mem_pages: int = memory_size // 65536
@@ -123,7 +99,11 @@ class ExecutionContext:
         frame_offset = self.local_offset
         if frame_offset + len(args) > len(self.local_stack):
             raise WASMTrap("LOCAL_STACK_OVERFLOW")
-        frame = CallFrame(frame_offset=frame_offset, func_idx=func_idx)
+        frame = CallFrame(
+            frame_offset=frame_offset,
+            func_idx=func_idx,
+            operand_base=self.sp_offset,
+        )
         self.call_frame_stack.append(frame)
         for index, arg in enumerate(args):
             self.local_stack[frame_offset + index] = arg
@@ -241,15 +221,6 @@ def _h_nop(
 def _h_block(
     ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
 ) -> tuple[str | None, int | None]:
-    end_pc, arity = arg
-    ctrl = ControlFrame(
-        parent_offset=len(ctx.control_frame_stack),
-        label_pc=end_pc,
-        saved_sp=ctx.sp_offset,
-        result_arity=arity,
-        is_loop=False,
-    )
-    ctx.control_frame_stack.append(ctrl)
     return (None, None)
 
 
@@ -257,15 +228,6 @@ def _h_block(
 def _h_loop(
     ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
 ) -> tuple[str | None, int | None]:
-    start_pc, arity = arg
-    ctrl = ControlFrame(
-        parent_offset=len(ctx.control_frame_stack),
-        label_pc=start_pc,
-        saved_sp=ctx.sp_offset,
-        result_arity=arity,
-        is_loop=True,
-    )
-    ctx.control_frame_stack.append(ctrl)
     return (None, None)
 
 
@@ -273,16 +235,8 @@ def _h_loop(
 def _h_if(
     ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
 ) -> tuple[str | None, int | None]:
-    else_or_end_pc, end_pc, arity = arg
+    else_or_end_pc, _, _ = arg
     cond = ctx.pop()
-    ctrl = ControlFrame(
-        parent_offset=len(ctx.control_frame_stack),
-        label_pc=end_pc,
-        saved_sp=ctx.sp_offset,
-        result_arity=arity,
-        is_loop=False,
-    )
-    ctx.control_frame_stack.append(ctrl)
     if cond == 0:
         return (None, else_or_end_pc)
     return (None, None)
@@ -300,35 +254,33 @@ def _h_else(
 def _h_end(
     ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
 ) -> tuple[str | None, int | None]:
-    if ctx.control_frame_stack:
-        ctx.control_frame_stack.pop()
     return (None, None)
+
+
+def _apply_branch(
+    ctx: ExecutionContext, edge: tuple[int | None, int, int]
+) -> tuple[str | None, int | None]:
+    """Restore the loader-computed operand height and select its target."""
+    target_pc, stack_base_words, result_words = edge
+    frame = ctx.current_call_frame()
+    ctx.prune_stack(frame.operand_base + stack_base_words, result_words)
+    return ("RETURN", None) if target_pc is None else (None, target_pc)
 
 
 @_op_handler("br")
 def _h_br(
     ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
 ) -> tuple[str | None, int | None]:
-    depth = int(arg)
-    target_ctrl = ctx.control_frame_stack[-(depth + 1)]
-    ctx.prune_stack(target_ctrl.saved_sp, target_ctrl.result_arity)
-    for _ in range(depth + (0 if target_ctrl.is_loop else 1)):
-        ctx.control_frame_stack.pop()
-    return (None, target_ctrl.label_pc)
+    return _apply_branch(ctx, arg)
 
 
 @_op_handler("br_if")
 def _h_br_if(
     ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
 ) -> tuple[str | None, int | None]:
-    depth = int(arg)
     cond = ctx.pop()
     if cond != 0:
-        target_ctrl = ctx.control_frame_stack[-(depth + 1)]
-        ctx.prune_stack(target_ctrl.saved_sp, target_ctrl.result_arity)
-        for _ in range(depth + (0 if target_ctrl.is_loop else 1)):
-            ctx.control_frame_stack.pop()
-        return (None, target_ctrl.label_pc)
+        return _apply_branch(ctx, arg)
     return (None, None)
 
 
@@ -336,14 +288,10 @@ def _h_br_if(
 def _h_br_table(
     ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
 ) -> tuple[str | None, int | None]:
-    targets, default_target = arg
+    edges = arg
     idx = ctx.pop()
-    depth = targets[idx] if 0 <= idx < len(targets) else default_target
-    target_ctrl = ctx.control_frame_stack[-(depth + 1)]
-    ctx.prune_stack(target_ctrl.saved_sp, target_ctrl.result_arity)
-    for _ in range(depth + (0 if target_ctrl.is_loop else 1)):
-        ctx.control_frame_stack.pop()
-    return (None, target_ctrl.label_pc)
+    edge = edges[idx] if 0 <= idx < len(edges) - 1 else edges[-1]
+    return _apply_branch(ctx, edge)
 
 
 @_op_handler("return")
@@ -1421,7 +1369,7 @@ def test_block_loop_and_stack_pruning() -> None:
         ("block", (5, 1)),  # block result i32
         ("i32.const", 10),
         ("i32.const", 42),
-        ("br", 0),  # prune stack and exit block
+        ("br", (6, 0, 1)),  # loader-resolved target and operand height
         ("i32.const", 99),
         ("end", None),
         ("return", None),
@@ -1502,7 +1450,7 @@ def test_br_table_and_parametric() -> None:
         ("block", (8, 0)),  # depth 1: middle block (end at 8)
         ("block", (5, 0)),  # depth 0: inner block (end at 5)
         ("i32.const", 1),  # 3: index 1
-        ("br_table", ([0, 1], 2)),  # 4: target depth 1 -> jumps to 8
+        ("br_table", ((6, 0, 0), (9, 0, 0), (18, 0, 1))),  # 4: target depth 1 -> jumps to 8
         ("end", None),  # 5
         ("i32.const", 10),  # 6
         ("return", None),  # 7

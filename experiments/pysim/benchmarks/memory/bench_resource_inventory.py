@@ -7,6 +7,7 @@ import ast
 import hashlib
 import io
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -150,6 +151,7 @@ def native_jit_definitions() -> dict[str, int]:
         "FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES": JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES,
         "FB_CONF_JIT_X64_TRACE_HEADER_BYTES": JIT_X64_TRACE_HEADER_BYTES,
         "FB_CONF_JIT_X64_CHAIN_TARGET_OFFSET": JIT_X64_CHAIN_TARGET_OFFSET,
+        "FB_CONF_JIT_X64_TRACE_CHAIN_ENTRY_OFFSET": config.JIT_X64_TRACE_CHAIN_ENTRY_OFFSET,
         "FB_CONF_JIT_X64_COMMON_CODE_RELATIVE_OFFSET": config.JIT_X64_COMMON_CODE_RELATIVE_OFFSET,
     }
     for name in (
@@ -176,19 +178,21 @@ def jit_runtime_layout() -> dict[str, int]:
     """Compile a measurement-only sizeof probe; do not add a product export."""
     expressions = {
         "runtime_bytes": "sizeof(fireball::jit_runtime<void>)",
-        "execution_extension_bytes": "sizeof(decltype(fireball::jit_runtime<void>::extension))",
-        "cache_banks_bytes": "sizeof(decltype(fireball::jit_runtime<void>::banks))",
-        "fast_cache_bytes": "sizeof(decltype(fireball::jit_runtime<void>::fast))",
-        "profile_history_bytes": "sizeof(decltype(fireball::jit_runtime<void>::history_records))",
-        "compile_queue_bytes": "sizeof(decltype(fireball::jit_runtime<void>::queue_pcs))",
-        "compile_output_bytes": "fireball::compile_output_bytes",
+        "execution_extension_bytes": "sizeof(decltype(fireball::jit_runtime<void>::provider))",
+        "cache_banks_bytes": "sizeof(decltype(fireball::jit_cache_state::banks))",
+        "pc_index_bytes": "sizeof(decltype(fireball::jit_cache_state::pc_index))",
+        "inbound_chain_heads_bytes": "sizeof(decltype(fireball::jit_cache_state::inbound_chain_heads))",
+        "inbound_chain_next_bytes": "sizeof(decltype(fireball::jit_cache_state::inbound_chain_next))",
+        "profile_history_bytes": "sizeof(decltype(fireball::jit_hotspot_state<fireball::jit_profile>::history_records))",
+        "compile_queue_bytes": "sizeof(decltype(fireball::jit_hotspot_state<fireball::jit_profile>::compile_queue_items))",
+        "compile_scratch_bytes": "fireball::jit_compile_scratch_bytes",
         "compile_body_bytes": "fireball::kMaxBodyBytes",
-        "compile_stack_locations_bytes": "fireball::kMaxStackDepth * sizeof(std::int16_t)",
+        "compile_stack_widths_bytes": "fireball::kMaxStackDepth * sizeof(std::uint8_t)",
         "max_trace_instructions": "fireball::kMaxTraceInstructions",
         "max_stack_depth": "fireball::kMaxStackDepth",
         "trace_header_bytes": "sizeof(fireball::jit_trace_header)",
-        "cache_entry_bytes": "sizeof(fireball::entry)",
-        "cache_bank_bytes": "sizeof(fireball::bank)",
+        "cache_entry_bytes": "sizeof(fireball::jit_cache_entry)",
+        "cache_bank_bytes": "sizeof(fireball::jit_cache_bank)",
     }
     runtime_source = _PYSIM / "native/tier3_plugins/jit/jit_runtime.cxx"
     with tempfile.TemporaryDirectory(prefix="fireball-resource-layout-") as directory:
@@ -245,6 +249,11 @@ def compiler_stack_frames() -> dict[str, int]:
                     "-fno-exceptions",
                     "-fno-rtti",
                     "-fstack-usage",
+                    "-I",
+                    str(
+                        Path(os.environ.get("TMPDIR", "/tmp"))
+                        / "fireball-pysim-native/jit-stencils"
+                    ),
                     *(f"-D{name}={value}" for name, value in definitions.items()),
                     "-c",
                     str(source),
@@ -260,7 +269,8 @@ def compiler_stack_frames() -> dict[str, int]:
                 for entry in (
                     "compile_wasm_trace",
                     "compile_instruction_body",
-                    "compile_pending",
+                    "compile_queued_candidates",
+                    "compile_one_candidate",
                     "fb_jit_compile_block",
                 ):
                     if entry in function:
@@ -272,7 +282,8 @@ def compiler_stack_frames() -> dict[str, int]:
             for name in (
                 "compile_wasm_trace",
                 "compile_instruction_body",
-                "compile_pending",
+                "compile_queued_candidates",
+                "compile_one_candidate",
                 "fb_jit_compile_block",
             )
         )
@@ -328,7 +339,12 @@ def main() -> None:
     )
     stack_frames = compiler_stack_frames()
     layout = jit_runtime_layout()
-    wasm_compile_call_chain = ("compile_pending", "fb_jit_compile_block", "compile_wasm_trace")
+    wasm_compile_call_chain = (
+        "compile_queued_candidates",
+        "compile_one_candidate",
+        "fb_jit_compile_block",
+        "compile_wasm_trace",
+    )
     wasm_compile_frames = sum(stack_frames[name] for name in wasm_compile_call_chain)
     report = {
         "measured_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -380,7 +396,7 @@ def main() -> None:
                     "common_code.cxx",
                     "jit_runtime.cxx",
                     "jit_runtime.hxx",
-                    "jit_runtime_exports.hxx",
+                    "jit_runtime_apis.hxx",
                     "jit_internal.hxx",
                     "stencils_x64.hxx",
                 )
@@ -389,10 +405,10 @@ def main() -> None:
             "known_wasm_compile_frame_bytes": wasm_compile_frames,
             "qa_instruction_body_frame_bytes": stack_frames["compile_instruction_body"],
             "qa_instruction_body_in_wasm_call_chain": False,
-            "cache_output_bytes": layout["compile_output_bytes"],
-            "cache_output_accounting": "written directly to the executable cache; included in the plugin region",
-            "stack_locations_bytes": layout["compile_stack_locations_bytes"],
-            "stack_locations_in_compile_pending_frame": True,
+            "compile_scratch_bytes": layout["compile_scratch_bytes"],
+            "compile_scratch_accounting": "scratch is inside compile_one_candidate stack frame; do not add it again",
+            "stack_widths_bytes": layout["compile_stack_widths_bytes"],
+            "stack_widths_accounting": "emitter stack width state is included in compiler stack frames",
             "minimum_known_compile_bytes": wasm_compile_frames,
             "excluded": "additional callee/ABI frames, caller frames and Python objects; not a whole-path upper bound",
         },

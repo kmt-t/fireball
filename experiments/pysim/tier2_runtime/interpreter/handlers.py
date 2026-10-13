@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import ctypes
 import math
 import struct
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
-from system_containers import StaticVector
-from tier2_runtime.abi.interpreter_abi import NativeValueStack
+from system_containers import SequenceView, StaticVector, freeze_sequence
+from tier2_runtime.abi.interpreter_abi import NativeValueStack, UInt32Pointer
 from tier2_runtime.interpreter.control_flow import (
     OpcodeAttribute,
     opcode_has_attribute,
@@ -235,30 +234,35 @@ if TYPE_CHECKING:
 
 _HandlerResult = Trap | None
 _HandlerFn = Callable[
-    ["ExecutionContext", ctypes.POINTER(ctypes.c_uint32), NativeValueStack],
+    ["ExecutionContext", UInt32Pointer, NativeValueStack],
     _HandlerResult,
 ]
-_HANDLERS: StaticVector[_HandlerFn | None] = StaticVector(capacity=256)
 _BASIC_BLOCK_BOUNDARY: bytes = bytes(
     opcode_has_attribute(opcode, OpcodeAttribute.BASIC_BLOCK_BOUNDARY) for opcode in range(256)
 )
 
 
-def _handler(opcode: int) -> Callable[[_HandlerFn], _HandlerFn]:
-    def register(fn: _HandlerFn) -> _HandlerFn:
-        while len(_HANDLERS) <= opcode:
-            _HANDLERS.append(None)
-        _HANDLERS[opcode] = fn
-        return fn
-
-    return register
-
-
-def _do_branch(depth: int, frame: "CallFrame") -> int | None:
-    """Apply a WASM branch and restore its result stack height."""
-    return frame.frames.branch(
-        depth, frame.values, frame.control_frame_metadata, frame.result_arity
-    )
+def _do_branch(ip: int, edge_index: int, frame: "CallFrame") -> int | None:
+    """Apply a loader-resolved branch edge and restore its operand height."""
+    target_ip, stack_base, result_words = frame.control_map.branch_edges(ip)[edge_index]
+    values = frame.values
+    assert 0 <= result_words <= 2
+    operand_base_address = int(frame.native.operand_stack_base or 0)
+    assert operand_base_address >= values.address
+    operand_base = (operand_base_address - values.address) // 4
+    stack_base += operand_base
+    assert stack_base + result_words <= len(values)
+    result_start = len(values) - result_words
+    result0 = values.raw_at(result_start) if result_words >= 1 else 0
+    result1 = values.raw_at(result_start + 1) if result_words >= 2 else 0
+    values.truncate(stack_base)
+    if result_words >= 1:
+        pushed = values.push_back(result0)
+        assert pushed
+    if result_words >= 2:
+        pushed = values.push_back(result1)
+        assert pushed
+    return None if target_ip == 0xFFFF_FFFF else target_ip
 
 
 # Per-opcode logical CPS handlers. Each receives ctx, ip*, and sp*, updates
@@ -266,148 +270,93 @@ def _do_branch(depth: int, frame: "CallFrame") -> int | None:
 # ---------------------------------------------------------------------------
 
 
-@_handler(UNREACHABLE)
 def _h_unreachable(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     return Trap(TrapCode.UNREACHABLE)
 
 
-@_handler(NOP)
-def _h_nop(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
-    ip = int(ip[0])
-    ctx.ip = ip + 1
+def _h_nop(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
+    instruction_ip = int(ip[0])
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(BLOCK)
-def _h_block(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
-    frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    if not frame.frames.push_back(ip, len(frame.values)):
-        return Trap(TrapCode.CONTROL_FRAME_CAPACITY)
-    ctx.ip = ip + 2
+def _h_block(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
+    instruction_ip = int(ip[0])
+    ctx.ip = instruction_ip + 2
     return None
 
 
-@_handler(LOOP)
-def _h_loop(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
-    frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    if not frame.frames.push_back(ip, len(frame.values)):
-        return Trap(TrapCode.CONTROL_FRAME_CAPACITY)
-    ctx.ip = ip + 2
+def _h_loop(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
+    instruction_ip = int(ip[0])
+    ctx.ip = instruction_ip + 2
     return None
 
 
-@_handler(IF)
-def _h_if(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_if(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    match_end, else_off, _ = frame.control_map.block(ip)
+    instruction_ip = int(ip[0])
+    match_end, else_off, _ = frame.control_map.block(instruction_ip)
     cond = frame.values.pop_back()
     if cond == 0:
         if else_off is not None:
-            if not frame.frames.push_back(ip, len(frame.values)):
-                return Trap(TrapCode.CONTROL_FRAME_CAPACITY)
             ctx.ip = else_off + 1
             return None
         else:
             ctx.ip = match_end + 1
             return None
-    if not frame.frames.push_back(ip, len(frame.values)):
-        return Trap(TrapCode.CONTROL_FRAME_CAPACITY)
-    ctx.ip = ip + 2
+    ctx.ip = instruction_ip + 2
     return None
 
 
-@_handler(ELSE)
-def _h_else(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_else(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    popped = frame.frames.pop_back() if frame.frames else None
-    if frame.boundary_next_pc is not None:
-        ctx.ip = frame.boundary_next_pc - frame.code_pc_offset
-        return None
-    if popped is not None:
-        match_end, _, _ = frame.control_map.block(int(popped.start))
-        ctx.ip = match_end + 1
-        return None
-    ctx.ip = ip + 1
+    instruction_ip = int(ip[0])
+    ctx.ip = frame.control_map.else_target(instruction_ip)
     return None
 
 
-@_handler(END)
-def _h_end(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
-    frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    if frame.frames:
-        frame.frames.pop_back()
-    ctx.ip = ip + 1
+def _h_end(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
+    instruction_ip = int(ip[0])
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(BR)
-def _h_br(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_br(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    depth, _ = decode_unsigned(frame.code, ip + 1)
-    next_ip = _do_branch(depth, frame)
+    instruction_ip = int(ip[0])
+    next_ip = _do_branch(instruction_ip, 0, frame)
     if (next_ip) is None:
         ctx.ip = RETURN_SENTINEL_IP
         return None
-    if frame.boundary_next_pc is not None:
-        next_ip = frame.boundary_next_pc - frame.code_pc_offset
     ctx.ip = next_ip
     return None
 
 
-@_handler(BR_IF)
-def _h_br_if(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_br_if(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    depth, next_ip = decode_unsigned(frame.code, ip + 1)
+    instruction_ip = int(ip[0])
+    _, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
     cond = frame.values.pop_back()
     if cond == 0:
         ctx.ip = next_ip
         return None
-    target_ip = _do_branch(depth, frame)
+    target_ip = _do_branch(instruction_ip, 0, frame)
     if target_ip is None:
         ctx.ip = RETURN_SENTINEL_IP
-        return None
-    if frame.boundary_loops_to is not None:
-        ctx.ip = frame.boundary_loops_to - frame.code_pc_offset
         return None
     ctx.ip = target_ip
     return None
 
 
-@_handler(BR_TABLE)
-def _h_br_table(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_br_table(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    labels, default_lbl = frame.control_map.br_table(ip)
+    instruction_ip = int(ip[0])
     index = _to_u32(frame.values.pop_back())
-    depth = labels[index] if index < len(labels) else default_lbl
-    next_ip = _do_branch(depth, frame)
+    edges = frame.control_map.branch_edges(instruction_ip)
+    target_index = index if index < len(edges) - 1 else len(edges) - 1
+    next_ip = _do_branch(instruction_ip, target_index, frame)
     if (next_ip) is None:
         ctx.ip = RETURN_SENTINEL_IP
         return None
@@ -415,10 +364,7 @@ def _h_br_table(
     return None
 
 
-@_handler(RETURN)
-def _h_return(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_return(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     ctx.ip = RETURN_SENTINEL_IP
     return None
 
@@ -429,35 +375,37 @@ def _h_return(
 # resolver; no guest opcode is sent to the Python handler table.
 
 
-@_handler(DROP)
-def _h_drop(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_drop(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     module = frame.context.module
     assert module is not None
     function = module.functions[frame.func_index - len(module.imports)]
-    width = function.drop_widths.view().find(ip) if function.drop_widths is not None else None
+    width = (
+        function.drop_widths.view().find(instruction_ip)
+        if function.drop_widths is not None
+        else None
+    )
     frame.values.pop_back()
     if width == 2:
         frame.values.pop_back()
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(SELECT)
-def _h_select(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_select(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     c = frame.values.pop_back()
     assert c is not None
     module = frame.context.module
     assert module is not None
     function = module.functions[frame.func_index - len(module.imports)]
-    width = function.select_widths.view().find(ip) if function.select_widths is not None else None
+    width = (
+        function.select_widths.view().find(instruction_ip)
+        if function.select_widths is not None
+        else None
+    )
     if width == 2:
         b_high = frame.values.pop_back()
         b_low = frame.values.pop_back()
@@ -474,17 +422,14 @@ def _h_select(
         assert a is not None and b is not None
         pushed = frame.values.push_back(a if c != 0 else b)
         assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(LOCAL_GET)
-def _h_local_get(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_local_get(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    idx, next_ip = decode_unsigned(frame.code, ip + 1)
+    instruction_ip = int(ip[0])
+    idx, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
     raw_slot, raw_width = frame.locals.raw_span(idx)
     pushed = frame.values.push_raw_from(
         frame.context.local_stack,
@@ -496,13 +441,10 @@ def _h_local_get(
     return None
 
 
-@_handler(LOCAL_SET)
-def _h_local_set(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_local_set(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    idx, next_ip = decode_unsigned(frame.code, ip + 1)
+    instruction_ip = int(ip[0])
+    idx, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
     raw_slot, raw_width = frame.locals.raw_span(idx)
     frame.values.pop_raw_to(
         frame.context.local_stack,
@@ -513,13 +455,10 @@ def _h_local_set(
     return None
 
 
-@_handler(LOCAL_TEE)
-def _h_local_tee(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_local_tee(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    idx, next_ip = decode_unsigned(frame.code, ip + 1)
+    instruction_ip = int(ip[0])
+    idx, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
     raw_slot, raw_width = frame.locals.raw_span(idx)
     frame.values.copy_raw_to(
         frame.context.local_stack,
@@ -530,26 +469,20 @@ def _h_local_tee(
     return None
 
 
-@_handler(I32_CONST)
-def _h_i32_const(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_const(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    val, next_ip = decode_signed(frame.code, ip + 1, bits=32)
+    instruction_ip = int(ip[0])
+    val, next_ip = decode_signed(frame.code, instruction_ip + 1, bits=32)
     frame.values.push_back(_to_i32(val))
     ctx.ip = next_ip
     return None
 
 
-@_handler(GLOBAL_GET)
-def _h_global_get(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_global_get(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    idx, next_ip = decode_unsigned(frame.code, ip + 1)
+    idx, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
     value = env.globals[idx]
     value_type = env.module.globals[idx].vtype
     if value_type == I64 or value_type == F64:
@@ -564,14 +497,11 @@ def _h_global_get(
     return None
 
 
-@_handler(GLOBAL_SET)
-def _h_global_set(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_global_set(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    idx, next_ip = decode_unsigned(frame.code, ip + 1)
+    idx, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
     value_type = env.module.globals[idx].vtype
     if value_type == I64 or value_type == F64:
         high = frame.values.pop_back() & I32_MASK
@@ -649,14 +579,11 @@ def _vmmio_store(env: ExecEnv, addr: int, val_bytes: bytes) -> Trap | None:
     return None
 
 
-@_handler(I32_LOAD)
-def _h_i32_load(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_load(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    mem_offset, next_ip = _read_memarg(frame.code, ip)
+    mem_offset, next_ip = _read_memarg(frame.code, instruction_ip)
     addr = _to_u32(frame.values.pop_back()) + mem_offset
     if addr & 0x8000_0000:
         value, trap = _vmmio_load(env, addr, 4, signed=True)
@@ -672,14 +599,13 @@ def _h_i32_load(
     return None
 
 
-@_handler(I32_LOAD8_S)
 def _h_i32_load8_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    mem_offset, next_ip = _read_memarg(frame.code, ip)
+    mem_offset, next_ip = _read_memarg(frame.code, instruction_ip)
     addr = _to_u32(frame.values.pop_back()) + mem_offset
     if addr & 0x8000_0000:
         value, trap = _vmmio_load(env, addr, 1, signed=True)
@@ -695,14 +621,13 @@ def _h_i32_load8_s(
     return None
 
 
-@_handler(I32_LOAD8_U)
 def _h_i32_load8_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    mem_offset, next_ip = _read_memarg(frame.code, ip)
+    mem_offset, next_ip = _read_memarg(frame.code, instruction_ip)
     addr = _to_u32(frame.values.pop_back()) + mem_offset
     if addr & 0x8000_0000:
         value, trap = _vmmio_load(env, addr, 1, signed=False)
@@ -718,14 +643,13 @@ def _h_i32_load8_u(
     return None
 
 
-@_handler(I32_LOAD16_S)
 def _h_i32_load16_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    mem_offset, next_ip = _read_memarg(frame.code, ip)
+    mem_offset, next_ip = _read_memarg(frame.code, instruction_ip)
     addr = _to_u32(frame.values.pop_back()) + mem_offset
     if addr & 0x8000_0000:
         value, trap = _vmmio_load(env, addr, 2, signed=True)
@@ -741,14 +665,13 @@ def _h_i32_load16_s(
     return None
 
 
-@_handler(I32_LOAD16_U)
 def _h_i32_load16_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    mem_offset, next_ip = _read_memarg(frame.code, ip)
+    mem_offset, next_ip = _read_memarg(frame.code, instruction_ip)
     addr = _to_u32(frame.values.pop_back()) + mem_offset
     if addr & 0x8000_0000:
         value, trap = _vmmio_load(env, addr, 2, signed=False)
@@ -767,14 +690,11 @@ def _h_i32_load16_u(
 # --- Stores (Dedicated per-opcode handlers with Bit 31 RAM Bypass) ---
 
 
-@_handler(I32_STORE)
-def _h_i32_store(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_store(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    mem_offset, next_ip = _read_memarg(frame.code, ip)
+    mem_offset, next_ip = _read_memarg(frame.code, instruction_ip)
     value = _to_i32(frame.values.pop_back())
     addr = _to_u32(frame.values.pop_back()) + mem_offset
     raw_val = (value & 0xFFFFFFFF).to_bytes(4, "little")
@@ -790,14 +710,11 @@ def _h_i32_store(
     return None
 
 
-@_handler(I32_STORE8)
-def _h_i32_store8(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_store8(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    mem_offset, next_ip = _read_memarg(frame.code, ip)
+    mem_offset, next_ip = _read_memarg(frame.code, instruction_ip)
     value = frame.values.pop_back() & 0xFF
     addr = _to_u32(frame.values.pop_back()) + mem_offset
     raw_val = value.to_bytes(1, "little")
@@ -813,14 +730,13 @@ def _h_i32_store8(
     return None
 
 
-@_handler(I32_STORE16)
 def _h_i32_store16(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    mem_offset, next_ip = _read_memarg(frame.code, ip)
+    mem_offset, next_ip = _read_memarg(frame.code, instruction_ip)
     value = frame.values.pop_back() & 0xFFFF
     addr = _to_u32(frame.values.pop_back()) + mem_offset
     raw_val = value.to_bytes(2, "little")
@@ -839,199 +755,158 @@ def _h_i32_store16(
 # --- Memory Size / Grow ---
 
 
-@_handler(MEMORY_SIZE)
 def _h_memory_size(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
     page_count = env.runtime_api.memory_size()
     if page_count is None:
         return Trap(TrapCode.MEMORY_SECTION_MISSING)
     frame.values.push_back(page_count)
-    ctx.ip = ip + 2
+    ctx.ip = instruction_ip + 2
     return None
 
 
-@_handler(MEMORY_GROW)
 def _h_memory_grow(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
     delta_pages = _to_u32(frame.values.pop_back())
     frame.values.push_back(env.runtime_api.grow_memory(delta_pages))
-    ctx.ip = ip + 2
+    ctx.ip = instruction_ip + 2
     return None
 
 
 # --- Comparisons (Dedicated per-opcode handlers without if statements) ---
 
 
-@_handler(I32_EQZ)
-def _h_i32_eqz(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_eqz(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     frame.values.push_back(1 if frame.values.pop_back() == 0 else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_EQ)
-def _h_i32_eq(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_eq(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(1 if _to_i32(a) == _to_i32(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_NE)
-def _h_i32_ne(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_ne(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(1 if _to_i32(a) != _to_i32(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_LT_S)
-def _h_i32_lt_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_lt_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(1 if _to_i32(a) < _to_i32(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_LT_U)
-def _h_i32_lt_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_lt_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(1 if _to_u32(a) < _to_u32(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_GT_S)
-def _h_i32_gt_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_gt_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(1 if _to_i32(a) > _to_i32(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_GT_U)
-def _h_i32_gt_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_gt_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(1 if _to_u32(a) > _to_u32(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_LE_S)
-def _h_i32_le_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_le_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(1 if _to_i32(a) <= _to_i32(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_LE_U)
-def _h_i32_le_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_le_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(1 if _to_u32(a) <= _to_u32(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_GE_S)
-def _h_i32_ge_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_ge_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(1 if _to_i32(a) >= _to_i32(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_GE_U)
-def _h_i32_ge_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_ge_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(1 if _to_u32(a) >= _to_u32(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
 # --- Unary Ops (Dedicated per-opcode handlers without if statements) ---
 
 
-@_handler(I32_CLZ)
-def _h_i32_clz(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_clz(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     v = _to_u32(frame.values.pop_back())
     frame.values.push_back(32 if v == 0 else 32 - v.bit_length())
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_CTZ)
-def _h_i32_ctz(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_ctz(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     v = _to_u32(frame.values.pop_back())
     if v == 0:
         res = 32
@@ -1044,70 +919,55 @@ def _h_i32_ctz(
         res = n
 
     frame.values.push_back(res)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_POPCNT)
-def _h_i32_popcnt(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_popcnt(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     v = _to_u32(frame.values.pop_back())
     frame.values.push_back(bin(v).count("1"))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
 # --- Binary Arithmetic & Bitwise Ops (Dedicated per-opcode handlers without if statements) ---
 
 
-@_handler(I32_ADD)
-def _h_i32_add(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_add(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(_to_i32(a + b))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_SUB)
-def _h_i32_sub(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_sub(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(_to_i32(a - b))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_MUL)
-def _h_i32_mul(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_mul(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(_to_i32(a * b))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_DIV_S)
-def _h_i32_div_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_div_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = _to_i32(frame.values.pop_back())
     a = _to_i32(frame.values.pop_back())
     if b == 0:
@@ -1116,161 +976,128 @@ def _h_i32_div_s(
         return Trap(TrapCode.INTEGER_OVERFLOW)
     q = abs(a) // abs(b)
     frame.values.push_back(_to_i32(-q if (a < 0) != (b < 0) else q))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_DIV_U)
-def _h_i32_div_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_div_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = _to_u32(frame.values.pop_back())
     a = _to_u32(frame.values.pop_back())
     if b == 0:
         return Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO)
     frame.values.push_back(_to_i32(a // b))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_REM_S)
-def _h_i32_rem_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_rem_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = _to_i32(frame.values.pop_back())
     a = _to_i32(frame.values.pop_back())
     if b == 0:
         return Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO)
     r = abs(a) % abs(b)
     frame.values.push_back(_to_i32(-r if a < 0 else r))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_REM_U)
-def _h_i32_rem_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_rem_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = _to_u32(frame.values.pop_back())
     a = _to_u32(frame.values.pop_back())
     if b == 0:
         return Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO)
     frame.values.push_back(_to_i32(a % b))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_AND)
-def _h_i32_and(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_and(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(_to_i32(_to_u32(a) & _to_u32(b)))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_OR)
-def _h_i32_or(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_or(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(_to_i32(_to_u32(a) | _to_u32(b)))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_XOR)
-def _h_i32_xor(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_xor(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(_to_i32(_to_u32(a) ^ _to_u32(b)))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_SHL)
-def _h_i32_shl(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_shl(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(_to_i32(_to_u32(a) << (_to_u32(b) & 31)))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_SHR_S)
-def _h_i32_shr_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_shr_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(_to_i32(_to_i32(a) >> (_to_u32(b) & 31)))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_SHR_U)
-def _h_i32_shr_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_shr_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     frame.values.push_back(_to_i32(_to_u32(a) >> (_to_u32(b) & 31)))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_ROTL)
-def _h_i32_rotl(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_rotl(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     n = _to_u32(b) & 31
     v = _to_u32(a)
     frame.values.push_back(_to_i32(((v << n) | (v >> (32 - n))) & I32_MASK if n else v))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_ROTR)
-def _h_i32_rotr(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i32_rotr(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_back()
     a = frame.values.pop_back()
     n = _to_u32(b) & 31
     v = _to_u32(a)
     frame.values.push_back(_to_i32(((v >> n) | (v << (32 - n))) & I32_MASK if n else v))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
@@ -1280,14 +1107,11 @@ def _h_i32_rotr(
 # --- i64 / f32 / f64 Memory Handlers ---
 
 
-@_handler(I64_LOAD)
-def _h_i64_load(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_load(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    offset, next_ip = _read_memarg(frame.code, ip)
+    offset, next_ip = _read_memarg(frame.code, instruction_ip)
     addr = _to_u32(frame.values.pop_back()) + offset
     if addr & 0x8000_0000:
         val, trap = _vmmio_load(env, addr, 8, signed=True)
@@ -1305,15 +1129,15 @@ def _h_i64_load(
 
 def _h_i64_load_narrow(
     ctx: ExecutionContext,
-    ip: ctypes.POINTER(ctypes.c_uint32),
+    ip: UInt32Pointer,
     sp: NativeValueStack,
     width: int,
     signed: bool,
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    offset, next_ip = _read_memarg(frame.code, ip)
+    offset, next_ip = _read_memarg(frame.code, instruction_ip)
     addr = _to_u32(frame.values.pop_back()) + offset
     if addr & 0x8000_0000:
         val, trap = _vmmio_load(env, addr, width, signed=signed)
@@ -1329,56 +1153,47 @@ def _h_i64_load_narrow(
     return None
 
 
-@_handler(I64_LOAD8_S)
 def _h_i64_load8_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     return _h_i64_load_narrow(ctx, ip, sp, 1, True)
 
 
-@_handler(I64_LOAD8_U)
 def _h_i64_load8_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     return _h_i64_load_narrow(ctx, ip, sp, 1, False)
 
 
-@_handler(I64_LOAD16_S)
 def _h_i64_load16_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     return _h_i64_load_narrow(ctx, ip, sp, 2, True)
 
 
-@_handler(I64_LOAD16_U)
 def _h_i64_load16_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     return _h_i64_load_narrow(ctx, ip, sp, 2, False)
 
 
-@_handler(I64_LOAD32_S)
 def _h_i64_load32_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     return _h_i64_load_narrow(ctx, ip, sp, 4, True)
 
 
-@_handler(I64_LOAD32_U)
 def _h_i64_load32_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     return _h_i64_load_narrow(ctx, ip, sp, 4, False)
 
 
-@_handler(I64_STORE)
-def _h_i64_store(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_store(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    offset, next_ip = _read_memarg(frame.code, ip)
+    offset, next_ip = _read_memarg(frame.code, instruction_ip)
     val = frame.values.pop_i64()
     assert val is not None
     addr = _to_u32(frame.values.pop_back()) + offset
@@ -1397,14 +1212,14 @@ def _h_i64_store(
 
 def _h_i64_store_narrow(
     ctx: ExecutionContext,
-    ip: ctypes.POINTER(ctypes.c_uint32),
+    ip: UInt32Pointer,
     sp: NativeValueStack,
     width: int,
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    offset, next_ip = _read_memarg(frame.code, ip)
+    offset, next_ip = _read_memarg(frame.code, instruction_ip)
     val = frame.values.pop_i64()
     assert val is not None
     addr = _to_u32(frame.values.pop_back()) + offset
@@ -1421,35 +1236,27 @@ def _h_i64_store_narrow(
     return None
 
 
-@_handler(I64_STORE8)
-def _h_i64_store8(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_store8(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     return _h_i64_store_narrow(ctx, ip, sp, 1)
 
 
-@_handler(I64_STORE16)
 def _h_i64_store16(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     return _h_i64_store_narrow(ctx, ip, sp, 2)
 
 
-@_handler(I64_STORE32)
 def _h_i64_store32(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     return _h_i64_store_narrow(ctx, ip, sp, 4)
 
 
-@_handler(F32_LOAD)
-def _h_f32_load(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_load(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    offset, next_ip = _read_memarg(frame.code, ip)
+    offset, next_ip = _read_memarg(frame.code, instruction_ip)
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 4 > len(env.memory):
         return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
@@ -1460,14 +1267,11 @@ def _h_f32_load(
     return None
 
 
-@_handler(F32_STORE)
-def _h_f32_store(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_store(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    offset, next_ip = _read_memarg(frame.code, ip)
+    offset, next_ip = _read_memarg(frame.code, instruction_ip)
     bits = frame.values.pop_back()
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 4 > len(env.memory):
@@ -1477,14 +1281,11 @@ def _h_f32_store(
     return None
 
 
-@_handler(F64_LOAD)
-def _h_f64_load(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_load(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    offset, next_ip = _read_memarg(frame.code, ip)
+    offset, next_ip = _read_memarg(frame.code, instruction_ip)
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 8 > len(env.memory):
         return Trap(TrapCode.MEMORY_OUT_OF_BOUNDS, addr)
@@ -1495,14 +1296,11 @@ def _h_f64_load(
     return None
 
 
-@_handler(F64_STORE)
-def _h_f64_store(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_store(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    offset, next_ip = _read_memarg(frame.code, ip)
+    offset, next_ip = _read_memarg(frame.code, instruction_ip)
     bits = frame.values.pop_i64()
     assert bits is not None
     addr = _to_u32(frame.values.pop_back()) + offset
@@ -1516,161 +1314,125 @@ def _h_f64_store(
 # --- Const Handlers ---
 
 
-@_handler(I64_CONST)
-def _h_i64_const(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_const(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    val, next_ip = decode_signed(frame.code, ip + 1, bits=64)
+    instruction_ip = int(ip[0])
+    val, next_ip = decode_signed(frame.code, instruction_ip + 1, bits=64)
     pushed = frame.values.push_i64(_to_i64(val))
     assert pushed
     ctx.ip = next_ip
     return None
 
 
-@_handler(F32_CONST)
-def _h_f32_const(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_const(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    bits = int.from_bytes(frame.code[ip + 1 : ip + 5], "little")
+    instruction_ip = int(ip[0])
+    bits = int.from_bytes(frame.code[instruction_ip + 1 : instruction_ip + 5], "little")
     pushed = frame.values.push_back(bits)
     assert pushed
-    ctx.ip = ip + 5
+    ctx.ip = instruction_ip + 5
     return None
 
 
-@_handler(F64_CONST)
-def _h_f64_const(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_const(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
-    bits = int.from_bytes(frame.code[ip + 1 : ip + 9], "little")
+    instruction_ip = int(ip[0])
+    bits = int.from_bytes(frame.code[instruction_ip + 1 : instruction_ip + 9], "little")
     pushed = frame.values.push_i64(_to_i64(bits))
     assert pushed
-    ctx.ip = ip + 9
+    ctx.ip = instruction_ip + 9
     return None
 
 
 # --- i64 Comparison & Arithmetic Handlers ---
 
 
-@_handler(I64_EQZ)
-def _h_i64_eqz(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_eqz(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     v = frame.values.pop_i64()
     assert v is not None
     frame.values.push_back(1 if v == 0 else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_EQ)
-def _h_i64_eq(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_eq(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     frame.values.push_back(1 if _to_i64(a) == _to_i64(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_NE)
-def _h_i64_ne(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_ne(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     frame.values.push_back(1 if _to_i64(a) != _to_i64(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_LT_S)
-def _h_i64_lt_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_lt_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     frame.values.push_back(1 if _to_i64(a) < _to_i64(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_LT_U)
-def _h_i64_lt_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_lt_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     frame.values.push_back(1 if _to_u64(a) < _to_u64(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_ADD)
-def _h_i64_add(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_add(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     pushed = frame.values.push_i64(_to_i64(a + b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_SUB)
-def _h_i64_sub(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_sub(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     pushed = frame.values.push_i64(_to_i64(a - b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_MUL)
-def _h_i64_mul(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_mul(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     pushed = frame.values.push_i64(_to_i64(a * b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_DIV_S)
-def _h_i64_div_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_div_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_i64()
     a = frame.values.pop_i64()
     assert b is not None and a is not None
@@ -1683,16 +1445,13 @@ def _h_i64_div_s(
     q = abs(a) // abs(b)
     pushed = frame.values.push_i64(_to_i64(-q if (a < 0) != (b < 0) else q))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_DIV_U)
-def _h_i64_div_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_div_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_i64()
     a = frame.values.pop_i64()
     assert b is not None and a is not None
@@ -1702,233 +1461,185 @@ def _h_i64_div_u(
         return Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO)
     pushed = frame.values.push_i64(_to_i64(a // b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
 # --- f32 Arithmetic Handlers ---
 
 
-@_handler(F32_ADD)
-def _h_f32_add(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_add(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
     pushed = frame.values.push_f32(_to_f32(a + b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_SUB)
-def _h_f32_sub(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_sub(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
     pushed = frame.values.push_f32(_to_f32(a - b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_MUL)
-def _h_f32_mul(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_mul(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
     pushed = frame.values.push_f32(_to_f32(a * b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_DIV)
-def _h_f32_div(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_div(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
     pushed = frame.values.push_f32(_to_f32(_wasm_float_div(a, b)))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_SQRT)
-def _h_f32_sqrt(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_sqrt(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f32()
     assert a is not None
     pushed = frame.values.push_f32(_to_f32(math.sqrt(a) if a >= 0 else float("nan")))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_MIN)
-def _h_f32_min(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_min(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
     pushed = frame.values.push_f32(_to_f32(_f32_min(a, b)))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_MAX)
-def _h_f32_max(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_max(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
     pushed = frame.values.push_f32(_to_f32(_f32_max(a, b)))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_LT)
-def _h_f32_lt(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_lt(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
     frame.values.push_back(1 if a < b else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_LE)
-def _h_f32_le(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_le(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
     frame.values.push_back(1 if a <= b else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_GT)
-def _h_f32_gt(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_gt(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
     frame.values.push_back(1 if a > b else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_GE)
-def _h_f32_ge(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_ge(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
     frame.values.push_back(1 if a >= b else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
 # --- f64 Arithmetic Handlers ---
 
 
-@_handler(F64_ADD)
-def _h_f64_add(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_add(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
     pushed = frame.values.push_f64(float(a + b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_SUB)
-def _h_f64_sub(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_sub(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
     pushed = frame.values.push_f64(float(a - b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_MUL)
-def _h_f64_mul(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_mul(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
     pushed = frame.values.push_f64(float(a * b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_DIV)
-def _h_f64_div(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_div(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
     pushed = frame.values.push_f64(_wasm_float_div(a, b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_SQRT)
-def _h_f64_sqrt(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_sqrt(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f64()
     assert a is not None
     pushed = frame.values.push_f64(float(math.sqrt(a) if a >= 0 else float("nan")))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
@@ -1953,14 +1664,11 @@ def _vdma_address_is_supported(address: int) -> bool:
     return function_code == FC_DYNAMIC or function_code == FC_SHM or function_code == FC_PASSTHROUGH
 
 
-@_handler(FC_PREFIX)
-def _h_fc_prefix(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_fc_prefix(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     env = frame.env
-    subopcode, next_ip = decode_unsigned(frame.code, ip + 1)
+    subopcode, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
 
     if FC_I32_TRUNC_SAT_F32_S <= subopcode <= FC_I32_TRUNC_SAT_F64_U:
         source_is_f32 = subopcode == 0 or subopcode == 1
@@ -2052,44 +1760,41 @@ def _h_fc_prefix(
     return None
 
 
-@_handler(I32_TRUNC_F32_S)
 def _h_i32_trunc_f32_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f32()
     assert a is not None
     converted = _truncate_float(a, 32, True)
     if converted is None:
         return Trap(TrapCode.INVALID_CONVERSION)
     frame.values.push_back(_to_i32(converted))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_TRUNC_F64_S)
 def _h_i32_trunc_f64_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f64()
     assert a is not None
     converted = _truncate_float(a, 32, True)
     if converted is None:
         return Trap(TrapCode.INVALID_CONVERSION)
     frame.values.push_back(_to_i32(converted))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_TRUNC_F32_S)
 def _h_i64_trunc_f32_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f32()
     assert a is not None
     converted = _truncate_float(a, 64, True)
@@ -2097,16 +1802,15 @@ def _h_i64_trunc_f32_s(
         return Trap(TrapCode.INVALID_CONVERSION)
     pushed = frame.values.push_i64(converted)
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_TRUNC_F32_U)
 def _h_i64_trunc_f32_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f32()
     assert a is not None
     converted = _truncate_float(a, 64, False)
@@ -2114,16 +1818,15 @@ def _h_i64_trunc_f32_u(
         return Trap(TrapCode.INVALID_CONVERSION)
     pushed = frame.values.push_i64(converted)
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_TRUNC_F64_S)
 def _h_i64_trunc_f64_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f64()
     assert a is not None
     converted = _truncate_float(a, 64, True)
@@ -2131,16 +1834,15 @@ def _h_i64_trunc_f64_s(
         return Trap(TrapCode.INVALID_CONVERSION)
     pushed = frame.values.push_i64(converted)
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_TRUNC_F64_U)
 def _h_i64_trunc_f64_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f64()
     assert a is not None
     converted = _truncate_float(a, 64, False)
@@ -2148,258 +1850,221 @@ def _h_i64_trunc_f64_u(
         return Trap(TrapCode.INVALID_CONVERSION)
     pushed = frame.values.push_i64(converted)
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_CONVERT_I32_S)
 def _h_f32_convert_i32_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = _to_i32(frame.values.pop_back())
     pushed = frame.values.push_f32(_to_f32(float(a)))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_CONVERT_I32_U)
 def _h_f32_convert_i32_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = _to_u32(frame.values.pop_back())
     pushed = frame.values.push_f32(_to_f32(float(a)))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_CONVERT_I64_S)
 def _h_f32_convert_i64_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_i64()
     assert a is not None
     pushed = frame.values.push_f32(_to_f32(float(a)))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_CONVERT_I64_U)
 def _h_f32_convert_i64_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_i64()
     assert a is not None
     pushed = frame.values.push_f32(_to_f32(float(_to_u64(a))))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_CONVERT_I32_S)
 def _h_f64_convert_i32_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = _to_i32(frame.values.pop_back())
     pushed = frame.values.push_f64(float(a))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_CONVERT_I32_U)
 def _h_f64_convert_i32_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = _to_u32(frame.values.pop_back())
     pushed = frame.values.push_f64(float(a))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_CONVERT_I64_S)
 def _h_f64_convert_i64_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_i64()
     assert a is not None
     pushed = frame.values.push_f64(float(a))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_CONVERT_I64_U)
 def _h_f64_convert_i64_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_i64()
     assert a is not None
     pushed = frame.values.push_f64(float(_to_u64(a)))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_PROMOTE_F32)
 def _h_f64_promote_f32(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f32()
     assert a is not None
     pushed = frame.values.push_f64(float("nan") if math.isnan(a) else float(a))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_DEMOTE_F64)
 def _h_f32_demote_f64(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f64()
     assert a is not None
     pushed = frame.values.push_f32(float("nan") if math.isnan(a) else _to_f32(float(a)))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_ABS)
-def _h_f32_abs(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_abs(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     bits = frame.values.pop_back()
     pushed = frame.values.push_back(bits & 0x7FFF_FFFF)
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_NEG)
-def _h_f32_neg(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_neg(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     bits = frame.values.pop_back()
     pushed = frame.values.push_back(bits ^ 0x8000_0000)
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_ABS)
-def _h_f64_abs(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_abs(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     bits = frame.values.pop_i64()
     assert bits is not None
     pushed = frame.values.push_i64(_to_i64(_to_u64(bits) & 0x7FFF_FFFF_FFFF_FFFF))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_NEG)
-def _h_f64_neg(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_neg(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     bits = frame.values.pop_i64()
     assert bits is not None
     pushed = frame.values.push_i64(_to_i64(_to_u64(bits) ^ 0x8000_0000_0000_0000))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_EQ)
-def _h_f32_eq(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_eq(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
     frame.values.push_back(1 if a == b else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_NE)
-def _h_f32_ne(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_ne(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f32(), frame.values.pop_f32()
     assert b is not None and a is not None
     frame.values.push_back(1 if a != b else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_EQ)
-def _h_f64_eq(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_eq(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
     frame.values.push_back(1 if a == b else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_NE)
-def _h_f64_ne(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_ne(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
     frame.values.push_back(1 if a != b else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_REM_S)
-def _h_i64_rem_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_rem_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_i64()
     a = frame.values.pop_i64()
     assert b is not None and a is not None
@@ -2410,16 +2075,13 @@ def _h_i64_rem_s(
     r = abs(a) % abs(b)
     pushed = frame.values.push_i64(_to_i64(-r if a < 0 else r))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_REM_U)
-def _h_i64_rem_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_rem_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b = frame.values.pop_i64()
     a = frame.values.pop_i64()
     assert b is not None and a is not None
@@ -2429,103 +2091,82 @@ def _h_i64_rem_u(
         return Trap(TrapCode.INTEGER_DIVIDE_BY_ZERO)
     pushed = frame.values.push_i64(_to_i64(a % b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_AND)
-def _h_i64_and(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_and(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     pushed = frame.values.push_i64(_to_i64(a & b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_OR)
-def _h_i64_or(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_or(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     pushed = frame.values.push_i64(_to_i64(a | b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_XOR)
-def _h_i64_xor(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_xor(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     pushed = frame.values.push_i64(_to_i64(a ^ b))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_SHL)
-def _h_i64_shl(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_shl(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     k = frame.values.pop_i64()
     v = frame.values.pop_i64()
     assert k is not None and v is not None
     pushed = frame.values.push_i64(_to_i64((v << (k % 64)) & I64_MASK))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_SHR_S)
-def _h_i64_shr_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_shr_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     k = frame.values.pop_i64()
     v = frame.values.pop_i64()
     assert k is not None and v is not None
     pushed = frame.values.push_i64(_to_i64(_to_i64(v) >> (k % 64)))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_SHR_U)
-def _h_i64_shr_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_shr_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     k = frame.values.pop_i64()
     v = frame.values.pop_i64()
     assert k is not None and v is not None
     pushed = frame.values.push_i64(_to_i64(_to_u64(v) >> (k % 64)))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_ROTL)
-def _h_i64_rotl(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_rotl(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     k = frame.values.pop_i64()
     v = frame.values.pop_i64()
     assert k is not None and v is not None
@@ -2534,16 +2175,13 @@ def _h_i64_rotl(
     rotated = ((v << k) | (v >> (64 - k))) & I64_MASK if k else v
     pushed = frame.values.push_i64(_to_i64(rotated))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_ROTR)
-def _h_i64_rotr(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_rotr(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     k = frame.values.pop_i64()
     v = frame.values.pop_i64()
     assert k is not None and v is not None
@@ -2552,16 +2190,13 @@ def _h_i64_rotr(
     rotated = ((v >> k) | (v << (64 - k))) & I64_MASK if k else v
     pushed = frame.values.push_i64(_to_i64(rotated))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_CLZ)
-def _h_i64_clz(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_clz(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     value = frame.values.pop_i64()
     assert value is not None
     v = _to_u64(value)
@@ -2571,16 +2206,13 @@ def _h_i64_clz(
     else:
         pushed = frame.values.push_i64(64 - v.bit_length())
         assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_CTZ)
-def _h_i64_ctz(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_ctz(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     value = frame.values.pop_i64()
     assert value is not None
     v = _to_u64(value)
@@ -2590,237 +2222,194 @@ def _h_i64_ctz(
     else:
         pushed = frame.values.push_i64((v & -v).bit_length() - 1)
         assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_POPCNT)
-def _h_i64_popcnt(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_popcnt(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     value = frame.values.pop_i64()
     assert value is not None
     v = _to_u64(value)
     pushed = frame.values.push_i64(bin(v).count("1"))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_GT_S)
-def _h_i64_gt_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_gt_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     frame.values.push_back(1 if _to_i64(a) > _to_i64(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_GT_U)
-def _h_i64_gt_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_gt_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     frame.values.push_back(1 if _to_u64(a) > _to_u64(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_LE_S)
-def _h_i64_le_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_le_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     frame.values.push_back(1 if _to_i64(a) <= _to_i64(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_LE_U)
-def _h_i64_le_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_le_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     frame.values.push_back(1 if _to_u64(a) <= _to_u64(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_GE_S)
-def _h_i64_ge_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_ge_s(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     frame.values.push_back(1 if _to_i64(a) >= _to_i64(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_GE_U)
-def _h_i64_ge_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_i64_ge_u(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     frame.values.push_back(1 if _to_u64(a) >= _to_u64(b) else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
 # --- Additional F32 / F64 Math Handlers ---
 
 
-@_handler(F32_CEIL)
-def _h_f32_ceil(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_ceil(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f32()
     assert a is not None
     pushed = frame.values.push_f32(_to_f32(_wasm_integral_round(a, "ceil")))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_FLOOR)
-def _h_f32_floor(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_floor(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f32()
     assert a is not None
     pushed = frame.values.push_f32(_to_f32(_wasm_integral_round(a, "floor")))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_TRUNC)
-def _h_f32_trunc(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f32_trunc(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f32()
     assert a is not None
     pushed = frame.values.push_f32(_to_f32(_wasm_integral_round(a, "trunc")))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_NEAREST)
 def _h_f32_nearest(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f32()
     assert a is not None
     pushed = frame.values.push_f32(_to_f32(_wasm_nearest(a)))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_COPYSIGN)
 def _h_f32_copysign(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_back(), frame.values.pop_back()
     pushed = frame.values.push_back((a & 0x7FFF_FFFF) | (b & 0x8000_0000))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_CEIL)
-def _h_f64_ceil(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_ceil(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f64()
     assert a is not None
     pushed = frame.values.push_f64(_wasm_integral_round(a, "ceil"))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_FLOOR)
-def _h_f64_floor(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_floor(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f64()
     assert a is not None
     pushed = frame.values.push_f64(_wasm_integral_round(a, "floor"))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_TRUNC)
-def _h_f64_trunc(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_trunc(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f64()
     assert a is not None
     pushed = frame.values.push_f64(_wasm_integral_round(a, "trunc"))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_NEAREST)
 def _h_f64_nearest(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f64()
     assert a is not None
     pushed = frame.values.push_f64(_wasm_nearest(a))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_COPYSIGN)
 def _h_f64_copysign(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_i64(), frame.values.pop_i64()
     assert b is not None and a is not None
     bits_a = _to_u64(a)
@@ -2828,16 +2417,13 @@ def _h_f64_copysign(
     bits = (bits_a & 0x7FFF_FFFF_FFFF_FFFF) | (bits_b & 0x8000_0000_0000_0000)
     pushed = frame.values.push_i64(_to_i64(bits))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_MIN)
-def _h_f64_min(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_min(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
     if math.isnan(a) or math.isnan(b):
@@ -2848,16 +2434,13 @@ def _h_f64_min(
         res = min(a, b)
     pushed = frame.values.push_f64(float(res))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_MAX)
-def _h_f64_max(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_max(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
     if math.isnan(a) or math.isnan(b):
@@ -2868,257 +2451,411 @@ def _h_f64_max(
         res = max(a, b)
     pushed = frame.values.push_f64(float(res))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_LT)
-def _h_f64_lt(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_lt(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
     frame.values.push_back(1 if a < b else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_LE)
-def _h_f64_le(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_le(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
     frame.values.push_back(1 if a <= b else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_GT)
-def _h_f64_gt(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_gt(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
     frame.values.push_back(1 if a > b else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_GE)
-def _h_f64_ge(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
-) -> _HandlerResult:
+def _h_f64_ge(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     b, a = frame.values.pop_f64(), frame.values.pop_f64()
     assert b is not None and a is not None
     frame.values.push_back(1 if a >= b else 0)
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
 # --- Conversion & Reinterpret Handlers ---
 
 
-@_handler(I32_EXTEND8_S)
 def _h_i32_extend8_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     value = _to_u32(frame.values.pop_back()) & 0xFF
     pushed = frame.values.push_back(_to_i32(value - 0x100 if value & 0x80 else value))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_EXTEND16_S)
 def _h_i32_extend16_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     value = _to_u32(frame.values.pop_back()) & 0xFFFF
     pushed = frame.values.push_back(_to_i32(value - 0x10000 if value & 0x8000 else value))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_EXTEND8_S)
 def _h_i64_extend8_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     value = _to_u64(frame.values.pop_i64()) & 0xFF
     pushed = frame.values.push_i64(_to_i64(value - 0x100 if value & 0x80 else value))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_EXTEND16_S)
 def _h_i64_extend16_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     value = _to_u64(frame.values.pop_i64()) & 0xFFFF
     pushed = frame.values.push_i64(_to_i64(value - 0x10000 if value & 0x8000 else value))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_EXTEND32_S)
 def _h_i64_extend32_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     value = _to_u64(frame.values.pop_i64()) & 0xFFFF_FFFF
     pushed = frame.values.push_i64(_to_i64(value - 0x1_0000_0000 if value & 0x8000_0000 else value))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_WRAP_I64)
 def _h_i32_wrap_i64(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_i64()
     assert a is not None
     frame.values.push_back(_to_i32(a))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_TRUNC_F32_U)
 def _h_i32_trunc_f32_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f32()
     assert a is not None
     if math.isnan(a) or a <= -1.0 or a >= 4294967296.0:
         return Trap(TrapCode.INVALID_CONVERSION)
     frame.values.push_back(_to_i32(int(a)))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_TRUNC_F64_U)
 def _h_i32_trunc_f64_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_f64()
     assert a is not None
     if math.isnan(a) or a <= -1.0 or a >= 4294967296.0:
         return Trap(TrapCode.INVALID_CONVERSION)
     frame.values.push_back(_to_i32(int(a)))
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_EXTEND_I32_S)
 def _h_i64_extend_i32_s(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_i32()
     assert a is not None
     pushed = frame.values.push_i64(_to_i64(a))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_EXTEND_I32_U)
 def _h_i64_extend_i32_u(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     a = frame.values.pop_i32()
     assert a is not None
     pushed = frame.values.push_i64(_to_i64(_to_u32(a)))
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I32_REINTERPRET_F32)
 def _h_i32_reinterpret_f32(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     bits = frame.values.pop_back()
     pushed = frame.values.push_back(bits)
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F32_REINTERPRET_I32)
 def _h_f32_reinterpret_i32(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     bits = frame.values.pop_back()
     pushed = frame.values.push_back(bits)
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(I64_REINTERPRET_F64)
 def _h_i64_reinterpret_f64(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     bits = frame.values.pop_i64()
     assert bits is not None
     pushed = frame.values.push_i64(bits)
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-@_handler(F64_REINTERPRET_I64)
 def _h_f64_reinterpret_i64(
-    ctx: ExecutionContext, ip: ctypes.POINTER(ctypes.c_uint32), sp: NativeValueStack
+    ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
 ) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
-    ip = int(ip[0])
+    instruction_ip = int(ip[0])
     bits = frame.values.pop_i64()
     assert bits is not None
     pushed = frame.values.push_i64(bits)
     assert pushed
-    ctx.ip = ip + 1
+    ctx.ip = instruction_ip + 1
     return None
 
 
-# Complete the direct-indexed table after decorator registration without
-# materializing an iterator or a temporary tuple. The table is then read by
-# every interpreter dispatch step, so this storage is required runtime state.
-while len(_HANDLERS) < 256:
-    _HANDLERS.append(None)
+def _build_opcode_dispatch() -> SequenceView[_HandlerFn | None]:
+    """Freeze the dispatch catalog and release its mutable setup storage."""
+    handlers = StaticVector[_HandlerFn | None](capacity=256)
+    for _ in range(256):
+        handlers.append(None)
+    handlers[UNREACHABLE] = _h_unreachable
+    handlers[NOP] = _h_nop
+    handlers[BLOCK] = _h_block
+    handlers[LOOP] = _h_loop
+    handlers[IF] = _h_if
+    handlers[ELSE] = _h_else
+    handlers[END] = _h_end
+    handlers[BR] = _h_br
+    handlers[BR_IF] = _h_br_if
+    handlers[BR_TABLE] = _h_br_table
+    handlers[RETURN] = _h_return
+    handlers[DROP] = _h_drop
+    handlers[SELECT] = _h_select
+    handlers[LOCAL_GET] = _h_local_get
+    handlers[LOCAL_SET] = _h_local_set
+    handlers[LOCAL_TEE] = _h_local_tee
+    handlers[I32_CONST] = _h_i32_const
+    handlers[GLOBAL_GET] = _h_global_get
+    handlers[GLOBAL_SET] = _h_global_set
+    handlers[I32_LOAD] = _h_i32_load
+    handlers[I32_LOAD8_S] = _h_i32_load8_s
+    handlers[I32_LOAD8_U] = _h_i32_load8_u
+    handlers[I32_LOAD16_S] = _h_i32_load16_s
+    handlers[I32_LOAD16_U] = _h_i32_load16_u
+    handlers[I32_STORE] = _h_i32_store
+    handlers[I32_STORE8] = _h_i32_store8
+    handlers[I32_STORE16] = _h_i32_store16
+    handlers[MEMORY_SIZE] = _h_memory_size
+    handlers[MEMORY_GROW] = _h_memory_grow
+    handlers[I32_EQZ] = _h_i32_eqz
+    handlers[I32_EQ] = _h_i32_eq
+    handlers[I32_NE] = _h_i32_ne
+    handlers[I32_LT_S] = _h_i32_lt_s
+    handlers[I32_LT_U] = _h_i32_lt_u
+    handlers[I32_GT_S] = _h_i32_gt_s
+    handlers[I32_GT_U] = _h_i32_gt_u
+    handlers[I32_LE_S] = _h_i32_le_s
+    handlers[I32_LE_U] = _h_i32_le_u
+    handlers[I32_GE_S] = _h_i32_ge_s
+    handlers[I32_GE_U] = _h_i32_ge_u
+    handlers[I32_CLZ] = _h_i32_clz
+    handlers[I32_CTZ] = _h_i32_ctz
+    handlers[I32_POPCNT] = _h_i32_popcnt
+    handlers[I32_ADD] = _h_i32_add
+    handlers[I32_SUB] = _h_i32_sub
+    handlers[I32_MUL] = _h_i32_mul
+    handlers[I32_DIV_S] = _h_i32_div_s
+    handlers[I32_DIV_U] = _h_i32_div_u
+    handlers[I32_REM_S] = _h_i32_rem_s
+    handlers[I32_REM_U] = _h_i32_rem_u
+    handlers[I32_AND] = _h_i32_and
+    handlers[I32_OR] = _h_i32_or
+    handlers[I32_XOR] = _h_i32_xor
+    handlers[I32_SHL] = _h_i32_shl
+    handlers[I32_SHR_S] = _h_i32_shr_s
+    handlers[I32_SHR_U] = _h_i32_shr_u
+    handlers[I32_ROTL] = _h_i32_rotl
+    handlers[I32_ROTR] = _h_i32_rotr
+    handlers[I64_LOAD] = _h_i64_load
+    handlers[I64_LOAD8_S] = _h_i64_load8_s
+    handlers[I64_LOAD8_U] = _h_i64_load8_u
+    handlers[I64_LOAD16_S] = _h_i64_load16_s
+    handlers[I64_LOAD16_U] = _h_i64_load16_u
+    handlers[I64_LOAD32_S] = _h_i64_load32_s
+    handlers[I64_LOAD32_U] = _h_i64_load32_u
+    handlers[I64_STORE] = _h_i64_store
+    handlers[I64_STORE8] = _h_i64_store8
+    handlers[I64_STORE16] = _h_i64_store16
+    handlers[I64_STORE32] = _h_i64_store32
+    handlers[F32_LOAD] = _h_f32_load
+    handlers[F32_STORE] = _h_f32_store
+    handlers[F64_LOAD] = _h_f64_load
+    handlers[F64_STORE] = _h_f64_store
+    handlers[I64_CONST] = _h_i64_const
+    handlers[F32_CONST] = _h_f32_const
+    handlers[F64_CONST] = _h_f64_const
+    handlers[I64_EQZ] = _h_i64_eqz
+    handlers[I64_EQ] = _h_i64_eq
+    handlers[I64_NE] = _h_i64_ne
+    handlers[I64_LT_S] = _h_i64_lt_s
+    handlers[I64_LT_U] = _h_i64_lt_u
+    handlers[I64_ADD] = _h_i64_add
+    handlers[I64_SUB] = _h_i64_sub
+    handlers[I64_MUL] = _h_i64_mul
+    handlers[I64_DIV_S] = _h_i64_div_s
+    handlers[I64_DIV_U] = _h_i64_div_u
+    handlers[F32_ADD] = _h_f32_add
+    handlers[F32_SUB] = _h_f32_sub
+    handlers[F32_MUL] = _h_f32_mul
+    handlers[F32_DIV] = _h_f32_div
+    handlers[F32_SQRT] = _h_f32_sqrt
+    handlers[F32_MIN] = _h_f32_min
+    handlers[F32_MAX] = _h_f32_max
+    handlers[F32_LT] = _h_f32_lt
+    handlers[F32_LE] = _h_f32_le
+    handlers[F32_GT] = _h_f32_gt
+    handlers[F32_GE] = _h_f32_ge
+    handlers[F64_ADD] = _h_f64_add
+    handlers[F64_SUB] = _h_f64_sub
+    handlers[F64_MUL] = _h_f64_mul
+    handlers[F64_DIV] = _h_f64_div
+    handlers[F64_SQRT] = _h_f64_sqrt
+    handlers[FC_PREFIX] = _h_fc_prefix
+    handlers[I32_TRUNC_F32_S] = _h_i32_trunc_f32_s
+    handlers[I32_TRUNC_F64_S] = _h_i32_trunc_f64_s
+    handlers[I64_TRUNC_F32_S] = _h_i64_trunc_f32_s
+    handlers[I64_TRUNC_F32_U] = _h_i64_trunc_f32_u
+    handlers[I64_TRUNC_F64_S] = _h_i64_trunc_f64_s
+    handlers[I64_TRUNC_F64_U] = _h_i64_trunc_f64_u
+    handlers[F32_CONVERT_I32_S] = _h_f32_convert_i32_s
+    handlers[F32_CONVERT_I32_U] = _h_f32_convert_i32_u
+    handlers[F32_CONVERT_I64_S] = _h_f32_convert_i64_s
+    handlers[F32_CONVERT_I64_U] = _h_f32_convert_i64_u
+    handlers[F64_CONVERT_I32_S] = _h_f64_convert_i32_s
+    handlers[F64_CONVERT_I32_U] = _h_f64_convert_i32_u
+    handlers[F64_CONVERT_I64_S] = _h_f64_convert_i64_s
+    handlers[F64_CONVERT_I64_U] = _h_f64_convert_i64_u
+    handlers[F64_PROMOTE_F32] = _h_f64_promote_f32
+    handlers[F32_DEMOTE_F64] = _h_f32_demote_f64
+    handlers[F32_ABS] = _h_f32_abs
+    handlers[F32_NEG] = _h_f32_neg
+    handlers[F64_ABS] = _h_f64_abs
+    handlers[F64_NEG] = _h_f64_neg
+    handlers[F32_EQ] = _h_f32_eq
+    handlers[F32_NE] = _h_f32_ne
+    handlers[F64_EQ] = _h_f64_eq
+    handlers[F64_NE] = _h_f64_ne
+    handlers[I64_REM_S] = _h_i64_rem_s
+    handlers[I64_REM_U] = _h_i64_rem_u
+    handlers[I64_AND] = _h_i64_and
+    handlers[I64_OR] = _h_i64_or
+    handlers[I64_XOR] = _h_i64_xor
+    handlers[I64_SHL] = _h_i64_shl
+    handlers[I64_SHR_S] = _h_i64_shr_s
+    handlers[I64_SHR_U] = _h_i64_shr_u
+    handlers[I64_ROTL] = _h_i64_rotl
+    handlers[I64_ROTR] = _h_i64_rotr
+    handlers[I64_CLZ] = _h_i64_clz
+    handlers[I64_CTZ] = _h_i64_ctz
+    handlers[I64_POPCNT] = _h_i64_popcnt
+    handlers[I64_GT_S] = _h_i64_gt_s
+    handlers[I64_GT_U] = _h_i64_gt_u
+    handlers[I64_LE_S] = _h_i64_le_s
+    handlers[I64_LE_U] = _h_i64_le_u
+    handlers[I64_GE_S] = _h_i64_ge_s
+    handlers[I64_GE_U] = _h_i64_ge_u
+    handlers[F32_CEIL] = _h_f32_ceil
+    handlers[F32_FLOOR] = _h_f32_floor
+    handlers[F32_TRUNC] = _h_f32_trunc
+    handlers[F32_NEAREST] = _h_f32_nearest
+    handlers[F32_COPYSIGN] = _h_f32_copysign
+    handlers[F64_CEIL] = _h_f64_ceil
+    handlers[F64_FLOOR] = _h_f64_floor
+    handlers[F64_TRUNC] = _h_f64_trunc
+    handlers[F64_NEAREST] = _h_f64_nearest
+    handlers[F64_COPYSIGN] = _h_f64_copysign
+    handlers[F64_MIN] = _h_f64_min
+    handlers[F64_MAX] = _h_f64_max
+    handlers[F64_LT] = _h_f64_lt
+    handlers[F64_LE] = _h_f64_le
+    handlers[F64_GT] = _h_f64_gt
+    handlers[F64_GE] = _h_f64_ge
+    handlers[I32_EXTEND8_S] = _h_i32_extend8_s
+    handlers[I32_EXTEND16_S] = _h_i32_extend16_s
+    handlers[I64_EXTEND8_S] = _h_i64_extend8_s
+    handlers[I64_EXTEND16_S] = _h_i64_extend16_s
+    handlers[I64_EXTEND32_S] = _h_i64_extend32_s
+    handlers[I32_WRAP_I64] = _h_i32_wrap_i64
+    handlers[I32_TRUNC_F32_U] = _h_i32_trunc_f32_u
+    handlers[I32_TRUNC_F64_U] = _h_i32_trunc_f64_u
+    handlers[I64_EXTEND_I32_S] = _h_i64_extend_i32_s
+    handlers[I64_EXTEND_I32_U] = _h_i64_extend_i32_u
+    handlers[I32_REINTERPRET_F32] = _h_i32_reinterpret_f32
+    handlers[F32_REINTERPRET_I32] = _h_f32_reinterpret_i32
+    handlers[I64_REINTERPRET_F64] = _h_i64_reinterpret_f64
+    handlers[F64_REINTERPRET_I64] = _h_f64_reinterpret_i64
+    return freeze_sequence(handlers)
+
+
+_HANDLERS = _build_opcode_dispatch()

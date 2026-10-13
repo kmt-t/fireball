@@ -1,0 +1,122 @@
+ M .agents/rules/coding-standards-cpp.md
+ M .agents/rules/coding-standards-python.md
+ M .agents/rules/development-policy.md
+ M .agents/skills/cpp-pro/SKILL.md
+ M .agents/skills/pysim-optimization/SKILL.md
+ M .agents/skills/pysim-review/SKILL.md
+ M .agents/skills/pysim-review/references/pysim_review_rubric.md
+ M docs/components/tier1_core/system_config.md
+ M docs/components/tier1_interface/system_memory.md
+ M docs/components/tier2_runtime/concepts/README.md
+ M docs/components/tier2_runtime/formal/vsoc_state_model.py
+ M docs/components/tier2_runtime/interpreter.md
+ M docs/components/tier2_runtime/jit_abi.md
+ M docs/components/tier2_runtime/runtime_loader.md
+ M docs/components/tier2_runtime/runtime_logging.md
+ M docs/components/tier2_runtime/runtime_memory.md
+ M docs/components/tier2_runtime/runtime_vsoc.md
+ M docs/components/tier3_plugins/benchmarks/jit_aging_bench_spec.md
+ M docs/components/tier3_plugins/benchmarks/jit_cache_metabolism_bench_spec.md
+ M docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md
+ M docs/components/tier3_plugins/formal/jit_cache_model.py
+ M docs/components/tier3_plugins/jit_compiler.md
+ M docs/components/tier3_plugins/jit_runtime.md
+ M docs/plans/backlog_list.md
+ M docs/plans/roadmap_phase.md
+ M docs/qa/integration_test_scenarios.md
+ M docs/qa/specs/wasm_instruction_set_test_spec.md
+ M docs/qa/tier2_runtime/interpreter_test_spec.md
+ M docs/qa/tier2_runtime/runtime_loader_test_spec.md
+ M docs/qa/tier3_plugins/jit_compiler_test_spec.md
+ M docs/qa/tier3_plugins/jit_runtime_test_spec.md
+ M docs/qa/verification_factor_matrix.md
+ M docs/qa/wasm_core_mvp_test_results.md
+ M docs/requires/requirement_list.md
+ M docs/specs/wasm_instruction_set.md
+ M experiments/pysim/benchmarks/BENCHMARK_REPORT.md
+ M experiments/pysim/benchmarks/interpreter/bench_block_search_cache.py
+ M experiments/pysim/benchmarks/jit/bench_jit_aging.py
+ M experiments/pysim/benchmarks/jit/bench_jit_cache_metabolism.py
+ M experiments/pysim/benchmarks/memory/bench_resource_inventory.py
+ M experiments/pysim/benchmarks/run_all.py
+ M experiments/pysim/native/tier2_runtime/interpreter/build_native.ps1
+ M experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
+ M experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx
+ D experiments/pysim/native/tier2_runtime/interpreter/native_interpreter_handlers.hxx
+ M experiments/pysim/native/tier2_runtime/interpreter/native_interpreter_runtime.hxx
+ D experiments/pysim/native/tier2_runtime/interpreter/native_interpreter_runtime_apis.hxx
+ D experiments/pysim/native/tier2_runtime/interpreter/native_interpreter_utilities.hxx
+ M experiments/pysim/native/tier3_plugins/jit/build_native.ps1
+ M experiments/pysim/native/tier3_plugins/jit/build_native.sh
+ M experiments/pysim/native/tier3_plugins/jit/common_code.cxx
+ M experiments/pysim/native/tier3_plugins/jit/common_code_abi.hxx
+ M experiments/pysim/native/tier3_plugins/jit/executable_memory.cxx
+ M experiments/pysim/native/tier3_plugins/jit/executable_memory_abi.hxx
+ M experiments/pysim/native/tier3_plugins/jit/jit_internal.hxx
+ M experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx
+ M experiments/pysim/native/tier3_plugins/jit/jit_runtime.hxx
+ M experiments/pysim/native/tier3_plugins/jit/jit_runtime_abi.hxx
+ M experiments/pysim/native/tier3_plugins/jit/jit_runtime_apis.hxx
+ D experiments/pysim/native/tier3_plugins/jit/jit_runtime_exports.hxx
+ M experiments/pysim/native/tier3_plugins/jit/jit_types.hxx
+ M experiments/pysim/native/tier3_plugins/jit/lir/x64/operations.S
+ M experiments/pysim/native/tier3_plugins/jit/profiling.cxx
+ M experiments/pysim/native/tier3_plugins/jit/profiling.hxx
+ M experiments/pysim/native/tier3_plugins/jit/stencils_x64.hxx
+ M experiments/pysim/native/tier3_plugins/jit/trace_compiler.cxx
+ M experiments/pysim/native/tier3_plugins/jit/trace_compiler_abi.hxx
+ M experiments/pysim/qa/cross_cutting/test_gotchas.py
+ M experiments/pysim/qa/integration/test_pairwise_combinations.py
+ M experiments/pysim/qa/private/jit_measurements.hxx
+ M experiments/pysim/qa/private/jit_native_abi.py
+ M experiments/pysim/qa/private/jit_native_probe.hxx
+ M experiments/pysim/qa/private/jit_probe_exports.def
+ M experiments/pysim/qa/private/native_interpreter_probe.cxx
+ M experiments/pysim/qa/private/native_jit_probe.cxx
+ M experiments/pysim/qa/run_all.py
+ M experiments/pysim/qa/shared/exec_memory.py
+ M experiments/pysim/qa/shared/jit_cache.py
+ M experiments/pysim/qa/shared/jit_manager.py
+ M experiments/pysim/qa/tier2_runtime/interpreter/test_interpreter.py
+ M experiments/pysim/qa/tier2_runtime/test_wasm_reader.py
+ M experiments/pysim/qa/tier3_plugins/jit/test_exec_memory.py
+ M experiments/pysim/qa/tier3_plugins/jit/test_jit_runtime.py
+ M experiments/pysim/qa/workloads/test_wasm_core_spec.py
+ M experiments/pysim/tier1_core/config.py
+ M experiments/pysim/tier2_runtime/abi/native_abi.hxx
+ M experiments/pysim/tier2_runtime/interpreter/control_flow.py
+ M experiments/pysim/tier2_runtime/interpreter/errors.py
+ M experiments/pysim/tier2_runtime/interpreter/handlers.py
+ M experiments/pysim/tier2_runtime/interpreter/interpreter.py
+ M experiments/pysim/tier2_runtime/observability/logger.py
+ M experiments/pysim/tier2_runtime/wasm/binary.py
+ M experiments/pysim/tier2_runtime/wasm/builder.py
+ M experiments/pysim/tier2_runtime/wasm/leb128.py
+ M experiments/pysim/tier2_runtime/wasm/module.py
+ M experiments/pysim/tier2_runtime/wasm/reader.py
+ M experiments/pysim/tier3_plugins/jit/jit_manager.py
+ M spec-integrator.yaml
+ M tools/jit_stencil_gen/README.md
+ M tools/jit_stencil_gen/generate_assembly.py
+?? .clang-format
+?? docs/components/tier2_runtime/concepts/indirect_call_concept.py
+?? docs/components/tier2_runtime/formal/interpreter_indirect_call_model.py
+?? docs/plans/native_runtime_refactor_worklist.md
+?? experiments/pysim/benchmarks/aobench/bench_native_build.py
+?? experiments/pysim/benchmarks/aobench/bench_wamr.py
+?? experiments/pysim/benchmarks/aobench/compare_wamr.py
+?? experiments/pysim/benchmarks/results/aobench_interpreter_jit_wamr_20261012_current_baseline.json
+?? experiments/pysim/benchmarks/results/aobench_interpreter_jit_wamr_20261012_refactor.json
+?? experiments/pysim/benchmarks/results/aobench_yield_threshold_4096_vs_max_20261012.json
+?? experiments/pysim/benchmarks/results/aobench_yield_threshold_4096_vs_max_20261012_diagnostic.json
+?? experiments/pysim/benchmarks/results/interpreter_cost_20261012/
+?? experiments/pysim/benchmarks/results/native_frame_pointer_ab_20261012.json
+?? experiments/pysim/benchmarks/results/native_runtime_o2_o3_20261012.json
+?? experiments/pysim/benchmarks/results/native_runtime_o2_o3_20261012_before_inline.json
+?? experiments/pysim/benchmarks/results/native_runtime_o2_o3_20261012_before_rom_reference.json
+?? experiments/pysim/benchmarks/results/native_runtime_readonly_20261012.json
+?? experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.cxx
+?? experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.hxx
+?? experiments/pysim/native/tier3_plugins/jit/jit_runtime_apis.cxx
+?? experiments/pysim/qa/private/interpreter_measurements.hxx
+?? experiments/pysim/tier2_runtime/wasm/validation.py

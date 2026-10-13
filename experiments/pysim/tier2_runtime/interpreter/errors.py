@@ -13,8 +13,8 @@ class TrapCode(IntEnum):
     NO_HOST_HANDLER = 5
     TABLE_INDEX_OUT_OF_BOUNDS = 6
     TABLE_SLOT_UNINITIALIZED = 7
+    INDIRECT_CALL_TYPE_MISMATCH = 8
     UNREACHABLE = 9
-    CONTROL_FRAME_CAPACITY = 10
     VMMIO_NOT_CONFIGURED = 11
     VMMIO_ACCESS = 12
     MEMORY_OUT_OF_BOUNDS = 13
@@ -22,6 +22,7 @@ class TrapCode(IntEnum):
     INTEGER_DIVIDE_BY_ZERO = 15
     INTEGER_OVERFLOW = 16
     INVALID_CONVERSION = 17
+    INVALID_WASM_BINARY = 18
 
 
 class Trap(Exception):
@@ -64,12 +65,12 @@ TRAP_LOG_EVENTS: tuple[tuple[int, str], ...] = (
         "TRAP: table slot uninitialized (pc=0x%08X, slot=%d)",
     ),
     (
-        LOG_EVT_TRAP_BASE + TrapCode.UNREACHABLE,
-        "TRAP: unreachable instruction executed (pc=0x%08X)",
+        LOG_EVT_TRAP_BASE + TrapCode.INDIRECT_CALL_TYPE_MISMATCH,
+        "TRAP: indirect call signature mismatch (pc=0x%08X)",
     ),
     (
-        LOG_EVT_TRAP_BASE + TrapCode.CONTROL_FRAME_CAPACITY,
-        "TRAP: control frame capacity exceeded (pc=0x%08X)",
+        LOG_EVT_TRAP_BASE + TrapCode.UNREACHABLE,
+        "TRAP: unreachable instruction executed (pc=0x%08X)",
     ),
     (
         LOG_EVT_TRAP_BASE + TrapCode.VMMIO_NOT_CONFIGURED,
@@ -98,6 +99,10 @@ TRAP_LOG_EVENTS: tuple[tuple[int, str], ...] = (
     (
         LOG_EVT_TRAP_BASE + TrapCode.INVALID_CONVERSION,
         "TRAP: invalid float-to-integer conversion (pc=0x%08X)",
+    ),
+    (
+        LOG_EVT_TRAP_BASE + TrapCode.INVALID_WASM_BINARY,
+        "TRAP: invalid WASM binary (pc=0x%08X)",
     ),
 )
 

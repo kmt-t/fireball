@@ -1,6 +1,7 @@
 """
 docs/components/tier3_plugins/formal/jit_cache_model.py
 pyModelChecking による JIT 3面キャッシュ代謝・抽象W^X状態・遅延チェイニング安全性・2-bit Hotspot FSM の形式検証（証明・変異検査対応）モデル
+抽象W^X性質は権限切替を使う対象のモデルである。Linux/Windows x64のRWX権限の証明ではない。
 """
 
 from pyModelChecking import Kripke
@@ -37,7 +38,7 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         "s_synced",
         "s_active_exec",
         "s_warm_obs",
-        "s_oldest_eval",
+        "s_oldest_exec",
         "c_unexecuted",
         "c_executed",
         "c_hot",
@@ -58,30 +59,36 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         "s_bad_skip_hot",
         "s_bad_permanent_deopt",
         "s_bad_compile_failure_retry",
+        "s_bad_oldest_write",
+        "s_bad_new_oldest_link",
         "s_dangling_chain",  # guards=False で ch_s0_t1_l1 から到達するダングリング違反状態 (src=2, tgt=3, linked=1)
         # --- エイジングスイープ違反状態（{JIT_CardAgingSweep}） ---
         "s_bad_aged_compiled",  # スイープが COMPILED（常駐トレース）を戻した
         "s_bad_aged_hot",  # スイープが HOT（コンパイル待ち列）を戻した
         "s_bad_aging_stall",  # EXECUTED がスイープされず永久に残る
+        "s_indexed_trace_lookup",
+        "s_bad_index_pc_mismatch",
     ]
-    # Two descriptor slots abstract the capacity boundary independently of
-    # code bytes: insertion increments usage; a full bank rotates first.
-    entry_capacity = 2
+    # Each bank holds 24 descriptors independently of generated code bytes.
+    # Insertion increments usage; a full bank rotates before the next insertion.
+    entry_capacity = 24
     entry_states = [f"e_used_{used}" for used in range(entry_capacity + 2)]
     S.extend(entry_states)
     S0 = {"s_idle", "ch_s0_t0_l1", "ch_s0_t1_l1"}
     R = [
         # --- 抽象W^X状態 & 3面キャッシュ代謝サイクル ---
         ("s_idle", "s_compiling"),
+        ("s_idle", "s_indexed_trace_lookup"),
+        ("s_indexed_trace_lookup", "s_indexed_trace_lookup"),
         ("s_idle", "c_unexecuted"),
         ("s_compiling", "s_synced"),
         ("s_synced", "s_active_exec"),
         ("s_active_exec", "s_active_exec"),
         ("s_active_exec", "s_warm_obs"),
         ("s_warm_obs", "s_warm_obs"),
-        ("s_warm_obs", "s_oldest_eval"),
-        ("s_oldest_eval", "s_synced"),
-        ("s_oldest_eval", "s_idle"),
+        ("s_warm_obs", "s_oldest_exec"),
+        ("s_oldest_exec", "s_oldest_exec"),  # A hit executes without cache writes.
+        ("s_oldest_exec", "s_idle"),  # Rotation retires Oldest instead of promoting it.
         # --- 2-bit Hotspot FSM サイクル ---
         ("c_unexecuted", "c_executed"),
         ("c_executed", "c_hot"),
@@ -106,10 +113,13 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         ("s_bad_skip_hot", "s_bad_skip_hot"),
         ("s_bad_permanent_deopt", "s_bad_permanent_deopt"),
         ("s_bad_compile_failure_retry", "s_bad_compile_failure_retry"),
+        ("s_bad_oldest_write", "s_bad_oldest_write"),
+        ("s_bad_new_oldest_link", "s_bad_new_oldest_link"),
         ("s_dangling_chain", "s_dangling_chain"),
         ("s_bad_aged_compiled", "s_bad_aged_compiled"),
         ("s_bad_aged_hot", "s_bad_aged_hot"),
         ("s_bad_aging_stall", "s_bad_aging_stall"),
+        ("s_bad_index_pc_mismatch", "s_bad_index_pc_mismatch"),
     ]
     R.append(("s_idle", entry_states[0]))
     for used, state in enumerate(entry_states):
@@ -143,6 +153,12 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         R.append(("c_evicted", "s_bad_permanent_deopt"))
         # 6. Compile failure後のTrackable Mask解除を無効化
         R.append(("c_hot", "s_bad_compile_failure_retry"))
+        # Oldest lookup copies code or updates the cache.
+        R.append(("s_oldest_exec", "s_bad_oldest_write"))
+        # A newly created chain targets Oldest rather than Active/Warm.
+        R.append(("s_idle", "s_bad_new_oldest_link"))
+        # A loader block index must still name the trace's exact successor PC.
+        R.append(("s_indexed_trace_lookup", "s_bad_index_pc_mismatch"))
 
     L = {
         "s_idle": {"clean", "ro_x", "idle"},
@@ -150,18 +166,18 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         "s_synced": {"synced", "ro_x"},
         "s_active_exec": {"executing", "in_active", "ro_x"},
         "s_warm_obs": {"executing", "in_warm", "ro_x"},
-        "s_oldest_eval": {"in_oldest", "ro_x"},
+        "s_oldest_exec": {"executing", "in_oldest", "ro_x"},
         "c_unexecuted": {"unexecuted", "ro_x"},
         "c_executed": {"executed", "recompilable", "ro_x"},
         "c_hot": {"hot", "recompilable", "ro_x"},
         "c_compiled": {"compiled", "ro_x"},
         "c_compile_failed": {"hot", "compile_failed", "target_excluded", "ro_x"},
         "c_evicted": {"evicted", "ro_x"},
-        "ch_s0_t0_l1": {"linked", "ro_x"},
-        "ch_s0_t1_l1": {"linked", "ro_x"},
+        "ch_s0_t0_l1": {"linked", "new_link", "target_active", "ro_x"},
+        "ch_s0_t1_l1": {"linked", "new_link", "target_warm", "ro_x"},
         "ch_s1_t1_l1": {"linked", "ro_x"},
-        "ch_s1_t2_l1": {"linked", "ro_x"},
-        "ch_s2_t2_l1": {"linked", "ro_x"},
+        "ch_s1_t2_l1": {"linked", "target_oldest", "ro_x"},
+        "ch_s2_t2_l1": {"linked", "target_oldest", "ro_x"},
         "ch_s2_t3_l0": {"unlinked", "ro_x"},
         "ch_s3_t3_l0": {"unlinked", "ro_x"},
         "s_bad_rwx": {"writing", "executing", "bad_rwx"},
@@ -169,10 +185,14 @@ def build_model(*, guards: bool = True, aging_guard: bool = True) -> Kripke:
         "s_bad_skip_hot": {"bad_skip_hot", "compiled"},
         "s_bad_permanent_deopt": {"bad_permanent_deopt", "evicted"},
         "s_bad_compile_failure_retry": {"compile_failed", "compile_retry_enabled"},
+        "s_bad_oldest_write": {"in_oldest", "writing"},
+        "s_bad_new_oldest_link": {"new_link", "target_oldest"},
         "s_dangling_chain": {"dangling_chain", "bad_chain", "linked"},
         "s_bad_aged_compiled": {"bad_aged_compiled", "unexecuted"},
         "s_bad_aged_hot": {"bad_aged_hot", "unexecuted"},
         "s_bad_aging_stall": {"executed", "aging_stalled"},
+        "s_indexed_trace_lookup": {"indexed_lookup", "index_pc_match"},
+        "s_bad_index_pc_mismatch": {"indexed_lookup", "index_pc_mismatch"},
     }
     for used, state in enumerate(entry_states):
         L[state] = {"entry_overflow"} if used > entry_capacity else {"entry_bounded"}
@@ -183,11 +203,37 @@ def properties():
     bad_wx = And(AtomicProposition("writing"), AtomicProposition("executing"))
     return [
         {
+            "name": "oldest_hits_do_not_write_cache",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Imply(AtomicProposition("in_oldest"), Not(AtomicProposition("writing")))),
+            "violation": And(AtomicProposition("in_oldest"), AtomicProposition("writing")),
+            "expect": True,
+        },
+        {
+            "name": "new_chains_never_target_oldest",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(
+                Not(And(AtomicProposition("new_link"), AtomicProposition("target_oldest")))
+            ),
+            "violation": And(AtomicProposition("new_link"), AtomicProposition("target_oldest")),
+            "expect": True,
+        },
+        {
             "name": "descriptor_slots_never_overflow",
             "kind": "safety",
             "logic": "CTL",
             "formula": AG(Not(AtomicProposition("entry_overflow"))),
             "violation": AtomicProposition("entry_overflow"),
+            "expect": True,
+        },
+        {
+            "name": "indexed_trace_lookup_checks_the_exact_successor_pc",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(AtomicProposition("index_pc_mismatch"))),
+            "violation": AtomicProposition("index_pc_mismatch"),
             "expect": True,
         },
         {

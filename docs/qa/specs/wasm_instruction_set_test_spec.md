@@ -31,7 +31,7 @@
 | TEST-WASM-12 | `block`/`loop`/`if`/`else`/`end`のラベル解決 | ネストしたブロック | 実行 | 分岐先ラベルが正しく記録・解決される | wasm_instruction_set.md (Control Flow) |
 | TEST-WASM-13 | `br`/`br_if`/`br_table` | 各種分岐条件 | 実行 | スタック遷移`[i32]->[]`等を満たし、正しい深さへジャンプ | wasm_instruction_set.md (Control Flow) |
 | TEST-WASM-14 | `return` | 関数呼び出し中 | 実行 | コールフレームをpopして復帰 | wasm_instruction_set.md (Control Flow) |
-| TEST-WASM-15 | `call`/`call_indirect` | 直接/間接呼び出しと不一致型のテーブル要素 | 実行・リンク | 適合する`call_indirect`は関数を呼び出す。不一致の初期化済み要素を含むテーブルはリンク時に拒否する。`call_indirect`が参照するリンク済みテーブルの要素は書き換えられない | wasm_instruction_set.md (Control Flow) |
+| TEST-WASM-15 | `call`/`call_indirect` | 直接/間接呼出しと異なる型のテーブル要素 | 実行・リンク | 選択した関数の型が適合すれば呼び出す。未選択の別型要素は許可する。選択先の型不一致、範囲外、未初期化は実行時にtrapとなり、本体・host callbackを実行しない。リンク済みテーブルは不変とする | wasm_instruction_set.md (Control Flow) |
 
 ### パラメトリック
 

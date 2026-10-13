@@ -77,8 +77,8 @@ verification_matrix:
   pairwise_test: "experiments/pysim/qa/integration/test_pairwise_combinations.py"
   expected:
     component_specs: 26
-    concept_files: 14
-    formal_models: 21
+    concept_files: 15
+    formal_models: 22
     test_specs: 25
     pysim_unit_suites: 30
     pysim_integration_suites: 4
@@ -418,7 +418,7 @@ source_verification:
   groups:
     cpp:
       description: "C/C++ core hypervisor and platform code"
-      include_dirs: ["inc", "src"]
+      include_dirs: ["inc", "src", "experiments/pysim/native", "experiments/pysim/tier2_runtime/abi"]
       extensions: [".hxx", ".cxx", ".c", ".h", ".cpp"]
       formatters: ["clang-format"]
       checks:
@@ -476,6 +476,7 @@ source_verification:
             - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           raise_exclude_paths:
+            - "experiments/pysim/tier2_runtime/wasm/validation.py"
             - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
           test_backdoor_exclude_paths:

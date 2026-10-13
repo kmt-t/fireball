@@ -27,6 +27,7 @@ import time
 import wasmtime
 from qa.private.debugger_support import make_debug_execution
 from qa.private.runtime_test_driver import RuntimeEngineDebugDriver
+from qa.shared.runtime_support import instruction_blocks
 from tier3_plugins.debugger.debugger import DebuggerManager
 from tier3_plugins.debugger.gdb_server import GDBServer
 
@@ -120,7 +121,7 @@ def test_scenario_gdb_socket_debugger():
     """
     engine = RuntimeEngineDebugDriver()
     mod = engine.load_wasm(wat_to_wasm(wat))
-    block10, block20, block30 = mod.blocks[0], mod.blocks[1], mod.blocks[2]
+    block10, block20, block30 = instruction_blocks(mod)[:3]
     blocks = {block10.head_pc: block10, block20.head_pc: block20, block30.head_pc: block30}
     # Initial guest state: local0 = 2, memory 128 bytes
     mem = bytearray(128)

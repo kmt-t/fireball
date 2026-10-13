@@ -10,6 +10,7 @@ from collections.abc import Callable
 
 from bump_allocator import BumpAllocator
 from config import FB_CONF_MAX_FUNCTIONS, FB_CONF_MAX_GLOBALS, FB_CONF_MAX_TABLES
+from tier2_runtime.abi.integer_types import function_index_t
 from tier2_runtime.wasm.module import (
     Export,
     Function,
@@ -20,8 +21,9 @@ from tier2_runtime.wasm.module import (
     Module,
     Table,
 )
+from tier2_runtime.wasm.validation import require_wasm
 
-StackWidthIndexer = Callable[[Module, int], None]
+StackWidthIndexer = Callable[[Module, function_index_t], None]
 
 
 class WasmModuleBuilder:
@@ -99,12 +101,14 @@ class WasmModuleBuilder:
         self._module.globals.append(global_value)
 
     def imported_global_type(self, global_index: int) -> int:
-        assert 0 <= global_index < len(self._module.globals), (
-            "global initializer global.get index is out of range"
+        require_wasm(
+            0 <= global_index < len(self._module.globals),
+            "global initializer global.get index is out of range",
         )
         global_value = self._module.globals[global_index]
-        assert global_value.imported and not global_value.mutable, (
-            "global initializer global.get must reference an imported immutable global"
+        require_wasm(
+            global_value.imported and not global_value.mutable,
+            "global initializer global.get must reference an imported immutable global",
         )
         return global_value.vtype
 
@@ -125,8 +129,8 @@ class WasmModuleBuilder:
         self._module.element_section_size = size
 
         def validate_element(table_index: int, _slot: int, _function_index: int) -> None:
-            assert table_index < len(self._module.tables), (
-                "element segment table index out of range"
+            require_wasm(
+                table_index < len(self._module.tables), "element segment table index out of range"
             )
 
         self._module.stream_element_initializers(validate_element, (), resolve_globals=False)
@@ -134,7 +138,7 @@ class WasmModuleBuilder:
     def on_data_section(self, offset: int, size: int) -> None:
         self._module.data_section_offset = offset
         self._module.data_section_size = size
-        assert self._module.memory is not None, "data segment requires linear memory"
+        require_wasm(self._module.memory is not None, "data segment requires linear memory")
 
         def validate_data(_offset: int, _data: memoryview) -> None:
             return None
@@ -151,15 +155,25 @@ class WasmModuleBuilder:
             previous_code_end = code_end
 
         for import_entry in self._module.imports:
-            self._module.type_at(import_entry.type_index)
+            require_wasm(
+                import_entry.type_index < len(self._module.types),
+                "import type index is out of range",
+            )
 
         if self._module.start_function is not None:
-            start_type = self._module.func_type(self._module.start_function)
-            assert start_type.params is not None and len(start_type.params) == 0, (
-                "start function must not have parameters"
+            require_wasm(
+                self._module.start_function
+                < len(self._module.imports) + len(self._module.functions),
+                "start function index is out of range",
             )
-            assert start_type.results is not None and len(start_type.results) == 0, (
-                "start function must not have results"
+            start_type = self._module.func_type(self._module.start_function)
+            require_wasm(
+                start_type.params is not None and len(start_type.params) == 0,
+                "start function must not have parameters",
+            )
+            require_wasm(
+                start_type.results is not None and len(start_type.results) == 0,
+                "start function must not have results",
             )
 
         self._module.prepare_function_layouts()
@@ -168,7 +182,7 @@ class WasmModuleBuilder:
         from tier2_runtime.interpreter.control_flow import build_control_map
 
         for function_index in range(function_start, function_end):
-            index_stack_value_widths(self._module, function_index)
+            index_stack_value_widths(self._module, function_index_t(function_index))
             function = self._module.functions[function_index - function_start]
             assert function.control_map is None
             function.control_map = build_control_map(
@@ -176,6 +190,7 @@ class WasmModuleBuilder:
                 function.drop_widths,
                 function.select_widths,
                 self._allocator,
+                function.branch_layouts,
             )
         self._module.build_basic_block_index(self._allocator)
         return self._module

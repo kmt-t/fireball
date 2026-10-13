@@ -1,0 +1,57 @@
+{
+  "measured_at_local": "2026-10-13",
+  "workload": "AO-Bench WASM module (Loader only)",
+  "input_wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+  "measurement_script_sha256": "073d6fb7932aa2689623a35a1006d270688d8d9b5dcbee05ea38fab0eb7b1542",
+  "baseline_step0": {
+    "source_result": "experiments/pysim/benchmarks/results/interpreter_contracts_v3_20261012/pool_step0.json",
+    "source_result_sha256": "1799d43b472b4de2e0eb4863ff32a01e8e9dea133ded0fd03002b29ad6e4cc0f",
+    "annotation_pool_bytes": 2456,
+    "loader_arena_bytes": 25756,
+    "basicblock_bytes_each": 28
+  },
+  "current": {
+    "function_count": 6,
+    "basicblock_count": 107,
+    "function_annotation_pool_bytes": [
+      28,
+      60,
+      366,
+      394,
+      588,
+      1508
+    ],
+    "annotation_pool_bytes": 2944,
+    "basicblock_bytes_each": 36,
+    "basicblock_metadata_bytes": 3852,
+    "loader_arena_bytes": 27100,
+    "loader_arena_capacity_bytes": 131072
+  },
+  "increase": {
+    "annotation_pool_bytes": 488,
+    "annotation_pool_percent": 19.86970684039088,
+    "basicblock_bytes": 856,
+    "basicblock_percent": 28.571428571428573,
+    "loader_arena_bytes": 1344,
+    "loader_arena_percent": 5.218201584096909,
+    "arena_capacity_percent": 1.025390625
+  },
+  "jit_boundary_metadata": {
+    "bytes_before": 24,
+    "bytes_after": 24,
+    "block_index_offset": 16,
+    "increase_bytes": 0
+  },
+  "runtime_abi_current_bytes": {
+    "execution_context": 168,
+    "call_frame": 48,
+    "call_stack_32_frames": 1544,
+    "function_execution_view": 112
+  },
+  "source_sha256": {
+    "experiments/pysim/tier2_runtime/interpreter/control_flow.py": "50dda42d816f4fd4920a06ed716f25df969dabb21b7aae88b95c1558b2534488",
+    "experiments/pysim/tier2_runtime/wasm/module.py": "30287769dbc9aefb7ed0b4ce4ab970cc4c4b6918cd6146734c8ae43eec7edf19",
+    "experiments/pysim/tier2_runtime/abi/interpreter_abi.hxx": "63537ad673f709140b443f784e4caba0591f8761ce0292c3224e22b5ba46cd5c",
+    "experiments/pysim/native/tier3_plugins/jit/jit_types.hxx": "18156edd869909939f5b049778032556604bf448265bd3ba792c3c76f8431c4a"
+  }
+}

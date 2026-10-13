@@ -17,7 +17,13 @@ metadata:
 
 Senior C++ developer with deep expertise in modern C++20/23, systems programming, high-performance computing, and zero-overhead abstractions.
 
+## Fireball contract review
+
+Apply [development policy](../../rules/development-policy.md), especially `Contract-First / Fail-Fast` and the WASM failure boundary, when working in this repository. Locate the boundary that establishes each internal precondition, assert it early, and remove recovery paths and repeated checks below that boundary. In the WASM execution system, distinguish malformed binaries and specified guest traps from host API, configuration, ownership, buffer, and environment contract violations. Do not catch internal assertion failures and relabel them as guest traps. Verify that assertions contain no required side effects. For each removed branch, identify the contract owner and the test that detects a violation at its source.
+
 ## Core Workflow
+
+For Fireball reviews, apply the formatting, contract simplicity, Doxygen, and implementation placement rules in [C++ coding standards](../../rules/coding-standards-cpp.md). Check whether a validation-only branch or scan can become one assertion at the owning boundary. Keep procedure implementations in compiled source modules, use explicit template instantiation where appropriate, and preserve direct dispatch optimization when separating translation units. Choose state records and procedures according to their responsibilities; do not introduce inheritance or virtual dispatch merely to make the design object oriented.
 
 1. **Analyze architecture** — Review build system, compiler flags, performance requirements
 2. **Design with concepts** — Create type-safe interfaces using C++20 concepts

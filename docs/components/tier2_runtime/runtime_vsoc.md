@@ -15,7 +15,7 @@ vSoC (Virtual System-on-Chip) は WASM 実行環境の統合マネージャで�
 各サブコンポーネントを統合する環境としての役割を担う。`execution_context` 内のリニアメモリ情報やグローバル変数テーブル（`vsoc_runtime` 領域）を介して実行環境を提供する。
 本システムは **1ランタイム1ゲストの直交分離原則** を採用する。各 vSoC インスタンスは厳密に 1 つのゲストモジュールのみを担当する。
 各ランタイムは**自身専用の固定長データバンプアロケータ**を所有する。ロードした全モジュールのシステムコンテナストレージ（RAM/XN）の確保を一元管理する。モジュールはランタイムと同じ期間保持し、個別アンロードは行わない。ランタイム破棄時にアリーナ全体を $O(1)$ で一括リセットし、メモリ断片化を根絶する。
-JIT機械語キャッシュ（3-Bank）は、Tier 3のJIT拡張が専用のコード領域に構築する。Tier 2 vSoCは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のInterpreter拡張契約に従い、Interpreter構成時に拡張を結線する。Interpreter dispatcherがtraceをlookupし、返されたentryを呼び出して実行する。RuntimeはInterpreterをscheduler境界まで進める。JIT拡張はキャッシュ、ホットスポット、コンパイル待ち列を所有する。x64参照構成では実行可能バッファの書込・実行権限を切り替える。ARMv8-Mの物理保護方式、領域配置、同期処理はすべてTBDとする。
+JIT機械語キャッシュ（3-Bank）は、Tier 3のJIT拡張が専用のコード領域に構築する。Tier 2 vSoCは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のInterpreter拡張契約に従い、Interpreter構成時に拡張を結線する。Interpreter dispatcherがtraceをlookupし、返されたentryを呼び出して実行する。RuntimeはInterpreterをscheduler境界まで進める。JIT拡張はキャッシュ、ホットスポット、コンパイル待ち列を所有する。x64参照構成では実行可能バッファに初回だけRWXを設定する。ARMv8-Mの物理保護方式、領域配置、同期処理はすべてTBDとする。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} {META_StaticDI} {OneRuntimeOneGuest} -->
@@ -41,7 +41,7 @@ graph TD
         Harness["vsoc_harness"]
         Context["vsoc_context"]
         Alloc["bump_allocator (データRAMアリーナ: RW+XN)"]
-        JitAlloc["jit_code_allocator (JITコードセクション: W^X)"]
+        JitAlloc["jit_code_allocator (JITコードセクション)"]
     end
 
     subgraph Engines
@@ -108,9 +108,9 @@ vSoCは実行コンテキストとモジュール実行情報を組み合わせ�
 | リニアメモリ有効サイズ | 境界検査対象の有効バイト数。ゲスト論理アドレス幅とは区別する | 64bit符号なし | x86-64では `execution_context` の `+0x80` |
 | グローバル値と幅 | WASM `global` の値配列と型幅 | モジュール実行情報への非所有ビュー | `execution_context` へ重複配置しない |
 
-確認済みx86-64の `execution_context` は160バイトである。フィールド順とオフセットは [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) を正本とする。物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のPIC契約に従う。 `{PositionIndependentCode}`
+確認済みx86-64の `execution_context` は144バイトである。フィールド順とオフセットは [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) を正本とする。物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のPIC契約に従う。 `{PositionIndependentCode}`
 
-オペランド領域、ローカル値領域、制御ブロック復帰情報領域は、それぞれ独立した固定容量領域である。各領域の位置と容量はInterpreterが管理する（[interpreter.md](docs/components/tier2_runtime/interpreter.md#adr-interp-03-制御フレームを専用スタックへ分離)）。
+オペランド領域とローカル値領域は、それぞれ独立した固定容量の値領域である。呼出し元へ戻る情報は固定容量のCallStack記述子配列に保持し、制御ブロックごとの実行時領域は持たない。各値領域の位置と容量はInterpreterが管理する（[interpreter.md](docs/components/tier2_runtime/interpreter.md#adr-interp-03-制御状態の実行時配列を廃止)）。
 
 > [!NOTE]
 > **構造体の役割分離**:
@@ -141,7 +141,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 | :--- | :--- | :--- | :--- |
 | **C++ Interpreter dispatcher** | WASM実行開始時 | Interpreter dispatcherはBasicBlockを解決し、JIT拡張が接続されていればtrace lookupを依頼する。返されたtrace entryをdispatcher自身が呼び出す。traceがない場合はopcode handlerを実行し、いずれもyield・trap・完了などの境界まで同じdispatchで続ける | JIT拡張は候補・cache・lookupを所有し、trace bodyの呼出しと実行状態更新はInterpreter dispatcherが行う。handler-mediated遷移をchainと数えない（`GOTCHA-VSOC-01`） |
 | **LOOP後方分岐yield** | C++ branch handlerが取得済みLOOP後方辺を処理した時 | handlerが実行contextの回数を増やす。Interpreter設定のしきい値に達するまではC++ dispatcherが続行し、到達時にyield statusを返す。RuntimeEngineはstatusをSystemへ伝える | Interpreter単独とHybrid JITがInterpreter設定の同じ回数条件で協調境界へ戻る。割り込みイベントはCOOS境界で処理する {GOTCHA-VSOC-02} <!-- definition: {GOTCHA-VSOC-02} --> |
-| **x64 trace chain** | 互換な直線後続traceがキャッシュ常駐時 | trace末尾が共通コード領域のchain dispatcherへ進み、dispatcherがheaderのtarget bodyへtail-jumpする | chain dispatcherはopcodeを判定せず、C++ Interpreter handlerの分岐処理を迂回しない |
+| **x64 trace chain** | 互換な直線後続traceがキャッシュ常駐時 | trace末尾が共通コード領域のchain dispatcherへ進み、dispatcherがheaderのtarget bodyへtail-jumpする | 遷移前にWASM意味論上の共有状態を確定し、LOOP後方辺のyieldしきい値を守る |
 | **デバッガとInterpreter拡張の接続排他** | Interpreter構成時 | デバッガ付きInterpreterへのネイティブ実行拡張の接続を`assert`で拒否する | 同一InterpreterでDebuggerとJITを同時に実行しない |
 | **1ランタイム1ゲスト・専用アリーナ** | ランタイム生成時および破棄時 | データと実行可能コード用の領域を別のアロケータで管理し、ランタイム破棄時に所有する領域を一括返却する | 領域の寿命と所有権をランタイム単位で分離する。ARMv8-Mの物理配置と保護方式はTBD |
 | **選択`0xFC`メモリ命令** | `memory.copy` / `memory.fill`実行時 | 全アクセス範囲を先に検査する。copyの両端点がリニアメモリならCPU memmoveで処理する。FC=13/14/15の端点を含む場合はvMMIOの権限・所有権・範囲を検査して内部vDMAへ委譲する。fillはCPUで処理する | 範囲外の部分更新を許さない。vDMAの成功復帰は転送完了とCPU可視性を意味する。リニアメモリ間転送にDMA選択のしきい値を設けない |
@@ -149,7 +149,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 - **1ランタイム1ゲストのライフサイクル管理と専用アリーナ (`OneRuntimeOneGuest`)**:
   vSoC インスタンス生成時、メモリマネージャからデータ用領域と実行可能コード用領域を別々に取得し、専用の `bump_allocator` と `jit_code_allocator` を初期化する。具体的な物理配置と保護方式は対象プラットフォームで定める。ARMv8-MはTBDである。
   WASM ローダはデータ用バンプアロケータを受け取り、モジュール内の全システムコンテナストレージ（`ReadOnlyRadixBinaryTreeStorage`, `MutableBitStorage` 等）を順次切り出す。
-  一方、JIT コンパイラは実行可能コード領域から専用アロケータを用いて機械語トレースを確保する。x64では書込み権限と実行権限を同時に付与せず、W^Xを維持する。ARMv8-Mの物理配置と保護方式はTBDである。
+  一方、JIT コンパイラは実行可能コード領域から専用アロケータを用いて機械語トレースを確保する。x64では領域の確保または借用時にRWXを設定し、昇格時の権限切替を行わない。ARMv8-Mの物理配置と保護方式はTBDである。
   ゲスト実行終了後もロード済みモジュールのメタデータはランタイム内に保持する。ランタイム破棄時にJIT キャッシュを無効化（3-Bank Flush）し、データバンプアロケータとJITコードアロケータのアリーナを $O(1)$ で一括リセットして返還する。
   個別の `free()` や複雑なデストラクタ走査は一切行わない。これにより動的メモリ断片化や他モジュールからのダングリング参照を原理的に根絶する。
 - **C++実行dispatcherと3論理引数契約 (`{GOTCHA-VSOC-01}`)**: <!-- definition: {GOTCHA-VSOC-01} -->
@@ -167,7 +167,7 @@ sequenceDiagram
     participant vSoC as vSoC Engine
     participant Mem as MemoryManager
     participant DataAlloc as bump_allocator (Data RAM)
-    participant JitAlloc as jit_code_allocator (W^X JIT)
+    participant JitAlloc as jit_code_allocator (JITコード領域)
     participant JitRuntime as JIT runtime (Tier 3)
     participant Loader as WASM Loader
     participant Mod as WASM Module
@@ -312,14 +312,14 @@ stateDiagram-v2
 
 **重要な設計ポイント:**
 
-- **LOOP後方分岐yield {ADR_LoopBackedgeYield}**: C++ Interpreter handlerが取得後方辺を記録し、C++ dispatcherはInterpreterが所有するしきい値到達までC++内で処理する。到達時だけRuntimeEngineへstatusを返し、SystemがCOOSへの協調yieldを行う。 <!-- definition: {ADR_LoopBackedgeYield} -->
+- **LOOP後方分岐yield {ADR_LoopBackedgeYield}**: InterpreterとJITは取得後方辺を共通contextへ記録する。各実行経路はInterpreterが所有するしきい値到達まで処理する。到達時だけRuntimeEngineへstatusを返し、SystemがCOOSへの協調yieldを行う。 <!-- definition: {ADR_LoopBackedgeYield} -->
 
 ### 4.2.1 LOOP後方分岐とJIT chain
 <!-- traceability: {JIT_BackedgeYield} {Challenge_JITCacheEfficiency} {DebuggerInterpreterComposition} {JIT_LazyChaining} -->
 
-`br`、`br_if`、`br_table`、構造終端の意味論は命令別C++ Interpreter handlerが所有する。handlerは取得したLOOP後方辺だけを共通contextで数える。協調yield回数しきい値はInterpreter構成で指定する。
+制御命令の各実行経路は同じWASM意味論を保つ。JIT生成コードとJIT Runtime APIでも制御命令を処理できる。取得したLOOP後方辺は共通contextで数える。協調yield回数しきい値はInterpreter構成で指定する。
 
-Interpreter設定のしきい値に達するまでは、C++ディスパッチループが次のC++ handlerまたはJIT traceを実行する。しきい値へ達すると、dispatch loopはyield statusを返す。
+Interpreter設定のしきい値に達するまでは、dispatcherまたはJIT chainが後続の実行を続ける。後方分岐chainでも取得済みLOOP後方辺を数える。しきい値へ達すると、実行経路はyield statusを返す。
 
 制御はRuntimeEngineとSystemを経てCOOSへ戻る。Interpreter単独経路も同じしきい値を使う。
 
@@ -342,7 +342,7 @@ ARMv8-Mのchain構成、命令列、header、lookup方式、保護方式、物�
 ```
 
 #### JITキャッシュ管理への委譲
-<!-- traceability: {Challenge_JITCacheEfficiency} {LowLatencyJIT} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
+<!-- traceability: {Challenge_JITCacheEfficiency} {LowLatencyJIT} {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} -->
 JITキャッシュの状態、検索、バンク回転、昇格、および破棄は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) を正本とする。対象ABIの物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を参照する。
 
 Interpreter dispatcherは接続済みネイティブ実行拡張を呼び出す。RuntimeEngineはInterpreterをscheduler境界まで進める。vSoCは境界結果に従ってyieldを行い、キャッシュの内部状態や回転契機を扱わない。ARMv8-Mの物理容量と配置はTBDである。

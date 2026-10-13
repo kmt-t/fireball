@@ -15,24 +15,27 @@ $sdkVer = Get-ChildItem "$sdkRoot\Include" | Select-Object -Last 1 -ExpandProper
 $nativeBuildDir = Join-Path $env:TEMP "fireball-pysim-native"
 New-Item -ItemType Directory -Force -Path $nativeBuildDir | Out-Null
 $sourceCxx = Join-Path $scriptDir "native_interpreter.cxx"
+$nativeSources = @($sourceCxx, (Join-Path $scriptDir "native_wasm_operations.cxx"))
+$measurementFlags = @()
 $pythonPackageDir = Join-Path $projectRoot "experiments\pysim\tier2_runtime\interpreter"
 $outputDll = Join-Path $nativeBuildDir "native_interpreter.dll"
 if ($Qa) {
-    $sourceCxx = Join-Path $projectRoot "experiments\pysim\qa\private\native_interpreter_probe.cxx"
+    $nativeSources += Join-Path $projectRoot "experiments\pysim\qa\private\native_interpreter_probe.cxx"
+    $measurementFlags += "/FI" + (Join-Path $projectRoot "experiments\pysim\qa\private\interpreter_measurements.hxx")
     $pythonPackageDir = Join-Path $projectRoot "experiments\pysim\qa\private"
     $outputDll = Join-Path $nativeBuildDir "interpreter_probe.dll"
 }
 
 Write-Host ">>> Compiling native_interpreter.cxx -> native_interpreter.dll" -ForegroundColor Yellow
 if ($BlockCounters) { $counterDefine = "/DFB_CONF_JIT_BLOCK_COUNTERS=1" }
-& clang-cl.exe /TP /std:c++latest /O2 /LD /W4 `
+& clang-cl.exe /TP /std:c++latest /O2 /LD /W4 -flto=thin -fuse-ld=lld -fno-exceptions -fno-rtti `
     $counterDefine `
     "-I$scriptDir" `
     "-I$vsDir\VC\Tools\MSVC\$msvcVer\include" `
     "-I$sdkRoot\Include\$sdkVer\ucrt" `
     "-I$sdkRoot\Include\$sdkVer\shared" `
     "-I$sdkRoot\Include\$sdkVer\um" `
-    $sourceCxx /Fe:$outputDll `
+    @measurementFlags @nativeSources /Fe:$outputDll `
     /link `
     "/LIBPATH:$vsDir\VC\Tools\MSVC\$msvcVer\lib\x64" `
     "/LIBPATH:$sdkRoot\Lib\$sdkVer\ucrt\x64" `

@@ -171,9 +171,9 @@ def test_intp_gotcha_03_if_false_no_else_no_frame_leak():
 
     call_state = interp.start(0, [])
     call_state = interp.step(call_state)
-    depth_before = len(get_call_cont(call_state)[1].frames)
+    depth_before = len(call_state.context.call_frame_stack)
     call_state = interp.step(call_state)
-    depth_after = len(get_call_cont(call_state)[1].frames)
+    depth_after = len(call_state.context.call_frame_stack)
     assert depth_after == depth_before  # No frame leaked!
 
     while not call_state.finished:
@@ -227,8 +227,8 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     assert engine.jit_runtime.cache.find_trace(pc) is resident
 
 
-def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
-    """GOTCHA-JITR-02: Promotion preserves inbound sources for resident chain targets."""
+def test_jitr_gotcha_02_oldest_preserves_existing_chain_until_retirement():
+    """GOTCHA-JITR-02: Oldest hits preserve existing chains until the target is retired."""
     cache = JitRuntimeBoundary(bank_capacity=512)
     t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
     cache.insert(t2)  # t2 -> Active
@@ -239,17 +239,9 @@ def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
     assert cache.find_trace(t2.head_pc) is t2 and t1.chain_next == t2.head_pc
 
     cache.rotate()  # t2's bank -> Oldest
-    promoted = cache.lookup(0x200)  # promote t2 out of Oldest
-    assert promoted is t2
-    assert cache.promotions == 1 and t1.chain_next == t2.head_pc
-    # Promote the source while it is Oldest, before another rotation purges it.
-    cache.rotate()
-    assert cache.find_trace(t1.head_pc) is not None
-    assert cache.lookup(t1.head_pc) is t1
-    assert t1.chain_next == t2.head_pc
-    cache.rotate()
-    assert cache.find_trace(t2.head_pc) is not None
-    assert t1.chain_next == t2.head_pc
+    address = t2.raw_addr
+    assert cache.lookup(0x200) is t2
+    assert t2.raw_addr == address and t1.header.chain_target_addr == address
     cache.rotate()
     assert cache.find_trace(t2.head_pc) is None
     assert cache.find_trace(t1.head_pc) is t1 and t1.chain_next is None

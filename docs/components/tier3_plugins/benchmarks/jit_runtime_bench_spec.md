@@ -9,7 +9,7 @@
 正本: [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md), [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md)
 参考実装: [`bench_jit.py`](experiments/pysim/benchmarks/jit/bench_jit.py)
 
-trace compile時間（WASM decode、operation選択、raw stencilの接続slot展開、template分岐再配置）、2-bitカードマーキング表（`bit_view<2>`）による$O(1)$ホットスポット事前判定、少数の疎なJITエントリをソート配列から二分探索するlookup時間、Runtime API table呼出し、およびインタープリタ対JITネイティブ実行のスループット比を計測する。操作、trace scaffold、共通chain dispatcherはassembly sourceからbuild時に生成し、raw binaryをC++ byte arrayとしてJIT実行ライブラリへ含める。JIT実行コードが次opcodeや次operationを取得せず、operation間call/jumpなしのfall-throughでtrace内の固定operation列を実行することも生成コードで確認する。
+trace compile時間（WASM decode、operation選択、raw stencilの接続slot展開、template分岐再配置）、2-bitカードマーキング表（`bit_view<2>`）による$O(1)$ホットスポット事前判定、Loader BasicBlock indexからの直接lookup、およびmetadataを持たないQA fixture用のPC索引検索、Runtime API table呼出し、インタープリタ対JITネイティブ実行のスループット比を計測する。操作、trace scaffold、共通chain dispatcherはassembly sourceからbuild時に生成し、raw binaryをC++ byte arrayとしてJIT実行ライブラリへ含める。JIT実行コードが次opcodeや次operationを取得せず、operation間call/jumpなしのfall-throughでtrace内の固定operation列を実行することも生成コードで確認する。
 
 ## 2. ベンチマーク測定項目一覧
 <!-- traceability: {META_BinarySearch} -->
@@ -19,7 +19,7 @@ trace compile時間（WASM decode、operation選択、raw stencilの接続slot�
 | **BENCHMARK-JIT-01** | native stencil trace composition latency | 4 / 16 / 64 WASM命令の適格trace | Traces/sec, µs/trace | build-timeにassembly sourceから生成したstencilを使うtrace compilerが動作し、サイズとcompile latencyを記録する | `{JIT_AssemblyStencilCodegen}`, `{LowLatencyJIT}` |
 | **BENCHMARK-JIT-02** | trace長別コンパイル時間 | 4 / 16 / 64操作と融合率を変えたtrace | ns/WASM opcode, µs/trace | trace長に対するスケーリングを計測する。固定のpatch時間は仮定しない | `{LowLatencyJIT}` |
 | **BENCHMARK-JIT-03** | 2-Bit カードマーキング状態判定 ($O(1)$) | `HotspotBitmap` / `bit_view<2>` | ns/check, M ops/sec | インタープリタ実行ループを阻害しない極低コスト | `jit_runtime.md` |
-| **BENCHMARK-JIT-04** | 少数JITエントリのソート配列二分探索 | 3バンクに収まる疎なエントリ数（上限は設定容量から算出） | ns/lookup, M ops/sec | 正確なキー検索。JIT用Radix索引は使用しない | `META_BinarySearch` |
+| **BENCHMARK-JIT-04** | Loader BasicBlock indexによるJIT trace lookupとQA fixture用PC索引検索 | Loader metadataを持つ製品経路と、metadataなしのQA fixture経路を分ける | ns/lookup, M ops/sec | 製品経路はindexとPCを照合してBasicBlock参照からlookupする。`lower_bound`はQA fixtureのPC検索に限る | `jit_runtime.md` |
 | **BENCHMARK-JIT-06** | 共通コード領域のRuntime API table呼出し | Runtime API stencilと登録済みAPI table entry | ns/API call, M calls/sec, 副作用回数 | 共通領域のopcode対応API tableからAPIを呼び、通常継続時に後続JIT operationへ進む | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md), `{JIT_RuntimeAPI}`, `{PositionIndependentCode}` |
 
 ## 3. 測定手順
@@ -142,19 +142,19 @@ VTuneは各経路を別々に収集し、ソフトウェアサンプリングを
 
 1. **コンパイル速度測定**:
    - `TraceCompiler.compile_instructions()` に対し、算術基本ブロックを $N=10,000$ 回コンパイルし、1トレースあたりの平均所要時間を算出。
-2. **カードマーキング & JITエントリ二分探索測定**:
-   - `HotspotBitmap.get_state()` と3バンク内のソート済みエントリ配列に対するbinary lookupの単体スループットを $N=100,000$ 回計測。
+2. **カード状態とtrace lookup測定**:
+   - `HotspotBitmap.get_state()` の単体スループットを $N=100,000$ 回計測する。製品経路のtrace lookupはLoader BasicBlock indexとPCを使い、metadataなしQA fixtureのPC lookupは最大72件のソート索引を使う。それぞれを分けて計測する。
 3. **実行速度比較 (Differential Execution)**:
    - 同一の WASM 算術ループモジュールをPythonハンドラ、C++ネイティブハンドラ、Hybrid JITの3経路で実行し、計算結果の等価性と実行所要時間を比較する。InterpreterはTier 2、JIT拡張はTier 3の実装である。`Interpreter.call()` はビルド済みC++拡張を使うため、Pythonハンドラ経路の計測ではPythonハンドラを直接実行する。
    - ビルド済みC++インタープリタ拡張の実行時間は別の基準値として測定し、Pythonハンドラの速度比と混同しない。各経路の結果は直接比較して一致を検証する。
    - C++インタープリタとHybrid JITは同じ `FB_CONF_INTERPRETER_YIELD_THRESHOLD` を使い、取得済みLOOP後方分岐数が設定値へ達した場合にPython/COOS境界へ戻る。C++インタープリタはJIT managerのホットスポットyieldを持たないため、計測対象のHybrid JITループを事前コンパイルし、計測中の追加ホットスポットyieldを避ける。
    - 各実行経路を同じ反復回数で3回計測し、中央値を報告する。JIT経路は計測前にトレースをコンパイルし、計測区間のJIT実行回数が0より大きいことを確認する。
 ### 3.3 QA専用のトレース実行回数と退役記録
-<!-- traceability: {Challenge_JITCacheEfficiency} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
+<!-- traceability: {Challenge_JITCacheEfficiency} {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} -->
 
-スラッシング防止の判断材料は、QA専用の計測型を合成したJITランタイムで採取する。製品の速度測定とは別の実行とする。計測型はC++のテンプレート引数で選ぶ。製品構成は`void`を選び、実行回数、履歴上書き回数、昇格・追い出し回数、コンパイル・aging時間の状態と更新処理を持たない。時計の読取り、実行後の計測用chain走査、および退役通知も製品構成へ組み込まない。検査用APIはQA専用ライブラリに置く。
+スラッシング防止の判断材料は、QA専用の計測型を合成したJITランタイムで採取する。製品の速度測定とは別の実行とする。計測型はC++のテンプレート引数で選ぶ。製品構成は`void`を選び、実行回数、履歴上書き回数、追い出し回数、コンパイル・aging時間の状態と更新処理を持たない。時計の読取り、実行後の計測用chain走査、および退役通知も製品構成へ組み込まない。検査用APIはQA専用ライブラリに置く。
 
-QA計測型は各トレースに32ビット符号なしの実行回数を保持する。JIT拡張が実行した各bodyを1回と数え、直接chainの後続bodyも個別に数える。lookup、コンパイル、昇格、実行前の容量不足によるfallbackは数えない。最大値`0xFFFF_FFFF`で飽和する。昇格とchain終端の再構成では値を保持し、再コンパイルした別traceは0から始める。QAの`reset_stats`で測定区間を0から始め直す。
+QA計測型は各トレースに32ビット符号なしの実行回数を保持する。JIT拡張が実行した各bodyを1回と数え、直接chainの後続bodyも個別に数える。lookup、コンパイル、実行前の容量不足によるfallbackは数えない。最大値`0xFFFF_FFFF`で飽和する。世代交代とchain終端の再構成では値を保持し、再コンパイルした別traceは0から始める。QAの`reset_stats`で測定区間を0から始め直す。
 
 カウンタはtraceあたり4バイトであり、計測型の記述子がその所在を保持する。QA計測構成だけが本体実行後に後続traceを辿って計数する。低水準の`JITTrace.execute`等によるdispatcher外の直接呼出しは対象外とする。通常統計とホットスポット検出の有効・無効から、QA計数の有効・無効を独立させる。
 

@@ -13,10 +13,11 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from qa.shared.helpers import make_interpreter
+from qa.shared.helpers import make_interpreter, make_native_interpreter
 from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterCall, Trap
 from tier2_runtime.wasm.module import F32, F64, I32, I64, Module
 from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.validation import InvalidWasm
 
 ROOT = Path(__file__).resolve().parents[4]
 SPEC_REVISION = "970c4116e644e2bf7acb39aab8b733db14ccdf28"
@@ -111,7 +112,7 @@ def _module_globals(module: Module) -> tuple[int, ...]:
     return tuple(values)
 
 
-def _instantiate(binary: bytes) -> tuple[Module, Interpreter]:
+def _instantiate(binary: bytes, *, native: bool = False) -> tuple[Module, Interpreter]:
     module = parse(binary)
     if module.imports or module.memory_import is not None or module.table_import_count:
         raise UnsupportedFixture("module requires an imported function, memory, table, or global")
@@ -120,7 +121,11 @@ def _instantiate(binary: bytes) -> tuple[Module, Interpreter]:
     else:
         memory = bytearray(module.memory.min_pages * 65536)
     module.init_memory_data(memory, _module_globals(module))
-    interpreter = make_interpreter(module, memory=memory)
+    interpreter = (
+        make_native_interpreter(module, memory=memory)
+        if native
+        else make_interpreter(module, memory=memory)
+    )
     if module.start_function is not None:
         call = interpreter.start(module.start_function, ())
         while not call.finished:
@@ -134,7 +139,7 @@ def _assert_rejected_module(binary: bytes, location: str) -> None:
     """Treat only parser rejection as a passing malformed/invalid assertion."""
     try:
         parse(binary)
-    except (AssertionError, ValueError, IndexError, struct.error):
+    except InvalidWasm:
         return
     raise AssertionError(f"{location}: loader accepted rejected module")
 
@@ -276,7 +281,7 @@ def _converted_case(name: str) -> tuple[JsonObject, Path]:
     return _as_object(payload), SPEC_OUTPUT_DIR
 
 
-def _execute_spec_file(name: str) -> tuple[int, dict[str, int]]:
+def _execute_spec_file(name: str, *, native: bool = False) -> tuple[int, dict[str, int]]:
     payload, binary_dir = _converted_case(name)
     active_module: tuple[Module, Interpreter] | None = None
     passed = 0
@@ -293,7 +298,7 @@ def _execute_spec_file(name: str) -> tuple[int, dict[str, int]]:
         if command_type == "module":
             wasm_file = binary_dir / _as_string(command.get("filename"))
             try:
-                active_module = _instantiate(wasm_file.read_bytes())
+                active_module = _instantiate(wasm_file.read_bytes(), native=native)
             except UnsupportedFixture as error:
                 active_module = None
                 skip(str(error))
@@ -306,7 +311,7 @@ def _execute_spec_file(name: str) -> tuple[int, dict[str, int]]:
         if command_type == "assert_uninstantiable":
             wasm_file = binary_dir / _as_string(command.get("filename"))
             try:
-                _instantiate(wasm_file.read_bytes())
+                _instantiate(wasm_file.read_bytes(), native=native)
             except UnsupportedFixture as error:
                 skip(str(error))
             except Trap:
@@ -358,6 +363,13 @@ def test_official_core_spec_file_executes_on_fireball(
     core_spec_summary.append((name, passed, skipped))
     reasons = "; ".join(f"{reason}: {count}" for reason, count in sorted(skipped.items()))
     print(f"{name}: {passed} Core assertions executed, {skipped_count} skipped ({reasons})")
+
+
+def test_official_left_to_right_executes_on_native_interpreter():
+    """Run every original side-effect ordering assertion through the C++ dispatcher."""
+    passed, skipped = _execute_spec_file("left-to-right", native=True)
+    assert passed > 0 and not skipped
+    print(f"left-to-right (native): {passed} Core assertions executed, 0 skipped")
 
 
 @pytest.fixture(scope="module")

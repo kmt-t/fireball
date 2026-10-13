@@ -1,0 +1,18 @@
+module,module_rva,elf_address,samples,categories,innermost_function,innermost_line
+libnative_interpreter.so,4466,0xd172,1.0,dispatch_outer,"int fireball::interpreter::run_native_dispatch_abi<false, true, false, false, void, fb_native_result>(std::conditional<false, fb_native_dispatch_extension_call, fb_native_dispatch_call>::type const*, fb_native_result*)",1017
+libnative_interpreter.so,4716,0xd26c,2.0,dispatch_outer,"unsigned int fireball::interpreter::execute_jit_trace<false, false, false, fb_native_result>(fireball::interpreter::native_dispatch_state<false, true, false, false, fb_native_result>&, fireball_call_frame_native&, unsigned int, unsigned int, unsigned char const*&)",796
+libnative_interpreter.so,5125,0xd405,1.0,dispatch_outer,"int fireball::interpreter::run_native_dispatch_abi<false, true, false, false, void, fb_native_result>(std::conditional<false, fb_native_dispatch_extension_call, fb_native_dispatch_call>::type const*, fb_native_result*)",1038
+libnative_interpreter.so,5499,0xd57b,1.0,dispatch_outer,"int fireball::interpreter::run_native_dispatch_abi<false, true, false, false, void, fb_native_result>(std::conditional<false, fb_native_dispatch_extension_call, fb_native_dispatch_call>::type const*, fb_native_result*)",0
+libnative_interpreter.so,5751,0xd677,1.0,dispatch_outer,"bool fireball::interpreter::handle_runtime_exit<false, true, false, false, void, fb_native_result>(fireball::interpreter::native_dispatch_state<false, true, false, false, fb_native_result>&, unsigned int)",878
+libnative_interpreter.so,8650,0xe1ca,1.0,control_handlers,"fireball::wasm_runtime::runtime_if(fireball_execution_context_native*, unsigned char const*&, unsigned int*&, unsigned int*&, unsigned char const*&)",1864
+libnative_interpreter.so,11632,0xed70,1.0,,"void (anonymous namespace)::h_runtime_api<void, &bool fireball::wasm_runtime::runtime_call<false>(fireball_execution_context_native*, unsigned char const*&, unsigned int*&, unsigned int*&, unsigned char const*&)>(fireball_execution_context_native*, unsigned char const*, unsigned int*, unsigned char const*)",135
+libnative_interpreter.so,12076,0xef2c,1.0,call_frame_setup;runtime_call,"bool fireball::wasm_runtime::runtime_call<false>(fireball_execution_context_native*, unsigned char const*&, unsigned int*&, unsigned int*&, unsigned char const*&)",1580
+libnative_interpreter.so,12365,0xf04d,1.0,call_frame_setup;runtime_call,"bool fireball::wasm_runtime::runtime_call<false>(fireball_execution_context_native*, unsigned char const*&, unsigned int*&, unsigned int*&, unsigned char const*&)",1591
+libnative_interpreter.so,14448,0xf870,1.0,,fireball::wasm_runtime::active_frame(fireball_execution_context_native&),135
+libnative_interpreter.so,14507,0xf8ab,2.0,,"fireball::wasm_runtime::apply_local_get(fireball_execution_context_native*, unsigned int*&, unsigned int*&, fireball_call_frame_native const&, unsigned int)",1093
+libnative_interpreter.so,14651,0xf93b,1.0,,"void (anonymous namespace)::dispatch_next<void>(fireball_execution_context_native*, unsigned char const*, unsigned int*, unsigned char const*)",590
+libnative_interpreter.so,14800,0xf9d0,1.0,,fireball::wasm_runtime::active_frame(fireball_execution_context_native&),135
+libnative_interpreter.so,14992,0xfa90,1.0,,"void (anonymous namespace)::dispatch_next<void>(fireball_execution_context_native*, unsigned char const*, unsigned int*, unsigned char const*)",613
+libtrace_compiler.so,89396,0x1dd34,1.0,jit_lookup,fireball::jit_runtime<void>::trace_header(fireball::jit_cache_entry) const,506
+libtrace_compiler.so,89530,0x1ddba,1.0,,fireball::jit_runtime<void>::is_profiled_pc(unsigned int),131
+libc.so.6,1508484,,1.0,,__memset_avx2_unaligned_erms,

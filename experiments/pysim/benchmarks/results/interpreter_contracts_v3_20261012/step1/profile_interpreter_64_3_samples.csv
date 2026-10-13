@@ -1,0 +1,10 @@
+module,module_rva,elf_address,samples,categories,innermost_function,innermost_line
+libnative_interpreter.so,3343,0xcd0f,1.0,dispatch_outer,"fireball::wasm_runtime::interpreter_rel_for_block_index(fireball_call_frame_native const&, unsigned int)",42
+libnative_interpreter.so,3609,0xce19,1.0,dispatch_outer,"bool fireball::interpreter::handle_runtime_exit<false, false, false, false, void, fb_native_result>(fireball::interpreter::native_dispatch_state<false, false, false, false, fb_native_result>&, unsigned int)",878
+libnative_interpreter.so,8627,0xe1b3,1.0,control_handlers,"fireball::wasm_runtime::control_entry(fireball_execution_context_native const&, unsigned int)",483
+libnative_interpreter.so,11444,0xecb4,1.0,,"fireball::wasm_runtime::finish_current_function(fireball_execution_context_native&, unsigned int*&, unsigned char const*&)",438
+libnative_interpreter.so,14448,0xf870,1.0,,fireball::wasm_runtime::active_frame(fireball_execution_context_native&),135
+libnative_interpreter.so,14465,0xf881,1.0,,fireball::wasm_runtime::read_u32(unsigned char const*&),308
+libnative_interpreter.so,14507,0xf8ab,1.0,,"fireball::wasm_runtime::apply_local_get(fireball_execution_context_native*, unsigned int*&, unsigned int*&, fireball_call_frame_native const&, unsigned int)",1093
+libnative_interpreter.so,23200,0x11aa0,1.0,,"fireball::wasm_runtime::push(fireball_execution_context_native&, unsigned int*&, unsigned int)",575
+libnative_interpreter.so,33780,0x143f4,1.0,,"void (anonymous namespace)::dispatch_next<void>(fireball_execution_context_native*, unsigned char const*, unsigned int*, unsigned char const*)",596

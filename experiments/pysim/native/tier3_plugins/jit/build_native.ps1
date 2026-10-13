@@ -41,14 +41,19 @@ $sourceCpp = Join-Path $nativeSourceDir "trace_compiler.cxx"
 $commonSourceCpp = Join-Path $nativeSourceDir "common_code.cxx"
 $memorySourceCpp = Join-Path $nativeSourceDir "executable_memory.cxx"
 $runtimeSourceCpp = Join-Path $nativeSourceDir "jit_runtime.cxx"
+$runtimeSources = @($runtimeSourceCpp)
+$measurementFlags = @()
 $profilingSourceCpp = Join-Path $nativeSourceDir "profiling.cxx"
+$runtimeApisSourceCpp = Join-Path $nativeSourceDir "jit_runtime_apis.cxx"
+$operationsSourceCpp = Join-Path $nativeSourceDir "..\..\tier2_runtime\interpreter\native_wasm_operations.cxx"
 $generatedDll = Join-Path $nativeBuildDir "trace_compiler.dll"
 
 $commonConfig = & uv run --offline --no-sync --python $uvPython python -c 'import config; names=(''JIT_CACHE_REGION_BYTES'', ''JIT_CACHE_COMMON_CODE_BYTES'', ''JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET'', ''JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES'', ''JIT_HISTORY_CAPACITY'', ''JIT_COMPILE_QUEUE_CAPACITY'', ''JIT_CARD_SHIFT'', ''JIT_CACHE_BANK_CAPACITY_BYTES'', ''JIT_CACHE_ACTIVE_OFFSET_BYTES'', ''JIT_CACHE_WARM_OFFSET_BYTES'', ''JIT_CACHE_OLDEST_OFFSET_BYTES'', ''FB_CONF_JIT_AGING_STEP_UNITS'', ''FB_CONF_JIT_AGING_STEP_SCAN_BYTES''); print(" ".join("/D"+(name if name.startswith("FB_CONF_") else "FB_CONF_"+name)+"="+str(getattr(config,name)) for name in names))'
 $commonDefines = (($commonConfig -join " ").Trim() -split "\s+")
 
 if ($QA) {
-    $runtimeSourceCpp = Join-Path $projectRoot "experiments\pysim\qa\private\native_jit_probe.cxx"
+    $runtimeSources += Join-Path $projectRoot "experiments\pysim\qa\private\native_jit_probe.cxx"
+    $measurementFlags += "/FI" + (Join-Path $projectRoot "experiments\pysim\qa\private\jit_measurements.hxx")
     $generatedDll = Join-Path $nativeBuildDir "jit_probe.dll"
     $pythonPackageDir = Join-Path $projectRoot "experiments\pysim\qa\private"
 }
@@ -97,7 +102,7 @@ if ($QA) {
 } else {
     Write-Host ">>> Compiling trace_compiler.cxx -> trace_compiler.dll (clang-cl)" -ForegroundColor Yellow
 }
-& clang-cl.exe /TP /std:c++latest /O2 /LD `
+& clang-cl.exe /TP /std:c++latest /O2 /LD -flto=thin -fuse-ld=lld `
     "/DFB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET=$chainDispatchOffset" `
     "/DFB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES=$chainDispatchBytes" `
     "/DFB_CONF_JIT_X64_TRACE_HEADER_BYTES=$traceHeaderBytes" `
@@ -111,7 +116,7 @@ if ($QA) {
     "-I$sdkRoot\Include\$sdkVer\ucrt" `
     "-I$sdkRoot\Include\$sdkVer\shared" `
     "-I$sdkRoot\Include\$sdkVer\um" `
-    @commonDefines $sourceCpp $commonSourceCpp $memorySourceCpp $runtimeSourceCpp $profilingSourceCpp `
+    @commonDefines @measurementFlags $sourceCpp $commonSourceCpp $memorySourceCpp @runtimeSources $profilingSourceCpp $runtimeApisSourceCpp $operationsSourceCpp `
     /Fe:$generatedDll `
     /link @linkerArgs
 if ($LASTEXITCODE -ne 0) { throw "clang-cl compile failed" }

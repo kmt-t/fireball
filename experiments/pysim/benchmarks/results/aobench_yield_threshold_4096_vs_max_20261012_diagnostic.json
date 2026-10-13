@@ -1,0 +1,50 @@
+[
+  {
+    "engine": "interpreter",
+    "yield_threshold": 4096,
+    "width": 320,
+    "height": 180,
+    "timed": false,
+    "yield_count": 400,
+    "runtime_boundary_count": 403,
+    "jit_body_executions": 0,
+    "native_control_handlers": 18821696,
+    "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699"
+  },
+  {
+    "engine": "interpreter",
+    "yield_threshold": 4294967295,
+    "width": 320,
+    "height": 180,
+    "timed": false,
+    "yield_count": 0,
+    "runtime_boundary_count": 3,
+    "jit_body_executions": 0,
+    "native_control_handlers": 18821696,
+    "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699"
+  },
+  {
+    "engine": "jit",
+    "yield_threshold": 4096,
+    "width": 320,
+    "height": 180,
+    "timed": false,
+    "yield_count": 400,
+    "runtime_boundary_count": 403,
+    "jit_body_executions": 5999683,
+    "native_control_handlers": 18821696,
+    "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699"
+  },
+  {
+    "engine": "jit",
+    "yield_threshold": 4294967295,
+    "width": 320,
+    "height": 180,
+    "timed": false,
+    "yield_count": 0,
+    "runtime_boundary_count": 3,
+    "jit_body_executions": 4713949,
+    "native_control_handlers": 18821696,
+    "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699"
+  }
+]

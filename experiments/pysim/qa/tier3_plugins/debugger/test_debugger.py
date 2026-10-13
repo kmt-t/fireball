@@ -450,8 +450,8 @@ def test_dbg_10_branch_stop_retains_control_state(
     assert execution.call.results == [result]
 
 
-def test_dbg_10_loop_stop_keeps_local_and_control_frame_history() -> None:
-    """TEST-DBG-10: Stop/restart does not replay the loop opener or lose its frame."""
+def test_dbg_10_loop_stop_keeps_local_and_operand_history() -> None:
+    """TEST-DBG-10: Stop/restart preserves the loop position and operand values."""
     execution, _, rsp = _debug_rsp(
         """(module (func (param i32) (result i32)
         loop local.get 0 i32.const 1 i32.sub local.tee 0 br_if 0 end local.get 0))""",
@@ -596,7 +596,7 @@ def test_dbg_12_disabled_composition_has_no_debug_state_or_weave() -> None:
     interpreter = make_native_interpreter(module)
     call = interpreter.start(0, ())
     assert interpreter._native_dispatcher is native_abi.RUN_DISPATCH
-    assert ctypes.sizeof(ExecutionContextABI) == 160
+    assert ctypes.sizeof(ExecutionContextABI) == 144
     assert ctypes.sizeof(call.context) == (
         ctypes.sizeof(ExecutionContextABI) + ctypes.sizeof(ctypes.c_void_p)
     )

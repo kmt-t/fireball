@@ -1,0 +1,12 @@
+{
+  "executable_page_offsets": {
+    "libnative_interpreter.so": 49152,
+    "libtrace_compiler.so": 32768
+  },
+  "symbol_library_sha256": {
+    "libnative_interpreter.so": "52babab9dfe048ff297ab0dc5d5dfaac6220295966b822a697270649230507bb",
+    "libtrace_compiler.so": "b4ff99ad2ca30b31dd31b91e9de99f2e08bb33c98aee86857a966bdad126ab15"
+  },
+  "baseline_text_sha256": "93a23f0c97049b1575f45b432066f93252d5eeed454ec55eef42a9912d0c10b1",
+  "symbols_text_sha256": "93a23f0c97049b1575f45b432066f93252d5eeed454ec55eef42a9912d0c10b1"
+}

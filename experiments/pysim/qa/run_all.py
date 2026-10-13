@@ -129,7 +129,7 @@ TEST_SUITES = [
     # --- Tier 3: Executer ---
     (
         "Tier 3 Plugins",
-        "Executable Memory W^X",
+        "Executable Memory Patch Transactions",
         TEST_DIR / "tier3_plugins" / "jit" / "test_exec_memory.py",
     ),
     (

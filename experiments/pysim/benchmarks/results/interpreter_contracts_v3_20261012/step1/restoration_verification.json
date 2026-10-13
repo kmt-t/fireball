@@ -1,0 +1,9 @@
+{
+  "sources_checked": 105,
+  "diagnostic_source_restored": true,
+  "library_sha256_matches": true,
+  "libraries": {
+    "baseline_interpreter.so": "ae971b951511ac65560314ec7edeea24a0a8e106478305fd5a34c7f1d4bfc05d",
+    "baseline_jit.so": "b4ff99ad2ca30b31dd31b91e9de99f2e08bb33c98aee86857a966bdad126ab15"
+  }
+}

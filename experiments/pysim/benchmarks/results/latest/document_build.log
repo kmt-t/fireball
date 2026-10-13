@@ -1,0 +1,9 @@
+================================================================================
+ Spec-Integrator: Building Document Database [Fireball Hypervisor]
+================================================================================
+✔ Parsed 88 document(s), 1708 node(s).
+Extracting terminology & keywords via TF-IDF...
+✔ Extracted and indexed 1000 terms via TF-IDF.
+================================================================================
+✔ Database build complete: /home/t-matsu/workspace/mysrc/fireball/.spec-integrator/doc_cache.db
+================================================================================

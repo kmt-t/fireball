@@ -21,7 +21,6 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 import pytest
 from qa.shared.helpers import (
-    expect_assertion,
     get_call_cont,
     make_native_interpreter,
     wat_to_wasm,
@@ -37,9 +36,11 @@ from tier2_runtime.wasm.module import (
     I32,
     I64,
     FunctionTable,
+    LocalLayout,
     Memory,
 )
 from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.validation import InvalidWasm
 
 
 def test_intp_01_python_reference_cps_handlers_and_dispatch_table():
@@ -50,9 +51,13 @@ def test_intp_01_python_reference_cps_handlers_and_dispatch_table():
     import inspect
 
     from tier2_runtime.interpreter.interpreter import _HANDLERS
+    from tier2_runtime.wasm.opcodes import UNREACHABLE
 
-    # Direct 256-element fixed-capacity table (no dynamic dict lookup)
-    assert type(_HANDLERS) is StaticVector
+    # Immutable direct dispatch catalog; an execution step cannot alter a handler.
+    unreachable_handler = _HANDLERS[UNREACHABLE]
+    with pytest.raises(TypeError):
+        _HANDLERS[UNREACHABLE] = None
+    assert _HANDLERS[UNREACHABLE] is unreachable_handler
     assert len(_HANDLERS) == 256
     # Every registered handler receives the context, instruction pointer, and operand stack.
     registered_count = 0
@@ -104,20 +109,32 @@ def test_python_interpreter_preserves_shared_operand_stack_across_call():
     assert call_state.results == [42]
 
 
-def test_control_frame_stores_opener_pc_and_opcode_metadata_is_shared():
-    """Control frames store dynamic state and resolve opcode metadata by PC."""
-    from tier2_runtime.interpreter.control_flow import OpcodeAttribute, opcode_has_attribute
-    from tier2_runtime.interpreter.interpreter import NativeControlStack
+def test_control_opcodes_use_static_metadata_without_control_frames():
+    from tier2_runtime.interpreter.control_flow import (
+        OPCODE_ATTRIBUTES,
+        OpcodeAttribute,
+        opcode_has_attribute,
+    )
     from tier2_runtime.wasm.opcodes import BR_IF, CALL, I32_ADD, LOOP
 
-    control_stack = NativeControlStack(capacity=1)
-    pushed = control_stack.push_back(start=0, stack_height=0)
-    assert pushed
-    assert control_stack[0].start == 0
     assert opcode_has_attribute(CALL, OpcodeAttribute.CALL)
     assert opcode_has_attribute(BR_IF, OpcodeAttribute.BRANCH)
     assert opcode_has_attribute(LOOP, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
     assert not opcode_has_attribute(I32_ADD, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
+    attributes = memoryview(OPCODE_ATTRIBUTES.buffer)
+    assert attributes.readonly
+    with pytest.raises(TypeError):
+        attributes[CALL // 2] = 0
+    assert opcode_has_attribute(CALL, OpcodeAttribute.CALL)
+
+    module = parse(
+        wat_to_wasm(
+            '(module (func (export "main") (result i32) '
+            "(block $outer (result i32) (i32.const 17) (br $outer))))"
+        )
+    )
+    interpreter = Interpreter(module)
+    assert interpreter.call(0, []) == [17]
 
 
 def test_loader_builds_control_map_before_interpreter_creation():
@@ -131,24 +148,43 @@ def test_loader_builds_control_map_before_interpreter_creation():
 
     assert function.control_map is not None
     loaded_control_map = function.control_map
-    assert function.interpreter_constant_pool is not None
-    loaded_constant_pool = function.interpreter_constant_pool
+    assert function.interpreter_annotation_pool is not None
+    loaded_annotation_pool = function.interpreter_annotation_pool
     assert module.blocks
-    assert tuple(loaded_constant_pool) == (1, 0, 0, 0, 2, 1, 2, 0, 0, 0, 0, 2, 1, 1)
-    assert tuple(block.interpreter_constant_byte_offset for block in module.blocks) == (
+    assert tuple(loaded_annotation_pool) == (
+        2,
+        1,
         0,
-        7,
+        0,
+        0,
+        1,
+        1,
+        0,
+        3,
+        0,
+        0,
+        0,
+        3,
+        0,
+        255,
+        255,
+    )
+    assert function.entry_block_index == 0
+    assert tuple(block.next_block_index for block in module.blocks) == (1, 3, 3, None)
+    assert tuple(block.interpreter_annotation_byte_offset for block in module.blocks) == (
+        0,
+        8,
         12,
-        13,
+        14,
     )
     Interpreter(module)
     assert function.control_map is loaded_control_map
-    assert function.interpreter_constant_pool is loaded_constant_pool
-    assert tuple(block.interpreter_constant_byte_offset for block in module.blocks) == (
+    assert function.interpreter_annotation_pool is loaded_annotation_pool
+    assert tuple(block.interpreter_annotation_byte_offset for block in module.blocks) == (
         0,
-        7,
+        8,
         12,
-        13,
+        14,
     )
 
     from qa.shared.helpers import make_native_interpreter
@@ -162,8 +198,42 @@ def test_loader_builds_control_map_before_interpreter_creation():
     assert native_execution._module_view.global_widths == module.global_widths_address
     assert ctypes.c_uint8.from_address(module.global_widths_address).value == 2
     function_view = native_execution._templates[0]._native_function_view
-    assert function_view.control_map == ctypes.addressof(loaded_control_map.native_entries)
-    assert function_view.interpreter_constant_pool == loaded_constant_pool.native_address
+    assert not hasattr(function_view, "control_map")
+    assert function_view.interpreter_annotation_pool == loaded_annotation_pool.native_address
+
+
+@pytest.mark.parametrize(
+    "expression, result_type, expected_trap",
+    (
+        ("unreachable", "i32", InterpreterTrapCode.UNREACHABLE),
+        ("i32.const 1 i32.const 0 i32.div_s", "i32", InterpreterTrapCode.INTEGER_DIVIDE_BY_ZERO),
+        ("i64.const 1 i64.const 0 i64.rem_u", "i64", InterpreterTrapCode.INTEGER_DIVIDE_BY_ZERO),
+        (
+            "i32.const -2147483648 i32.const -1 i32.div_s",
+            "i32",
+            InterpreterTrapCode.INTEGER_OVERFLOW,
+        ),
+        ("f64.const nan i32.trunc_f64_s", "i32", InterpreterTrapCode.INVALID_CONVERSION),
+        ("f64.const 2147483648 i32.trunc_f64_s", "i32", InterpreterTrapCode.INVALID_CONVERSION),
+        ("i32.const 65535 i32.load", "i32", InterpreterTrapCode.MEMORY_OUT_OF_BOUNDS),
+    ),
+)
+@pytest.mark.parametrize("native", (False, True))
+def test_wasm_runtime_traps_keep_code_and_stop_following_effects(
+    expression: str, result_type: str, expected_trap: InterpreterTrapCode, native: bool
+) -> None:
+    module = parse(
+        wat_to_wasm(
+            "(module (memory 1) (global (mut i32) (i32.const 0)) "
+            f"(func (result {result_type}) {expression} i32.const 99 global.set 0))"
+        )
+    )
+    interpreter = make_native_interpreter(module) if native else Interpreter(module)
+    call = interpreter.start(0, ())
+    while not call.finished:
+        interpreter.step(call)
+    assert call.trap is not None and call.trap.code == expected_trap
+    assert interpreter.globals[0] == 0
 
 
 def test_intp_73_wide_frame_uses_compact_per_local_layout():
@@ -187,9 +257,9 @@ def test_intp_73_wide_frame_uses_compact_per_local_layout():
     assert Interpreter(module).call(0, [7, 42, 3.5]) == [42]
 
 
-def test_interpreter_constant_pool_stores_instruction_widths():
-    """Store decoded operands and widths; fixed-width float payloads stay in code."""
-    from tier2_runtime.interpreter.control_flow import build_interpreter_constant_pool
+def test_interpreter_annotation_pool_stores_derived_operands_compactly():
+    """Store derived values and encoded widths; fixed-width floats stay in code."""
+    from tier2_runtime.interpreter.control_flow import build_interpreter_annotation_pool
 
     code = bytes.fromhex(
         "28 02 04 "  # i32.load: alignment, then offset
@@ -200,20 +270,88 @@ def test_interpreter_constant_pool_stores_instruction_widths():
         "44 00 00 00 00 00 00 f8 7f "  # f64.const: fixed-width payload
         "0b"
     )
-    constants, block_offsets = build_interpreter_constant_pool(
-        memoryview(code), (0, 3, 6, 10, 13, 18, 27)
+    annotations, block_offsets = build_interpreter_annotation_pool(
+        memoryview(code), (0, 3, 6, 10, 13, 18, 27), local_layout=LocalLayout(())
     )
 
-    assert list(block_offsets) == [0, 9, 18, 31, 40, 41, 42]
-    assert list(constants) == list(
+    assert list(block_offsets) == [0, 5, 10, 20, 29, 29, 29]
+    assert list(annotations) == list(
         bytes.fromhex(
-            "02 00 00 00 04 00 00 00 03 "
-            "01 00 00 00 02 00 00 00 03 "
-            "01 00 00 00 00 00 00 00 01 "
-            "00 00 00 04 80 00 00 00 00 "
-            "00 00 00 03 05 09 01"
+            "03 04 00 00 00 03 01 00 ff ff 01 00 ff ff 00 00 ff ff 00 00 "
+            "03 80 00 00 00 00 00 00 00 ff ff"
         )
     )
+
+
+@pytest.mark.parametrize("label_count", (0, 1, 255, 256))
+def test_br_table_annotation_capacity_matches_depth_and_target_records(label_count: int):
+    """The table stores one u16 count and a four-byte resolved record per label."""
+    from tier2_runtime.interpreter.control_flow import (
+        _count_interpreter_annotation_pool_bytes,
+        build_interpreter_annotation_pool,
+    )
+
+    encoded_count = bytearray()
+    remaining = label_count
+    while remaining >= 0x80:
+        encoded_count.append((remaining & 0x7F) | 0x80)
+        remaining >>= 7
+    encoded_count.append(remaining)
+    code = memoryview(bytes((0x0E,)) + bytes(encoded_count) + bytes(label_count + 1))
+
+    annotations, block_offsets = build_interpreter_annotation_pool(
+        code, (0,), local_layout=LocalLayout(())
+    )
+    target_count = label_count + 1
+    expected_bytes = 2 + target_count * 4
+    assert _count_interpreter_annotation_pool_bytes(code) == expected_bytes
+    assert len(annotations) == expected_bytes
+    annotation_bytes = list(annotations)
+    assert annotation_bytes[:2] == [label_count & 0xFF, (label_count >> 8) & 0xFF]
+    assert list(block_offsets) == [0]
+    for index in range(target_count):
+        entry = 2 + index * 4
+        assert annotation_bytes[entry : entry + 4] == [0xFF, 0xFF, 0, 0]
+
+
+def test_native_br_table_with_255_labels_preserves_branch_result():
+    labels = " ".join("$target" for _ in range(255))
+    wasm_bytes = wat_to_wasm(
+        '(module (func (export "dispatch") (param i32) '
+        f"(block $target (local.get 0) (br_table {labels} $target))))"
+    )
+    assert wasm_bytes
+    module = parse(memoryview(wasm_bytes))
+    interpreter = make_native_interpreter(module)
+    for selector in (0, 254, 255, 256):
+        assert interpreter.call(module.export_func_index("dispatch"), [selector]) == []
+
+
+def test_native_br_table_single_label_preserves_branch_result():
+    module = parse(
+        memoryview(
+            wat_to_wasm(
+                '(module (func (export "dispatch") (param i32) '
+                "(block $target (local.get 0) (br_table $target $target))))"
+            )
+        )
+    )
+    assert make_native_interpreter(module).call(module.export_func_index("dispatch"), [0]) == []
+
+
+def test_native_br_table_default_only_preserves_branch_result():
+    module = parse(
+        memoryview(
+            wat_to_wasm(
+                '(module (func (export "dispatch") (param i32) '
+                "(block $target (local.get 0) (br_table $target))))"
+            )
+        )
+    )
+
+    interpreter = make_native_interpreter(module)
+    for selector in (0, 1, 0xFFFF_FFFF):
+        assert interpreter.call(module.export_func_index("dispatch"), [selector]) == []
 
 
 def test_native_single_byte_local_boundary_and_multibyte_call():
@@ -272,7 +410,8 @@ def test_native_call_dispatch_resolves_callee_and_caller_blocks(monkeypatch):
 
     assert interpreter.call(module.export_func_index("main"), []) == [42]
     assert len(observations) == 1
-    assert observations[0].block_search_cache_misses >= 3
+    assert observations[0].block_search_cache_hits == 0
+    assert observations[0].block_search_cache_misses == 0
 
 
 def test_native_runtime_api_false_stops_before_following_store():
@@ -304,8 +443,8 @@ def test_intp_72_control_map_uses_four_entry_locality_caches():
     wide_map = build_control_map(memoryview(b"\x02\x7e\x0b"))
     assert wide_map.block(0) == (2, None, 2)
     assert len(control_map.block_cache) == 4
-    assert len(control_map.br_table_cache) == 4
-    for ip in (0, 1, 2, 0xFFFF):
+    assert len(control_map.branch_cache) == 4
+    for ip in (0, 1, 2, 0xFFFF, 0x1_0000, 0xFFFF_FFFF):
         assert 0 <= control_map._cache_slot(ip) < 4
 
 
@@ -469,8 +608,8 @@ def test_native_dispatch_reuses_block_search_results_within_dispatch(monkeypatch
 
     assert interpreter.call(module.export_func_index("sum_to"), [8]) == [36]
     assert len(observations) == 1
-    assert observations[0].block_search_cache_misses > 0
-    assert observations[0].block_search_cache_hits > 0
+    assert observations[0].block_search_cache_misses == 0
+    assert observations[0].block_search_cache_hits == 0
 
 
 def test_intp_16_nested_return_consumes_sentinel_and_restores_caller():
@@ -577,7 +716,7 @@ def test_wasm_01_to_06_unsupported_features_rejected():
         b"\x07\x0d\x01\x09test_simd\x00\x00"
         b"\x0a\x06\x01\x04\x00\xfd\x00\x0b"
     )
-    with expect_assertion("ERR_WASM_UNSUPPORTED_FEATURE"):
+    with pytest.raises(InvalidWasm, match="ERR_WASM_UNSUPPORTED_FEATURE"):
         mod = parse(wasm_bytes)
         interp = Interpreter(mod)
         interp.call(0, [])
@@ -848,7 +987,9 @@ def test_intp_70_to_72_direct_bytecode_execution():
 
     # 1. TEST-INTP-18/75: independent call descriptors and local storage follow the native ABI.
     context = ExecutionContext(module)
-    frame, locals_arr = interp._build_frame(0, StaticVector.of((15,), capacity=64), context)
+    built = interp._build_frame(0, StaticVector.of((15,), capacity=64), context)
+    assert built is not None
+    frame, locals_arr = built
     assert frame.code == module.code_for(0)
     assert frame.control_map is not None
     assert frame.control_map is module.functions[0].control_map
@@ -1132,26 +1273,137 @@ def test_wasm_mvp_imported_table_and_active_element_segment():
         external_table[0] = None
 
 
-def test_call_indirect_signature_mismatch_fails_while_linking_table():
-    """A table's initialized targets must satisfy every linked call_indirect site."""
-    wat = """
+@pytest.mark.parametrize("native", (False, True), ids=("python", "native"))
+def test_call_indirect_accepts_unselected_targets_with_other_signatures(native: bool):
+    """A valid selected target remains callable beside a differently typed table slot."""
+    module = parse(
+        wat_to_wasm(
+            """
+            (module
+              (type $expected (func (result i32)))
+              (type $other (func (result i64)))
+              (table 2 funcref)
+              (func $answer (type $expected) (i32.const 42))
+              (func $other (type $other) (i64.const 7))
+              (elem (i32.const 0) $answer $other)
+              (func (export "call") (result i32)
+                (call_indirect (type $expected) (i32.const 0))))
+            """
+        )
+    )
+    interpreter = make_native_interpreter(module) if native else Interpreter(module)
+    assert interpreter.tables[0][0] == 0
+    assert interpreter.tables[0][1] == 1
+    assert interpreter.call(module.export_func_index("call"), []) == [42]
+
+
+@pytest.mark.parametrize("native", (False, True), ids=("python", "native"))
+def test_call_indirect_reads_wide_function_index_from_table_slot_two(native: bool):
+    """A u16 function index is loaded from each loader-owned u32 table slot."""
+    module = parse(
+        wat_to_wasm(
+            """
+            (module
+              (type $narrow (func (result i32)))
+              (type $wide_type (func (param i64) (result i32)))
+              (table 3 funcref)
+              (func $narrow (type $narrow) (i32.const 7))
+              (func $wrong (result i64) (i64.const 9))
+              (func $wide (param $value i64) (result i32)
+                (i32.wrap_i64 (local.get $value)))
+              (elem (i32.const 0) $narrow $wrong $wide)
+              (func (export "call") (result i32)
+                (call_indirect (type $wide_type) (i64.const 42) (i32.const 2)))
+            )
+            """
+        )
+    )
+    interpreter = make_native_interpreter(module) if native else Interpreter(module)
+    assert list(interpreter.tables[0]) == [0, 1, 2]
+    assert interpreter.call(module.export_func_index("call"), []) == [42]
+
+
+@pytest.mark.parametrize("native", (False, True), ids=("python", "native"))
+@pytest.mark.parametrize(
+    ("expected", "actual", "arguments", "result"),
+    (
+        ("(result i32)", "(result i64)", "", "(i64.const 42)"),
+        ("(param i32) (result i32)", "(param f32) (result i32)", "(i32.const 7)", "(i32.const 42)"),
+        ("(param i32) (result i32)", "(param i64) (result i32)", "(i32.const 7)", "(i32.const 42)"),
+        (
+            "(param i32) (result i32)",
+            "(param i32 i32) (result i32)",
+            "(i32.const 7)",
+            "(i32.const 42)",
+        ),
+        ("(result i32)", "", "", ""),
+    ),
+    ids=("result-type", "parameter-type", "parameter-width", "parameter-count", "result-count"),
+)
+def test_call_indirect_signature_mismatch_traps_before_entering_target(
+    native: bool, expected: str, actual: str, arguments: str, result: str
+):
+    """A selected signature mismatch traps without running the target body."""
+    wat = f"""
     (module
-      (type $expected (func (result i32)))
-      (type $actual (func (result i64)))
+      (type $expected (func {expected}))
+      (type $actual (func {actual}))
       (table 1 funcref)
-      (func $wrong (type $actual) (i64.const 42))
+      (global $entered (export "entered") (mut i32) (i32.const 0))
+      (func $wrong (type $actual)
+        (global.set $entered (i32.const 1)) {result})
       (elem (i32.const 0) $wrong)
       (func (export "call") (result i32)
-        (call_indirect (type $expected) (i32.const 0)))
+        (call_indirect (type $expected) {arguments} (i32.const 0)))
     )
     """
     module = parse(wat_to_wasm(wat))
 
-    with pytest.raises(AssertionError, match="incompatible signature"):
-        make_native_interpreter(module)
+    interpreter = make_native_interpreter(module) if native else Interpreter(module)
+    call = interpreter.start(module.export_func_index("call"), [])
+    while not call.finished:
+        call = interpreter.step(call)
+    assert call.trap is not None
+    assert call.trap.code == InterpreterTrapCode.INDIRECT_CALL_TYPE_MISMATCH
+    assert interpreter.globals[0] == 0
 
 
-def test_call_indirect_links_structurally_equal_duplicate_signatures():
+@pytest.mark.parametrize("native", (False, True), ids=("python", "native"))
+def test_call_indirect_import_signature_mismatch_never_invokes_host(native: bool):
+    """Imported targets are checked at the host boundary before callback side effects."""
+    module = parse(
+        wat_to_wasm(
+            """(module
+              (type $expected (func (result i32)))
+              (import "env" "wrong" (func $wrong (result i64)))
+              (table 1 funcref)
+              (elem (i32.const 0) $wrong)
+              (func (export "call") (result i32)
+                (call_indirect (type $expected) (i32.const 0))))"""
+        )
+    )
+    received: StaticVector[int] = StaticVector(capacity=1)
+
+    def wrong() -> int:
+        received.append(1)
+        return 42
+
+    functions = StaticVector.of((wrong,), capacity=1)
+    interpreter = (
+        make_native_interpreter(module, host_functions=functions)
+        if native
+        else Interpreter(module, host_functions=functions)
+    )
+    call = interpreter.start(module.export_func_index("call"), [])
+    while not call.finished:
+        call = interpreter.step(call)
+    assert call.trap is not None
+    assert call.trap.code == InterpreterTrapCode.INDIRECT_CALL_TYPE_MISMATCH
+    assert len(received) == 0
+
+
+@pytest.mark.parametrize("native", (False, True), ids=("python", "native"))
+def test_call_indirect_links_structurally_equal_duplicate_signatures(native: bool):
     """Distinct type indices with identical signatures remain compatible."""
     wat = """
     (module
@@ -1165,7 +1417,7 @@ def test_call_indirect_links_structurally_equal_duplicate_signatures():
     )
     """
     module = parse(wat_to_wasm(wat))
-    interpreter = make_native_interpreter(module)
+    interpreter = make_native_interpreter(module) if native else Interpreter(module)
 
     assert interpreter.call(module.export_func_index("call"), []) == [42]
 
@@ -1382,6 +1634,50 @@ def test_runtime_keeps_constructor_arena_and_rejects_foreign_interpreter():
 # ===========================================================================
 # Test Runner
 # ===========================================================================
+
+
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("callee", [False, True])
+def test_function_entry_capacity_precedes_traps_and_side_effects(native: bool, callee: bool):
+    """Function admission may replace an earlier WASM trap only when capacity is insufficient."""
+    wide = " ".join(["i64.const 0"] * 33 + ["drop"] * 33)
+    body = f"i32.const 99 global.set 0 local.get 0 if unreachable else {wide} end"
+    functions = f"(func (param i32) {body})"
+    index = 0
+    if callee:
+        functions += "(func (param i32) local.get 0 call 0)"
+        index = 1
+    module = parse(wat_to_wasm(f"(module (global (mut i32) (i32.const 0)) {functions})"))
+    engine = make_native_interpreter(module) if native else Interpreter(module)
+    call = engine.start(index, (1,))
+    while not call.finished:
+        call = engine.step(call)
+    assert call.trap is not None
+    assert call.trap.code == InterpreterTrapCode.OPERAND_STACK_CAPACITY
+    assert engine.globals[0] == 0
+    assert not call.context.call_frame_stack
+
+
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("count", [31, 32])
+def test_callee_capacity_uses_entry_sp_after_arguments(native: bool, count: int):
+    """Caller live values occupy capacity; parameters become locals before callee admission."""
+    wide = " ".join(["i64.const 0"] * count + ["drop"] * count)
+    module = parse(
+        wat_to_wasm(f"""(module
+      (func (param i64) {wide})
+      (func (result i64) i64.const 7 i64.const 1 call 0))""")
+    )
+    engine = make_native_interpreter(module) if native else Interpreter(module)
+    call = engine.start(1, ())
+    while not call.finished:
+        call = engine.step(call)
+    if count == 31:
+        assert call.trap is None and tuple(call.results or ()) == (7,)
+    else:
+        assert call.trap is not None
+        assert call.trap.code == InterpreterTrapCode.OPERAND_STACK_CAPACITY
+
 
 ALL_TESTS = sorted(
     (v for k, v in globals().items() if k.startswith("test_") and callable(v)),

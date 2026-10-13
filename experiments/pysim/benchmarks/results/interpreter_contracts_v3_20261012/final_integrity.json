@@ -1,0 +1,12 @@
+{
+  "timing_source_sha256_match": true,
+  "timing_library_sha256_match": true,
+  "diagnostic_counter_instrumentation_restored": true,
+  "resolution_count": 5,
+  "output_hashes_match_per_resolution": true,
+  "current_libraries": {
+    "/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so": "b42fedf3b6c668c53b52148af3c27fd5c9c7a0aad24a1fcbafcffe0050fb97c8",
+    "/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier3_plugins/jit/libtrace_compiler.so": "8bf08e8d1c079434211a138d143dca731fddfb7f668dc73b68aadc3d6abe66bb",
+    "/tmp/fireball-wamr-fast-o3/libiwasm.so": "2a288b7b4e74de2bc26693cb51c6e34b9160f45b4f037a5e9e4deaa8f708a960"
+  }
+}

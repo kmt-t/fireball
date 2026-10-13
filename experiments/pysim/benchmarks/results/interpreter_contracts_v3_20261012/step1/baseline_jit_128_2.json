@@ -1,0 +1,45 @@
+{
+  "engine": "jit",
+  "width": 128,
+  "height": 72,
+  "warmup": 3,
+  "repeats": 7,
+  "yield_threshold": 4096,
+  "samples_ms": [
+    93.40512,
+    88.782703,
+    88.668831,
+    90.282592,
+    89.094465,
+    89.159537,
+    88.818831
+  ],
+  "median_ms": 89.094465,
+  "frame_bytes": 9288,
+  "frame_sha256": "e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4",
+  "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+  "runner_sha256": "2eed894096011d23dbd9a9aecb49054332499e57eadd05f8450cf87193c4ddee",
+  "interpreter_library_sha256": "ae971b951511ac65560314ec7edeea24a0a8e106478305fd5a34c7f1d4bfc05d",
+  "jit_library_sha256": "b4ff99ad2ca30b31dd31b91e9de99f2e08bb33c98aee86857a966bdad126ab15",
+  "python": "3.13.15",
+  "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+  "affinity": [
+    2
+  ],
+  "diagnostic": false,
+  "profiled": false,
+  "frame_counters": [],
+  "command": [
+    "taskset",
+    "-c",
+    "2",
+    "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+    "/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/benchmarks/results/interpreter_contracts_v3_20261012/step1/measure.py",
+    "--engine",
+    "jit",
+    "--width",
+    "128"
+  ],
+  "trial": 2,
+  "mode": "baseline"
+}

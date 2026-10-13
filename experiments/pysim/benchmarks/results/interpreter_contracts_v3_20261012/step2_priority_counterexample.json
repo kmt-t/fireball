@@ -1,0 +1,9 @@
+{
+  "wat": "(module (func (param i32) local.get 0 if unreachable else i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 i64.const 0 drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop drop end))",
+  "argument": 1,
+  "function_peak_words": 66,
+  "operand_capacity_words": 64,
+  "current_observed_trap_code": 9,
+  "proposed_entry_capacity_trap_code": 4,
+  "proposed_change_is_static_prediction": true
+}

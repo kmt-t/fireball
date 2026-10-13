@@ -24,8 +24,10 @@ scope: GLOBAL
 
 ### 即時失敗とアサーション
 
+- 内部契約と処理経路の正本は [開発方針](development-policy.md)の `Contract-First / Fail-Fast` と「WASM実行系の失敗境界」とする。最初に契約を確定できる境界で `assert` し、下流の重複チェックと不要な欠損状態を削る。
+
 - `experiments/pysim/` は参照シミュレータであり、不変条件・事前条件・事後条件・型契約に違反した場合は `assert` で直ちに停止させる。pysim で不具合を握りつぶしたり、暗黙のフォールバックで処理を継続したりしてはならない。
-- pysim の製品コードでは明示的な `raise` を禁止する。`try` / `except` による境界での捕捉は許可するが、エラーは `Result` 等の戻り値へ集約し、事前条件・不変条件違反は `assert` で停止させる。
+- pysim の製品コードでは明示的な `raise` を禁止する。不正なWASMバイナリを拒否する専用のtrap送出手続きは「WASM実行系の失敗境界」に従う例外とする。`try` / `except` による境界での捕捉は許可するが、通常のエラーは `Result` 等の戻り値へ集約し、事前条件・不変条件違反は `assert` で停止させる。内部の `AssertionError` をtrapへ変換しない。
 - `isinstance`、`type`、`hasattr`、`getattr`、`setattr` および型・リフレクション用の特殊属性を使用しない。実行時型判定ではなく、静的な型・専用メソッド・明示的な状態を使う。
 - `in` / `not in` 演算子を製品コードで使用しない。線形探索を隠蔽するため、固定キーは分岐またはインデックス、テーブルは専用ビューの検索メソッドを使う。
 - `pytest` / `unittest` / `mock`、`test_*` / `_test_*` の製品シンボル、テスト専用フックやバックドアを `experiments/pysim` の製品コードへ持ち込まない。テスト専用セットアップは `experiments/pysim/qa` 側に置く。

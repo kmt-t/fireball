@@ -87,7 +87,7 @@ ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式�
 | `FB_CONF_JIT_COMMON_CODE_SIZE` | 相対ジャンプ等の非エビクション共通コード領域 | `2048` | |
 | `FB_CONF_JIT_BANK_SIZE` | 各エビクション対象バンクのサイズ | `2048` | |
 | `FB_CONF_JIT_CACHE_SIZE` | 連続JIT領域（共通コード2KB + 3バンク×2KB） | `8192` | |
-| `FB_CONF_JIT_NUM_BUFFERS` | JITキャッシュバッファ面数 (3面) | `3` | `{JIT_OldestOnly_Promote}` |
+| `FB_CONF_JIT_NUM_BUFFERS` | JITキャッシュバッファ面数 (3面) | `3` | `{JIT_OldestExecuteOnly}` |
 | `FB_CONF_JIT_MAX_INBOUND_CHAINS_PER_BANK` | 単一キャッシュバンクの最大被チェインエントリ数 | `32` | `{JIT_LazyChaining}` |
 | `FB_CONF_JIT_CARD_SHIFT` | JITカードテーブルのビットシフト数（関数ごと、4バイト単位 = 2） | `2` | |
 | `FB_CONF_INTERPRETER_YIELD_THRESHOLD` | Interpreterが協調yieldするまでに取得するLOOP後方分岐数。C++ Interpreter単独とHybrid JITに適用する。`64`は100 MHz STM32 Cortex-M33で約300 µs（30,000サイクル / 約469サイクル/後方分岐）を狙う初期値であり、実機・実ワークロードで校正する | `64` | |

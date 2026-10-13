@@ -1,0 +1,34 @@
+{
+  "collect": [
+    "AMDuProfCLI",
+    "collect",
+    "--config",
+    "hotspots",
+    "--timer-interval",
+    "1",
+    "--start-paused",
+    "-o",
+    "/tmp/fireball-contracts-v3-step1/profile_jit_256_3",
+    "taskset",
+    "-c",
+    "2",
+    "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+    "/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/benchmarks/results/interpreter_contracts_v3_20261012/step1/measure.py",
+    "--engine",
+    "jit",
+    "--width",
+    "256",
+    "--profile"
+  ],
+  "report": [
+    "AMDuProfCLI",
+    "report",
+    "-i",
+    "/tmp/fireball-contracts-v3-step1/profile_jit_256_3",
+    "--inline",
+    "--cutoff",
+    "0",
+    "--db",
+    "sqlite"
+  ]
+}

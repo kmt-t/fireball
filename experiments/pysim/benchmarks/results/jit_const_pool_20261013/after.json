@@ -1,0 +1,208 @@
+{
+  "aobench": [
+    {
+      "diagnostics": {
+        "average_instructions_per_trace": 5.649171270718232,
+        "instruction_count": 2045,
+        "item_bytes": {
+          "duplicated_interpreter_annotations": 0,
+          "interpreter_annotation_offsets": 1448,
+          "runtime_immediate_span_bytes": 377,
+          "runtime_immediates": 75,
+          "slot_and_immediate_count": 754,
+          "source_ip": 1508,
+          "trace_header_references": 1448
+        },
+        "pool_bytes": 5610,
+        "runtime_api_count": 377,
+        "runtime_api_opcodes": {
+          "0x02": 19,
+          "0x04": 120,
+          "0x05": 24,
+          "0x0b": 105,
+          "0x0c": 58,
+          "0x0d": 36,
+          "0x3a": 15
+        },
+        "trace_count": 362
+      },
+      "frame_sha256": "d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567",
+      "height": 36,
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "width": 64
+    },
+    {
+      "diagnostics": {
+        "average_instructions_per_trace": 5.627306273062731,
+        "instruction_count": 7625,
+        "item_bytes": {
+          "duplicated_interpreter_annotations": 0,
+          "interpreter_annotation_offsets": 5420,
+          "runtime_immediate_span_bytes": 1416,
+          "runtime_immediates": 305,
+          "slot_and_immediate_count": 2832,
+          "source_ip": 5664,
+          "trace_header_references": 5420
+        },
+        "pool_bytes": 21057,
+        "runtime_api_count": 1416,
+        "runtime_api_opcodes": {
+          "0x02": 66,
+          "0x04": 430,
+          "0x05": 100,
+          "0x0b": 415,
+          "0x0c": 214,
+          "0x0d": 130,
+          "0x3a": 61
+        },
+        "trace_count": 1355
+      },
+      "frame_sha256": "e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4",
+      "height": 72,
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "width": 128
+    },
+    {
+      "diagnostics": {
+        "average_instructions_per_trace": 5.62565963060686,
+        "instruction_count": 17057,
+        "item_bytes": {
+          "duplicated_interpreter_annotations": 0,
+          "interpreter_annotation_offsets": 12128,
+          "runtime_immediate_span_bytes": 3154,
+          "runtime_immediates": 610,
+          "slot_and_immediate_count": 6308,
+          "source_ip": 12616,
+          "trace_header_references": 12128
+        },
+        "pool_bytes": 46944,
+        "runtime_api_count": 3154,
+        "runtime_api_opcodes": {
+          "0x02": 147,
+          "0x04": 945,
+          "0x05": 215,
+          "0x0b": 942,
+          "0x0c": 485,
+          "0x0d": 298,
+          "0x3a": 122
+        },
+        "trace_count": 3032
+      },
+      "frame_sha256": "9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1",
+      "height": 108,
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "width": 192
+    },
+    {
+      "diagnostics": {
+        "average_instructions_per_trace": 5.609501100513573,
+        "instruction_count": 30583,
+        "item_bytes": {
+          "duplicated_interpreter_annotations": 0,
+          "interpreter_annotation_offsets": 21808,
+          "runtime_immediate_span_bytes": 5681,
+          "runtime_immediates": 1145,
+          "slot_and_immediate_count": 11362,
+          "source_ip": 22724,
+          "trace_header_references": 21808
+        },
+        "pool_bytes": 84528,
+        "runtime_api_count": 5681,
+        "runtime_api_opcodes": {
+          "0x02": 267,
+          "0x04": 1729,
+          "0x05": 383,
+          "0x0b": 1697,
+          "0x0c": 850,
+          "0x0d": 526,
+          "0x3a": 229
+        },
+        "trace_count": 5452
+      },
+      "frame_sha256": "f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4",
+      "height": 144,
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "width": 256
+    },
+    {
+      "diagnostics": {
+        "average_instructions_per_trace": 5.575161831695037,
+        "instruction_count": 46508,
+        "item_bytes": {
+          "duplicated_interpreter_annotations": 0,
+          "interpreter_annotation_offsets": 33368,
+          "runtime_immediate_span_bytes": 8684,
+          "runtime_immediates": 1710,
+          "slot_and_immediate_count": 17368,
+          "source_ip": 34736,
+          "trace_header_references": 33368
+        },
+        "pool_bytes": 129234,
+        "runtime_api_count": 8684,
+        "runtime_api_opcodes": {
+          "0x02": 400,
+          "0x04": 2651,
+          "0x05": 564,
+          "0x0b": 2670,
+          "0x0c": 1254,
+          "0x0d": 803,
+          "0x3a": 342
+        },
+        "trace_count": 8342
+      },
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "height": 180,
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "width": 320
+    }
+  ],
+  "diagnostic_build": "/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/qa/private/libjit_probe.so",
+  "diagnostic_library_sha256": "23093e09c4cc463f05b0748dbc7c58fc62d4f3c722d8649b9277218b92aede89",
+  "other_module_compile_all_blocks": {
+    "blocks_attempted": 519,
+    "diagnostics": {
+      "average_instructions_per_trace": 9.525252525252526,
+      "instruction_count": 2829,
+      "item_bytes": {
+        "duplicated_interpreter_annotations": 0,
+        "interpreter_annotation_offsets": 1172,
+        "runtime_immediate_span_bytes": 466,
+        "runtime_immediates": 809,
+        "slot_and_immediate_count": 932,
+        "source_ip": 1864,
+        "trace_header_references": 1188
+      },
+      "pool_bytes": 6431,
+      "runtime_api_count": 466,
+      "runtime_api_opcodes": {
+        "0x02": 30,
+        "0x03": 54,
+        "0x0b": 43,
+        "0x0c": 36,
+        "0x0d": 119,
+        "0x0e": 10,
+        "0x0f": 4,
+        "0x11": 1,
+        "0x28": 40,
+        "0x2c": 1,
+        "0x2d": 49,
+        "0x2f": 1,
+        "0x36": 40,
+        "0x37": 4,
+        "0x3a": 20,
+        "0x3b": 5,
+        "0x52": 1,
+        "0x65": 2,
+        "0x82": 1,
+        "0x88": 1,
+        "0xa7": 1,
+        "0xaa": 2,
+        "0xb7": 1
+      },
+      "trace_count": 297
+    },
+    "path": "experiments/pysim/benchmarks/profile/guest/suite.wasm",
+    "traces_compiled": 297,
+    "wasm_sha256": "15be324af0ae7708c3b25515b88173fb52a02dd750b1518a5f69704ea23511f6"
+  }
+}

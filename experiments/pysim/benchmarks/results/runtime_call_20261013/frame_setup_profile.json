@@ -1,0 +1,89 @@
+{
+  "source_sha256_after": "2d09c647d1bc4676d874da759716b6ca65646075aeb4f256f3822555ff89f95d",
+  "library_sha256_before": "fdb7a2e148230f5da0a373700a4d6ca43c7758491cc16a52fb92b3d8ca406ce4",
+  "compiler": "Ubuntu clang version 21.1.8 (6ubuntu1)",
+  "flags": [
+    "-std=c++23",
+    "-O3",
+    "-DNDEBUG",
+    "-flto=thin",
+    "-fuse-ld=lld",
+    "-fvisibility=hidden",
+    "-fno-exceptions",
+    "-fno-rtti",
+    "-fomit-frame-pointer",
+    "-Wall",
+    "-Wextra",
+    "-Wpedantic",
+    "-shared",
+    "-fPIC",
+    "-g for symbolization build only"
+  ],
+  "profile_command_template": "AMDuProfCLI collect --config hotspots --timer-interval 1 --start-paused -o <raw> taskset -c 2 .venv/bin/python <measure.py> --engine interpreter --width 320 --profile",
+  "frame_setup_source_lines": [
+    1597,
+    1636
+  ],
+  "rows": [
+    {
+      "variant": "before",
+      "trial": 1,
+      "total_samples": 2669,
+      "runtime_call_samples": 321,
+      "frame_setup_samples": 173,
+      "native_sampled_addresses": 341,
+      "frame_setup_share_percent": 6.481828400149869,
+      "frame_setup_ms_per_call": 26.378757975646312
+    },
+    {
+      "variant": "before",
+      "trial": 2,
+      "total_samples": 2547,
+      "runtime_call_samples": 290,
+      "frame_setup_samples": 165,
+      "native_sampled_addresses": 315,
+      "frame_setup_share_percent": 6.478209658421672,
+      "frame_setup_ms_per_call": 26.36403097173145
+    },
+    {
+      "variant": "before",
+      "trial": 3,
+      "total_samples": 2796,
+      "runtime_call_samples": 347,
+      "frame_setup_samples": 178,
+      "native_sampled_addresses": 346,
+      "frame_setup_share_percent": 6.366237482117311,
+      "frame_setup_ms_per_call": 25.90834366309013
+    },
+    {
+      "variant": "after",
+      "trial": 1,
+      "total_samples": 2531,
+      "runtime_call_samples": 187,
+      "frame_setup_samples": 71,
+      "native_sampled_addresses": 320,
+      "frame_setup_share_percent": 2.8052153299091267,
+      "frame_setup_ms_per_call": 10.563692360726984
+    },
+    {
+      "variant": "after",
+      "trial": 2,
+      "total_samples": 2159,
+      "runtime_call_samples": 146,
+      "frame_setup_samples": 47,
+      "native_sampled_addresses": 274,
+      "frame_setup_share_percent": 2.176933765632237,
+      "frame_setup_ms_per_call": 8.197751646595647
+    },
+    {
+      "variant": "after",
+      "trial": 3,
+      "total_samples": 2594,
+      "runtime_call_samples": 193,
+      "frame_setup_samples": 79,
+      "native_sampled_addresses": 298,
+      "frame_setup_share_percent": 3.0454895913646878,
+      "frame_setup_ms_per_call": 11.468501112181958
+    }
+  ]
+}

@@ -18,6 +18,9 @@
 #ifndef FB_TRACE_COMMON_RELATIVE_OFFSET
 #error "FB_TRACE_COMMON_RELATIVE_OFFSET must come from the production C++ ABI probe"
 #endif
+#ifndef FB_CONTEXT_REL_OFFSET
+#error "FB_CONTEXT_REL_OFFSET must come from the production C++ ABI probe"
+#endif
 
 .intel_syntax noprefix
 .text
@@ -205,8 +208,9 @@ FB_TRACE_BEGIN fb_stencil_i32_rem_u
 FB_TRACE_END fb_stencil_i32_rem_u
 
 FB_TRACE_BEGIN fb_trace_exit
-  movsxd r10, dword ptr [FB_REL_REG]
-  lea r11, [FB_REL_REG + r10]
+  mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET]
+  movsxd r10, dword ptr [r11]
+  add r11, r10
   movsxd r10, dword ptr [r11 + FB_TRACE_COMMON_RELATIVE_OFFSET]
   lea rax, [r11 + r10]
   mov FB_REL_REG, r11
@@ -217,6 +221,8 @@ FB_TRACE_BEGIN fb_trace_entry
   push r12
   sub rsp, 8
   mov r12, FB_CTX_REG
+  mov qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET], FB_REL_REG
+  add FB_REL_REG, 4
   FB_SLOT_MARK fb_jit_start_slot__fb_trace_entry, 0xe8
   movq r10, xmm0
   test r10b, 1

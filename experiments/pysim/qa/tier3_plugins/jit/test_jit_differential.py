@@ -9,7 +9,7 @@ Every case runs the same WASM on three independent executors and requires identi
 
 The targeted cases each pin one defect found by the large profiling workload
 (docs/qa/bug_table/); the generated and clang-suite cases widen the coverage.
-Traceability: docs/qa/tier3_plugins/jit_runtime_test_spec.md (TEST-JITR-53 .. TEST-JITR-69).
+Traceability: docs/qa/tier3_plugins/jit_runtime_test_spec.md (TEST-JITR-53 .. TEST-JITR-74).
 """
 
 from __future__ import annotations
@@ -266,11 +266,33 @@ def _assert_jit_ran(engine: RuntimeEngine) -> None:
     assert engine.stat_jit_invocations > 0, "the case never executed a compiled trace"
 
 
-def test_jitr_53_loop_entered_after_hot_block_keeps_control_frames():
-    """TEST-JITR-53: a compiled block that ends at `block` must not skip the frame push.
+def test_jitr_74_call_indirect_uses_compact_annotation_records():
+    """TEST-JITR-74: compact Runtime API records preserve indirect-call execution."""
+    wat = """
+    (module
+      (type $sig (func (param i32) (result i32)))
+      (table 1 funcref)
+      (elem (i32.const 0) $increment)
+      (func $increment (type $sig) (param $value i32) (result i32)
+        (i32.add (local.get $value) (i32.const 3)))
+      (func (export "main") (param $reps i32) (result i32)
+        (local $index i32) (local $sum i32)
+        (loop $repeat
+          (local.set $sum
+            (i32.add (local.get $sum)
+              (call_indirect (type $sig) (local.get $index) (i32.const 0))))
+          (local.set $index (i32.add (local.get $index) (i32.const 1)))
+          (br_if $repeat (i32.lt_s (local.get $index) (local.get $reps))))
+        (local.get $sum)))
+    """
+    _assert_jit_ran(_check_three_ways(wat, "main", [40]))
 
-    Only the pre-loop block is compiled, so the loop's own branches run on the interpreter
-    and resolve their target through the control-frame stack.
+
+def test_jitr_53_loop_entered_after_hot_block_uses_static_branch_metadata():
+    """TEST-JITR-53: a compiled block ending at `block` preserves static branch metadata.
+
+    Only the pre-loop block is compiled, so the loop's branches run on the interpreter and
+    resolve targets through loader metadata.
     """
     wasm = wat_to_wasm(LOOP_AFTER_HOT_BLOCK_WAT)
     first_function_block_pc = parse(wasm).blocks[0].head_pc
@@ -283,11 +305,11 @@ def test_jitr_54_a_non_head_resume_point_never_enters_the_compile_queue():
         _assert_jit_ran(_check_three_ways(resume_at_end_wat(pad), "main", [200]))
 
 
-def test_jitr_55_stale_control_frames_are_dropped_before_structural_opcodes():
-    """TEST-JITR-55: frames left by skipped `end`/`br` are truncated at every resume point.
+def test_jitr_55_static_branch_edges_resolve_every_resume_point():
+    """TEST-JITR-55: loader-resolved branch edges cover each resume point.
 
     The loop exit falls through to a `br 0` that is neither a block head nor a structural
-    opcode, so only the control-map depth calculation resolves the correct frame count.
+    opcode, so only the precomputed control metadata resolves the correct target and stack.
     """
     _assert_jit_ran(_check_three_ways(NESTED_BR_EXIT_WAT, "main", [300]))
     _assert_jit_ran(_check_three_ways(LOOP_EXIT_THEN_BR_WAT, "main", [40]))
@@ -373,7 +395,7 @@ def test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_inter
     assert engine.stat_jit_invocations > 0, "`work` never ran compiled before the overflow"
 
 
-def test_jitr_69_forward_br_chains_and_updates_control_frame_depth():
+def test_jitr_69_forward_br_chains_preserve_static_nesting_metadata():
     """The shared chain dispatcher trims a departed block frame before jumping to its target."""
     wat = """
     (module
@@ -573,9 +595,9 @@ def test_jitr_59_clang_kernel_suite_matches_wasmtime_on_the_jit():
 
 
 if __name__ == "__main__":
-    test_jitr_53_loop_entered_after_hot_block_keeps_control_frames()
+    test_jitr_53_loop_entered_after_hot_block_uses_static_branch_metadata()
     test_jitr_54_a_non_head_resume_point_never_enters_the_compile_queue()
-    test_jitr_55_stale_control_frames_are_dropped_before_structural_opcodes()
+    test_jitr_55_static_branch_edges_resolve_every_resume_point()
     test_jitr_56_jit_runs_in_a_frame_that_also_holds_a_wide_local()
     test_jitr_57_hot_block_ending_at_if_hands_the_condition_to_the_interpreter()
     test_jitr_60_frames_with_different_local_layout_sizes_run_side_by_side()

@@ -1,0 +1,2572 @@
+[
+  {
+    "engine": "interpreter",
+    "width": 64,
+    "height": 36,
+    "baseline_ms": 19.744507,
+    "diagnostic_ms": 19.282524,
+    "restored_ms": 19.290139,
+    "normal_reference_ms": 19.4059545,
+    "diagnostic_net_difference_percent": -0.6360444676916099,
+    "normal_process_median_min_ms": 18.959393,
+    "normal_process_median_max_ms": 20.974532,
+    "diagnostic_process_median_min_ms": 19.11389,
+    "diagnostic_process_median_max_ms": 19.471276,
+    "profiled_ms": 19.736031,
+    "profiled_net_difference_percent": 1.7009031944293262,
+    "frame_sha256": "d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567",
+    "counts": {
+      "block_search_calls": {
+        "median": 745491,
+        "mean": 745491,
+        "min": 745491,
+        "max": 745491
+      },
+      "block_search_hits": {
+        "median": 284672,
+        "mean": 284672,
+        "min": 284672,
+        "max": 284672
+      },
+      "block_search_misses": {
+        "median": 460819,
+        "mean": 460819,
+        "min": 460819,
+        "max": 460819
+      },
+      "control_block_loop_constructs": {
+        "median": 15994,
+        "mean": 15994,
+        "min": 15994,
+        "max": 15994
+      },
+      "control_if_constructs": {
+        "median": 66735,
+        "mean": 66735,
+        "min": 66735,
+        "max": 66735
+      },
+      "runtime_call_entries": {
+        "median": 210578,
+        "mean": 210578,
+        "min": 210578,
+        "max": 210578
+      },
+      "call_frame_constructs": {
+        "median": 210577,
+        "mean": 210577,
+        "min": 210577,
+        "max": 210577
+      },
+      "dispatch_iterations": {
+        "median": 745491,
+        "mean": 745491,
+        "min": 745491,
+        "max": 745491
+      },
+      "jit_lookup_calls": {
+        "median": 0,
+        "mean": 0,
+        "min": 0,
+        "max": 0
+      },
+      "runtime_if_entries": {
+        "median": 124357,
+        "mean": 124357,
+        "min": 124357,
+        "max": 124357
+      },
+      "runtime_block_loop_entries": {
+        "median": 15994,
+        "mean": 15994,
+        "min": 15994,
+        "max": 15994
+      },
+      "native_dispatch_entries": {
+        "median": 18,
+        "mean": 18,
+        "min": 18,
+        "max": 18
+      }
+    },
+    "costs": {
+      "block_search": {
+        "samples": 58.0,
+        "total_samples": 343.0,
+        "share_percent": 16.909620991253643,
+        "per_process_share_percent": [
+          19.548872180451127,
+          13.970588235294118,
+          17.56756756756757
+        ],
+        "estimated_ms_per_frame": 3.3387213002915446,
+        "estimated_ns_per_occurrence": 4.478553463813171,
+        "sampled_ms_per_frame": 2.761904761904762,
+        "sampled_ns_per_occurrence": 3.7048130184063415,
+        "occurrences_mean": 745491,
+        "occurrence_counter_keys": [
+          "block_search_calls"
+        ]
+      },
+      "backing_block_index_search": {
+        "samples": 29.0,
+        "total_samples": 343.0,
+        "share_percent": 8.454810495626822,
+        "per_process_share_percent": [
+          8.270676691729323,
+          7.352941176470589,
+          10.81081081081081
+        ],
+        "estimated_ms_per_frame": 1.6693606501457723,
+        "estimated_ns_per_occurrence": 3.6225950973066916,
+        "sampled_ms_per_frame": 1.380952380952381,
+        "sampled_ns_per_occurrence": 2.9967349023203926,
+        "occurrences_mean": 460819,
+        "occurrence_counter_keys": [
+          "block_search_misses"
+        ]
+      },
+      "control_frame_stores": {
+        "samples": 1.0,
+        "total_samples": 343.0,
+        "share_percent": 0.2915451895043732,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          1.3513513513513513
+        ],
+        "estimated_ms_per_frame": 0.057564160349854225,
+        "estimated_ns_per_occurrence": 0.6958159816975211,
+        "sampled_ms_per_frame": 0.047619047619047616,
+        "sampled_ns_per_occurrence": 0.5756028432478045,
+        "occurrences_mean": 82729,
+        "occurrence_counter_keys": [
+          "control_block_loop_constructs",
+          "control_if_constructs"
+        ]
+      },
+      "control_handlers": {
+        "samples": 15.0,
+        "total_samples": 343.0,
+        "share_percent": 4.373177842565598,
+        "per_process_share_percent": [
+          4.511278195488721,
+          4.411764705882353,
+          4.054054054054054
+        ],
+        "estimated_ms_per_frame": 0.8634624052478134,
+        "estimated_ns_per_occurrence": 6.152164254246948,
+        "sampled_ms_per_frame": 0.7142857142857143,
+        "sampled_ns_per_occurrence": 5.0892812611646105,
+        "occurrences_mean": 140351,
+        "occurrence_counter_keys": [
+          "runtime_block_loop_entries",
+          "runtime_if_entries"
+        ]
+      },
+      "runtime_call": {
+        "samples": 29.0,
+        "total_samples": 343.0,
+        "share_percent": 8.454810495626822,
+        "per_process_share_percent": [
+          9.774436090225564,
+          8.088235294117647,
+          6.756756756756757
+        ],
+        "estimated_ms_per_frame": 1.6693606501457723,
+        "estimated_ns_per_occurrence": 7.927516882797692,
+        "sampled_ms_per_frame": 1.380952380952381,
+        "sampled_ns_per_occurrence": 6.557913841675678,
+        "occurrences_mean": 210578,
+        "occurrence_counter_keys": [
+          "runtime_call_entries"
+        ]
+      },
+      "call_frame_setup": {
+        "samples": 16.0,
+        "total_samples": 343.0,
+        "share_percent": 4.664723032069971,
+        "per_process_share_percent": [
+          3.7593984962406015,
+          5.147058823529411,
+          5.405405405405405
+        ],
+        "estimated_ms_per_frame": 0.9210265655976676,
+        "estimated_ns_per_occurrence": 4.373823188656252,
+        "sampled_ms_per_frame": 0.7619047619047619,
+        "sampled_ns_per_occurrence": 3.618176543044881,
+        "occurrences_mean": 210577,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "call_capacity_checks": {
+        "samples": 0.0,
+        "total_samples": 343.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": 0.0,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": 0.0,
+        "occurrences_mean": 210577,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "dispatch_outer": {
+        "samples": 106.0,
+        "total_samples": 343.0,
+        "share_percent": 30.903790087463555,
+        "per_process_share_percent": [
+          32.33082706766917,
+          29.411764705882355,
+          31.08108108108108
+        ],
+        "estimated_ms_per_frame": 6.101800997084547,
+        "estimated_ns_per_occurrence": 8.184942537313725,
+        "sampled_ms_per_frame": 5.0476190476190474,
+        "sampled_ns_per_occurrence": 6.77086517157021,
+        "occurrences_mean": 745491,
+        "occurrence_counter_keys": [
+          "dispatch_iterations"
+        ]
+      },
+      "jit_lookup": {
+        "samples": 0.0,
+        "total_samples": 343.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": null,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": null,
+        "occurrences_mean": 0,
+        "occurrence_counter_keys": [
+          "jit_lookup_calls"
+        ]
+      }
+    }
+  },
+  {
+    "engine": "jit",
+    "width": 64,
+    "height": 36,
+    "baseline_ms": 22.673182,
+    "diagnostic_ms": 22.749242,
+    "restored_ms": 23.004178,
+    "normal_reference_ms": 22.83868,
+    "diagnostic_net_difference_percent": -0.39160757101549537,
+    "normal_process_median_min_ms": 22.287461,
+    "normal_process_median_max_ms": 23.924977,
+    "diagnostic_process_median_min_ms": 22.489317,
+    "diagnostic_process_median_max_ms": 22.992736,
+    "profiled_ms": 22.936762,
+    "profiled_net_difference_percent": 0.4294556427954843,
+    "frame_sha256": "d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567",
+    "counts": {
+      "block_search_calls": {
+        "median": 745491,
+        "mean": 745491,
+        "min": 745491,
+        "max": 745491
+      },
+      "block_search_hits": {
+        "median": 284672,
+        "mean": 284672,
+        "min": 284672,
+        "max": 284672
+      },
+      "block_search_misses": {
+        "median": 460819,
+        "mean": 460819,
+        "min": 460819,
+        "max": 460819
+      },
+      "control_block_loop_constructs": {
+        "median": 15994,
+        "mean": 15994,
+        "min": 15994,
+        "max": 15994
+      },
+      "control_if_constructs": {
+        "median": 66735,
+        "mean": 66735,
+        "min": 66735,
+        "max": 66735
+      },
+      "runtime_call_entries": {
+        "median": 210578,
+        "mean": 210578,
+        "min": 210578,
+        "max": 210578
+      },
+      "call_frame_constructs": {
+        "median": 210577,
+        "mean": 210577,
+        "min": 210577,
+        "max": 210577
+      },
+      "dispatch_iterations": {
+        "median": 745492,
+        "mean": 745492,
+        "min": 745492,
+        "max": 745492
+      },
+      "jit_lookup_calls": {
+        "median": 221493,
+        "mean": 222807,
+        "min": 210066,
+        "max": 246895
+      },
+      "runtime_if_entries": {
+        "median": 124357,
+        "mean": 124357,
+        "min": 124357,
+        "max": 124357
+      },
+      "runtime_block_loop_entries": {
+        "median": 15994,
+        "mean": 15994,
+        "min": 15994,
+        "max": 15994
+      },
+      "native_dispatch_entries": {
+        "median": 18,
+        "mean": 18,
+        "min": 18,
+        "max": 18
+      }
+    },
+    "costs": {
+      "block_search": {
+        "samples": 22.0,
+        "total_samples": 259.0,
+        "share_percent": 8.494208494208493,
+        "per_process_share_percent": [
+          8.333333333333332,
+          10.071942446043165,
+          4.166666666666666
+        ],
+        "estimated_ms_per_frame": 1.9259073513513514,
+        "estimated_ns_per_occurrence": 2.583407916864659,
+        "sampled_ms_per_frame": 1.0476190476190477,
+        "sampled_ns_per_occurrence": 1.4052739035334398,
+        "occurrences_mean": 745491,
+        "occurrence_counter_keys": [
+          "block_search_calls"
+        ]
+      },
+      "backing_block_index_search": {
+        "samples": 18.0,
+        "total_samples": 259.0,
+        "share_percent": 6.94980694980695,
+        "per_process_share_percent": [
+          5.555555555555555,
+          8.633093525179856,
+          4.166666666666666
+        ],
+        "estimated_ms_per_frame": 1.5757423783783784,
+        "estimated_ns_per_occurrence": 3.4194388217030514,
+        "sampled_ms_per_frame": 0.8571428571428571,
+        "sampled_ns_per_occurrence": 1.8600423531643815,
+        "occurrences_mean": 460819,
+        "occurrence_counter_keys": [
+          "block_search_misses"
+        ]
+      },
+      "control_frame_stores": {
+        "samples": 0.0,
+        "total_samples": 259.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": 0.0,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": 0.0,
+        "occurrences_mean": 82729,
+        "occurrence_counter_keys": [
+          "control_block_loop_constructs",
+          "control_if_constructs"
+        ]
+      },
+      "control_handlers": {
+        "samples": 7.0,
+        "total_samples": 259.0,
+        "share_percent": 2.7027027027027026,
+        "per_process_share_percent": [
+          1.3888888888888888,
+          3.597122302158273,
+          2.083333333333333
+        ],
+        "estimated_ms_per_frame": 0.6127887027027028,
+        "estimated_ns_per_occurrence": 4.366115686405532,
+        "sampled_ms_per_frame": 0.3333333333333333,
+        "sampled_ns_per_occurrence": 2.3749979218768185,
+        "occurrences_mean": 140351,
+        "occurrence_counter_keys": [
+          "runtime_block_loop_entries",
+          "runtime_if_entries"
+        ]
+      },
+      "runtime_call": {
+        "samples": 24.0,
+        "total_samples": 259.0,
+        "share_percent": 9.266409266409266,
+        "per_process_share_percent": [
+          9.722222222222223,
+          6.474820143884892,
+          16.666666666666664
+        ],
+        "estimated_ms_per_frame": 2.100989837837838,
+        "estimated_ns_per_occurrence": 9.977252314286574,
+        "sampled_ms_per_frame": 1.1428571428571428,
+        "sampled_ns_per_occurrence": 5.427239041386768,
+        "occurrences_mean": 210578,
+        "occurrence_counter_keys": [
+          "runtime_call_entries"
+        ]
+      },
+      "call_frame_setup": {
+        "samples": 10.0,
+        "total_samples": 259.0,
+        "share_percent": 3.861003861003861,
+        "per_process_share_percent": [
+          5.555555555555555,
+          3.597122302158273,
+          2.083333333333333
+        ],
+        "estimated_ms_per_frame": 0.8754124324324324,
+        "estimated_ns_per_occurrence": 4.157208206178416,
+        "sampled_ms_per_frame": 0.47619047619047616,
+        "sampled_ns_per_occurrence": 2.261360339403051,
+        "occurrences_mean": 210577,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "call_capacity_checks": {
+        "samples": 0.0,
+        "total_samples": 259.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": 0.0,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": 0.0,
+        "occurrences_mean": 210577,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "dispatch_outer": {
+        "samples": 83.0,
+        "total_samples": 259.0,
+        "share_percent": 32.04633204633205,
+        "per_process_share_percent": [
+          31.944444444444443,
+          34.53237410071942,
+          25.0
+        ],
+        "estimated_ms_per_frame": 7.26592318918919,
+        "estimated_ns_per_occurrence": 9.746480430627276,
+        "sampled_ms_per_frame": 3.9523809523809526,
+        "sampled_ns_per_occurrence": 5.301708069812892,
+        "occurrences_mean": 745492,
+        "occurrence_counter_keys": [
+          "dispatch_iterations"
+        ]
+      },
+      "jit_lookup": {
+        "samples": 21.0,
+        "total_samples": 259.0,
+        "share_percent": 8.108108108108109,
+        "per_process_share_percent": [
+          6.944444444444445,
+          8.633093525179856,
+          8.333333333333332
+        ],
+        "estimated_ms_per_frame": 1.8383661081081082,
+        "estimated_ns_per_occurrence": 8.250935150637584,
+        "sampled_ms_per_frame": 1.0,
+        "sampled_ns_per_occurrence": 4.488189329778687,
+        "occurrences_mean": 222807,
+        "occurrence_counter_keys": [
+          "jit_lookup_calls"
+        ]
+      }
+    }
+  },
+  {
+    "engine": "interpreter",
+    "width": 128,
+    "height": 72,
+    "baseline_ms": 76.84562,
+    "diagnostic_ms": 76.299928,
+    "restored_ms": 75.837425,
+    "normal_reference_ms": 75.92325,
+    "diagnostic_net_difference_percent": 0.49612997336125897,
+    "normal_process_median_min_ms": 75.278934,
+    "normal_process_median_max_ms": 76.860759,
+    "diagnostic_process_median_min_ms": 75.130767,
+    "diagnostic_process_median_max_ms": 76.511443,
+    "profiled_ms": 76.671311,
+    "profiled_net_difference_percent": 0.9852857984872898,
+    "frame_sha256": "e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4",
+    "counts": {
+      "block_search_calls": {
+        "median": 3005146,
+        "mean": 3005146,
+        "min": 3005146,
+        "max": 3005146
+      },
+      "block_search_hits": {
+        "median": 1146574,
+        "mean": 1146574,
+        "min": 1146574,
+        "max": 1146574
+      },
+      "block_search_misses": {
+        "median": 1858572,
+        "mean": 1858572,
+        "min": 1858572,
+        "max": 1858572
+      },
+      "control_block_loop_constructs": {
+        "median": 63646,
+        "mean": 63646,
+        "min": 63646,
+        "max": 63646
+      },
+      "control_if_constructs": {
+        "median": 268924,
+        "mean": 268924,
+        "min": 268924,
+        "max": 268924
+      },
+      "runtime_call_entries": {
+        "median": 852748,
+        "mean": 852748,
+        "min": 852748,
+        "max": 852748
+      },
+      "call_frame_constructs": {
+        "median": 852747,
+        "mean": 852747,
+        "min": 852747,
+        "max": 852747
+      },
+      "dispatch_iterations": {
+        "median": 3005146,
+        "mean": 3005146,
+        "min": 3005146,
+        "max": 3005146
+      },
+      "jit_lookup_calls": {
+        "median": 0,
+        "mean": 0,
+        "min": 0,
+        "max": 0
+      },
+      "runtime_if_entries": {
+        "median": 501338,
+        "mean": 501338,
+        "min": 501338,
+        "max": 501338
+      },
+      "runtime_block_loop_entries": {
+        "median": 63646,
+        "mean": 63646,
+        "min": 63646,
+        "max": 63646
+      },
+      "native_dispatch_entries": {
+        "median": 66,
+        "mean": 66,
+        "min": 66,
+        "max": 66
+      }
+    },
+    "costs": {
+      "block_search": {
+        "samples": 305.0,
+        "total_samples": 1400.0,
+        "share_percent": 21.785714285714285,
+        "per_process_share_percent": [
+          20.967741935483872,
+          22.395833333333336,
+          22.115384615384613
+        ],
+        "estimated_ms_per_frame": 16.741367214285713,
+        "estimated_ns_per_occurrence": 5.570899787992235,
+        "sampled_ms_per_frame": 14.523809523809524,
+        "sampled_ns_per_occurrence": 4.832979670142324,
+        "occurrences_mean": 3005146,
+        "occurrence_counter_keys": [
+          "block_search_calls"
+        ]
+      },
+      "backing_block_index_search": {
+        "samples": 159.0,
+        "total_samples": 1400.0,
+        "share_percent": 11.357142857142858,
+        "per_process_share_percent": [
+          9.274193548387096,
+          12.760416666666666,
+          12.307692307692308
+        ],
+        "estimated_ms_per_frame": 8.727466842857142,
+        "estimated_ns_per_occurrence": 4.695791630809644,
+        "sampled_ms_per_frame": 7.571428571428571,
+        "sampled_ns_per_occurrence": 4.073788140264984,
+        "occurrences_mean": 1858572,
+        "occurrence_counter_keys": [
+          "block_search_misses"
+        ]
+      },
+      "control_frame_stores": {
+        "samples": 1.0,
+        "total_samples": 1400.0,
+        "share_percent": 0.07142857142857142,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.19230769230769232
+        ],
+        "estimated_ms_per_frame": 0.05488972857142857,
+        "estimated_ns_per_occurrence": 0.16504714367329756,
+        "sampled_ms_per_frame": 0.047619047619047616,
+        "sampled_ns_per_occurrence": 0.1431850365909361,
+        "occurrences_mean": 332570,
+        "occurrence_counter_keys": [
+          "control_block_loop_constructs",
+          "control_if_constructs"
+        ]
+      },
+      "control_handlers": {
+        "samples": 39.0,
+        "total_samples": 1400.0,
+        "share_percent": 2.7857142857142856,
+        "per_process_share_percent": [
+          3.225806451612903,
+          2.34375,
+          2.6923076923076925
+        ],
+        "estimated_ms_per_frame": 2.1406994142857143,
+        "estimated_ns_per_occurrence": 3.788955818723564,
+        "sampled_ms_per_frame": 1.8571428571428572,
+        "sampled_ns_per_occurrence": 3.2870715934307118,
+        "occurrences_mean": 564984,
+        "occurrence_counter_keys": [
+          "runtime_block_loop_entries",
+          "runtime_if_entries"
+        ]
+      },
+      "runtime_call": {
+        "samples": 116.0,
+        "total_samples": 1400.0,
+        "share_percent": 8.285714285714285,
+        "per_process_share_percent": [
+          9.475806451612904,
+          7.291666666666667,
+          7.884615384615384
+        ],
+        "estimated_ms_per_frame": 6.367208514285713,
+        "estimated_ns_per_occurrence": 7.466694163206145,
+        "sampled_ms_per_frame": 5.523809523809524,
+        "sampled_ns_per_occurrence": 6.477657553942693,
+        "occurrences_mean": 852748,
+        "occurrence_counter_keys": [
+          "runtime_call_entries"
+        ]
+      },
+      "call_frame_setup": {
+        "samples": 69.0,
+        "total_samples": 1400.0,
+        "share_percent": 4.928571428571429,
+        "per_process_share_percent": [
+          6.048387096774194,
+          4.166666666666666,
+          4.423076923076923
+        ],
+        "estimated_ms_per_frame": 3.7873912714285716,
+        "estimated_ns_per_occurrence": 4.44140087438428,
+        "sampled_ms_per_frame": 3.2857142857142856,
+        "sampled_ns_per_occurrence": 3.853093925530416,
+        "occurrences_mean": 852747,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "call_capacity_checks": {
+        "samples": 0.0,
+        "total_samples": 1400.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": 0.0,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": 0.0,
+        "occurrences_mean": 852747,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "dispatch_outer": {
+        "samples": 515.0,
+        "total_samples": 1400.0,
+        "share_percent": 36.78571428571429,
+        "per_process_share_percent": [
+          35.685483870967744,
+          39.0625,
+          36.15384615384615
+        ],
+        "estimated_ms_per_frame": 28.268210214285716,
+        "estimated_ns_per_occurrence": 9.406601281363939,
+        "sampled_ms_per_frame": 24.523809523809526,
+        "sampled_ns_per_occurrence": 8.160605016797694,
+        "occurrences_mean": 3005146,
+        "occurrence_counter_keys": [
+          "dispatch_iterations"
+        ]
+      },
+      "jit_lookup": {
+        "samples": 0.0,
+        "total_samples": 1400.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": null,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": null,
+        "occurrences_mean": 0,
+        "occurrence_counter_keys": [
+          "jit_lookup_calls"
+        ]
+      }
+    }
+  },
+  {
+    "engine": "jit",
+    "width": 128,
+    "height": 72,
+    "baseline_ms": 90.798211,
+    "diagnostic_ms": 89.754359,
+    "restored_ms": 89.657428,
+    "normal_reference_ms": 90.2278195,
+    "diagnostic_net_difference_percent": -0.5247389359774979,
+    "normal_process_median_min_ms": 89.321812,
+    "normal_process_median_max_ms": 93.360612,
+    "diagnostic_process_median_min_ms": 88.079684,
+    "diagnostic_process_median_max_ms": 90.652735,
+    "profiled_ms": 90.013703,
+    "profiled_net_difference_percent": -0.23730652163215238,
+    "frame_sha256": "e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4",
+    "counts": {
+      "block_search_calls": {
+        "median": 3005146,
+        "mean": 3005146,
+        "min": 3005146,
+        "max": 3005146
+      },
+      "block_search_hits": {
+        "median": 1146574,
+        "mean": 1146574,
+        "min": 1146574,
+        "max": 1146574
+      },
+      "block_search_misses": {
+        "median": 1858572,
+        "mean": 1858572,
+        "min": 1858572,
+        "max": 1858572
+      },
+      "control_block_loop_constructs": {
+        "median": 63646,
+        "mean": 63646,
+        "min": 63646,
+        "max": 63646
+      },
+      "control_if_constructs": {
+        "median": 268924,
+        "mean": 268924,
+        "min": 268924,
+        "max": 268924
+      },
+      "runtime_call_entries": {
+        "median": 852748,
+        "mean": 852748,
+        "min": 852748,
+        "max": 852748
+      },
+      "call_frame_constructs": {
+        "median": 852747,
+        "mean": 852747,
+        "min": 852747,
+        "max": 852747
+      },
+      "dispatch_iterations": {
+        "median": 3005147,
+        "mean": 3005147,
+        "min": 3005147,
+        "max": 3005147
+      },
+      "jit_lookup_calls": {
+        "median": 900192,
+        "mean": 903902.1428571428,
+        "min": 854180,
+        "max": 968006
+      },
+      "runtime_if_entries": {
+        "median": 501338,
+        "mean": 501338,
+        "min": 501338,
+        "max": 501338
+      },
+      "runtime_block_loop_entries": {
+        "median": 63646,
+        "mean": 63646,
+        "min": 63646,
+        "max": 63646
+      },
+      "native_dispatch_entries": {
+        "median": 66,
+        "mean": 66,
+        "min": 66,
+        "max": 66
+      }
+    },
+    "costs": {
+      "block_search": {
+        "samples": 184.0,
+        "total_samples": 1650.0,
+        "share_percent": 11.15151515151515,
+        "per_process_share_percent": [
+          9.867172675521822,
+          11.743119266055047,
+          11.76470588235294
+        ],
+        "estimated_ms_per_frame": 10.125376256969696,
+        "estimated_ns_per_occurrence": 3.369345867711484,
+        "sampled_ms_per_frame": 8.761904761904763,
+        "sampled_ns_per_occurrence": 2.9156336370694675,
+        "occurrences_mean": 3005146,
+        "occurrence_counter_keys": [
+          "block_search_calls"
+        ]
+      },
+      "backing_block_index_search": {
+        "samples": 126.0,
+        "total_samples": 1650.0,
+        "share_percent": 7.636363636363637,
+        "per_process_share_percent": [
+          6.451612903225806,
+          8.256880733944955,
+          8.131487889273355
+        ],
+        "estimated_ms_per_frame": 6.933681567272727,
+        "estimated_ns_per_occurrence": 3.730649965281263,
+        "sampled_ms_per_frame": 6.0,
+        "sampled_ns_per_occurrence": 3.2282849413420625,
+        "occurrences_mean": 1858572,
+        "occurrence_counter_keys": [
+          "block_search_misses"
+        ]
+      },
+      "control_frame_stores": {
+        "samples": 2.0,
+        "total_samples": 1650.0,
+        "share_percent": 0.12121212121212122,
+        "per_process_share_percent": [
+          0.18975332068311196,
+          0.1834862385321101,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.11005843757575758,
+        "estimated_ns_per_occurrence": 0.3309331496399482,
+        "sampled_ms_per_frame": 0.09523809523809523,
+        "sampled_ns_per_occurrence": 0.2863700731818722,
+        "occurrences_mean": 332570,
+        "occurrence_counter_keys": [
+          "control_block_loop_constructs",
+          "control_if_constructs"
+        ]
+      },
+      "control_handlers": {
+        "samples": 29.0,
+        "total_samples": 1650.0,
+        "share_percent": 1.7575757575757573,
+        "per_process_share_percent": [
+          1.8975332068311195,
+          1.651376146788991,
+          1.7301038062283738
+        ],
+        "estimated_ms_per_frame": 1.5958473448484847,
+        "estimated_ns_per_occurrence": 2.8245885633017656,
+        "sampled_ms_per_frame": 1.380952380952381,
+        "sampled_ns_per_occurrence": 2.4442327233202725,
+        "occurrences_mean": 564984,
+        "occurrence_counter_keys": [
+          "runtime_block_loop_entries",
+          "runtime_if_entries"
+        ]
+      },
+      "runtime_call": {
+        "samples": 142.0,
+        "total_samples": 1650.0,
+        "share_percent": 8.606060606060606,
+        "per_process_share_percent": [
+          8.72865275142315,
+          9.541284403669724,
+          7.612456747404845
+        ],
+        "estimated_ms_per_frame": 7.8141490678787875,
+        "estimated_ns_per_occurrence": 9.163491521385904,
+        "sampled_ms_per_frame": 6.761904761904762,
+        "sampled_ns_per_occurrence": 7.929546316033297,
+        "occurrences_mean": 852748,
+        "occurrence_counter_keys": [
+          "runtime_call_entries"
+        ]
+      },
+      "call_frame_setup": {
+        "samples": 82.0,
+        "total_samples": 1650.0,
+        "share_percent": 4.96969696969697,
+        "per_process_share_percent": [
+          5.1233396584440225,
+          5.137614678899083,
+          4.671280276816609
+        ],
+        "estimated_ms_per_frame": 4.51239594060606,
+        "estimated_ns_per_occurrence": 5.291599900798315,
+        "sampled_ms_per_frame": 3.9047619047619047,
+        "sampled_ns_per_occurrence": 4.579039157876727,
+        "occurrences_mean": 852747,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "call_capacity_checks": {
+        "samples": 0.0,
+        "total_samples": 1650.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": 0.0,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": 0.0,
+        "occurrences_mean": 852747,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "dispatch_outer": {
+        "samples": 580.0,
+        "total_samples": 1650.0,
+        "share_percent": 35.15151515151515,
+        "per_process_share_percent": [
+          33.96584440227704,
+          34.4954128440367,
+          36.851211072664356
+        ],
+        "estimated_ms_per_frame": 31.916946896969694,
+        "estimated_ns_per_occurrence": 10.620760614029761,
+        "sampled_ms_per_frame": 27.61904761904762,
+        "sampled_ns_per_occurrence": 9.190581232481346,
+        "occurrences_mean": 3005147,
+        "occurrence_counter_keys": [
+          "dispatch_iterations"
+        ]
+      },
+      "jit_lookup": {
+        "samples": 110.0,
+        "total_samples": 1650.0,
+        "share_percent": 6.666666666666667,
+        "per_process_share_percent": [
+          6.451612903225806,
+          6.7889908256880735,
+          6.747404844290658
+        ],
+        "estimated_ms_per_frame": 6.0532140666666665,
+        "estimated_ns_per_occurrence": 6.69675817731007,
+        "sampled_ms_per_frame": 5.238095238095238,
+        "sampled_ns_per_occurrence": 5.794980440623972,
+        "occurrences_mean": 903902.1428571428,
+        "occurrence_counter_keys": [
+          "jit_lookup_calls"
+        ]
+      }
+    }
+  },
+  {
+    "engine": "interpreter",
+    "width": 192,
+    "height": 108,
+    "baseline_ms": 171.887308,
+    "diagnostic_ms": 170.31745,
+    "restored_ms": 170.148725,
+    "normal_reference_ms": 171.2243165,
+    "diagnostic_net_difference_percent": -0.5296365133978909,
+    "normal_process_median_min_ms": 168.336895,
+    "normal_process_median_max_ms": 172.825198,
+    "diagnostic_process_median_min_ms": 167.276166,
+    "diagnostic_process_median_max_ms": 171.329388,
+    "profiled_ms": 169.291256,
+    "profiled_net_difference_percent": -1.1289637707503908,
+    "frame_sha256": "9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1",
+    "counts": {
+      "block_search_calls": {
+        "median": 6756885,
+        "mean": 6756885,
+        "min": 6756885,
+        "max": 6756885
+      },
+      "block_search_hits": {
+        "median": 2576769,
+        "mean": 2576769,
+        "min": 2576769,
+        "max": 2576769
+      },
+      "block_search_misses": {
+        "median": 4180116,
+        "mean": 4180116,
+        "min": 4180116,
+        "max": 4180116
+      },
+      "control_block_loop_constructs": {
+        "median": 142138,
+        "mean": 142138,
+        "min": 142138,
+        "max": 142138
+      },
+      "control_if_constructs": {
+        "median": 604588,
+        "mean": 604588,
+        "min": 604588,
+        "max": 604588
+      },
+      "runtime_call_entries": {
+        "median": 1922018,
+        "mean": 1922018,
+        "min": 1922018,
+        "max": 1922018
+      },
+      "call_frame_constructs": {
+        "median": 1922017,
+        "mean": 1922017,
+        "min": 1922017,
+        "max": 1922017
+      },
+      "dispatch_iterations": {
+        "median": 6756885,
+        "mean": 6756885,
+        "min": 6756885,
+        "max": 6756885
+      },
+      "jit_lookup_calls": {
+        "median": 0,
+        "mean": 0,
+        "min": 0,
+        "max": 0
+      },
+      "runtime_if_entries": {
+        "median": 1127390,
+        "mean": 1127390,
+        "min": 1127390,
+        "max": 1127390
+      },
+      "runtime_block_loop_entries": {
+        "median": 142138,
+        "mean": 142138,
+        "min": 142138,
+        "max": 142138
+      },
+      "native_dispatch_entries": {
+        "median": 145,
+        "mean": 145,
+        "min": 145,
+        "max": 145
+      }
+    },
+    "costs": {
+      "block_search": {
+        "samples": 609.0,
+        "total_samples": 2967.0,
+        "share_percent": 20.525783619817997,
+        "per_process_share_percent": [
+          21.633085896076352,
+          18.251366120218577,
+          21.46077547339946
+        ],
+        "estimated_ms_per_frame": 35.28121691001011,
+        "estimated_ns_per_occurrence": 5.22152099821295,
+        "sampled_ms_per_frame": 29.0,
+        "sampled_ns_per_occurrence": 4.291918539386122,
+        "occurrences_mean": 6756885,
+        "occurrence_counter_keys": [
+          "block_search_calls"
+        ]
+      },
+      "backing_block_index_search": {
+        "samples": 292.0,
+        "total_samples": 2967.0,
+        "share_percent": 9.841590832490732,
+        "per_process_share_percent": [
+          10.816542948038176,
+          9.617486338797814,
+          9.197475202885483
+        ],
+        "estimated_ms_per_frame": 16.91644554634311,
+        "estimated_ns_per_occurrence": 4.046884236309019,
+        "sampled_ms_per_frame": 13.904761904761905,
+        "sampled_ns_per_occurrence": 3.3264057516016075,
+        "occurrences_mean": 4180116,
+        "occurrence_counter_keys": [
+          "block_search_misses"
+        ]
+      },
+      "control_frame_stores": {
+        "samples": 3.0,
+        "total_samples": 2967.0,
+        "share_percent": 0.10111223458038424,
+        "per_process_share_percent": [
+          0.10604453870625664,
+          0.0,
+          0.18034265103697023
+        ],
+        "estimated_ms_per_frame": 0.17379909807886754,
+        "estimated_ns_per_occurrence": 0.23274815404695637,
+        "sampled_ms_per_frame": 0.14285714285714285,
+        "sampled_ns_per_occurrence": 0.1913113281942009,
+        "occurrences_mean": 746726,
+        "occurrence_counter_keys": [
+          "control_block_loop_constructs",
+          "control_if_constructs"
+        ]
+      },
+      "control_handlers": {
+        "samples": 66.0,
+        "total_samples": 2967.0,
+        "share_percent": 2.224469160768453,
+        "per_process_share_percent": [
+          1.5906680805938493,
+          3.060109289617486,
+          2.0739404869251574
+        ],
+        "estimated_ms_per_frame": 3.8235801577350856,
+        "estimated_ns_per_occurrence": 3.0118123883325816,
+        "sampled_ms_per_frame": 3.142857142857143,
+        "sampled_ns_per_occurrence": 2.4756107331678727,
+        "occurrences_mean": 1269528,
+        "occurrence_counter_keys": [
+          "runtime_block_loop_entries",
+          "runtime_if_entries"
+        ]
+      },
+      "runtime_call": {
+        "samples": 268.0,
+        "total_samples": 2967.0,
+        "share_percent": 9.032692955847658,
+        "per_process_share_percent": [
+          9.013785790031813,
+          8.19672131147541,
+          9.738503155996394
+        ],
+        "estimated_ms_per_frame": 15.526052761712165,
+        "estimated_ns_per_occurrence": 8.077995503534392,
+        "sampled_ms_per_frame": 12.761904761904763,
+        "sampled_ns_per_occurrence": 6.639846641345066,
+        "occurrences_mean": 1922018,
+        "occurrence_counter_keys": [
+          "runtime_call_entries"
+        ]
+      },
+      "call_frame_setup": {
+        "samples": 156.0,
+        "total_samples": 2967.0,
+        "share_percent": 5.25783619817998,
+        "per_process_share_percent": [
+          4.559915164369035,
+          5.573770491803279,
+          5.5906221821460775
+        ],
+        "estimated_ms_per_frame": 9.037553100101112,
+        "estimated_ns_per_occurrence": 4.702119232088536,
+        "sampled_ms_per_frame": 7.428571428571429,
+        "sampled_ns_per_occurrence": 3.8649873692956036,
+        "occurrences_mean": 1922017,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "call_capacity_checks": {
+        "samples": 0.0,
+        "total_samples": 2967.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": 0.0,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": 0.0,
+        "occurrences_mean": 1922017,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "dispatch_outer": {
+        "samples": 1055.0,
+        "total_samples": 2967.0,
+        "share_percent": 35.557802494101786,
+        "per_process_share_percent": [
+          36.16118769883351,
+          34.75409836065574,
+          35.70784490532011
+        ],
+        "estimated_ms_per_frame": 61.11934949106842,
+        "estimated_ns_per_occurrence": 9.045492041239184,
+        "sampled_ms_per_frame": 50.23809523809524,
+        "sampled_ns_per_occurrence": 7.43509697709747,
+        "occurrences_mean": 6756885,
+        "occurrence_counter_keys": [
+          "dispatch_iterations"
+        ]
+      },
+      "jit_lookup": {
+        "samples": 0.0,
+        "total_samples": 2967.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": null,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": null,
+        "occurrences_mean": 0,
+        "occurrence_counter_keys": [
+          "jit_lookup_calls"
+        ]
+      }
+    }
+  },
+  {
+    "engine": "jit",
+    "width": 192,
+    "height": 108,
+    "baseline_ms": 203.430047,
+    "diagnostic_ms": 198.078112,
+    "restored_ms": 200.020676,
+    "normal_reference_ms": 200.883491,
+    "diagnostic_net_difference_percent": -1.3965204338269865,
+    "normal_process_median_min_ms": 199.410046,
+    "normal_process_median_max_ms": 205.917027,
+    "diagnostic_process_median_min_ms": 196.398217,
+    "diagnostic_process_median_max_ms": 200.318842,
+    "profiled_ms": 206.675111,
+    "profiled_net_difference_percent": 2.883074149682119,
+    "frame_sha256": "9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1",
+    "counts": {
+      "block_search_calls": {
+        "median": 6756885,
+        "mean": 6756885,
+        "min": 6756885,
+        "max": 6756885
+      },
+      "block_search_hits": {
+        "median": 2576769,
+        "mean": 2576769,
+        "min": 2576769,
+        "max": 2576769
+      },
+      "block_search_misses": {
+        "median": 4180116,
+        "mean": 4180116,
+        "min": 4180116,
+        "max": 4180116
+      },
+      "control_block_loop_constructs": {
+        "median": 142138,
+        "mean": 142138,
+        "min": 142138,
+        "max": 142138
+      },
+      "control_if_constructs": {
+        "median": 604588,
+        "mean": 604588,
+        "min": 604588,
+        "max": 604588
+      },
+      "runtime_call_entries": {
+        "median": 1922018,
+        "mean": 1922018,
+        "min": 1922018,
+        "max": 1922018
+      },
+      "call_frame_constructs": {
+        "median": 1922017,
+        "mean": 1922017,
+        "min": 1922017,
+        "max": 1922017
+      },
+      "dispatch_iterations": {
+        "median": 6756886,
+        "mean": 6756886,
+        "min": 6756886,
+        "max": 6756886
+      },
+      "jit_lookup_calls": {
+        "median": 2084062,
+        "mean": 2077694.857142857,
+        "min": 1975101,
+        "max": 2201181
+      },
+      "runtime_if_entries": {
+        "median": 1127390,
+        "mean": 1127390,
+        "min": 1127390,
+        "max": 1127390
+      },
+      "runtime_block_loop_entries": {
+        "median": 142138,
+        "mean": 142138,
+        "min": 142138,
+        "max": 142138
+      },
+      "native_dispatch_entries": {
+        "median": 145,
+        "mean": 145,
+        "min": 145,
+        "max": 145
+      }
+    },
+    "costs": {
+      "block_search": {
+        "samples": 421.0,
+        "total_samples": 3868.0,
+        "share_percent": 10.884177869700103,
+        "per_process_share_percent": [
+          9.984025559105431,
+          11.041503523884105,
+          11.57580283793876
+        ],
+        "estimated_ms_per_frame": 22.14168815589452,
+        "estimated_ns_per_occurrence": 3.2769076513651663,
+        "sampled_ms_per_frame": 20.047619047619047,
+        "sampled_ns_per_occurrence": 2.96699130555264,
+        "occurrences_mean": 6756885,
+        "occurrence_counter_keys": [
+          "block_search_calls"
+        ]
+      },
+      "backing_block_index_search": {
+        "samples": 305.0,
+        "total_samples": 3868.0,
+        "share_percent": 7.885211995863495,
+        "per_process_share_percent": [
+          7.268370607028754,
+          8.065779169929522,
+          8.289768483943242
+        ],
+        "estimated_ms_per_frame": 16.040890469234746,
+        "estimated_ns_per_occurrence": 3.837427111887504,
+        "sampled_ms_per_frame": 14.523809523809524,
+        "sampled_ns_per_occurrence": 3.474499158350994,
+        "occurrences_mean": 4180116,
+        "occurrence_counter_keys": [
+          "block_search_misses"
+        ]
+      },
+      "control_frame_stores": {
+        "samples": 3.0,
+        "total_samples": 3868.0,
+        "share_percent": 0.07755946225439503,
+        "per_process_share_percent": [
+          0.1597444089456869,
+          0.07830853563038372,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.15777925051706307,
+        "estimated_ns_per_occurrence": 0.21129470584533427,
+        "sampled_ms_per_frame": 0.14285714285714285,
+        "sampled_ns_per_occurrence": 0.1913113281942009,
+        "occurrences_mean": 746726,
+        "occurrence_counter_keys": [
+          "control_block_loop_constructs",
+          "control_if_constructs"
+        ]
+      },
+      "control_handlers": {
+        "samples": 75.0,
+        "total_samples": 3868.0,
+        "share_percent": 1.938986556359876,
+        "per_process_share_percent": [
+          1.5974440894568689,
+          2.0360219263899766,
+          2.165795369678865
+        ],
+        "estimated_ms_per_frame": 3.9444812629265775,
+        "estimated_ns_per_occurrence": 3.107045502680191,
+        "sampled_ms_per_frame": 3.5714285714285716,
+        "sampled_ns_per_occurrence": 2.8131940149634915,
+        "occurrences_mean": 1269528,
+        "occurrence_counter_keys": [
+          "runtime_block_loop_entries",
+          "runtime_if_entries"
+        ]
+      },
+      "runtime_call": {
+        "samples": 353.0,
+        "total_samples": 3868.0,
+        "share_percent": 9.126163391933815,
+        "per_process_share_percent": [
+          9.025559105431311,
+          10.493343774471416,
+          7.916355489171023
+        ],
+        "estimated_ms_per_frame": 18.565358477507754,
+        "estimated_ns_per_occurrence": 9.659305208123834,
+        "sampled_ms_per_frame": 16.80952380952381,
+        "sampled_ns_per_occurrence": 8.745768150726898,
+        "occurrences_mean": 1922018,
+        "occurrence_counter_keys": [
+          "runtime_call_entries"
+        ]
+      },
+      "call_frame_setup": {
+        "samples": 192.0,
+        "total_samples": 3868.0,
+        "share_percent": 4.963805584281282,
+        "per_process_share_percent": [
+          5.111821086261981,
+          5.011746280344558,
+          4.779686333084392
+        ],
+        "estimated_ms_per_frame": 10.097872033092036,
+        "estimated_ns_per_occurrence": 5.253789135627851,
+        "sampled_ms_per_frame": 9.142857142857142,
+        "sampled_ns_per_occurrence": 4.756907531440743,
+        "occurrences_mean": 1922017,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "call_capacity_checks": {
+        "samples": 0.0,
+        "total_samples": 3868.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": 0.0,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": 0.0,
+        "occurrences_mean": 1922017,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "dispatch_outer": {
+        "samples": 1314.0,
+        "total_samples": 3868.0,
+        "share_percent": 33.971044467425024,
+        "per_process_share_percent": [
+          32.82747603833866,
+          32.88958496476116,
+          36.07169529499627
+        ],
+        "estimated_ms_per_frame": 69.10731172647363,
+        "estimated_ns_per_occurrence": 10.22768650033072,
+        "sampled_ms_per_frame": 62.57142857142857,
+        "sampled_ns_per_occurrence": 9.26039429574934,
+        "occurrences_mean": 6756886,
+        "occurrence_counter_keys": [
+          "dispatch_iterations"
+        ]
+      },
+      "jit_lookup": {
+        "samples": 280.0,
+        "total_samples": 3868.0,
+        "share_percent": 7.238883143743537,
+        "per_process_share_percent": [
+          7.188498402555911,
+          6.812842599843383,
+          7.6923076923076925
+        ],
+        "estimated_ms_per_frame": 14.726063381592555,
+        "estimated_ns_per_occurrence": 7.087693041625519,
+        "sampled_ms_per_frame": 13.333333333333334,
+        "sampled_ns_per_occurrence": 6.417368405901852,
+        "occurrences_mean": 2077694.857142857,
+        "occurrence_counter_keys": [
+          "jit_lookup_calls"
+        ]
+      }
+    }
+  },
+  {
+    "engine": "interpreter",
+    "width": 256,
+    "height": 144,
+    "baseline_ms": 300.412566,
+    "diagnostic_ms": 300.339995,
+    "restored_ms": 300.935325,
+    "normal_reference_ms": 300.6739455,
+    "diagnostic_net_difference_percent": -0.11106732225989457,
+    "normal_process_median_min_ms": 296.769699,
+    "normal_process_median_max_ms": 307.247177,
+    "diagnostic_process_median_min_ms": 296.94421,
+    "diagnostic_process_median_max_ms": 302.453417,
+    "profiled_ms": 305.720033,
+    "profiled_net_difference_percent": 1.6782589830351524,
+    "frame_sha256": "f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4",
+    "counts": {
+      "block_search_calls": {
+        "median": 12036303,
+        "mean": 12036303,
+        "min": 12036303,
+        "max": 12036303
+      },
+      "block_search_hits": {
+        "median": 4591553,
+        "mean": 4591553,
+        "min": 4591553,
+        "max": 4591553
+      },
+      "block_search_misses": {
+        "median": 7444750,
+        "mean": 7444750,
+        "min": 7444750,
+        "max": 7444750
+      },
+      "control_block_loop_constructs": {
+        "median": 253578,
+        "mean": 253578,
+        "min": 253578,
+        "max": 253578
+      },
+      "control_if_constructs": {
+        "median": 1076596,
+        "mean": 1076596,
+        "min": 1076596,
+        "max": 1076596
+      },
+      "runtime_call_entries": {
+        "median": 3421799,
+        "mean": 3421799,
+        "min": 3421799,
+        "max": 3421799
+      },
+      "call_frame_constructs": {
+        "median": 3421798,
+        "mean": 3421798,
+        "min": 3421798,
+        "max": 3421798
+      },
+      "dispatch_iterations": {
+        "median": 12036303,
+        "mean": 12036303,
+        "min": 12036303,
+        "max": 12036303
+      },
+      "jit_lookup_calls": {
+        "median": 0,
+        "mean": 0,
+        "min": 0,
+        "max": 0
+      },
+      "runtime_if_entries": {
+        "median": 2007847,
+        "mean": 2007847,
+        "min": 2007847,
+        "max": 2007847
+      },
+      "runtime_block_loop_entries": {
+        "median": 253578,
+        "mean": 253578,
+        "min": 253578,
+        "max": 253578
+      },
+      "native_dispatch_entries": {
+        "median": 258,
+        "mean": 258,
+        "min": 258,
+        "max": 258
+      }
+    },
+    "costs": {
+      "block_search": {
+        "samples": 1284.0,
+        "total_samples": 6121.0,
+        "share_percent": 20.976964548276424,
+        "per_process_share_percent": [
+          21.137787056367433,
+          20.159774436090224,
+          21.665864227250843
+        ],
+        "estimated_ms_per_frame": 63.01743746838752,
+        "estimated_ns_per_occurrence": 5.2356140808674825,
+        "sampled_ms_per_frame": 61.142857142857146,
+        "sampled_ns_per_occurrence": 5.07987021786151,
+        "occurrences_mean": 12036303,
+        "occurrence_counter_keys": [
+          "block_search_calls"
+        ]
+      },
+      "backing_block_index_search": {
+        "samples": 577.0,
+        "total_samples": 6121.0,
+        "share_percent": 9.426564286881229,
+        "per_process_share_percent": [
+          8.977035490605429,
+          9.821428571428571,
+          9.436687530091477
+        ],
+        "estimated_ms_per_frame": 28.318583659859502,
+        "estimated_ns_per_occurrence": 3.8038327223693877,
+        "sampled_ms_per_frame": 27.476190476190474,
+        "sampled_ns_per_occurrence": 3.6906800733658587,
+        "occurrences_mean": 7444750,
+        "occurrence_counter_keys": [
+          "block_search_misses"
+        ]
+      },
+      "control_frame_stores": {
+        "samples": 11.0,
+        "total_samples": 6121.0,
+        "share_percent": 0.17970919784348963,
+        "per_process_share_percent": [
+          0.2609603340292276,
+          0.18796992481203006,
+          0.09629272989889263
+        ],
+        "estimated_ms_per_frame": 0.5398690125796439,
+        "estimated_ns_per_occurrence": 0.4058634528863472,
+        "sampled_ms_per_frame": 0.5238095238095238,
+        "sampled_ns_per_occurrence": 0.39379022880429465,
+        "occurrences_mean": 1330174,
+        "occurrence_counter_keys": [
+          "control_block_loop_constructs",
+          "control_if_constructs"
+        ]
+      },
+      "control_handlers": {
+        "samples": 133.0,
+        "total_samples": 6121.0,
+        "share_percent": 2.172847573925829,
+        "per_process_share_percent": [
+          2.1398747390396657,
+          1.9266917293233081,
+          2.4554646124217623
+        ],
+        "estimated_ms_per_frame": 6.52750715209933,
+        "estimated_ns_per_occurrence": 2.886457500071561,
+        "sampled_ms_per_frame": 6.333333333333333,
+        "sampled_ns_per_occurrence": 2.800594020731766,
+        "occurrences_mean": 2261425,
+        "occurrence_counter_keys": [
+          "runtime_block_loop_entries",
+          "runtime_if_entries"
+        ]
+      },
+      "runtime_call": {
+        "samples": 610.0,
+        "total_samples": 6121.0,
+        "share_percent": 9.965691880411697,
+        "per_process_share_percent": [
+          10.594989561586639,
+          9.492481203007518,
+          9.870004814636495
+        ],
+        "estimated_ms_per_frame": 29.938190697598436,
+        "estimated_ns_per_occurrence": 8.749254616533126,
+        "sampled_ms_per_frame": 29.047619047619047,
+        "sampled_ns_per_occurrence": 8.488990454325064,
+        "occurrences_mean": 3421799,
+        "occurrence_counter_keys": [
+          "runtime_call_entries"
+        ]
+      },
+      "call_frame_setup": {
+        "samples": 375.0,
+        "total_samples": 6121.0,
+        "share_percent": 6.126449926482601,
+        "per_process_share_percent": [
+          5.897703549060543,
+          6.296992481203008,
+          6.162734713529129
+        ],
+        "estimated_ms_per_frame": 18.404625428851496,
+        "estimated_ns_per_occurrence": 5.378641704990036,
+        "sampled_ms_per_frame": 17.857142857142858,
+        "sampled_ns_per_occurrence": 5.218643197857634,
+        "occurrences_mean": 3421798,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "call_capacity_checks": {
+        "samples": 0.0,
+        "total_samples": 6121.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": 0.0,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": 0.0,
+        "occurrences_mean": 3421798,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "dispatch_outer": {
+        "samples": 2138.0,
+        "total_samples": 6121.0,
+        "share_percent": 34.9289331808528,
+        "per_process_share_percent": [
+          35.38622129436326,
+          35.0093984962406,
+          34.424650938854114
+        ],
+        "estimated_ms_per_frame": 104.93090444502533,
+        "estimated_ns_per_occurrence": 8.71786830599274,
+        "sampled_ms_per_frame": 101.80952380952381,
+        "sampled_ns_per_occurrence": 8.458537792669711,
+        "occurrences_mean": 12036303,
+        "occurrence_counter_keys": [
+          "dispatch_iterations"
+        ]
+      },
+      "jit_lookup": {
+        "samples": 0.0,
+        "total_samples": 6121.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": null,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": null,
+        "occurrences_mean": 0,
+        "occurrence_counter_keys": [
+          "jit_lookup_calls"
+        ]
+      }
+    }
+  },
+  {
+    "engine": "jit",
+    "width": 256,
+    "height": 144,
+    "baseline_ms": 358.29681,
+    "diagnostic_ms": 350.833758,
+    "restored_ms": 356.118427,
+    "normal_reference_ms": 357.20761849999997,
+    "diagnostic_net_difference_percent": -1.7843573792645673,
+    "normal_process_median_min_ms": 352.02059,
+    "normal_process_median_max_ms": 365.050681,
+    "diagnostic_process_median_min_ms": 349.98823,
+    "diagnostic_process_median_max_ms": 354.412615,
+    "profiled_ms": 358.247851,
+    "profiled_net_difference_percent": 0.29121229395057124,
+    "frame_sha256": "f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4",
+    "counts": {
+      "block_search_calls": {
+        "median": 12036303,
+        "mean": 12036303,
+        "min": 12036303,
+        "max": 12036303
+      },
+      "block_search_hits": {
+        "median": 4591553,
+        "mean": 4591553,
+        "min": 4591553,
+        "max": 4591553
+      },
+      "block_search_misses": {
+        "median": 7444750,
+        "mean": 7444750,
+        "min": 7444750,
+        "max": 7444750
+      },
+      "control_block_loop_constructs": {
+        "median": 253578,
+        "mean": 253578,
+        "min": 253578,
+        "max": 253578
+      },
+      "control_if_constructs": {
+        "median": 1076596,
+        "mean": 1076596,
+        "min": 1076596,
+        "max": 1076596
+      },
+      "runtime_call_entries": {
+        "median": 3421799,
+        "mean": 3421799,
+        "min": 3421799,
+        "max": 3421799
+      },
+      "call_frame_constructs": {
+        "median": 3421798,
+        "mean": 3421798,
+        "min": 3421798,
+        "max": 3421798
+      },
+      "dispatch_iterations": {
+        "median": 12036304,
+        "mean": 12036304,
+        "min": 12036304,
+        "max": 12036304
+      },
+      "jit_lookup_calls": {
+        "median": 3690696,
+        "mean": 3733500.8571428573,
+        "min": 3630540,
+        "max": 3846023
+      },
+      "runtime_if_entries": {
+        "median": 2007847,
+        "mean": 2007847,
+        "min": 2007847,
+        "max": 2007847
+      },
+      "runtime_block_loop_entries": {
+        "median": 253578,
+        "mean": 253578,
+        "min": 253578,
+        "max": 253578
+      },
+      "native_dispatch_entries": {
+        "median": 258,
+        "mean": 258,
+        "min": 258,
+        "max": 258
+      }
+    },
+    "costs": {
+      "block_search": {
+        "samples": 766.0,
+        "total_samples": 7326.0,
+        "share_percent": 10.455910455910455,
+        "per_process_share_percent": [
+          11.054852320675106,
+          9.469263077510501,
+          10.954214805305948
+        ],
+        "estimated_ms_per_frame": 37.46319361998362,
+        "estimated_ns_per_occurrence": 3.1125166606377075,
+        "sampled_ms_per_frame": 36.476190476190474,
+        "sampled_ns_per_occurrence": 3.030514475764732,
+        "occurrences_mean": 12036303,
+        "occurrence_counter_keys": [
+          "block_search_calls"
+        ]
+      },
+      "backing_block_index_search": {
+        "samples": 521.0,
+        "total_samples": 7326.0,
+        "share_percent": 7.111657111657112,
+        "per_process_share_percent": [
+          7.341772151898734,
+          6.452844597174494,
+          7.616602481814291
+        ],
+        "estimated_ms_per_frame": 25.48084056920557,
+        "estimated_ns_per_occurrence": 3.4226589971732517,
+        "sampled_ms_per_frame": 24.80952380952381,
+        "sampled_ns_per_occurrence": 3.3324858201449086,
+        "occurrences_mean": 7444750,
+        "occurrence_counter_keys": [
+          "block_search_misses"
+        ]
+      },
+      "control_frame_stores": {
+        "samples": 4.0,
+        "total_samples": 7326.0,
+        "share_percent": 0.054600054600054605,
+        "per_process_share_percent": [
+          0.08438818565400844,
+          0.0,
+          0.08557980316645272
+        ],
+        "estimated_ms_per_frame": 0.1956302538902539,
+        "estimated_ns_per_occurrence": 0.14707117556819926,
+        "sampled_ms_per_frame": 0.19047619047619047,
+        "sampled_ns_per_occurrence": 0.14319644683792532,
+        "occurrences_mean": 1330174,
+        "occurrence_counter_keys": [
+          "control_block_loop_constructs",
+          "control_if_constructs"
+        ]
+      },
+      "control_handlers": {
+        "samples": 135.0,
+        "total_samples": 7326.0,
+        "share_percent": 1.8427518427518428,
+        "per_process_share_percent": [
+          2.067510548523207,
+          1.4127529591447117,
+          2.0967051775780914
+        ],
+        "estimated_ms_per_frame": 6.602521068796069,
+        "estimated_ns_per_occurrence": 2.9196285832145965,
+        "sampled_ms_per_frame": 6.428571428571429,
+        "sampled_ns_per_occurrence": 2.8427082165322433,
+        "occurrences_mean": 2261425,
+        "occurrence_counter_keys": [
+          "runtime_block_loop_entries",
+          "runtime_if_entries"
+        ]
+      },
+      "runtime_call": {
+        "samples": 577.0,
+        "total_samples": 7326.0,
+        "share_percent": 7.876057876057876,
+        "per_process_share_percent": [
+          8.059071729957806,
+          7.178312332951508,
+          8.472400513478819
+        ],
+        "estimated_ms_per_frame": 28.219664123669123,
+        "estimated_ns_per_occurrence": 8.247025650445606,
+        "sampled_ms_per_frame": 27.476190476190474,
+        "sampled_ns_per_occurrence": 8.029749987123871,
+        "occurrences_mean": 3421799,
+        "occurrence_counter_keys": [
+          "runtime_call_entries"
+        ]
+      },
+      "call_frame_setup": {
+        "samples": 318.0,
+        "total_samples": 7326.0,
+        "share_percent": 4.340704340704341,
+        "per_process_share_percent": [
+          4.345991561181434,
+          4.123711340206185,
+          4.5785194694052205
+        ],
+        "estimated_ms_per_frame": 15.552605184275183,
+        "estimated_ns_per_occurrence": 4.545155846217452,
+        "sampled_ms_per_frame": 15.142857142857142,
+        "sampled_ns_per_occurrence": 4.425409431783274,
+        "occurrences_mean": 3421798,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "call_capacity_checks": {
+        "samples": 0.0,
+        "total_samples": 7326.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": 0.0,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": 0.0,
+        "occurrences_mean": 3421798,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "dispatch_outer": {
+        "samples": 2532.0,
+        "total_samples": 7326.0,
+        "share_percent": 34.561834561834566,
+        "per_process_share_percent": [
+          35.780590717299575,
+          33.2569683085147,
+          34.78818998716303
+        ],
+        "estimated_ms_per_frame": 123.83395071253072,
+        "estimated_ns_per_occurrence": 10.28837014356988,
+        "sampled_ms_per_frame": 120.57142857142857,
+        "sampled_ns_per_occurrence": 10.017313335674189,
+        "occurrences_mean": 12036304,
+        "occurrence_counter_keys": [
+          "dispatch_iterations"
+        ]
+      },
+      "jit_lookup": {
+        "samples": 559.0,
+        "total_samples": 7326.0,
+        "share_percent": 7.63035763035763,
+        "per_process_share_percent": [
+          7.552742616033756,
+          7.292859870179457,
+          8.087291399229782
+        ],
+        "estimated_ms_per_frame": 27.33932798116298,
+        "estimated_ns_per_occurrence": 7.3227056929310566,
+        "sampled_ms_per_frame": 26.61904761904762,
+        "sampled_ns_per_occurrence": 7.129782110032359,
+        "occurrences_mean": 3733500.8571428573,
+        "occurrence_counter_keys": [
+          "jit_lookup_calls"
+        ]
+      }
+    }
+  },
+  {
+    "engine": "interpreter",
+    "width": 320,
+    "height": 180,
+    "baseline_ms": 473.488752,
+    "diagnostic_ms": 465.730594,
+    "restored_ms": 472.398393,
+    "normal_reference_ms": 473.110451,
+    "diagnostic_net_difference_percent": -1.5598592219642216,
+    "normal_process_median_min_ms": 470.978213,
+    "normal_process_median_max_ms": 481.925347,
+    "diagnostic_process_median_min_ms": 465.320959,
+    "diagnostic_process_median_max_ms": 477.443205,
+    "profiled_ms": 472.210687,
+    "profiled_net_difference_percent": -0.19018053777890565,
+    "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+    "counts": {
+      "block_search_calls": {
+        "median": 18821697,
+        "mean": 18821697,
+        "min": 18821697,
+        "max": 18821697
+      },
+      "block_search_hits": {
+        "median": 7178464,
+        "mean": 7178464,
+        "min": 7178464,
+        "max": 7178464
+      },
+      "block_search_misses": {
+        "median": 11643233,
+        "mean": 11643233,
+        "min": 11643233,
+        "max": 11643233
+      },
+      "control_block_loop_constructs": {
+        "median": 395790,
+        "mean": 395790,
+        "min": 395790,
+        "max": 395790
+      },
+      "control_if_constructs": {
+        "median": 1683568,
+        "mean": 1683568,
+        "min": 1683568,
+        "max": 1683568
+      },
+      "runtime_call_entries": {
+        "median": 5354466,
+        "mean": 5354466,
+        "min": 5354466,
+        "max": 5354466
+      },
+      "call_frame_constructs": {
+        "median": 5354465,
+        "mean": 5354465,
+        "min": 5354465,
+        "max": 5354465
+      },
+      "dispatch_iterations": {
+        "median": 18821697,
+        "mean": 18821697,
+        "min": 18821697,
+        "max": 18821697
+      },
+      "jit_lookup_calls": {
+        "median": 0,
+        "mean": 0,
+        "min": 0,
+        "max": 0
+      },
+      "runtime_if_entries": {
+        "median": 3139878,
+        "mean": 3139878,
+        "min": 3139878,
+        "max": 3139878
+      },
+      "runtime_block_loop_entries": {
+        "median": 395790,
+        "mean": 395790,
+        "min": 395790,
+        "max": 395790
+      },
+      "native_dispatch_entries": {
+        "median": 402,
+        "mean": 402,
+        "min": 402,
+        "max": 402
+      }
+    },
+    "costs": {
+      "block_search": {
+        "samples": 2033.0,
+        "total_samples": 9499.0,
+        "share_percent": 21.402252868723025,
+        "per_process_share_percent": [
+          22.433105164903548,
+          20.889748549323016,
+          20.860823122840088
+        ],
+        "estimated_ms_per_frame": 101.33726000800084,
+        "estimated_ns_per_occurrence": 5.384066059930772,
+        "sampled_ms_per_frame": 96.80952380952381,
+        "sampled_ns_per_occurrence": 5.143506656680522,
+        "occurrences_mean": 18821697,
+        "occurrence_counter_keys": [
+          "block_search_calls"
+        ]
+      },
+      "backing_block_index_search": {
+        "samples": 982.0,
+        "total_samples": 9499.0,
+        "share_percent": 10.337930308453522,
+        "per_process_share_percent": [
+          10.983198506533915,
+          9.445519019987104,
+          10.55607917059378
+        ],
+        "estimated_ms_per_frame": 48.94893720012633,
+        "estimated_ns_per_occurrence": 4.204067478519611,
+        "sampled_ms_per_frame": 46.76190476190476,
+        "sampled_ns_per_occurrence": 4.0162302654172395,
+        "occurrences_mean": 11643233,
+        "occurrence_counter_keys": [
+          "block_search_misses"
+        ]
+      },
+      "control_frame_stores": {
+        "samples": 9.0,
+        "total_samples": 9499.0,
+        "share_percent": 0.09474681545425834,
+        "per_process_share_percent": [
+          0.12445550715619166,
+          0.06447453255963895,
+          0.0942507068803016
+        ],
+        "estimated_ms_per_frame": 0.44861551405411093,
+        "estimated_ns_per_occurrence": 0.2157471267834163,
+        "sampled_ms_per_frame": 0.42857142857142855,
+        "sampled_ns_per_occurrence": 0.20610757193875637,
+        "occurrences_mean": 2079358,
+        "occurrence_counter_keys": [
+          "control_block_loop_constructs",
+          "control_if_constructs"
+        ]
+      },
+      "control_handlers": {
+        "samples": 239.0,
+        "total_samples": 9499.0,
+        "share_percent": 2.516054321507527,
+        "per_process_share_percent": [
+          2.177971375233354,
+          2.5467440361057383,
+          2.827521206409048
+        ],
+        "estimated_ms_per_frame": 11.913234206548056,
+        "estimated_ns_per_occurrence": 3.3694436826500835,
+        "sampled_ms_per_frame": 11.380952380952381,
+        "sampled_ns_per_occurrence": 3.218897357147894,
+        "occurrences_mean": 3535668,
+        "occurrence_counter_keys": [
+          "runtime_block_loop_entries",
+          "runtime_if_entries"
+        ]
+      },
+      "runtime_call": {
+        "samples": 921.0,
+        "total_samples": 9499.0,
+        "share_percent": 9.695757448152436,
+        "per_process_share_percent": [
+          9.55196017423771,
+          9.929078014184398,
+          9.613572101790764
+        ],
+        "estimated_ms_per_frame": 45.908320938204014,
+        "estimated_ns_per_occurrence": 8.573837416878549,
+        "sampled_ms_per_frame": 43.857142857142854,
+        "sampled_ns_per_occurrence": 8.190759425336319,
+        "occurrences_mean": 5354466,
+        "occurrence_counter_keys": [
+          "runtime_call_entries"
+        ]
+      },
+      "call_frame_setup": {
+        "samples": 548.0,
+        "total_samples": 9499.0,
+        "share_percent": 5.769028318770396,
+        "per_process_share_percent": [
+          5.880522713130056,
+          5.577047066408769,
+          5.843543826578699
+        ],
+        "estimated_ms_per_frame": 27.31570018907253,
+        "estimated_ns_per_occurrence": 5.101480762143843,
+        "sampled_ms_per_frame": 26.095238095238095,
+        "sampled_ns_per_occurrence": 4.873547234922274,
+        "occurrences_mean": 5354465,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "call_capacity_checks": {
+        "samples": 2.0,
+        "total_samples": 9499.0,
+        "share_percent": 0.021054847878724078,
+        "per_process_share_percent": [
+          0.031113876789047916,
+          0.0,
+          0.031416902293433864
+        ],
+        "estimated_ms_per_frame": 0.0996923364564691,
+        "estimated_ns_per_occurrence": 0.018618542927532275,
+        "sampled_ms_per_frame": 0.09523809523809523,
+        "sampled_ns_per_occurrence": 0.017786668740592242,
+        "occurrences_mean": 5354465,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "dispatch_outer": {
+        "samples": 3416.0,
+        "total_samples": 9499.0,
+        "share_percent": 35.961680176860725,
+        "per_process_share_percent": [
+          35.8431860609832,
+          36.39587362991618,
+          35.65818410304744
+        ],
+        "estimated_ms_per_frame": 170.27451066764922,
+        "estimated_ns_per_occurrence": 9.04671404856051,
+        "sampled_ms_per_frame": 162.66666666666666,
+        "sampled_ns_per_occurrence": 8.642507987811443,
+        "occurrences_mean": 18821697,
+        "occurrence_counter_keys": [
+          "dispatch_iterations"
+        ]
+      },
+      "jit_lookup": {
+        "samples": 0.0,
+        "total_samples": 9499.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": null,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": null,
+        "occurrences_mean": 0,
+        "occurrence_counter_keys": [
+          "jit_lookup_calls"
+        ]
+      }
+    }
+  },
+  {
+    "engine": "jit",
+    "width": 320,
+    "height": 180,
+    "baseline_ms": 561.646476,
+    "diagnostic_ms": 556.093788,
+    "restored_ms": 559.233315,
+    "normal_reference_ms": 560.4398954999999,
+    "diagnostic_net_difference_percent": -0.7754814628466944,
+    "normal_process_median_min_ms": 554.625279,
+    "normal_process_median_max_ms": 565.92534,
+    "diagnostic_process_median_min_ms": 551.626594,
+    "diagnostic_process_median_max_ms": 576.552106,
+    "profiled_ms": 564.289368,
+    "profiled_net_difference_percent": 0.686866251119711,
+    "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+    "counts": {
+      "block_search_calls": {
+        "median": 18821697,
+        "mean": 18821697,
+        "min": 18821697,
+        "max": 18821697
+      },
+      "block_search_hits": {
+        "median": 7178464,
+        "mean": 7178464,
+        "min": 7178464,
+        "max": 7178464
+      },
+      "block_search_misses": {
+        "median": 11643233,
+        "mean": 11643233,
+        "min": 11643233,
+        "max": 11643233
+      },
+      "control_block_loop_constructs": {
+        "median": 395790,
+        "mean": 395790,
+        "min": 395790,
+        "max": 395790
+      },
+      "control_if_constructs": {
+        "median": 1683568,
+        "mean": 1683568,
+        "min": 1683568,
+        "max": 1683568
+      },
+      "runtime_call_entries": {
+        "median": 5354466,
+        "mean": 5354466,
+        "min": 5354466,
+        "max": 5354466
+      },
+      "call_frame_constructs": {
+        "median": 5354465,
+        "mean": 5354465,
+        "min": 5354465,
+        "max": 5354465
+      },
+      "dispatch_iterations": {
+        "median": 18821698,
+        "mean": 18821698,
+        "min": 18821698,
+        "max": 18821698
+      },
+      "jit_lookup_calls": {
+        "median": 5958848,
+        "mean": 5970030.142857143,
+        "min": 5794137,
+        "max": 6127342
+      },
+      "runtime_if_entries": {
+        "median": 3139878,
+        "mean": 3139878,
+        "min": 3139878,
+        "max": 3139878
+      },
+      "runtime_block_loop_entries": {
+        "median": 395790,
+        "mean": 395790,
+        "min": 395790,
+        "max": 395790
+      },
+      "native_dispatch_entries": {
+        "median": 402,
+        "mean": 402,
+        "min": 402,
+        "max": 402
+      }
+    },
+    "costs": {
+      "block_search": {
+        "samples": 1235.0,
+        "total_samples": 11363.0,
+        "share_percent": 10.868608642083958,
+        "per_process_share_percent": [
+          10.366657873911898,
+          11.009911599249932,
+          11.226882000520968
+        ],
+        "estimated_ms_per_frame": 61.043157428496,
+        "estimated_ns_per_occurrence": 3.2432334570307875,
+        "sampled_ms_per_frame": 58.80952380952381,
+        "sampled_ns_per_occurrence": 3.124560118544242,
+        "occurrences_mean": 18821697,
+        "occurrence_counter_keys": [
+          "block_search_calls"
+        ]
+      },
+      "backing_block_index_search": {
+        "samples": 893.0,
+        "total_samples": 11363.0,
+        "share_percent": 7.858840095045322,
+        "per_process_share_percent": [
+          7.649696649960433,
+          7.741762657380123,
+          8.179213336806459
+        ],
+        "estimated_ms_per_frame": 44.1388984482971,
+        "estimated_ns_per_occurrence": 3.7909486521739364,
+        "sampled_ms_per_frame": 42.523809523809526,
+        "sampled_ns_per_occurrence": 3.6522338360667974,
+        "occurrences_mean": 11643233,
+        "occurrence_counter_keys": [
+          "block_search_misses"
+        ]
+      },
+      "control_frame_stores": {
+        "samples": 11.0,
+        "total_samples": 11363.0,
+        "share_percent": 0.0968054211035818,
+        "per_process_share_percent": [
+          0.13189132155104194,
+          0.08036431824270024,
+          0.07814535035165407
+        ],
+        "estimated_ms_per_frame": 0.5437042362052276,
+        "estimated_ns_per_occurrence": 0.2614769732798429,
+        "sampled_ms_per_frame": 0.5238095238095238,
+        "sampled_ns_per_occurrence": 0.25190925459181335,
+        "occurrences_mean": 2079358,
+        "occurrence_counter_keys": [
+          "control_block_loop_constructs",
+          "control_if_constructs"
+        ]
+      },
+      "control_handlers": {
+        "samples": 242.0,
+        "total_samples": 11363.0,
+        "share_percent": 2.1297192642787994,
+        "per_process_share_percent": [
+          2.45317858084938,
+          2.143048486472006,
+          1.7973430580880436
+        ],
+        "estimated_ms_per_frame": 11.961493196515004,
+        "estimated_ns_per_occurrence": 3.3830928685937156,
+        "sampled_ms_per_frame": 11.523809523809524,
+        "sampled_ns_per_occurrence": 3.2593019264844787,
+        "occurrences_mean": 3535668,
+        "occurrence_counter_keys": [
+          "runtime_block_loop_entries",
+          "runtime_if_entries"
+        ]
+      },
+      "runtime_call": {
+        "samples": 980.0,
+        "total_samples": 11363.0,
+        "share_percent": 8.624482971046378,
+        "per_process_share_percent": [
+          8.493801107887101,
+          9.161532279667828,
+          8.231310237040896
+        ],
+        "estimated_ms_per_frame": 48.43910468010208,
+        "estimated_ns_per_occurrence": 9.046486555354369,
+        "sampled_ms_per_frame": 46.666666666666664,
+        "sampled_ns_per_occurrence": 8.715466055189568,
+        "occurrences_mean": 5354466,
+        "occurrence_counter_keys": [
+          "runtime_call_entries"
+        ]
+      },
+      "call_frame_setup": {
+        "samples": 564.0,
+        "total_samples": 11363.0,
+        "share_percent": 4.963477954765467,
+        "per_process_share_percent": [
+          4.90635716169876,
+          5.411197428341817,
+          4.584527220630372
+        ],
+        "estimated_ms_per_frame": 27.87719901997712,
+        "estimated_ns_per_occurrence": 5.206346296030905,
+        "sampled_ms_per_frame": 26.857142857142858,
+        "sampled_ns_per_occurrence": 5.0158405848470125,
+        "occurrences_mean": 5354465,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "call_capacity_checks": {
+        "samples": 0.0,
+        "total_samples": 11363.0,
+        "share_percent": 0.0,
+        "per_process_share_percent": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "estimated_ms_per_frame": 0.0,
+        "estimated_ns_per_occurrence": 0.0,
+        "sampled_ms_per_frame": 0.0,
+        "sampled_ns_per_occurrence": 0.0,
+        "occurrences_mean": 5354465,
+        "occurrence_counter_keys": [
+          "call_frame_constructs"
+        ]
+      },
+      "dispatch_outer": {
+        "samples": 3973.0,
+        "total_samples": 11363.0,
+        "share_percent": 34.96435800404823,
+        "per_process_share_percent": [
+          35.505143761540495,
+          35.09241896597911,
+          34.30580880437614
+        ],
+        "estimated_ms_per_frame": 196.37608458576082,
+        "estimated_ns_per_occurrence": 10.433494607434506,
+        "sampled_ms_per_frame": 189.1904761904762,
+        "sampled_ns_per_occurrence": 10.051722017348073,
+        "occurrences_mean": 18821698,
+        "occurrence_counter_keys": [
+          "dispatch_iterations"
+        ]
+      },
+      "jit_lookup": {
+        "samples": 838.0,
+        "total_samples": 11363.0,
+        "share_percent": 7.374812989527414,
+        "per_process_share_percent": [
+          7.649696649960433,
+          7.1524243236003215,
+          7.319614482938265
+        ],
+        "estimated_ms_per_frame": 41.42037726727097,
+        "estimated_ns_per_occurrence": 6.938051613831211,
+        "sampled_ms_per_frame": 39.904761904761905,
+        "sampled_ns_per_occurrence": 6.6841809756197055,
+        "occurrences_mean": 5970030.142857143,
+        "occurrence_counter_keys": [
+          "jit_lookup_calls"
+        ]
+      }
+    }
+  }
+]

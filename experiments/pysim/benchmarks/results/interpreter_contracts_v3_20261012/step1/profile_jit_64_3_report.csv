@@ -1,0 +1,96 @@
+
+"AMD uProf (Version:5.3.521.0)"
+PERFORMANCE ANALYSIS REPORT
+
+EXECUTION
+Target Path:,"taskset"
+Command Line Arguments:,"-c 2 /home/t-matsu/workspace/mysrc/fireball/.venv/bin/python /home/t-matsu/workspace/mysrc/fireball/experiments/pysim/benchmarks/results/interpreter_contracts_v3_20261012/step1/measure.py --engine jit --width 64 --profile "
+Working Directory:,"/home/t-matsu/workspace/mysrc/fireball"
+Environment Variables:
+CPU Details:,"Family(0x19), Model(0x50), Number of Cores(12)"
+Operating System:,"Linux Ubuntu 26.04.1 LTS-64 Kernel:7.0.0-38-generic"
+Collect Command:,"./AMDuProfCLI collect --config hotspots --timer-interval 1 --start-paused -o /tmp/fireball-contracts-v3-step1/profile_jit_64_3 taskset -c 2 /home/t-matsu/workspace/mysrc/fireball/.venv/bin/python /home/t-matsu/workspace/mysrc/fireball/experiments/pysim/benchmarks/results/interpreter_contracts_v3_20261012/step1/measure.py --engine jit --width 64 --profile"
+Report Command:,"./AMDuProfCLI report -i /tmp/fireball-contracts-v3-step1/profile_jit_64_3 --inline --cutoff 0 --db sqlite"
+
+PROFILE DETAILS
+Profile Session Type:,"Hotspots"
+Profile Scope:,"Single Application"
+CPU Mask:,"0-11"
+CPU Affinity Mask:,"0-11"
+Profile Start Time:,"Mon Oct 12 20:28:33 2026"
+Profile End Time:,"Mon Oct 12 20:28:34 2026"
+Profile Duration:,"0.855 seconds"
+Pause Duration:,"0.694 seconds"
+Data Folder:,"/tmp/fireball-contracts-v3-step1/profile_jit_64_3"
+Virtual Machine:,"No"
+Call Stack Sampling:,"False"
+Selected View:,"Time based hotspots"
+
+MONITORED EVENTS
+TBP Events:,Name,Interval,Description
+,"CPU_TIME","1.000 milliseconds","CPU Time is the time in which the CPU core is executing the code."
+
+
+APPLICATION PERFORMANCE SNAPSHOT
+Thread Count,"1"
+
+
+"HOTTEST FUNCTIONS (Sort Event - CPU_TIME)"
+FUNCTION,"CPU_TIME" (seconds),Module
+"[inlined] int fireball::interpreter::run_native_dispatch_abi<false, true, false, false, void, fb_native_result>(std::conditional<false, fb_native_dispatch_extension_call, fb_native_dispatch_call>::type const*, fb_native_result*)",0.0130,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] bool fireball::wasm_runtime::runtime_call<false>(fireball_execution_context_native*, unsigned char const*&, unsigned int*&, unsigned int*&, unsigned char const*&)",0.0060,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] fireball::wasm_runtime::active_frame(fireball_execution_context_native&)",0.0040,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] fireball::wasm_runtime::apply_local_get(fireball_execution_context_native*, unsigned int*&, unsigned int*&, fireball_call_frame_native const&, unsigned int)",0.0030,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] void (anonymous namespace)::dispatch_next<void>(fireball_execution_context_native*, unsigned char const*, unsigned int*, unsigned char const*)",0.0030,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] fb_native_find_block_index_folded(fireball_wasm_module_execution_view_native const*, unsigned int, unsigned int)",0.0030,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"fireball::jit_provider_adapter<void>::observe_runtime_block(unsigned long, unsigned int, unsigned int)",0.0030,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier3_plugins/jit/libtrace_compiler.so"
+"[inlined] void (anonymous namespace)::dispatch_next<void>(fireball_execution_context_native*, unsigned char const*, unsigned int*, unsigned char const*)",0.0020,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"fireball::jit_provider_adapter<void>::lookup_runtime_trace(unsigned long, unsigned int, unsigned int, fb_native_jit_trace*)",0.0020,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier3_plugins/jit/libtrace_compiler.so"
+"python3.13!0x6226d5",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"python3.13!0x630a0f",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"python3.13!0x632859",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"python3.13!0x639890",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"python3.13!0x63993e",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"python3.13!0x639a69",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"python3.13!0x639af9",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"python3.13!0x639dbf",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"python3.13!0x63c136",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"python3.13!0x63c15f",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"python3.13!0x63cae8",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"python3.13!0x63cba4",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"python3.13!0x647c8f",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"python3.13!0x67a625",0.0010,"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+"_ZN12_GLOBAL__N_113h_runtime_apiIvTnDaXadL_ZN8fireball12wasm_runtime12runtime_callILb0EEEbP33fireball_execution_context_nativeRPKhRPjSA_S8_EEEEvS5_S7_S9_S7_",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] runtime_i32_binary<&fireball::wasm_runtime::opcode_signed_gt>",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] fireball::wasm_runtime::read_u32(unsigned char const*&)",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] unsigned int fireball::interpreter::find_cached_block_index<false, true, false, false, fb_native_result>(fireball::interpreter::native_dispatch_state<false, true, false, false, fb_native_result>&, fireball_wasm_function_execution_view_native const&, unsigned int)",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] fireball::wasm_runtime::clear_cps_exit(fireball_execution_context_native&)",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] fireball::wasm_runtime::interpreter_rel_for_block_index(fireball_call_frame_native const&, unsigned int)",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] fb_native_find_block_index_folded(fireball_wasm_module_execution_view_native const*, unsigned int, unsigned int)",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] runtime_i32_binary<std::plus<void>{}>",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] fireball::wasm_runtime::runtime_end(fireball_execution_context_native*, unsigned char const*&, unsigned int*&, unsigned int*&, unsigned char const*&)",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] fireball::wasm_runtime::block_boundary(fireball_execution_context_native&, unsigned int)",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] fireball::wasm_runtime::apply_local_set(fireball_execution_context_native*, unsigned int*&, unsigned int*&, fireball_call_frame_native const&, unsigned int)",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] void (anonymous namespace)::dispatch_next<void>(fireball_execution_context_native*, unsigned char const*, unsigned int*, unsigned char const*)",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] bool fireball::wasm_runtime::opcode_signed_lt<unsigned int>(unsigned int, unsigned int)",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] fireball::wasm_runtime::push(fireball_execution_context_native&, unsigned int*&, unsigned int)",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so"
+"[inlined] fireball::jit_runtime<void>::lookup_cached_trace(unsigned int, unsigned int)",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier3_plugins/jit/libtrace_compiler.so"
+"[inlined] fireball::jit_runtime<void>::trace_header(fireball::jit_cache_entry) const",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier3_plugins/jit/libtrace_compiler.so"
+"[inlined] fireball::wasm_runtime::runtime_if(fireball_execution_context_native*, unsigned char const*&, unsigned int*&, unsigned int*&, unsigned char const*&)",0.0010,"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier3_plugins/jit/libtrace_compiler.so"
+"zero (deleted)!0x000008b7",0.0010,"/dev/zero (deleted)"
+"zero (deleted)!0x00001abf",0.0010,"/dev/zero (deleted)"
+
+"HOTTEST PROCESSES (Sort Event - CPU_TIME)"
+PROCESS,"CPU_TIME" (seconds)
+"python (PID:949)",0.0720
+
+"HOTTEST MODULES (Sort Event - CPU_TIME)"
+MODULE,"CPU_TIME" (seconds)
+"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier2_runtime/interpreter/libnative_interpreter.so",0.0480
+"/home/t-matsu/.local/share/uv/python/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13",0.0140
+"/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/tier3_plugins/jit/libtrace_compiler.so",0.0080
+"/dev/zero (deleted)",0.0020
+
+"HOTTEST THREADS (Sort Event - CPU_TIME)"
+THREAD,"CPU_TIME" (seconds),THREAD ID
+"taskset (PID:949)",0.0720,"949"

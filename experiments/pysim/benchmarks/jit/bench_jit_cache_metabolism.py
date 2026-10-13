@@ -1,6 +1,6 @@
 """
 experiments/pysim/benchmarks/jit/bench_jit_cache_metabolism.py
-JIT Code Cache Metabolism, Hit-Rate, Oldest-Only Promotion & Corner Cases Benchmark.
+JIT Code Cache Metabolism, Hit-Rate, In-place Execution & Corner Cases Benchmark.
 Conforms strictly to docs/components/tier3_plugins/benchmarks/jit_cache_metabolism_bench_spec.md (BENCHMARK-METAB-01 ~ BENCHMARK-METAB-05).
 """
 
@@ -38,7 +38,7 @@ class JITCacheMetabolismBenchmark:
         results = {}
 
         # ----------------------------------------------------------------------
-        # 1. Corner Case 1: Oldest-Only Promotion ({JIT_OldestOnly_Promote})
+        # 1. Warm and Oldest hits preserve code residency ({JIT_OldestExecuteOnly}).
         # ----------------------------------------------------------------------
         cache = JitRuntimeBoundary(bank_capacity=self.bank_capacity)
         t_active = JITTrace(head_pc=0x1000, size_bytes=64)
@@ -52,23 +52,21 @@ class JITCacheMetabolismBenchmark:
         cache.rotate()  # t_oldest moves to Oldest, t_warm moves to Warm
         cache.insert(t_active)  # in Active
 
-        # Warm hit test: should hit with 0 promotions
-        prom_before = cache.promotions
+        state = (cache.resident_bytes, cache.generation)
+        warm_address = t_warm.raw_addr
+        oldest_address = t_oldest.raw_addr
         hit_warm = cache.lookup(0x2000)
-        prom_after_warm = cache.promotions
-        assert hit_warm is not None
-        assert prom_after_warm == prom_before, "Warm hit must NEVER trigger promotion!"
-        results["warm_hit_promotions"] = prom_after_warm - prom_before
+        assert hit_warm is t_warm and hit_warm.raw_addr == warm_address
+        assert (cache.resident_bytes, cache.generation) == state
+        results["warm_hit_keeps_address"] = True
 
-        # Oldest hit test: should hit and trigger immediate promotion to Active bank
         hit_oldest = cache.lookup(0x3000)
-        prom_after_oldest = cache.promotions
-        assert hit_oldest is not None
-        assert prom_after_oldest == prom_before + 1, "Oldest hit MUST trigger promotion!"
+        assert hit_oldest is t_oldest and hit_oldest.raw_addr == oldest_address
+        assert (cache.resident_bytes, cache.generation) == state
         assert cache.lookup(0x3000) is hit_oldest
-        assert cache.promotions == prom_after_oldest, "promotion must not repeat"
-        results["oldest_hit_promotions"] = prom_after_oldest - prom_after_warm
-        results["oldest_only_promote_passed"] = True
+        assert hit_oldest.raw_addr == oldest_address
+        results["oldest_hit_keeps_address"] = True
+        results["generation_hits_keep_code"] = True
 
         # ----------------------------------------------------------------------
         # 2. Corner Case 2: Working Set Scalability & Cache Hit-Rate
@@ -191,16 +189,12 @@ def main():
     bench = JITCacheMetabolismBenchmark(bank_capacity=1024)
     res = bench.run_all()
 
-    print("\n[Section 1: Oldest-Only Promotion Invariant ({JIT_OldestOnly_Promote})]")
+    print("\n[Section 1: In-place Execution ({JIT_OldestExecuteOnly})]")
     print("-" * 80)
+    print(f"  * Warm Hit Keeps Code Address:        {res['warm_hit_keeps_address']}")
+    print(f"  * Oldest Hit Keeps Code Address:      {res['oldest_hit_keeps_address']}")
     print(
-        f"  * Warm Bank Hit Promotions:           {res['warm_hit_promotions']} (Zero-copy invariant verified)"
-    )
-    print(
-        f"  * Oldest Bank Hit Promotions:         {res['oldest_hit_promotions']} (Promoted to Active bank on demand)"
-    )
-    print(
-        f"  * Promotion Invariant Status:         [PASS] (Passed={res['oldest_only_promote_passed']})"
+        f"  * In-place Execution Status:          [PASS] (Passed={res['generation_hits_keep_code']})"
     )
 
     print("\n[Section 2: Working Set Scalability & Cache Hit-Rates]")

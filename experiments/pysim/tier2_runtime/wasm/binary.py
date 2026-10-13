@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from tier2_runtime.wasm.validation import reject_wasm, require_wasm
+
 MAGIC = b"\x00asm"
 VERSION = b"\x01\x00\x00\x00"
 CUSTOM_SECTION_ID = 0
@@ -36,7 +38,7 @@ class BinaryStream:
         )
 
     def remaining(self) -> int:
-        return max(0, self.limit - self.cursor)
+        return self.limit - self.cursor
 
     def tell(self) -> int:
         return self.cursor
@@ -48,7 +50,7 @@ class BinaryStream:
     def read_bytes(self, n: int) -> memoryview:
         assert n >= 0, "read length must be non-negative"
         if self.cursor + n > self.limit:
-            assert False, (
+            reject_wasm(
                 f"Unexpected end of stream: requested {n} bytes, {self.remaining()} remaining"
             )
         result = self.view[self.cursor : self.cursor + n]
@@ -63,8 +65,8 @@ class BinaryStream:
         shift = 0
         count = 0
         while True:
-            assert count < 5, "LEB128 u32 exceeded maximum 5 bytes"
-            assert self.cursor < self.limit, "Truncated LEB128 u32 integer"
+            require_wasm(count < 5, "LEB128 u32 exceeded maximum 5 bytes")
+            require_wasm(self.cursor < self.limit, "Truncated LEB128 u32 integer")
             byte = self.read_u8()
             count += 1
             result |= (byte & 0x7F) << shift
@@ -72,7 +74,7 @@ class BinaryStream:
                 break
             shift += 7
 
-        assert result <= 0xFFFFFFFF, "LEB128 u32 value out of 32-bit range"
+        require_wasm(result <= 0xFFFFFFFF, "LEB128 u32 value out of 32-bit range")
         return result
 
 
@@ -94,9 +96,9 @@ class WasmSectionReader:
         self._stream = BinaryStream(data)
         assert self._stream.remaining() >= 8, "truncated WASM header"
         magic = bytes(self._stream.read_bytes(4))
-        assert magic == MAGIC, "missing \\0asm magic header"
+        require_wasm(magic == MAGIC, "missing \\0asm magic header")
         version = bytes(self._stream.read_bytes(4))
-        assert version == VERSION, f"unsupported wasm version {version!r}"
+        require_wasm(version == VERSION, f"unsupported wasm version {version!r}")
         self._frame = SectionFrame(0, 0, 0)
         self._last_section_id = 0
 
@@ -106,16 +108,19 @@ class WasmSectionReader:
             return None
 
         section_id = self._stream.read_u8()
-        assert 0 <= section_id <= LAST_MVP_SECTION_ID, f"unsupported MVP section id={section_id}"
+        require_wasm(
+            0 <= section_id <= LAST_MVP_SECTION_ID, f"unsupported MVP section id={section_id}"
+        )
         payload_size = self._stream.read_leb128_u32()
         payload_offset = self._stream.tell()
         payload_end = payload_offset + payload_size
-        assert payload_end <= self._stream.limit, "section length exceeds module bounds"
+        require_wasm(payload_end <= self._stream.limit, "section length exceeds module bounds")
 
         if section_id != CUSTOM_SECTION_ID:
-            assert section_id > self._last_section_id, (
+            require_wasm(
+                section_id > self._last_section_id,
                 f"WASM sections are duplicated or out of order: {section_id} "
-                f"after {self._last_section_id}"
+                f"after {self._last_section_id}",
             )
             self._last_section_id = section_id
 

@@ -205,7 +205,7 @@ WIT インターフェース名は kebab-case で定義する。C++ の公開 AP
 
 #### 5.1.5 JITキャッシュアロケータ（`jit-cache-allocator`）
 <!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_StrictMemoryLimit} -->
-JITコード生成専用に予約された連続固定長リージョン（`FB_CONF_JIT_CACHE_SIZE`=8,192B、4KB物理ページ2枚）の貸与を契約する。領域の固定区画は共通コード2KBとActive/Warm/Oldest各2KBとし、`system_config.md`を正本とする。JITサブシステム（`jit_runtime.md`）は3可変バンクの世代交代・昇格を担当し、共通コード領域をエビクションしない。
+JITコード生成専用に予約された連続固定長リージョン（`FB_CONF_JIT_CACHE_SIZE`=8,192B、4KB物理ページ2枚）の貸与を契約する。領域の固定区画は共通コード2KBとActive/Warm/Oldest各2KBとし、`system_config.md`を正本とする。JITサブシステム（`jit_runtime.md`）は3可変バンクの世代交代を担当し、共通コード領域をエビクションしない。
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -213,7 +213,7 @@ JITコード生成専用に予約された連続固定長リージョン（`FB_C
 | シグネチャ | `acquire-jit-cache() -> result<jit-cache-region, memory-error>`<br>(C++マッピング: `fireball::co_mem::acquire_jit_cache`) |
 | 戻り値 | 成功時は `jit-cache-region`（連続した固定長 `FB_CONF_JIT_CACHE_SIZE`=8,192バイト、物理ページ2枚の実行可能メモリ領域ハンドル） |
 | 事前条件 | システム起動時に1度のみ呼び出される（動的な複数リージョン確保は想定しない） |
-| 補足 | W^X（書込み時 RW+XN / 実行時 RO+X）属性切り替えの実行方式は Tier 2 の実装詳細（`runtime_memory.md`）を正本とする。 |
+| 補足 | x64参照構成の初期RWX設定は `jit_runtime.md` を正本とする。ARMv8-Mの保護属性と切替方式は Tier 2 の実装詳細（`runtime_memory.md`）で決定する。 |
 
 
 ## 6. 制約達成の方策
@@ -271,4 +271,4 @@ JITコード生成専用に予約された連続固定長リージョン（`FB_C
     - 案1: 汎用パーティション貸与契約のまま据え置き、ランタイム用バンプアロケータ・JITキャッシュアロケータは各コンポーネントが独自契約として個別に定義し続ける。実装の自由度は高いが、`{GLOBAL_Policy_Memory}`が既に「ホスト・システム・共有メモリ・WASMゲスト・JIT」の5ドメインを要求として明示しているにもかかわらず、その正本契約が存在しない状態が続く。
     - 案2: 本コンポーネントを5プール（ホスト用ヒープ・タスクヒープ・共有メモリ用ヒープ・ランタイム用バンプアロケータ・JITキャッシュアロケータ）の統一契約として再定義し、各プールの貸与・返却インターフェースを本ドキュメントに集約する。
   - **結論**: 案2を採用する。
-- **理由**: `{GLOBAL_Policy_Memory}`が要求する5ドメイン分離ポリシーの正本契約を一箇所に集約することで、`system_config.md`の物理メモリ予算（`FB_CONF_*_HEAP_SIZE`等）との対応関係が一望でき、将来のプール追加・境界見直しの影響範囲を本コンポーネント1つに限定できる。各プールの物理実装（dlmalloc mspace / bump allocator / W^Xコードアロケータ）は引き続き `runtime_memory.md` が担い、契約と実装の分離（`{META_ContractImplSplit}`）は維持される。
+- **理由**: `{GLOBAL_Policy_Memory}`が要求する5ドメイン分離ポリシーの正本契約を一箇所に集約することで、`system_config.md`の物理メモリ予算（`FB_CONF_*_HEAP_SIZE`等）との対応関係が一望でき、将来のプール追加・境界見直しの影響範囲を本コンポーネント1つに限定できる。各プールの物理実装（dlmalloc mspace / bump allocator / JITコード領域）は引き続き `runtime_memory.md` が担い、契約と実装の分離（`{META_ContractImplSplit}`）は維持される。

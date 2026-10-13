@@ -1,0 +1,11 @@
+--- experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
++++ experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
+@@ -34,7 +34,7 @@
+   block_counter_define=("-DFB_CONF_JIT_BLOCK_COUNTERS=1")
+ fi
+ echo ">>> Compiling Interpreter -> ${library_name}"
+-clang++ -std=c++23 -O3 -flto=thin -fuse-ld=lld -fvisibility=hidden -fno-exceptions -fno-rtti -fomit-frame-pointer -Wall -Wextra -Wpedantic -shared -fPIC \
++clang++ -DFB_COST_DIAGNOSTIC=1 -std=c++23 -O3 -flto=thin -fuse-ld=lld -fvisibility=hidden -fno-exceptions -fno-rtti -fomit-frame-pointer -Wall -Wextra -Wpedantic -shared -fPIC \
+   "${release_define[@]}" \
+   "${block_counter_define[@]}" \
+   "${measurement_flags[@]}" \

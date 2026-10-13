@@ -157,7 +157,7 @@ def main():
     print("\n[Section 4: JIT Cache Metabolism & Corner Cases]")
     print("-" * 80)
     print(
-        "  * Oldest-Only Promotion Invariant:    [PASS] (Warm hits=0 promos, Oldest hit=+1 promo)"
+        f"  * In-place Generation Hit Invariant:  [PASS] ({metab_res['generation_hits_keep_code']})"
     )
     print(
         f"  * Small Working Set (N=8 <= Active):  Hit Rate = {metab_res['small_ws_8_hit_rate_pct']:.2f}%  ({metab_res['small_ws_8_lookup_mops']:.2f} M lookups/s)"

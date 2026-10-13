@@ -1,0 +1,40 @@
+{
+  "functions": [
+    {
+      "function_index": 0,
+      "instructions": 6,
+      "pool_bytes": 24
+    },
+    {
+      "function_index": 1,
+      "instructions": 12,
+      "pool_bytes": 44
+    },
+    {
+      "function_index": 2,
+      "instructions": 67,
+      "pool_bytes": 286
+    },
+    {
+      "function_index": 3,
+      "instructions": 69,
+      "pool_bytes": 334
+    },
+    {
+      "function_index": 4,
+      "instructions": 102,
+      "pool_bytes": 496
+    },
+    {
+      "function_index": 5,
+      "instructions": 254,
+      "pool_bytes": 1272
+    }
+  ],
+  "before_bytes": 1946,
+  "after_bytes": 2456,
+  "allocator_used_bytes": 25756,
+  "allocator_capacity_bytes": 131072,
+  "increase_bytes": 510,
+  "increase_percent": 26.20760534429599
+}

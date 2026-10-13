@@ -16,9 +16,10 @@ def build_model(*, guards: bool = True) -> Kripke:
     """Model bounded native LOOP exits and interrupt delivery at COOS boundaries.
 
     The two backedge-count states abstract any finite configured threshold. A
-    taken LOOP edge advances the count; threshold arrival returns through the
-    C++ interpreter handler and exposes a COOS boundary. The native helper does
-    not inspect pending interrupt events itself.
+    taken LOOP edge advances the count in either interpreter or JIT execution.
+    Threshold arrival exposes a COOS boundary, including for a backward chain.
+    This abstraction does not require a C++ interpreter handler on that path.
+    Native execution does not inspect pending interrupt events itself.
     """
     S = [
         "s_interpreter_run",

@@ -13,24 +13,34 @@ without hitting Python's recursion limit.
 
 from __future__ import annotations
 
-import ctypes
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import IntFlag
 
 from bump_allocator import BumpAllocator
+from config import FB_CONF_MAX_NESTING_DEPTH
 from system_containers import (
     MutableBitStorage,
     ReadOnlyBitStorage,
     ReadOnlyFlatMapStorage,
+    SequenceView,
     StaticVector,
     freeze_sequence,
 )
+from tier2_runtime.abi.integer_types import (
+    annotation_offset_t,
+    block_index_t,
+    frame_word_offset_t,
+    function_index_t,
+    global_index_t,
+    instruction_width_t,
+    type_index_t,
+)
 from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
 from tier2_runtime.wasm.module import (
-    WASM_RAW_WORD_BYTES,
-    InterpreterConstantPool,
-    NativeControlMapEntry,
+    ControlBlockMetadata,
+    InterpreterAnnotationPool,
+    LocalLayout,
     WasmOperand,
 )
 from tier2_runtime.wasm.opcodes import (
@@ -188,14 +198,25 @@ from tier2_runtime.wasm.opcodes import (
     SELECT,
     UNREACHABLE,
 )
+from tier2_runtime.wasm.validation import reject_wasm, require_wasm
 
 ControlBlock = tuple[int, int | None, int]
+BR_TABLE_COUNT_BYTES = 2
+BR_TABLE_TARGET_DEPTH_BYTES = 1
+BR_TABLE_TARGET_INDEX_BYTES = 2
+BR_TABLE_TARGET_STACK_BASE_BYTES = 1
+BR_TABLE_TARGET_RESULT_WORDS_BYTES = 1
+BR_TABLE_TARGET_BYTES = (
+    BR_TABLE_TARGET_INDEX_BYTES
+    + BR_TABLE_TARGET_STACK_BASE_BYTES
+    + BR_TABLE_TARGET_RESULT_WORDS_BYTES
+)
 
 
 def _decode_blocktype(code: memoryview, offset: int) -> tuple[int, int]:
     """Decode a supported blocktype and return (native-slot-count, next-offset)."""
 
-    assert 0 <= offset < len(code), "truncated blocktype"
+    require_wasm(0 <= offset < len(code), "truncated blocktype")
     blocktype = code[offset]
     if blocktype == 0x40:
         return 0, offset + 1
@@ -203,7 +224,7 @@ def _decode_blocktype(code: memoryview, offset: int) -> tuple[int, int]:
         return 1, offset + 1
     if blocktype == 0x7E or blocktype == 0x7C:  # i64/f64 occupy two raw stack slots
         return 2, offset + 1
-    assert False, (
+    reject_wasm(
         "ERR_WASM_UNSUPPORTED_FEATURE: blocktype must be empty or a single "
         f"value type, got 0x{blocktype:02X}"
     )
@@ -230,27 +251,29 @@ def _opcode_table(*opcodes: int) -> ReadOnlyBitStorage:
     return ReadOnlyBitStorage(bytes(storage.buffer), bits=1, count=256)
 
 
-_OPCODE_ATTRIBUTE_STORAGE = MutableBitStorage(count=256, bits=4)
-for _opcode, _attributes in (
-    (BLOCK, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
-    (LOOP, OpcodeAttribute.CONTROL_LOOP | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
-    (IF, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
-    (ELSE, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
-    (END, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
-    (BR, OpcodeAttribute.BRANCH | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
-    (BR_IF, OpcodeAttribute.BRANCH | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
-    (BR_TABLE, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
-    (RETURN, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
-    (CALL, OpcodeAttribute.CALL | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
-    (CALL_INDIRECT, OpcodeAttribute.CALL | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
-    (FC_PREFIX, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
-):
-    _OPCODE_ATTRIBUTE_STORAGE.put(_opcode, int(_attributes))
+def _build_opcode_attributes() -> ReadOnlyBitStorage:
+    """Freeze 256 four-bit attributes without retaining the setup buffer."""
+    storage = MutableBitStorage(count=256, bits=4)
+    for _opcode, _attributes in (
+        (BLOCK, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+        (LOOP, OpcodeAttribute.CONTROL_LOOP | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+        (IF, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+        (ELSE, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+        (END, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+        (BR, OpcodeAttribute.BRANCH | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+        (BR_IF, OpcodeAttribute.BRANCH | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+        (BR_TABLE, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+        (RETURN, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+        (CALL, OpcodeAttribute.CALL | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+        (CALL_INDIRECT, OpcodeAttribute.CALL | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+        (FC_PREFIX, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+    ):
+        storage.put(_opcode, int(_attributes))
 
-# Immutable ROM-style opcode metadata: 256 opcodes x 4 bits = 128 bytes.
-OPCODE_ATTRIBUTES: ReadOnlyBitStorage = ReadOnlyBitStorage(
-    bytes(_OPCODE_ATTRIBUTE_STORAGE.buffer), bits=4, count=256
-)
+    return ReadOnlyBitStorage(bytes(storage.buffer), bits=4, count=256)
+
+
+OPCODE_ATTRIBUTES = _build_opcode_attributes()
 
 
 def opcode_has_attribute(opcode: int, attribute: OpcodeAttribute) -> bool:
@@ -273,13 +296,15 @@ def _decode_fc_instruction(code: memoryview, offset: int) -> tuple[int, int]:
     if subopcode == FC_MEMORY_COPY:
         destination_memory, next_offset = decode_unsigned(code, next_offset)
         source_memory, next_offset = decode_unsigned(code, next_offset)
-        assert destination_memory == 0 and source_memory == 0, "only memory index zero is supported"
+        require_wasm(
+            destination_memory == 0 and source_memory == 0, "only memory index zero is supported"
+        )
         return subopcode, next_offset
     if subopcode == FC_MEMORY_FILL:
         memory_index, next_offset = decode_unsigned(code, next_offset)
-        assert memory_index == 0, "only memory index zero is supported"
+        require_wasm(memory_index == 0, "only memory index zero is supported")
         return subopcode, next_offset
-    assert False, f"ERR_WASM_UNSUPPORTED_FEATURE: 0xFC subopcode {subopcode} is not supported"
+    reject_wasm(f"ERR_WASM_UNSUPPORTED_FEATURE: 0xFC subopcode {subopcode} is not supported")
 
 
 def is_control_terminator(opcode: int) -> bool:
@@ -487,7 +512,6 @@ _BLOCK_OPENERS = _opcode_table(BLOCK, LOOP, IF)
 # (docs/requires/requirement_list.md has no existing nesting-depth bound);
 # chosen to match this codebase's other FB_CONF_* capacities (e.g.
 # core/scheduler.py's FB_CONF_MAX_TASKS=16) until a real spec value exists.
-FB_CONF_MAX_NESTING_DEPTH = 32
 
 
 @dataclass(slots=True)
@@ -502,20 +526,21 @@ class Instr:
 
 @dataclass(slots=True)
 class ControlMap:
-    """Pre-indexed control metadata with a fixed locality cache."""
+    """Sparse control delimiters and statically resolved control edges."""
 
-    native_entries: ctypes.Array
-    blocks: ReadOnlyFlatMapStorage[int, NativeControlMapEntry]
-    br_tables: ReadOnlyFlatMapStorage[int, tuple[tuple[int, ...], int]]
+    blocks: ReadOnlyFlatMapStorage[int, ControlBlockMetadata]
+    branch_targets: ReadOnlyFlatMapStorage[int, tuple[tuple[int, int, int], ...]]
+    else_targets: ReadOnlyFlatMapStorage[int, int]
     block_cache: StaticVector[tuple[int, ControlBlock] | None]
-    br_table_cache: StaticVector[tuple[int, tuple[tuple[int, ...], int]] | None]
+    branch_cache: StaticVector[tuple[int, tuple[tuple[int, int, int], ...]] | None]
 
     @staticmethod
     def _cache_slot(ip: int) -> int:
-        """Fold a 16-bit bytecode offset to the fixed 2-bit cache index."""
+        """Fold a 32-bit bytecode offset to the fixed 2-bit cache index."""
 
-        assert 0 <= ip <= 0xFFFF
-        temp = ip ^ (ip >> 8)
+        assert 0 <= ip <= 0xFFFF_FFFF
+        temp = ip ^ (ip >> 16)
+        temp = temp ^ (temp >> 8)
         temp = temp ^ (temp >> 4)
         temp = temp ^ (temp >> 2)
         return temp & 0x03
@@ -537,25 +562,34 @@ class ControlMap:
         self.block_cache[slot] = (ip, control)
         return control
 
-    def br_table(self, ip: int) -> tuple[tuple[int, ...], int]:
-        """Return a br_table descriptor, using the fixed O(1) locality cache."""
+    def branch_edges(self, ip: int) -> tuple[tuple[int, int, int], ...]:
+        """Return precomputed ``(target_ip, stack_base, result_words)`` edges."""
 
         slot = self._cache_slot(ip)
-        cached = self.br_table_cache[slot]
+        cached = self.branch_cache[slot]
         if cached is not None and cached[0] == ip:
             return cached[1]
-        value = self.br_tables.view().find(ip)
-        assert value is not None, f"unknown br_table at {ip}"
-        self.br_table_cache[slot] = (ip, value)
+        value = self.branch_targets.view().find(ip)
+        assert value is not None, f"unknown branch at {ip}"
+        self.branch_cache[slot] = (ip, value)
         return value
+
+    def else_target(self, ip: int) -> int:
+        """Return the instruction after an ELSE's matching END."""
+
+        target = self.else_targets.view().find(ip)
+        assert target is not None, f"ELSE at {ip} has no matching block"
+        return target
 
 
 @dataclass(slots=True)
 class _OpenBlock:
     opcode: int
     start: int
+    body_start: int
     else_offset: int | None
     result_arity: int
+    native_entry: ControlBlockMetadata
 
 
 def build_control_map(
@@ -563,32 +597,28 @@ def build_control_map(
     drop_widths: ReadOnlyFlatMapStorage[int, int] | None = None,
     select_widths: ReadOnlyFlatMapStorage[int, int] | None = None,
     allocator: BumpAllocator | None = None,
+    branch_layouts: ReadOnlyFlatMapStorage[int, tuple[tuple[int, int], ...]] | None = None,
 ) -> ControlMap:
     """Build sparse control metadata directly from a loader-owned ROM view."""
     block_count = 0
-    br_table_count = 0
+    branch_count = 0
     for instruction in iter_scan_instrs(code):
         if _BLOCK_OPENERS.at(instruction.opcode):
             block_count += 1
-        elif instruction.opcode == BR_TABLE:
-            br_table_count += 1
+        elif (
+            instruction.opcode == BR
+            or instruction.opcode == BR_IF
+            or instruction.opcode == BR_TABLE
+        ):
+            branch_count += 1
 
-    native_entries_type = NativeControlMapEntry * len(code)
-    native_entries = native_entries_type()
-    for instruction_offset in range(len(code)):
-        entry = native_entries[instruction_offset]
-        entry.match_end = 0xFFFF_FFFF
-        entry.else_offset = 0xFFFF_FFFF
-        entry.next_pc = 0xFFFF_FFFF
-        entry.result_arity = 0
-        entry.operand_width = 1
-
-    block_entries: StaticVector[tuple[int, NativeControlMapEntry]] = StaticVector(
+    block_entries: StaticVector[tuple[int, ControlBlockMetadata]] = StaticVector(
         capacity=block_count
     )
-    br_table_entries: StaticVector[tuple[int, tuple[tuple[int, ...], int]]] = StaticVector(
-        capacity=br_table_count
+    branch_opener_entries: StaticVector[tuple[int, tuple[int, ...]]] = StaticVector(
+        capacity=branch_count
     )
+    else_opener_entries: StaticVector[tuple[int, int]] = StaticVector(capacity=block_count)
     # [opcode, start_offset, else_offset] per still-open BLOCK/LOOP/IF, in a
     # fixed-size buffer indexed by `depth` (see FB_CONF_MAX_NESTING_DEPTH) --
     # else_offset is filled in place when this entry's own ELSE is reached,
@@ -608,22 +638,34 @@ def build_control_map(
             _, off = _decode_fc_instruction(code, off)
         elif _BLOCK_OPENERS.at(opcode):
             result_arity, off = _decode_blocktype(code, off)
-            if depth >= FB_CONF_MAX_NESTING_DEPTH:
-                assert False, (
-                    "ERR_WASM_UNSUPPORTED_FEATURE: block/loop/if nesting exceeds "
-                    f"FB_CONF_MAX_NESTING_DEPTH={FB_CONF_MAX_NESTING_DEPTH} at offset {start}"
-                )
-            open_stack[depth] = _OpenBlock(opcode, start, None, result_arity)
-            native_entries[start].next_pc = off
-            native_entries[start].result_arity = result_arity
+            assert depth < FB_CONF_MAX_NESTING_DEPTH, (
+                "section-count prevalidation must cap control nesting"
+            )
+            entry = ControlBlockMetadata()
+            entry.match_end = 0xFFFF_FFFF
+            entry.else_offset = 0xFFFF_FFFF
+            entry.result_arity = result_arity
+            open_stack[depth] = _OpenBlock(opcode, start, off, None, result_arity, entry)
             depth += 1
+        elif opcode == BR or opcode == BR_IF:
+            branch_depth, off = decode_unsigned(code, off)
+            if branch_depth < depth:
+                opener = open_stack[depth - branch_depth - 1]
+                assert opener is not None
+                target_start = opener.start
+            else:
+                target_start = 0xFFFF_FFFF
+            if not branch_opener_entries.push_back((start, (target_start,))):
+                assert False, "branch count exceeds code capacity"
         elif _LEB_UNSIGNED_OPERAND.at(opcode):
             _, off = decode_unsigned(code, off)
         elif opcode == I32_CONST or opcode == I64_CONST:
             _, off = decode_signed(code, off, bits=64 if opcode == I64_CONST else 32)
         elif opcode == F32_CONST:
+            require_wasm(off + 4 <= n, "truncated f32.const immediate")
             off += 4
         elif opcode == F64_CONST:
+            require_wasm(off + 8 <= n, "truncated f64.const immediate")
             off += 8
         elif _MEMARG_OPCODES.at(opcode):
             _, off = decode_unsigned(code, off)
@@ -632,16 +674,23 @@ def build_control_map(
             off += 1  # reserved
         elif opcode == BR_TABLE:
             n_labels, off = decode_unsigned(code, off)
-            labels: StaticVector[int] = StaticVector(capacity=n_labels)
-            for _ in range(n_labels):
-                lbl, off = decode_unsigned(code, off)
-                if not labels.push_back(lbl):
-                    assert False, (
-                        "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds code capacity"
-                    )
-            default_lbl, off = decode_unsigned(code, off)
-            if not br_table_entries.push_back((start, (freeze_sequence(labels), default_lbl))):
-                assert False, "ERR_WASM_UNSUPPORTED_FEATURE: br_table count exceeds code capacity"
+            require_wasm(
+                n_labels <= 0xFFFF,
+                "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds u16",
+            )
+            targets: StaticVector[int] = StaticVector(capacity=n_labels + 1)
+            for _ in range(n_labels + 1):
+                branch_depth, off = decode_unsigned(code, off)
+                if branch_depth < depth:
+                    opener = open_stack[depth - branch_depth - 1]
+                    assert opener is not None
+                    target_start = opener.start
+                else:
+                    target_start = 0xFFFF_FFFF
+                pushed = targets.push_back(target_start)
+                assert pushed
+            if not branch_opener_entries.push_back((start, freeze_sequence(targets))):
+                assert False, "branch count exceeds code capacity"
         elif opcode == CALL_INDIRECT:
             _, off = decode_unsigned(code, off)
             _, off = decode_unsigned(code, off)
@@ -649,14 +698,16 @@ def build_control_map(
             opener = open_stack[depth - 1]
             assert opener is not None and opener.opcode == IF, "ELSE without matching IF"
             opener.else_offset = start
-            native_entries[opener.start].else_offset = start
+            opener.native_entry.else_offset = start
+            pushed = else_opener_entries.push_back((start, opener.start))
+            assert pushed
         elif opcode == END:
             if depth > 0:
                 depth -= 1
                 opener = open_stack[depth]
                 assert opener is not None
                 open_stack[depth] = None
-                entry = native_entries[opener.start]
+                entry = opener.native_entry
                 entry.match_end = start
                 if not block_entries.push_back((opener.start, entry)):
                     assert False, "ERR_WASM_UNSUPPORTED_FEATURE: block count exceeds code capacity"
@@ -668,18 +719,42 @@ def build_control_map(
             )
 
     assert depth == 0, "unterminated block/loop/if (missing END)"
-    for widths in (drop_widths, select_widths):
-        if widths is not None:
-            for instruction_offset, width in widths.view().entries:
-                native_entries[instruction_offset].operand_width = width
-    if allocator is not None and len(code):
-        allocator.allocate(ctypes.sizeof(native_entries), ctypes.alignment(NativeControlMapEntry))
+    block_storage = ReadOnlyFlatMapStorage.create(block_entries)
+    branch_entries: StaticVector[tuple[int, tuple[tuple[int, int, int], ...]]] = StaticVector(
+        capacity=branch_count
+    )
+    for source_ip, opener_starts in branch_opener_entries:
+        layouts = None if branch_layouts is None else branch_layouts.view().find(source_ip)
+        if layouts is None:
+            assert all(target == 0xFFFF_FFFF for target in opener_starts), (
+                "validated branches require loader stack analysis"
+            )
+        else:
+            assert len(layouts) == len(opener_starts)
+        edges: StaticVector[tuple[int, int, int]] = StaticVector(capacity=len(opener_starts))
+        for target_number, opener_start in enumerate(opener_starts):
+            stack_base, result_words = (0, 0) if layouts is None else layouts[target_number]
+            if opener_start == 0xFFFF_FFFF:
+                target_ip = 0xFFFF_FFFF
+            else:
+                opener = block_storage.view().find(opener_start)
+                assert opener is not None
+                target_ip = opener_start + 2 if code[opener_start] == LOOP else opener.match_end + 1
+            edges.append((target_ip, stack_base, result_words))
+        pushed = branch_entries.push_back((source_ip, freeze_sequence(edges)))
+        assert pushed
+    else_targets: StaticVector[tuple[int, int]] = StaticVector(capacity=len(else_opener_entries))
+    for else_ip, opener_start in else_opener_entries:
+        opener = block_storage.view().find(opener_start)
+        assert opener is not None
+        pushed = else_targets.push_back((else_ip, opener.match_end + 1))
+        assert pushed
     return ControlMap(
-        native_entries=native_entries,
-        blocks=ReadOnlyFlatMapStorage.create(block_entries),
-        br_tables=ReadOnlyFlatMapStorage.create(br_table_entries),
+        blocks=block_storage,
+        branch_targets=ReadOnlyFlatMapStorage.create(branch_entries),
+        else_targets=ReadOnlyFlatMapStorage.create(else_targets),
         block_cache=StaticVector.of((None, None, None, None), capacity=4),
-        br_table_cache=StaticVector.of((None, None, None, None), capacity=4),
+        branch_cache=StaticVector.of((None, None, None, None), capacity=4),
     )
 
 
@@ -728,11 +803,16 @@ def iter_scan_instrs(code: memoryview, start: int = 0) -> Iterator[Instr]:
             _, off = decode_unsigned(code, off)  # align, unused
             _, off = decode_unsigned(code, off)  # mem_offset, unused
         elif _MEMORY_INDEX_OPCODES.at(opcode):
+            require_wasm(off < n, "truncated memory index")
             reserved = code[off]
             off += 1
-            assert reserved == 0, "only memory index 0 is supported"
+            require_wasm(reserved == 0, "only memory index 0 is supported")
         elif opcode == BR_TABLE:
             n_labels, off = decode_unsigned(code, off)
+            require_wasm(
+                n_labels <= 0xFFFF,
+                "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds u16",
+            )
             for _ in range(n_labels):
                 _, off = decode_unsigned(
                     code, off
@@ -744,67 +824,103 @@ def iter_scan_instrs(code: memoryview, start: int = 0) -> Iterator[Instr]:
         elif _NO_OPERAND.at(opcode):
             pass
         else:
-            assert False, (
+            reject_wasm(
                 f"ERR_WASM_UNSUPPORTED_FEATURE: opcode 0x{opcode:02X} at offset {start} is not supported"
             )
 
+        if _has_instruction_width_record(opcode):
+            _instruction_width_record_size(off - start)
         yield Instr(offset=start, opcode=opcode, end_offset=off, operand=operand)
 
 
-def _count_interpreter_constant_words(code: memoryview) -> int:
-    """Count decoded pool words without allocating the pool."""
+def _has_instruction_width_record(opcode: int) -> bool:
+    """Return whether a variable-length immediate needs its encoded width."""
 
-    word_count = 0
-    for instruction in iter_scan_instrs(code):
-        opcode = instruction.opcode
-        if _LEB_UNSIGNED_OPERAND.at(opcode):
-            word_count += 1
-        elif opcode == I32_CONST:
-            word_count += 1
-        elif opcode == I64_CONST:
-            word_count += 2
-        elif _MEMARG_OPCODES.at(opcode):
-            word_count += 2
-        elif _MEMORY_INDEX_OPCODES.at(opcode):
-            word_count += 1
-        elif opcode == BR_TABLE:
-            label_count, _ = decode_unsigned(code, instruction.offset + 1)
-            word_count += label_count + 2
-        elif opcode == CALL_INDIRECT:
-            word_count += 2
-        elif opcode == FC_PREFIX:
-            assert instruction.operand is not None
-            word_count += 1
-            if instruction.operand == FC_MEMORY_COPY:
-                word_count += 2
-            elif instruction.operand == FC_MEMORY_FILL:
-                word_count += 1
-    return word_count
+    return (
+        (bool(_LEB_UNSIGNED_OPERAND.at(opcode)) and opcode != BR and opcode != BR_TABLE)
+        or opcode == I32_CONST
+        or opcode == I64_CONST
+        or opcode == CALL_INDIRECT
+        or opcode == BR_IF
+        or opcode == FC_PREFIX
+        or bool(_MEMARG_OPCODES.at(opcode))
+    )
 
 
 def _instruction_width_record_size(instruction_width: int) -> int:
     assert instruction_width > 0
-    return 1 if instruction_width < 0xFF else 1 + WASM_RAW_WORD_BYTES
+    require_wasm(
+        instruction_width <= 0xFF,
+        "ERR_WASM_UNSUPPORTED_FEATURE: variable instruction width exceeds u8",
+    )
+    return 1
 
 
-def _count_interpreter_constant_pool_bytes(code: memoryview) -> int:
-    pool_bytes = _count_interpreter_constant_words(code) * WASM_RAW_WORD_BYTES
+def _count_interpreter_annotation_pool_bytes(code: memoryview) -> int:
+    annotation_bytes = 0
     for instruction in iter_scan_instrs(code):
-        pool_bytes += _instruction_width_record_size(instruction.end_offset - instruction.offset)
-    return pool_bytes
+        opcode = instruction.opcode
+        if opcode == LOCAL_GET or opcode == LOCAL_SET or opcode == LOCAL_TEE:
+            annotation_bytes += 3  # frame word offset and local width
+        elif opcode == GLOBAL_GET or opcode == GLOBAL_SET:
+            annotation_bytes += 2  # global index
+        elif opcode == I32_CONST:
+            annotation_bytes += 4  # signed value
+        elif opcode == I64_CONST:
+            annotation_bytes += 8  # signed value
+        elif _MEMARG_OPCODES.at(opcode):
+            annotation_bytes += 4  # effective offset
+        elif opcode == BR:
+            annotation_bytes += 4  # target block, stack base, and result width
+        elif opcode == BR_IF:
+            annotation_bytes += 4  # target block, stack base, and result width
+        elif opcode == BR_TABLE:
+            label_count, _ = decode_unsigned(code, instruction.offset + 1)
+            require_wasm(
+                label_count <= 0xFFFF,
+                "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds u16",
+            )
+            annotation_bytes += BR_TABLE_COUNT_BYTES + (label_count + 1) * BR_TABLE_TARGET_BYTES
+        elif opcode == IF:
+            annotation_bytes += 4
+        elif opcode == BLOCK or opcode == LOOP or opcode == ELSE or opcode == END:
+            annotation_bytes += 2
+        elif opcode == CALL or opcode == CALL_INDIRECT:
+            annotation_bytes += 4  # function/type index and continuation block index
+        elif opcode == FC_PREFIX:
+            assert instruction.operand is not None
+            if (
+                FC_I32_TRUNC_SAT_F32_S <= instruction.operand <= FC_I64_TRUNC_SAT_F64_U
+                or instruction.operand == FC_MEMORY_COPY
+                or instruction.operand == FC_MEMORY_FILL
+            ):
+                annotation_bytes += 3  # subopcode and successor block index
+        elif opcode == DROP or opcode == SELECT:
+            annotation_bytes += 1  # operand width, derived by stack type analysis
+        if _has_instruction_width_record(opcode):
+            annotation_bytes += _instruction_width_record_size(
+                instruction.end_offset - instruction.offset
+            )
+    return annotation_bytes
 
 
-def build_interpreter_constant_pool(
+def build_interpreter_annotation_pool(
     code: memoryview,
-    block_heads: Sequence[int],
+    block_heads: SequenceView[int],
     allocator: BumpAllocator | None = None,
-) -> tuple[InterpreterConstantPool, StaticVector[int]]:
-    """Decode LEB128 operands and instruction widths into each block's pool.
+    control_map: ControlMap | None = None,
+    block_index_base: int = 0,
+    *,
+    local_layout: LocalLayout,
+    drop_widths: ReadOnlyFlatMapStorage[int, int] | None = None,
+    select_widths: ReadOnlyFlatMapStorage[int, int] | None = None,
+) -> tuple[InterpreterAnnotationPool, StaticVector[annotation_offset_t]]:
+    """Store runtime-derived operands and control edges in the annotation pool.
 
-    Fixed-width float immediates stay in the original bytecode. Runtime reads
-    advance through this byte pool; they do not look up an offset for each PC.
-    Each block is parsed independently, and its starting byte offset is
-    recorded before its operands and instruction-width records are appended.
+    Fixed-width values and raw LEB128 values are not retained. Variable-length
+    immediates store one encoded-width byte; fixed-width instruction size comes
+    from its opcode. Branch annotations store the resolved BasicBlock index so
+    dispatch never decodes a branch depth or searches by PC.
     """
 
     assert len(block_heads) > 0
@@ -812,78 +928,187 @@ def build_interpreter_constant_pool(
     for block_index, start in enumerate(block_heads):
         end = block_heads[block_index + 1] if block_index + 1 < len(block_heads) else len(code)
         assert 0 <= start <= end <= len(code)
-        total_bytes += _count_interpreter_constant_pool_bytes(code[start:end])
+        total_bytes += _count_interpreter_annotation_pool_bytes(code[start:end])
 
-    constants = InterpreterConstantPool(capacity=total_bytes, allocator=allocator)
-    block_offsets: StaticVector[int] = StaticVector(capacity=len(block_heads))
+    annotations = InterpreterAnnotationPool(capacity=total_bytes, allocator=allocator)
+    block_offsets: StaticVector[annotation_offset_t] = StaticVector(capacity=len(block_heads))
 
-    def append_word(value: int) -> None:
+    def append_u32(value: int) -> None:
         assert 0 <= value <= 0xFFFF_FFFF
-        constants.append(value)
+        annotations.append(value)
+
+    def append_u16(value: int) -> None:
+        assert 0 <= value <= 0xFFFF
+        annotations.append_byte(value & 0xFF)
+        annotations.append_byte(value >> 8)
 
     def append_wide(value: int) -> None:
         bits = value & 0xFFFF_FFFF_FFFF_FFFF
-        append_word(bits & 0xFFFF_FFFF)
-        append_word(bits >> 32)
+        append_u32(bits & 0xFFFF_FFFF)
+        append_u32(bits >> 32)
 
-    def append_instruction_width(instruction_width: int) -> None:
-        if instruction_width < 0xFF:
-            constants.append_byte(instruction_width)
-            return
-        constants.append_byte(0xFF)
-        append_word(instruction_width)
+    def append_instruction_width(instruction_width: instruction_width_t) -> None:
+        require_wasm(
+            0 < instruction_width <= 0xFF,
+            "ERR_WASM_UNSUPPORTED_FEATURE: variable instruction width exceeds u8",
+        )
+        annotations.append_byte(instruction_width)
 
-    for block_index, start in enumerate(block_heads):
-        end = block_heads[block_index + 1] if block_index + 1 < len(block_heads) else len(code)
-        appended = block_offsets.push_back(len(constants))
+    def block_index_for_offset(offset: int) -> block_index_t:
+        if control_map is None or offset >= len(code):
+            return block_index_t(0xFFFF)
+        from bisect import bisect_left
+
+        position = bisect_left(block_heads, offset)
+        assert position < len(block_heads) and block_heads[position] == offset
+        block_index = block_index_base + position
+        require_wasm(
+            block_index < 0xFFFF,
+            "ERR_WASM_UNSUPPORTED_FEATURE: block index exceeds u16",
+        )
+        return block_index_t(block_index)
+
+    def append_branch_target(function_offset: int, target_number: int) -> None:
+        if control_map is None:
+            target_block_index = 0xFFFF
+            stack_base_words, result_words = 0, 0
+        else:
+            edges = control_map.branch_edges(function_offset)
+            assert target_number < len(edges)
+            target_offset, stack_base_words, result_words = edges[target_number]
+            target_block_index = block_index_for_offset(target_offset)
+        assert stack_base_words <= 0xFF and result_words <= 2
+        append_u16(target_block_index)
+        annotations.append_byte(stack_base_words)
+        annotations.append_byte(result_words)
+
+    for block_number, start in enumerate(block_heads):
+        end = block_heads[block_number + 1] if block_number + 1 < len(block_heads) else len(code)
+        appended = block_offsets.push_back(annotation_offset_t(len(annotations)))
         assert appended
         block_code = code[start:end]
         for instruction in iter_scan_instrs(block_code):
             cursor = instruction.offset + 1
+            function_offset = start + instruction.offset
             opcode = instruction.opcode
-            if _LEB_UNSIGNED_OPERAND.at(opcode):
-                value, _ = decode_unsigned(block_code, cursor)
-                append_word(value)
+            if _has_instruction_width_record(opcode):
+                append_instruction_width(
+                    instruction_width_t(instruction.end_offset - instruction.offset)
+                )
+            if opcode == LOCAL_GET or opcode == LOCAL_SET or opcode == LOCAL_TEE:
+                local_index, _ = decode_unsigned(block_code, cursor)
+                assert local_index < len(local_layout)
+                frame_offset: frame_word_offset_t = local_layout.offset(local_index)
+                local_width = local_layout.size_words(local_index)
+                assert frame_offset <= 0xFFFF and local_width <= 0xFF
+                append_u16(frame_offset)
+                annotations.append_byte(local_width)
+            elif opcode == DROP:
+                width = 1 if drop_widths is None else drop_widths.view().find(function_offset) or 1
+                assert width == 1 or width == 2
+                annotations.append_byte(width)
+            elif opcode == SELECT:
+                width = (
+                    1 if select_widths is None else select_widths.view().find(function_offset) or 1
+                )
+                assert width == 1 or width == 2
+                annotations.append_byte(width)
+            elif opcode == GLOBAL_GET or opcode == GLOBAL_SET:
+                raw_global_index, _ = decode_unsigned(block_code, cursor)
+                global_index = global_index_t(raw_global_index)
+                require_wasm(
+                    global_index <= 0xFFFF,
+                    "ERR_WASM_UNSUPPORTED_FEATURE: global index exceeds u16",
+                )
+                append_u16(global_index)
             elif opcode == I32_CONST:
                 value, _ = decode_signed(block_code, cursor, bits=32)
-                append_word(value & 0xFFFF_FFFF)
+                append_u32(value & 0xFFFF_FFFF)
             elif opcode == I64_CONST:
                 value, _ = decode_signed(block_code, cursor, bits=64)
                 append_wide(value)
             elif _MEMARG_OPCODES.at(opcode):
-                alignment, next_cursor = decode_unsigned(block_code, cursor)
-                append_word(alignment)
+                _alignment, next_cursor = decode_unsigned(block_code, cursor)
                 offset, _ = decode_unsigned(block_code, next_cursor)
-                append_word(offset)
-            elif _MEMORY_INDEX_OPCODES.at(opcode):
-                append_word(block_code[cursor])
+                append_u32(offset)
             elif opcode == BR_TABLE:
                 label_count, next_cursor = decode_unsigned(block_code, cursor)
-                append_word(label_count)
+                require_wasm(
+                    label_count <= 0xFFFF,
+                    "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds u16",
+                )
+                append_u16(label_count)
                 cursor = next_cursor
-                for _index in range(label_count + 1):
-                    target, cursor = decode_unsigned(block_code, cursor)
-                    append_word(target)
             elif opcode == CALL_INDIRECT:
-                type_index, next_cursor = decode_unsigned(block_code, cursor)
-                append_word(type_index)
-                table_index, _ = decode_unsigned(block_code, next_cursor)
-                append_word(table_index)
+                raw_type_index, next_cursor = decode_unsigned(block_code, cursor)
+                type_index = type_index_t(raw_type_index)
+                require_wasm(
+                    type_index <= 0xFFFF,
+                    "ERR_WASM_UNSUPPORTED_FEATURE: type index exceeds u16",
+                )
+                append_u16(type_index)
+                _table_index, _ = decode_unsigned(block_code, next_cursor)
+            elif opcode == CALL:
+                raw_function_index, _ = decode_unsigned(block_code, cursor)
+                function_index = function_index_t(raw_function_index)
+                require_wasm(
+                    function_index <= 0xFFFF,
+                    "ERR_WASM_UNSUPPORTED_FEATURE: function index exceeds u16",
+                )
+                append_u16(function_index)
             elif opcode == FC_PREFIX:
                 subopcode, cursor = decode_unsigned(block_code, cursor)
-                append_word(subopcode)
+                assert subopcode <= 0xFF
+                annotations.append_byte(subopcode)
                 if subopcode == FC_MEMORY_COPY:
-                    destination_memory, cursor = decode_unsigned(block_code, cursor)
-                    append_word(destination_memory)
-                    source_memory, _ = decode_unsigned(block_code, cursor)
-                    append_word(source_memory)
+                    _destination_memory, cursor = decode_unsigned(block_code, cursor)
+                    _source_memory, _ = decode_unsigned(block_code, cursor)
                 elif subopcode == FC_MEMORY_FILL:
-                    memory_index, _ = decode_unsigned(block_code, cursor)
-                    append_word(memory_index)
-            append_instruction_width(instruction.end_offset - instruction.offset)
+                    _memory_index, _ = decode_unsigned(block_code, cursor)
+            if opcode == BLOCK or opcode == LOOP:
+                append_u16(block_index_for_offset(start + instruction.end_offset))
+            elif opcode == IF:
+                then_target = start + instruction.end_offset
+                match = None if control_map is None else control_map.block(function_offset)
+                if match is None:
+                    else_target = len(code)
+                else:
+                    match_end, else_offset, _result_arity = match
+                    else_target = else_offset + 1 if else_offset is not None else match_end + 1
+                append_u16(block_index_for_offset(then_target))
+                append_u16(block_index_for_offset(else_target))
+            elif opcode == ELSE:
+                if control_map is None:
+                    target = len(code)
+                else:
+                    target = control_map.else_target(function_offset)
+                append_u16(block_index_for_offset(target))
+            elif opcode == END:
+                append_u16(block_index_for_offset(start + instruction.end_offset))
+            elif opcode == BR:
+                append_branch_target(function_offset, 0)
+            elif opcode == BR_IF:
+                append_branch_target(function_offset, 0)
+            elif opcode == BR_TABLE:
+                label_count, target_cursor = decode_unsigned(block_code, instruction.offset + 1)
+                for target_number in range(label_count + 1):
+                    _, target_cursor = decode_unsigned(block_code, target_cursor)
+                    append_branch_target(function_offset, target_number)
+            elif opcode == CALL or opcode == CALL_INDIRECT:
+                append_u16(block_index_for_offset(start + instruction.end_offset))
+            elif (
+                opcode == FC_PREFIX
+                and instruction.operand is not None
+                and (
+                    FC_I32_TRUNC_SAT_F32_S <= instruction.operand <= FC_I64_TRUNC_SAT_F64_U
+                    or instruction.operand == FC_MEMORY_COPY
+                    or instruction.operand == FC_MEMORY_FILL
+                )
+            ):
+                append_u16(block_index_for_offset(start + instruction.end_offset))
 
-    assert len(constants) == total_bytes
-    return constants, block_offsets
+    assert len(annotations) == total_bytes
+    return annotations, block_offsets
 
 
 def iter_block_ops(
@@ -905,7 +1130,9 @@ def iter_block_ops(
         start = off
         opcode = code[off]
         off += 1
-        if _LEB_UNSIGNED_OPERAND.at(opcode):
+        if opcode == FC_PREFIX:
+            arg, off = _decode_fc_instruction(code, off)
+        elif _LEB_UNSIGNED_OPERAND.at(opcode):
             operand, off = decode_unsigned(code, off)
             arg: WasmOperand = operand
         elif opcode == I32_CONST or opcode == I64_CONST:
@@ -937,13 +1164,20 @@ def iter_block_ops(
         yield (opcode, arg)
 
 
-def count_basic_blocks(code: memoryview) -> int:
-    """Count interpreter block entries without allocating their storage."""
+def count_basic_blocks_and_max_control_depth(code: memoryview) -> tuple[int, int]:
+    """Count block entries and maximum nesting without allocating their storage."""
     block_count = 0
     code_size = len(code)
     current_head: int | None = None
     pending_call_resume: int | None = None
+    control_depth = 0
+    max_control_depth = 0
     for instruction in iter_scan_instrs(code):
+        if instruction.opcode == BLOCK or instruction.opcode == LOOP or instruction.opcode == IF:
+            control_depth += 1
+            max_control_depth = max(max_control_depth, control_depth)
+        elif instruction.opcode == END and control_depth > 0:
+            control_depth -= 1
         if current_head is None:
             current_head = instruction.offset
         if opcode_has_attribute(instruction.opcode, OpcodeAttribute.BASIC_BLOCK_BOUNDARY):
@@ -959,7 +1193,12 @@ def count_basic_blocks(code: memoryview) -> int:
     if current_head is not None:
         if pending_call_resume != current_head:
             block_count += 1
-    return block_count
+    return block_count, max_control_depth
+
+
+def count_basic_blocks(code: memoryview) -> int:
+    """Count interpreter block entries without allocating their storage."""
+    return count_basic_blocks_and_max_control_depth(code)[0]
 
 
 def extract_basic_blocks(
@@ -988,21 +1227,6 @@ def extract_basic_blocks(
 
     code_size = len(code)
     instr_stream = iter_scan_instrs(code)
-
-    def _skip_trailing_ends(offset: int) -> int:
-        # A branch/if-skip target computed as "one past a matching END" can
-        # itself land exactly on the NEXT enclosing block/loop/if's own
-        # closing END (nested constructs sharing one exit point). None of
-        # those bare structural opcodes were ever entered via _h_block /
-        # _h_loop / _h_if for a JIT-bypassed trace, so walk past every
-        # consecutive END to the first real instruction -- landing on one
-        # would otherwise pop the interpreter's frame stack for a frame
-        # that was never pushed. END is a single, no-operand byte (0x0B),
-        # so this is a direct raw-byte scan -- no per-instruction Instr
-        # lookup table needed for it.
-        while offset < len(code) and code[offset] == END:
-            offset += 1
-        return offset
 
     assert 0 <= pc_base <= 0xFFFF_FFFF - len(code)
     block_capacity = count_basic_blocks(code)
@@ -1038,17 +1262,16 @@ def extract_basic_blocks(
             cur_span_end = ins.offset
 
         if _BLOCK_OPENERS.at(ins.opcode):
-            if active_openers_depth >= FB_CONF_MAX_NESTING_DEPTH:
-                assert False, (
-                    "ERR_WASM_UNSUPPORTED_FEATURE: block/loop/if nesting exceeds "
-                    f"FB_CONF_MAX_NESTING_DEPTH={FB_CONF_MAX_NESTING_DEPTH} at offset {ins.offset}"
-                )
+            assert active_openers_depth < FB_CONF_MAX_NESTING_DEPTH, (
+                "section-count prevalidation must cap control nesting"
+            )
             active_openers[active_openers_depth] = ins
             active_openers_depth += 1
 
         if (
             not opcode_has_attribute(ins.opcode, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
             or ins.opcode == CALL
+            or ins.opcode == FC_PREFIX
         ):
             cur_span_end = ins.end_offset
 
@@ -1074,7 +1297,7 @@ def extract_basic_blocks(
                         match = control_map.block(target.offset)
                         if match is not None:
                             match_end_ip, _else_offset, _result_arity = match
-                            branch_target = pc_base + _skip_trailing_ends(match_end_ip + 1)
+                            branch_target = pc_base + (match_end_ip + 1)
 
                 if ins.opcode == BR:
                     # Unconditional: the branch target is the block's only
@@ -1090,6 +1313,13 @@ def extract_basic_blocks(
                     # at this opcode so the interpreter can resolve its table.
                     next_pc = pc
                     loops_to = None
+                elif ins.opcode == BR_IF:
+                    # The false edge enters the first structural instruction
+                    # after br_if. Keep its head in the block index so its END
+                    # handlers can pop the active frames before the later
+                    # post-control successor is reached.
+                    next_pc = pc_base + ins.end_offset
+                    loops_to = branch_target
                 elif ins.opcode == IF:
                     # Conditional entry: the just-computed condition decides
                     # between the then-body (right after this IF) and the
@@ -1102,9 +1332,7 @@ def extract_basic_blocks(
                     if match is not None:
                         match_end_ip, else_offset, _result_arity = match
                         skip_target = pc_base + (
-                            (else_offset + 1)
-                            if else_offset is not None
-                            else _skip_trailing_ends(match_end_ip + 1)
+                            (else_offset + 1) if else_offset is not None else (match_end_ip + 1)
                         )
                     next_pc = skip_target
                     loops_to = then_target
@@ -1116,19 +1344,16 @@ def extract_basic_blocks(
                     assert if_opener is not None
                     match = control_map.block(if_opener.offset)
                     next_pc = (
-                        pc_base + _skip_trailing_ends(match[0] + 1)
-                        if match is not None
-                        else pc_base + ins.end_offset
+                        pc_base + (match[0] + 1) if match is not None else pc_base + ins.end_offset
                     )
                     loops_to = None
                 elif ins.opcode == FC_PREFIX:
-                    # Leave the prefixed instruction for the interpreter.
-                    # A JIT block ending immediately before this boundary
-                    # must resume at the prefix so its subopcode still runs.
-                    next_pc = pc
+                    # The Runtime API executes the prefixed operation before
+                    # handing off to the next indexed instruction boundary.
+                    next_pc = pc_base + ins.end_offset
                     loops_to = None
                 else:
-                    next_pc = pc_base + _skip_trailing_ends(ins.end_offset)
+                    next_pc = pc_base + ins.end_offset
                     loops_to = branch_target if ins.opcode == BR_IF else None
 
                 byte_span = cur_span_end - cur_head_offset

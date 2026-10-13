@@ -14,6 +14,7 @@ the Code section's implicit numbering are all in this unified space.
 from __future__ import annotations
 
 import ctypes
+from bisect import bisect_left
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
@@ -29,7 +30,22 @@ from system_containers import (
     StaticVector,
     fold_mix32,
 )
+from tier2_runtime.abi.integer_types import (
+    INVALID_BLOCK_INDEX,
+    ZERO_OPERAND_WORDS,
+    annotation_offset_t,
+    block_index_t,
+    code_offset_t,
+    frame_depth_t,
+    frame_word_offset_t,
+    function_index_t,
+    local_count_t,
+    operand_words_t,
+    type_index_t,
+    wasm_pc_t,
+)
 from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
+from tier2_runtime.wasm.validation import reject_wasm, require_wasm
 
 if TYPE_CHECKING:
     from tier2_runtime.interpreter.control_flow import ControlMap
@@ -40,12 +56,33 @@ ElementInitializer = Callable[[int, int, int], None]
 DataInitializer = Callable[[int, memoryview], None]
 
 
+def _function_block_index_for_pc(
+    block_heads: SequenceView[int],
+    block_index_base: int,
+    pc: int | None,
+    pc_base: int,
+) -> block_index_t:
+    """Resolve one loader-known function edge to its immutable global block index."""
+
+    if pc is None:
+        return block_index_t(0xFFFF)
+    local_pc = pc - pc_base
+    if local_pc < 0:
+        return block_index_t(0xFFFF)
+    position = bisect_left(block_heads, local_pc)
+    if position == len(block_heads) or block_heads[position] != local_pc:
+        return block_index_t(0xFFFF)
+    result = block_index_base + position
+    assert result < 0xFFFF
+    return block_index_t(result)
+
+
 class BasicBlock(ctypes.Structure):
     """
     A straight-line run of WASM instructions ending with branch/return, as PC
     range + control-flow metadata only. Decoded instructions are never stored
     in the module; consumers obtain a one-shot iterator over raw bytecode. A
-    zero-length entry marks a call-resume PC that needs a constant-pool start
+    zero-length entry marks a call-resume PC that needs an annotation-pool start
     but contains no JIT-eligible instructions. The pool start is stored here
     so every block owns the metadata needed to initialize `rel`.
     """
@@ -53,58 +90,82 @@ class BasicBlock(ctypes.Structure):
     __slots__ = ()
     _fields_ = (
         ("head_pc", ctypes.c_uint32),
-        ("function_index", ctypes.c_uint32),
+        ("function_index", ctypes.c_uint16),
         ("_next_pc", ctypes.c_uint32),
         ("_loops_to", ctypes.c_uint32),
-        ("frame_depth", ctypes.c_uint16),
+        ("frame_depth", ctypes.c_uint8),
         ("jit_cache_reference", ctypes.c_uint8),
-        ("_reserved0", ctypes.c_uint8),
+        ("_reserved0", ctypes.c_uint16),
         ("byte_span", ctypes.c_uint32),
-        ("interpreter_constant_byte_offset", ctypes.c_uint32),
+        ("interpreter_annotation_byte_offset", ctypes.c_uint32),
+        ("_next_block_index", ctypes.c_uint16),
+        ("_loops_to_block_index", ctypes.c_uint16),
     )
 
     def __init__(
         self,
-        head_pc: int,
-        func_index: int = 0,
-        next_pc: int | None = None,
-        loops_to: int | None = None,
-        frame_depth: int = 0,
-        byte_span: int = 0,
-        interpreter_constant_byte_offset: int = 0,
+        head_pc: wasm_pc_t,
+        func_index: function_index_t = function_index_t(0),
+        next_pc: wasm_pc_t | None = None,
+        loops_to: wasm_pc_t | None = None,
+        frame_depth: frame_depth_t = frame_depth_t(0),
+        byte_span: code_offset_t = code_offset_t(0),
+        interpreter_annotation_byte_offset: annotation_offset_t = annotation_offset_t(0),
+        next_block_index: block_index_t = block_index_t(0xFFFF),
+        loops_to_block_index: block_index_t = block_index_t(0xFFFF),
     ) -> None:
         self.head_pc = head_pc
         self.function_index = func_index
         self.next_pc = next_pc
         self.loops_to = loops_to
-        assert 0 <= frame_depth <= 0xFFFF
+        assert 0 <= frame_depth <= 0xFF
         self.frame_depth = frame_depth
         self.jit_cache_reference = 0xFF
         self._reserved0 = 0
         self.byte_span = byte_span
-        self.interpreter_constant_byte_offset = interpreter_constant_byte_offset
+        self.interpreter_annotation_byte_offset = interpreter_annotation_byte_offset
+        self.next_block_index = next_block_index
+        self.loops_to_block_index = loops_to_block_index
 
     @property
-    def func_index(self) -> int:
-        return int(self.function_index)
+    def func_index(self) -> function_index_t:
+        return function_index_t(self.function_index)
 
     @property
-    def next_pc(self) -> int | None:
+    def next_pc(self) -> wasm_pc_t | None:
         value = int(self._next_pc)
-        return None if value == 0xFFFF_FFFF else value
+        return None if value == 0xFFFF_FFFF else wasm_pc_t(value)
 
     @next_pc.setter
-    def next_pc(self, value: int | None) -> None:
+    def next_pc(self, value: wasm_pc_t | None) -> None:
         self._next_pc = 0xFFFF_FFFF if value is None else value
 
     @property
-    def loops_to(self) -> int | None:
+    def loops_to(self) -> wasm_pc_t | None:
         value = int(self._loops_to)
-        return None if value == 0xFFFF_FFFF else value
+        return None if value == 0xFFFF_FFFF else wasm_pc_t(value)
 
     @loops_to.setter
-    def loops_to(self, value: int | None) -> None:
+    def loops_to(self, value: wasm_pc_t | None) -> None:
         self._loops_to = 0xFFFF_FFFF if value is None else value
+
+    @property
+    def next_block_index(self) -> block_index_t | None:
+        value = int(self._next_block_index)
+        return None if value == 0xFFFF else block_index_t(value)
+
+    @next_block_index.setter
+    def next_block_index(self, value: block_index_t | None) -> None:
+        self._next_block_index = 0xFFFF if value is None else value
+
+    @property
+    def loops_to_block_index(self) -> block_index_t | None:
+        value = int(self._loops_to_block_index)
+        return None if value == 0xFFFF else block_index_t(value)
+
+    @loops_to_block_index.setter
+    def loops_to_block_index(self, value: block_index_t | None) -> None:
+        self._loops_to_block_index = 0xFFFF if value is None else value
 
 
 class BasicBlockStorage:
@@ -166,8 +227,8 @@ class BasicBlockStorage:
         return iter(self._entries)
 
 
-class InterpreterConstantPool:
-    """Loader-owned packed constants and instruction widths exposed as bytes."""
+class InterpreterAnnotationPool:
+    """Loader-owned operands, indices, and instruction-width annotations packed as bytes."""
 
     __slots__ = ("_arena_offset", "_bytes", "_size", "capacity")
 
@@ -218,16 +279,14 @@ class InterpreterConstantPool:
             self._arena_offset = relocated_offset
 
 
-class NativeControlMapEntry(ctypes.Structure):
-    """Flat control opener metadata shared with the native interpreter ABI."""
+class ControlBlockMetadata(ctypes.Structure):
+    """Sparse loader metadata for one structured-control opener."""
 
     __slots__ = ()
     _fields_ = (
         ("match_end", ctypes.c_uint32),
         ("else_offset", ctypes.c_uint32),
-        ("next_pc", ctypes.c_uint32),
-        ("result_arity", ctypes.c_uint32),
-        ("operand_width", ctypes.c_uint32),
+        ("result_arity", ctypes.c_uint8),
     )
 
 
@@ -239,7 +298,7 @@ F32 = 0x7D
 F64 = 0x7C
 WASM_RAW_WORD_BYTES = 4
 WASM_VALUE_SLOT_BYTES = 8
-UNINITIALIZED_TABLE_FUNCTION = 0xFFFF_FFFF
+UNINITIALIZED_TABLE_FUNCTION = 0xFFFF
 
 
 class FunctionTable:
@@ -297,7 +356,7 @@ class FunctionTable:
             self._values.put(index, value)
 
     def seal(self) -> None:
-        """Freeze table contents after interpreter linking validates call_indirect sites."""
+        """Freeze table contents after linking establishes valid function indices."""
 
         self._sealed = True
 
@@ -323,8 +382,6 @@ LOADER_EXPORT_ENTRY_BYTES = 4 * WASM_RAW_WORD_BYTES
 LOADER_GLOBAL_ENTRY_BYTES = 20
 LOADER_TABLE_ENTRY_BYTES = 12
 LOADER_BASIC_BLOCK_ENTRY_BYTES = ctypes.sizeof(BasicBlock)
-LOADER_BLOCK_INDEX_ENTRY_BYTES = 8
-LOADER_BLOCK_INDEX_ENTRY_WORDS = LOADER_BLOCK_INDEX_ENTRY_BYTES // WASM_RAW_WORD_BYTES
 LOADER_BLOCK_RADIX_SHIFT = 28
 
 
@@ -347,13 +404,12 @@ def value_slot_width(value_type: int) -> int:
 
 
 class LocalLayout:
-    """Load-time packed offsets, sizes, and WASM types for locals, parameters first."""
+    """Load-time packed offsets and WASM types for locals, parameters first."""
 
     __slots__ = (
         "_arena_offset",
         "_arena_size",
         "_offsets",
-        "_sizes",
         "_storage",
         "_types",
         "count",
@@ -367,20 +423,16 @@ class LocalLayout:
         allocator: BumpAllocator | None = None,
     ) -> None:
         count = len(params) + len(extra)
-        self.count = count
-        self._storage = bytearray(count * 4)
+        assert count <= 0xFFFF
+        self.count = local_count_t(count)
+        self._storage = bytearray(count * 3)
         self._offsets = (
             (ctypes.c_uint16 * count).from_buffer(self._storage)
             if count
             else (ctypes.c_uint16 * 0)()
         )
-        self._sizes = (
-            (ctypes.c_uint8 * count).from_buffer(self._storage, count * 2)
-            if count
-            else (ctypes.c_uint8 * 0)()
-        )
         self._types = (
-            (ctypes.c_uint8 * count).from_buffer(self._storage, count * 3)
+            (ctypes.c_uint8 * count).from_buffer(self._storage, count * 2)
             if count
             else (ctypes.c_uint8 * 0)()
         )
@@ -416,20 +468,15 @@ class LocalLayout:
 
     def _record(self, index: int, value_type: int, offset: int) -> int:
         width = value_slot_width(value_type)
+        assert offset + width <= 0xFFFF, "section-count limits must keep local offsets in u16"
         self._offsets[index] = offset
-        self._sizes[index] = width
         self._types[index] = value_type
         return offset + width
 
-    def offset(self, index: int) -> int:
+    def offset(self, index: int) -> frame_word_offset_t:
         """Return the precomputed raw-word offset of local `index`."""
         assert 0 <= index < self.count
-        return int(self._offsets[index])
-
-    @property
-    def sizes_address(self) -> int:
-        """Address of the contiguous per-local raw-word size table."""
-        return ctypes.addressof(self._sizes) if self.count else 0
+        return frame_word_offset_t(self._offsets[index])
 
     @property
     def types_address(self) -> int:
@@ -441,10 +488,10 @@ class LocalLayout:
         """Address of the contiguous per-local raw-word offset table."""
         return ctypes.addressof(self._offsets) if self.count else 0
 
-    def size_words(self, index: int) -> int:
-        """Return the precomputed raw-word size of local `index`."""
+    def size_words(self, index: int) -> operand_words_t:
+        """Derive the raw-word size from the retained WASM type."""
         assert 0 <= index < self.count
-        return int(self._sizes[index])
+        return operand_words_t(value_slot_width(int(self._types[index])))
 
     def value_type(self, index: int) -> int:
         """Return the original WASM value type of local `index`."""
@@ -461,9 +508,11 @@ class FuncTypeRecord(ctypes.Structure):
     __slots__ = ()
     _fields_ = (
         ("param_offset", ctypes.c_uint32),
-        ("param_count", ctypes.c_uint32),
+        ("param_count", ctypes.c_uint8),
+        ("reserved0", ctypes.c_uint8 * 3),
         ("result_offset", ctypes.c_uint32),
-        ("result_count", ctypes.c_uint32),
+        ("result_count", ctypes.c_uint8),
+        ("reserved1", ctypes.c_uint8 * 3),
     )
 
     def __init__(
@@ -541,21 +590,25 @@ class FuncType:
 
 @dataclass(slots=True)
 class Function:
-    type_index: int
+    type_index: type_index_t
     locals_extra: StaticVector[int]  # declared (non-parameter) locals, in order
-    code_offset: int
-    code_size: int
-    code_pc_offset: int
+    code_offset: code_offset_t
+    code_size: code_offset_t
+    code_pc_offset: wasm_pc_t
     control_map: ControlMap | None = None
-    interpreter_constant_pool: InterpreterConstantPool | None = None
+    interpreter_annotation_pool: InterpreterAnnotationPool | None = None
+    entry_block_index: block_index_t = INVALID_BLOCK_INDEX
     select_widths: ReadOnlyFlatMapStorage[int, int] | None = None
     drop_widths: ReadOnlyFlatMapStorage[int, int] | None = None
+    branch_layouts: ReadOnlyFlatMapStorage[int, tuple[tuple[int, int], ...]] | None = None
     # Per-local raw-word offsets and sizes are immutable loader metadata.
     local_layout_cache: LocalLayout | None = None
-    local_slot_count_cache: int | None = None
-    param_packed_slot_count_cache: int | None = None
-    param_count_cache: int | None = None
-    result_arity_cache: int | None = None
+    local_slot_count_cache: local_count_t | None = None
+    param_packed_slot_count_cache: operand_words_t | None = None
+    param_count_cache: operand_words_t | None = None
+    result_arity_cache: operand_words_t | None = None
+    # Maximum raw operand words above this function's entry stack position.
+    max_operand_stack_words: operand_words_t = ZERO_OPERAND_WORDS
 
 
 @dataclass(slots=True)
@@ -621,9 +674,6 @@ class Module:
     data_section_size: int = 0
     block_storage: ReadOnlyRadixBinaryTreeStorage[int] | None = None
     blocks: BasicBlockStorage = field(default_factory=lambda: BasicBlockStorage(capacity=0))
-    block_index_entries: CtypesU32Buffer | None = field(default=None, repr=False)
-    block_radix_table: CtypesU32Buffer | None = field(default=None, repr=False)
-    block_radix_shift: int = LOADER_BLOCK_RADIX_SHIFT
     source: memoryview | None = None
     allocator: BumpAllocator | None = field(default=None, repr=False)
     _arena_start: int = field(default=0, repr=False)
@@ -691,10 +741,6 @@ class Module:
             self.globals.relocate_arena(offset_delta)
             self.tables.relocate_arena(offset_delta)
             self.blocks.relocate_arena(offset_delta)
-            if self.block_index_entries is not None:
-                self.block_index_entries.relocate_arena(offset_delta)
-            if self.block_radix_table is not None:
-                self.block_radix_table.relocate_arena(offset_delta)
             if self._global_widths_arena_offset is not None:
                 self._global_widths_arena_offset += offset_delta
             for function in self.functions:
@@ -730,21 +776,22 @@ class Module:
         """Precompute each local's packed word span when loading the module."""
 
         for function in self.functions:
-            assert 0 <= function.type_index < len(self.types), (
-                "function type index is outside the type section"
+            require_wasm(
+                0 <= function.type_index < len(self.types),
+                "function type index is outside the type section",
             )
             function_type = self.type_at(function.type_index)
             local_count = len(function_type.params) + len(function.locals_extra)
-            assert local_count <= FB_CONF_MAX_LOCALS
+            assert local_count <= FB_CONF_MAX_LOCALS, "section-count prevalidation must cap locals"
             layout = LocalLayout(function_type.params, function.locals_extra, self.allocator)
             function.local_layout_cache = layout
-            function.local_slot_count_cache = layout.total_words
-            function.param_count_cache = len(function_type.params)
-            function.param_packed_slot_count_cache = sum(
-                value_slot_width(value_type) for value_type in function_type.params
+            function.local_slot_count_cache = local_count_t(layout.total_words)
+            function.param_count_cache = operand_words_t(len(function_type.params))
+            function.param_packed_slot_count_cache = operand_words_t(
+                sum(value_slot_width(value_type) for value_type in function_type.params)
             )
-            function.result_arity_cache = sum(
-                value_slot_width(value_type) for value_type in function_type.results
+            function.result_arity_cache = operand_words_t(
+                sum(value_slot_width(value_type) for value_type in function_type.results)
             )
 
     def stream_element_initializers(
@@ -765,7 +812,7 @@ class Module:
         segment_count, off = decode_unsigned(data, off, end)
         for _ in range(segment_count):
             flags, off = decode_unsigned(data, off, end)
-            assert flags == 0 or flags == 2, f"unsupported element segment flags={flags}"
+            require_wasm(flags == 0 or flags == 2, f"unsupported element segment flags={flags}")
             table_index = 0
             if flags == 2:
                 table_index, off = decode_unsigned(data, off, end)
@@ -774,12 +821,12 @@ class Module:
             )
             if flags == 2:
                 elem_kind, off = decode_unsigned(data, off, end)
-                assert elem_kind == 0, "only funcref element segments are supported"
+                require_wasm(elem_kind == 0, "only funcref element segments are supported")
             function_count, off = decode_unsigned(data, off, end)
             for index in range(function_count):
                 function_index, off = decode_unsigned(data, off, end)
                 callback(table_index, offset + index, function_index)
-        assert off == end, "element section length mismatch"
+        require_wasm(off == end, "element section length mismatch")
 
     def stream_data_initializers(
         self,
@@ -799,20 +846,20 @@ class Module:
         segment_count, off = decode_unsigned(data, off, end)
         for _ in range(segment_count):
             flags, off = decode_unsigned(data, off, end)
-            assert flags == 0 or flags == 2, f"unsupported data segment flags={flags}"
+            require_wasm(flags == 0 or flags == 2, f"unsupported data segment flags={flags}")
             memory_index = 0
             if flags == 2:
                 memory_index, off = decode_unsigned(data, off, end)
-            assert memory_index == 0, "only memory index 0 is supported"
+            require_wasm(memory_index == 0, "only memory index 0 is supported")
             offset, off = _read_init_offset(
                 data, off, end, global_values, self, "data segment", resolve_globals
             )
             data_size, off = decode_unsigned(data, off, end)
             data_end = off + data_size
-            assert data_end <= end, "data segment exceeds section bounds"
+            require_wasm(data_end <= end, "data segment exceeds section bounds")
             callback(offset, data[off:data_end])
             off = data_end
-        assert off == end, "data section length mismatch"
+        require_wasm(off == end, "data section length mismatch")
 
     def init_memory_data(self, memory: bytearray, global_values: SequenceView[int]) -> None:
         """Initializes memory with active data segments."""
@@ -980,40 +1027,62 @@ class Module:
     def build_basic_block_index(self, allocator: BumpAllocator | None = None) -> None:
         """Build the immutable block and instruction indexes during loading."""
         from tier2_runtime.interpreter.control_flow import (
-            build_interpreter_constant_pool,
+            build_interpreter_annotation_pool,
             extract_basic_blocks,
         )
 
         n_imports = len(self.imports)
         block_capacity = self.total_basic_blocks
+        assert block_capacity <= 0xFFFF, "section-count prevalidation must cap block count"
         all_blocks = BasicBlockStorage(block_capacity, allocator)
         for idx, _fn in enumerate(self.functions):
             func_idx = n_imports + idx
             code = self.code_for(func_idx)
             function_pc_offset = self.function_pc_offset(func_idx)
             function = self.functions[idx]
+            function_block_base = len(all_blocks)
             assert function.control_map is not None
+            assert function.local_layout_cache is not None
             extracted = extract_basic_blocks(code, function.control_map, pc_base=function_pc_offset)
+            function.entry_block_index = (
+                block_index_t(function_block_base) if len(extracted) != 0 else block_index_t(0xFFFF)
+            )
             block_heads: StaticVector[int] = StaticVector(capacity=len(extracted))
             for block in extracted:
                 block_heads.append(block[0] - function_pc_offset)
-            constants, block_constant_offsets = build_interpreter_constant_pool(
-                code, block_heads, allocator
+            annotations, block_annotation_offsets = build_interpreter_annotation_pool(
+                code,
+                block_heads,
+                allocator,
+                function.control_map,
+                function_block_base,
+                local_layout=function.local_layout_cache,
+                drop_widths=function.drop_widths,
+                select_widths=function.select_widths,
             )
-            function.interpreter_constant_pool = constants
-            assert len(block_constant_offsets) == len(extracted)
+            function.branch_layouts = None
+            function.interpreter_annotation_pool = annotations
+            assert len(block_annotation_offsets) == len(extracted)
             for block_index, (head_pc, next_pc, loops_to, frame_depth, byte_span) in enumerate(
                 extracted
             ):
+                next_block_index = _function_block_index_for_pc(
+                    block_heads, function_block_base, next_pc, function_pc_offset
+                )
+                loops_to_block_index = _function_block_index_for_pc(
+                    block_heads, function_block_base, loops_to, function_pc_offset
+                )
                 all_blocks.append(
                     BasicBlock(
-                        head_pc=head_pc,
-                        func_index=func_idx,
-                        next_pc=next_pc,
-                        loops_to=loops_to,
-                        frame_depth=frame_depth,
-                        byte_span=byte_span,
-                        interpreter_constant_byte_offset=block_constant_offsets[block_index],
+                        head_pc=wasm_pc_t(head_pc),
+                        func_index=function_index_t(func_idx),
+                        next_pc=None if next_pc is None else wasm_pc_t(next_pc),
+                        loops_to=None if loops_to is None else wasm_pc_t(loops_to),
+                        frame_depth=frame_depth_t(frame_depth),
+                        byte_span=code_offset_t(byte_span),
+                        interpreter_annotation_byte_offset=block_annotation_offsets[block_index],
+                        next_block_index=next_block_index,
+                        loops_to_block_index=loops_to_block_index,
                     )
                 )
 
@@ -1022,16 +1091,11 @@ class Module:
         # `all_blocks` is already in ascending head_pc order here (functions
         # walked in order, extract_basic_blocks yields blocks in bytecode
         # order within each). `self.blocks` keeps that natural, meaningful
-        # order for callers that index or iterate it directly -- it must
-        # not be re-ordered by an internal cache detail. `block_storage`'s
-        # own key/entry arrays are sorted separately, only for its radix
-        # lookup's internal use.
+        # order for callers that index or iterate it directly. `block_storage`
+        # owns its separate sorted Python lookup representation.
         self.blocks = all_blocks
         if not all_blocks:
             self.block_storage = None
-            self.block_index_entries = None
-            self.block_radix_table = None
-            self.block_radix_shift = LOADER_BLOCK_RADIX_SHIFT
             return
 
         entries: StaticVector[tuple[int, int]] = StaticVector(capacity=len(all_blocks))
@@ -1042,28 +1106,17 @@ class Module:
             entries,
             radix_shift=LOADER_BLOCK_RADIX_SHIFT,
         )
-        self.block_index_entries = CtypesU32Buffer(
-            len(entries) * LOADER_BLOCK_INDEX_ENTRY_WORDS,
-            allocator,
-        )
-        for entry_index, (folded_pc, block_index) in enumerate(entries):
-            word_index = entry_index * LOADER_BLOCK_INDEX_ENTRY_WORDS
-            self.block_index_entries.put(word_index, folded_pc)
-            self.block_index_entries.put(word_index + 1, block_index)
-        self.block_radix_table = CtypesU32Buffer(
-            len(self.block_storage.radix_table),
-            allocator,
-        )
-        for table_index, entry_index in enumerate(self.block_storage.radix_table):
-            self.block_radix_table.put(table_index, entry_index)
-        self.block_radix_shift = LOADER_BLOCK_RADIX_SHIFT
 
     def get_block(self, pc: int) -> BasicBlock | None:
         """Looks up a BasicBlock by UnifiedPC via the loader's Radix tree (O(1) + O(log n))."""
+        block_index = self.get_block_index(pc)
+        return None if block_index is None else self.blocks[block_index]
+
+    def get_block_index(self, pc: int) -> int | None:
+        """Returns the loader-owned block index for a UnifiedPC, when one exists."""
         if self.block_storage is None:
             return None
-        block_index = self.block_storage.view().find(fold_mix32(pc))
-        return None if block_index is None else self.blocks[block_index]
+        return self.block_storage.view().find(fold_mix32(pc))
 
     @property
     def total_basic_blocks(self) -> int:
@@ -1089,6 +1142,7 @@ def _read_init_offset(
     expression_name: str,
     resolve_globals: bool,
 ) -> tuple[int, int]:
+    require_wasm(off < end, f"truncated {expression_name} offset expression")
     opcode = data[off]
     off += 1
     if opcode == op.I32_CONST:
@@ -1097,20 +1151,22 @@ def _read_init_offset(
     elif opcode == op.GLOBAL_GET:
         global_index, off = decode_unsigned(data, off, end)
         if not resolve_globals:
-            assert global_index < len(module.globals), (
-                f"{expression_name} global index out of range"
+            require_wasm(
+                global_index < len(module.globals), (f"{expression_name} global index out of range")
             )
             global_ref = module.globals[global_index]
-            assert global_ref.imported and not global_ref.mutable and global_ref.vtype == I32, (
-                f"{expression_name} global.get must reference an imported immutable i32 global"
+            require_wasm(
+                global_ref.imported and not global_ref.mutable and global_ref.vtype == I32,
+                (f"{expression_name} global.get must reference an imported immutable i32 global"),
             )
             offset = 0
         else:
             assert global_index < len(global_values), f"{expression_name} global index out of range"
             offset = global_values[global_index] & 0xFFFF_FFFF
     else:
-        assert False, f"{expression_name} offset must use i32.const or global.get"
-    assert off < end and data[off] == op.END, (
-        f"{expression_name} offset expression must end with 0x0B"
+        reject_wasm(f"{expression_name} offset must use i32.const or global.get")
+    require_wasm(
+        off < end and data[off] == op.END,
+        (f"{expression_name} offset expression must end with 0x0B"),
     )
     return offset, off + 1

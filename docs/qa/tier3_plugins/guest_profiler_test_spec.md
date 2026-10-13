@@ -35,7 +35,7 @@ QAアダプタはnative完了・trapを構成器の結果契約へ変換する�
 時計入力を固定し、公開call境界の時間を独立した期待値で照合する。
 JIT構成は実生成コードの実行も確認する。
 全ゲストメモリとglobalを各callで照合する。
-call完了時のPC、値・local・呼出・制御スタックの深さ、結果を観測無効時とも比較する。
+call完了時のPC、値・local・呼出深さ、結果を観測無効時とも比較する。制御ネストはloader metadataで表し、実行時制御スタック深さを持たない。
 
 形式検証は [`guest_profiler_model.py`](docs/components/tier3_plugins/formal/guest_profiler_model.py) を参照する。
 呼出対応、時間分類、trap離脱、欠落、再帰超過を通常モデルと`guards=False`変異モデルで検査する。

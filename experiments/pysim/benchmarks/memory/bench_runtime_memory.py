@@ -325,7 +325,7 @@ def main() -> None:
             and not any(part in ("qa", "benchmarks", "__pycache__") for part in path.parts)
         },
         "measurement_model": "reference loader charges + host-native ctypes ABI",
-        "jit_compile_scratch_accounting": "compiler output is written into the executable cache; stack_locations is included in native stack frames",
+        "jit_compile_scratch_accounting": "compile_one_candidate scratch and emitter arrays are included in native stack frames; resident code is included in the executable region",
         "jit_measurement_path": "product RuntimeEngine and JITRuntimeManager with measured region_provider; no QA dispatcher in memory measurements",
         "jit_execution_validation_path": "separate QA RuntimeStatsEngine and diagnostic interpreter dispatcher; excluded from product memory/ROM totals",
         "jit_execution_validation": [asdict(validation) for validation in jit_execution_validation],

@@ -498,7 +498,7 @@ class JITTrace:
 
     @property
     def fn(self) -> NativeTraceFn | None:
-        """Resolve the entry from its descriptor after native installation or promotion."""
+        """Resolve the entry from its descriptor after native installation."""
 
         if self.raw_addr is not None:
             return ctypes.CFUNCTYPE(
@@ -553,14 +553,11 @@ class JITTrace:
         ctx.local_stack_base = ctx.local_stack.address
         ctx.local_stack_pointer = ctx.local_stack.value_ptr(len(ctx.local_stack)).value
         ctx.local_stack_limit = ctx.local_stack.address + ctx.local_stack.capacity * 4
-        ctx.control_stack = ctx.control_frame_stack.address
         if ctx.native_call_frames:
             native_frame = ctx.native_call_frames[-1]
             ctx.local_base = int(native_frame.local_base or 0)
-            ctx.control_frame_base = int(native_frame.control_frame_base or 0)
         else:
             ctx.local_base = ctx.local_stack_base
-            ctx.control_frame_base = ctx.control_frame_stack.frame_address(0)
         code_address = int(ctx.code or 0)
         instruction_ip = ctypes.c_void_p(code_address + int(ctx.ip))
         self.execute(ctx.context_ptr, instruction_ip, ctx.sp_ptr)
@@ -583,7 +580,7 @@ class JitRuntimeBoundary:
 
     Python anchors only descriptors explicitly supplied through this boundary.
     Native-owned traces need no Python reference registry.
-    C++ owns all bank, index, chain, promotion, rotation and aging decisions.
+    C++ owns all bank, index, chain, rotation and aging decisions.
     Native compilation, installation and patching stay inside the C++ owner.
     QA retirement observations use the last safe-point sample before an operation;
     native eviction during that operation can make the sampled count a lower bound.
@@ -677,20 +674,32 @@ class JitRuntimeBoundary:
                 ):
                     self._references[index] = None
         self._bind_fixture_blocks()
-        assert native_abi.RUNTIME_ERROR(self._native.pointer) == 0, (
-            "native cache contract violation"
-        )
 
     def _bind_fixture_blocks(self) -> None:
-        if self.metadata_provider is not None or self._references is None:
+        if (
+            self.metadata_provider is not None
+            or self._references is None
+            or len(self._fixture_blocks) == 0
+        ):
             return
-        traces = sorted(
-            (trace for trace in self._references if trace is not None),
-            key=lambda trace: trace.head_pc,
+        indexed_traces = tuple(
+            (index, trace) for index, trace in enumerate(self._references) if trace is not None
         )
-        assert len(traces) <= len(self._fixture_blocks)
-        for index, trace in enumerate(traces):
-            self._fixture_blocks[index] = native_abi._NativeWasmBlock(
+        assert len(indexed_traces) <= len(self._fixture_blocks)
+        sorted_traces = tuple(sorted(indexed_traces, key=lambda item: item[1].head_pc))
+        block_indices = {trace.head_pc: index for index, trace in indexed_traces}
+        empty_view = native_abi._NativeByteView(None, 0)
+        empty_layout = native_abi._NativeLocalLayout(empty_view, empty_view, 0, 0)
+        for position, (index, trace) in enumerate(sorted_traces):
+            next_block_index = block_indices.get(trace._native.dispatch_next_pc, 0xFFFF)
+            loops_to_block_index = block_indices.get(trace._native.dispatch_loops_to, 0xFFFF)
+            if trace._native_owner is None and trace.code_blob is not None:
+                blob = bytearray(trace.code_blob)
+                header = native_abi.NativeTraceHeader.from_buffer(blob)
+                header.block_index = index
+                trace.code_blob = bytes(blob)
+                trace.bind_code()
+            self._fixture_blocks[position] = native_abi._NativeWasmBlock(
                 trace.head_pc,
                 0,
                 trace._native.byte_span,
@@ -698,22 +707,20 @@ class JitRuntimeBoundary:
                 trace._native.dispatch_loops_to,
                 trace._native.frame_depth,
                 0,
-                native_abi._NativeByteView(None, 0),
-                native_abi._NativeLocalLayout(
-                    native_abi._NativeByteView(None, 0),
-                    native_abi._NativeByteView(None, 0),
-                    native_abi._NativeByteView(None, 0),
-                    0,
-                    0,
-                ),
+                empty_view,
+                empty_layout,
                 ctypes.cast(trace._native.exec_count, ctypes.c_void_p).value,
                 index,
+                next_block_index,
+                loops_to_block_index,
+                empty_view,
+                0,
             )
         assert (
             native_abi.RUNTIME_BIND_BLOCKS(
                 self._native.pointer,
                 self._fixture_blocks,
-                len(traces),
+                len(sorted_traces),
             )
             == 1
         )
@@ -778,12 +785,8 @@ class JitRuntimeBoundary:
 
     def age_step(self) -> int:
         result = int(native_abi.RUNTIME_AGE(self._native.pointer))
-        assert result >= 0 and native_abi.RUNTIME_ERROR(self._native.pointer) == 0
+        assert result >= 0
         return result
-
-    @property
-    def promotions(self) -> int:
-        return self.scalar(CacheField.PROMOTIONS)
 
     @property
     def evictions(self) -> int:
@@ -862,14 +865,6 @@ class JitRuntimeBoundary:
         self._check()
         return None if found == 0 else self._reference(location.token, head_pc)
 
-    def promote(self, head_pc: int) -> None:
-        """Resume native dispatch after its Oldest boundary without creating a trace wrapper."""
-        self._begin()
-        location = native_abi.CacheLookup()
-        found = native_abi.RUNTIME_LOOKUP(self._native.pointer, head_pc, ctypes.byref(location))
-        self._check()
-        assert found == 1, "native dispatch stopped at a missing trace"
-
     def rotate(self) -> None:
         self._begin()
         result = native_abi.RUNTIME_ROTATE(self._native.pointer)
@@ -884,7 +879,7 @@ class JitRuntimeBoundary:
 
     def build_snapshot(self, entries: ctypes.Array) -> int:
         count = int(native_abi.RUNTIME_SNAPSHOT(self._native.pointer, entries, len(entries)))
-        assert count >= 0 and native_abi.RUNTIME_ERROR(self._native.pointer) == 0
+        assert count >= 0
         return count
 
     def reset_execution_counts(self) -> None:

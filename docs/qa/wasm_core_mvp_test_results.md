@@ -2,6 +2,45 @@
 
 <!-- traceability: {ROMParsing} {LightweightVerifier} {ThreadedInterpreter} -->
 
+## 混在テーブルの間接呼出し修正後（2026-10-12）
+
+<!-- traceability: {Wasm32Only} {ThreadedInterpreter} -->
+
+`left-to-right`は、リンク時に全テーブル要素へ同じシグネチャを要求していたため失敗した。
+型照合を実行時の選択先へ移し、未選択の別型関数を許可した。
+選択した関数の型不一致はtrapコード8とし、本体とhost callbackの副作用を抑止する。
+型の索引が異なっても、引数型列と結果型列が同じなら適合する。
+内部の関数索引・所有権の契約はassertで確定し、テーブルはリンク後不変とする。
+
+固定Core Spec revisionとWABT版は下記の実行記録と同じである。
+ホストはLinux x86-64、CPython 3.13.15、Clang 21.1.8である。
+C++はO3・ThinLTO、assert有効の通常ビルドで検証した。
+
+| 対象 | 実測結果 |
+| :--- | :--- |
+| Python参照の選択Core Specセット | 37/37ファイル、15,230アサーション成功、skip 0件 |
+| Python参照の`left-to-right` | 全95アサーション成功、skip 0件 |
+| Nativeの`left-to-right` | 全95アサーション成功、skip 0件 |
+| Interpreter・Core Spec・ログ・ABIの関連回帰 | 181 pytest cases成功、失敗0件 |
+| 混在テーブル・型不一致・重複型の直接回帰と元の再現 | 18 pytest cases成功 |
+| 同じ直接回帰のASan/UBSan実行 | 18 pytest cases成功、メモリ・未定義動作の診断0件 |
+| 間接呼出しの形式モデル | 正常系3性質成功、`guards=False`で全3性質を反証 |
+| 型・テーブルの概念コード | 適合する選択先、重複型、型不一致、未初期化、範囲外を検証 |
+
+```bash
+.venv/bin/python -m pytest -q -s \
+  experiments/pysim/qa/tier2_runtime/interpreter/test_interpreter.py \
+  experiments/pysim/qa/workloads/test_wasm_core_spec.py \
+  experiments/pysim/qa/tier2_runtime/test_logging.py \
+  experiments/pysim/qa/tier2_runtime/test_interpreter_abi.py
+.venv/bin/python docs/components/tier2_runtime/formal/interpreter_indirect_call_model.py
+.venv/bin/python docs/components/tier2_runtime/concepts/indirect_call_concept.py
+```
+
+37ファイルの選択セット全体はPython参照で実行した。
+Nativeで追加実行した公式WASTは`left-to-right`である。
+公式Core Suite全体や、未選択の機能の適合性は主張しない。
+
 ## 再現可能な固定Core Spec Suite実行 (2026-10-04)
 
 [`test_wasm_core_spec.py`](experiments/pysim/qa/workloads/test_wasm_core_spec.py) は、公式WebAssembly Core Spec Testsから固定した37個のMVP互換WASTファイルをFireballインタープリタで実行する。WAST入力はrevision `970c4116e644e2bf7acb39aab8b733db14ccdf28`へ固定し、WABT 1.0.36の`wast2json`で実行前に変換する。

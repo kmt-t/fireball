@@ -211,6 +211,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         for index, block in enumerate(module.blocks):
             function = module.functions[block.func_index - len(module.imports)]
             assert function.local_layout_cache is not None
+            annotations = function.interpreter_annotation_pool
             local_index = block.func_index - len(module.imports)
             code = module.code_for(block.func_index)
             layout = function.local_layout_cache
@@ -227,7 +228,6 @@ class JITRuntimeManager(NativeJITRuntimeManager):
                 ),
                 native_abi._NativeLocalLayout(
                     native_abi._NativeByteView(layout.offsets_address, layout.count * 2),
-                    native_abi._NativeByteView(layout.sizes_address, layout.count),
                     native_abi._NativeByteView(layout.types_address, layout.count),
                     layout.count,
                     layout.total_words,
@@ -239,6 +239,13 @@ class JITRuntimeManager(NativeJITRuntimeManager):
                     else None
                 ),
                 index,
+                0xFFFF if block.next_block_index is None else block.next_block_index,
+                0xFFFF if block.loops_to_block_index is None else block.loops_to_block_index,
+                native_abi._NativeByteView(
+                    0 if annotations is None else annotations.native_address,
+                    0 if annotations is None else len(annotations),
+                ),
+                block.interpreter_annotation_byte_offset,
             )
         self._bind_profile()
         self._bind_test_views(_module_code_lengths(module), _module_function_pc_bases(module))
@@ -287,6 +294,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         function_index = block.func_index
         function = self.module.functions[function_index - len(self.module.imports)]
         assert function.local_layout_cache is not None
+        annotations = function.interpreter_annotation_pool
         assert self.module.block_storage is not None
         block_index = self.module.block_storage.view().find(fold_mix32(pc))
         assert block_index is not None
@@ -307,12 +315,18 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             frame_depth=block.frame_depth,
             locals=native_abi.NativeLocalLayout(
                 offsets=native_abi.NativeByteView(layout.offsets_address, layout.count * 2),
-                sizes=native_abi.NativeByteView(layout.sizes_address, layout.count),
                 types=native_abi.NativeByteView(layout.types_address, layout.count),
                 local_count=layout.count,
                 total_words=layout.total_words,
             ),
             block_index=block_index,
+            next_block_index=block.next_block_index,
+            loops_to_block_index=block.loops_to_block_index,
+            interpreter_annotations=native_abi.NativeByteView(
+                0 if annotations is None else annotations.native_address,
+                0 if annotations is None else len(annotations),
+            ),
+            interpreter_annotation_byte_offset=block.interpreter_annotation_byte_offset,
         )
         return block_input
 
@@ -410,7 +424,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         return self.cache.scalar(CacheField.AGING_SCANNED)
 
     def lookup(self, pc: int) -> JITTrace | None:
-        """Delegate filtering, lookup and promotion to the native JitRuntime."""
+        """Delegate filtering and lookup to the native JitRuntime."""
         assert 0 <= pc <= 0xFFFF_FFFF
         self.cache._begin()
         location = native_abi.CacheLookup()

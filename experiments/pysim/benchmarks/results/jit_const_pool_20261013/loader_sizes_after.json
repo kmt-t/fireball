@@ -1,0 +1,33 @@
+{
+  "method": "Loader parse with arena allocation; no timing instrumentation",
+  "modules": [
+    {
+      "path": "experiments/pysim/benchmarks/aobench/aobench.wasm",
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "functions_defined": 6,
+      "functions_imported": 1,
+      "code_bytes": 937,
+      "basic_block_count": 107,
+      "basic_block_record_bytes_each": 32,
+      "basic_block_records_bytes": 3424,
+      "block_index_entries_bytes": 642,
+      "radix_table_bytes": 34,
+      "loader_arena_bytes": 21444,
+      "loader_arena_capacity_bytes": 131072
+    },
+    {
+      "path": "experiments/pysim/benchmarks/profile/guest/suite.wasm",
+      "wasm_sha256": "15be324af0ae7708c3b25515b88173fb52a02dd750b1518a5f69704ea23511f6",
+      "functions_defined": 28,
+      "functions_imported": 0,
+      "code_bytes": 14419,
+      "basic_block_count": 885,
+      "basic_block_record_bytes_each": 32,
+      "basic_block_records_bytes": 28320,
+      "block_index_entries_bytes": 5310,
+      "radix_table_bytes": 34,
+      "loader_arena_bytes": 287586,
+      "loader_arena_capacity_bytes": 2000000
+    }
+  ]
+}

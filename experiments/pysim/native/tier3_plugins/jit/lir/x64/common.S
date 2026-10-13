@@ -45,6 +45,8 @@ fb_common_chain_dispatcher:
    * resolve the header-relative constant-pool offset, then enter the body. */
   mov r10d, dword ptr [rax - (FB_TRACE_HEADER_BYTES - FB_TRACE_CONST_REL_OFFSET)]
   lea FB_REL_REG, [rax + r10 - FB_TRACE_HEADER_BYTES]
+  mov qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET], FB_REL_REG
+  add FB_REL_REG, 4
   add rax, FB_TRACE_CHAIN_ENTRY_OFFSET
   jmp rax
 

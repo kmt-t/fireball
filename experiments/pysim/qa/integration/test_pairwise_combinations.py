@@ -173,8 +173,9 @@ def _prepare_cache(
         install()
         if cache_mode == "warm":
             cache.rotate()
+            address = cache.find_trace(block.head_pc).raw_addr
             assert cache.lookup(block.head_pc) is not None
-            assert cache.promotions == 0
+            assert cache.find_trace(block.head_pc).raw_addr == address
         elif cache_mode == "evict":
             for _ in range(3):
                 cache.rotate()

@@ -1,6 +1,7 @@
 # Fireball アクティブバックログ
 
 未完了の作業を記載する。全体のフェーズは [`roadmap_phase.md`](docs/plans/roadmap_phase.md) を参照する。
+Interpreter/JITの追加依頼と進捗は[`native_runtime_refactor_worklist.md`](docs/plans/native_runtime_refactor_worklist.md)で管理する。
 予算と計測値の正本は [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) とする。
 検証の実行手順は [`README.md`](tools/README.md) に従う。
 

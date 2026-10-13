@@ -123,8 +123,9 @@ Tier 1診断イベントの辞書エントリと引数数も、構成時に共�
 | `0x0305` | インタープリタ | `ERROR` | `TRAP: import has no bound host handler (pc=0x%08X, func=%d)` | `unified_pc`, `callee_func_index`, 0, 0 | インポート関数呼出し先にホストハンドラが未結合 |
 | `0x0306` | インタープリタ | `ERROR` | `TRAP: table index out of bounds (pc=0x%08X, slot=%d)` | `unified_pc`, `table_slot`, 0, 0 | `call_indirect` のテーブル索引が範囲外 |
 | `0x0307` | インタープリタ | `ERROR` | `TRAP: table slot uninitialized (pc=0x%08X, slot=%d)` | `unified_pc`, `table_slot`, 0, 0 | `call_indirect` が未初期化テーブルスロットを参照 |
+| `0x0308` | インタープリタ | `ERROR` | `TRAP: indirect call signature mismatch (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | `call_indirect` が選択した関数と期待する型が不一致 |
 | `0x0309` | インタープリタ | `ERROR` | `TRAP: unreachable instruction executed (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | `unreachable` 命令の実行 |
-| `0x030A` | インタープリタ | `ERROR` | `TRAP: control frame capacity exceeded (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | `block`/`loop`/`if` 制御ブロック復帰情報領域の固定容量超過 |
+| `0x030A` | — | — | 予約済み | — | 制御フレーム容量trapの廃止後、未使用 |
 | `0x030B` | インタープリタ | `ERROR` | `TRAP: vMMIO region not configured (pc=0x%08X, addr=0x%08X)` | `unified_pc`, `guest_addr`, 0, 0 | 未登録の vMMIO アドレス領域へのアクセス（詳細は `runtime_vmmio.md` 正本） |
 | `0x030C` | インタープリタ | `ERROR` | `TRAP: vMMIO access rejected (pc=0x%08X, status=%d)` | `unified_pc`, `vmmio_status`, 0, 0 | vMMIO ハンドラによるアクセス拒否 |
 | `0x030D` | インタープリタ | `ERROR` | `TRAP: linear memory access out of bounds (pc=0x%08X, addr=0x%08X)` | `unified_pc`, `guest_addr`, 0, 0 | リニアメモリ境界外アクセス（`{MemoryBoundaryCheck}`） |
@@ -132,8 +133,9 @@ Tier 1診断イベントの辞書エントリと引数数も、構成時に共�
 | `0x030F` | インタープリタ | `ERROR` | `TRAP: integer divide by zero (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | `div` / `rem` 系命令の除数ゼロ |
 | `0x0310` | インタープリタ | `ERROR` | `TRAP: integer division overflow (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | `INT_MIN / -1` 相当の符号付き除算オーバーフロー |
 | `0x0311` | インタープリタ | `ERROR` | `TRAP: invalid float-to-integer conversion (pc=0x%08X)` | `unified_pc`, 0, 0, 0 | NaN・範囲外浮動小数点数の整数変換 (`trunc`) |
+| `0x0312` | WASM検証 | `ERROR` | `TRAP: invalid WASM binary (pc=0x%08X)` | 入力内位置、未知なら`0xFFFFFFFF`, 0, 0, 0 | 不正バイナリの拒否コードに対応する診断辞書項目 |
 
-`0x03xx` 帯はインタープリタ実行時トラップ専用である。イベント ID は、トラップ原因コード（`interpreter.md` の `trap_code`）に `0x0300` を加算した値とする（`GOTCHA-LOG-04`）。トラップ原因コードとログ辞書エントリは機械的に1対1で対応する。原因コードを追加しても、ログ辞書エントリの登録漏れは生じない。
+`0x03xx` 帯はWASM検証とインタープリタ実行時のトラップ専用である。イベント ID は、トラップ原因コード（`interpreter.md` の `trap_code`）に `0x0300` を加算した値とする（`GOTCHA-LOG-04`）。トラップ原因コードとログ辞書エントリは機械的に1対1で対応する。原因コードを追加しても、ログ辞書エントリの登録漏れは生じない。Pysimのパーサは不正入力をtrapで拒否し、この辞書追加だけではログ送信の副作用を追加しない。
 
 `unified_pc` はCode section payload先頭からトラップ命令先頭までの32ビットオフセットである。関数インデックスは符号化しないため、PC値だけではモジュールを特定しない。ログレコードはmodule IDを含まないため、複数モジュールを含む診断では、出力側が別途Runtimeまたはモジュール文脈を保持する必要がある。
 

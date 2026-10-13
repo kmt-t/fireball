@@ -18,7 +18,7 @@ pysim は「**通常の `new` / `delete`、`malloc` / `free` / `realloc` / `call
   - 実行時データ構造としての `dict` / `set` / `list` の使用。
   - `typing.Any` または `object` 型の使用。
   - `T | None` / `Optional[T]` 以外のUnion型の使用。
-  - 製品コードからの明示的な `raise`。`except` による捕捉は許可する。
+  - 製品コードからの明示的な `raise`。ただし、開発方針の「WASM実行系の失敗境界」に従う不正WASM専用のtrap送出手続きは許可する。内部の `AssertionError` をtrapへ変換してはならない。`except` による境界での捕捉は許可する。
   - 仕様書との真っ向からの乖離・不変条件（Gotchas）の違反。
   - ホットパスにおける無制限ループや致命的な $O(N)$ ボトルネック。
   - 文書階層と実装の責務分割が真っ向から矛盾し、セキュリティ境界または依存方向を破壊している場合。
@@ -113,6 +113,7 @@ pysim は「**通常の `new` / `delete`、`malloc` / `free` / `realloc` / `call
 - 既存設定の定数名を使わず、同じ値を別名で再定義している場合も、意味が同一なら重複定義として報告する。
 
 ### 2.5 後方互換性がないか (No Dead Fallbacks & Unintended Regressions)
+- **契約からの単純化**: [開発方針](../../../rules/development-policy.md)の `Contract-First / Fail-Fast` を判定の正本とする。条件の所有者と最初の検証位置を追跡し、早期assert後にも同条件の回復分岐が残る場合はMAJORとする。assert式から副作用が消えて動作が変わる変更もMAJORとする。
 - **不要な後方互換フォールバックコードの排除 (No Dead Compatibility Paths)**:
   - 仕様改定によって廃止された古い引数、旧フォーマット対応のフォールバック分岐、未整理の二重管理コードが残っていないか。
   - 組み込み C++ では、使われない後方互換コードは単なる ROM 容量の浪費・検証負荷の増大（デッドコード）となるため、速やかに削除・一本化されているか。

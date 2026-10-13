@@ -1,0 +1,84 @@
+--- experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.cxx
++++ experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.cxx
+@@ -9,6 +9,15 @@
+ #include <functional>
+ #include <limits>
+ #include <type_traits>
++
++#if defined(FB_COST_DIAGNOSTIC)
++namespace fireball::measurement {
++extern std::uint64_t counters[12];
++}
++#define FB_COST_COUNT(index) (++fireball::measurement::counters[index])
++#else
++#define FB_COST_COUNT(index) ((void)0)
++#endif
+ 
+ namespace fireball::wasm_runtime {
+ 
+@@ -1032,6 +1041,7 @@
+ bool runtime_block(execution_context *context, const std::uint8_t *&instruction_ip,
+                    [[maybe_unused]] std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+                    [[maybe_unused]] const std::uint8_t *&rel) {
++  FB_COST_COUNT(10);
+   auto &current = *context;
+   const auto source_ip = instruction_offset(current, instruction_ip);
+   const auto *entry = control_entry(current, source_ip);
+@@ -1041,6 +1051,7 @@
+   if (current.control_stack->size >= FIREBALL_NATIVE_CONTROL_STACK_CAPACITY) {
+     return trap(current, kTrapControlFrameCapacity);
+   }
++  FB_COST_COUNT(3);
+   auto &frame = current.control_stack->frames[current.control_stack->size++];
+   frame.start = source_ip;
+   frame.stack_height = sp;
+@@ -1510,6 +1521,7 @@
+ bool runtime_call(execution_context *context, const std::uint8_t *&instruction_ip,
+                   std::uint32_t *&sp, std::uint32_t *&local_stack,
+                   [[maybe_unused]] const std::uint8_t *&rel) {
++  FB_COST_COUNT(5);
+   auto &current = *context;
+   const auto source_ip = instruction_offset(current, instruction_ip);
+   std::uint32_t function_index = 0;
+@@ -1596,6 +1608,7 @@
+     }
+   }
+ 
++  FB_COST_COUNT(6);
+   auto &callee = current.call_stack->frames[current.call_stack->size];
+   callee.function_view = &target;
+   callee.local_base = callee_local_base;
+@@ -1868,6 +1881,7 @@
+ bool runtime_if(execution_context *context, const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
+                 [[maybe_unused]] std::uint32_t *&local_base,
+                 [[maybe_unused]] const std::uint8_t *&rel) {
++  FB_COST_COUNT(9);
+   auto &current = *context;
+   const auto source_ip = instruction_offset(current, instruction_ip);
+   const auto *entry = control_entry(current, source_ip);
+@@ -1887,6 +1901,7 @@
+   if (current.control_stack->size >= FIREBALL_NATIVE_CONTROL_STACK_CAPACITY) {
+     return trap(current, kTrapControlFrameCapacity);
+   }
++  FB_COST_COUNT(4);
+   auto &frame = current.control_stack->frames[current.control_stack->size++];
+   frame.start = source_ip;
+   frame.stack_height = sp;
+@@ -2675,3 +2690,17 @@
+ runtime_fc_saturating_conversion_decoded<conversion_i64_trunc_sat_f64_u>(execution_context *context,
+                                                                          std::uint32_t *&sp);
+ } // namespace fireball::wasm_runtime
++
++#if defined(FB_COST_DIAGNOSTIC)
++namespace fireball::measurement {
++std::uint64_t counters[12]{};
++}
++extern "C" __attribute__((visibility("default"))) void fb_cost_reset() {
++  for (auto &value : fireball::measurement::counters) {
++    value = 0;
++  }
++}
++extern "C" __attribute__((visibility("default"))) std::uint64_t fb_cost_read(std::uint32_t index) {
++  return fireball::measurement::counters[index];
++}
++#endif

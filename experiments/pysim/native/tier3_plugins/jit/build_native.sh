@@ -27,6 +27,8 @@ COMMON_SOURCE_CPP="${native_source_dir}/common_code.cxx"
 MEMORY_SOURCE_CPP="${native_source_dir}/executable_memory.cxx"
 GENERATED_SO="${NATIVE_BUILD_DIR}/libtrace_compiler.so"
 RUNTIME_SOURCE_CPP="${native_source_dir}/jit_runtime.cxx"
+runtime_sources=("${RUNTIME_SOURCE_CPP}")
+measurement_flags=()
 qa_export_map="${project_root}/experiments/pysim/qa/private/jit_probe.exports"
 visibility_flags=(-fvisibility=hidden)
 linker_flags=()
@@ -47,7 +49,8 @@ common_config=$(PYTHONPATH="${project_root}/experiments/pysim/tier1_core" \
 read -r -a common_definitions <<< "${common_config}"
 
 if [[ "${qa_build}" == "1" ]]; then
-    RUNTIME_SOURCE_CPP="${project_root}/experiments/pysim/qa/private/native_jit_probe.cxx"
+    runtime_sources+=("${project_root}/experiments/pysim/qa/private/native_jit_probe.cxx")
+    measurement_flags=(-include "${project_root}/experiments/pysim/qa/private/jit_measurements.hxx")
     GENERATED_SO="${NATIVE_BUILD_DIR}/libjit_probe.so"
     python_package_dir="${project_root}/experiments/pysim/qa/private"
     visibility_flags=(-fvisibility=default)
@@ -81,9 +84,10 @@ echo ">>> Assembling shared x64 JIT code area"
     --assembly-output "${stencil_output_dir}/common_code.preprocessed.S"
 
 echo ">>> Compiling Tier 3 JIT"
-clang++ -std=c++23 -O2 -g -Wall -Wextra -Wpedantic -shared -fPIC \
+clang++ -std=c++23 -O3 -flto=thin -fuse-ld=lld -fomit-frame-pointer -g -Wall -Wextra -Wpedantic -shared -fPIC \
     "${visibility_flags[@]}" \
     "${release_define[@]}" \
+    "${measurement_flags[@]}" \
     -I "${native_source_dir}" \
     -I "${stencil_output_dir}" \
     -DFB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET="${chain_dispatch_offset}" \
@@ -96,7 +100,9 @@ clang++ -std=c++23 -O2 -g -Wall -Wextra -Wpedantic -shared -fPIC \
     "${common_definitions[@]}" -fno-exceptions -fno-rtti \
     "${SOURCE_CPP}" \
     "${COMMON_SOURCE_CPP}" "${MEMORY_SOURCE_CPP}" \
-    "${RUNTIME_SOURCE_CPP}" "${native_source_dir}/profiling.cxx" \
+    "${native_source_dir}/jit_runtime_apis.cxx" \
+    "${native_source_dir}/../../tier2_runtime/interpreter/native_wasm_operations.cxx" \
+    "${runtime_sources[@]}" "${native_source_dir}/profiling.cxx" \
     "${linker_flags[@]}" -o "${GENERATED_SO}"
 cp "${GENERATED_SO}" "${python_package_dir}/$(basename "${GENERATED_SO}")"
 if [[ "${qa_build}" == "1" ]]; then

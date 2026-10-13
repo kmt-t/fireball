@@ -5,6 +5,7 @@
 #include "stencils.hxx"
 
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 
@@ -37,9 +38,8 @@ struct stencil_view {
   stencil_image image = stencil_image::generated;
 
   constexpr std::size_t branch_table_size() const {
-    return image == stencil_image::generated
-               ? generated::stencil_branch_fixups.size()
-               : asm_generated::stencil_branch_fixups.size();
+    return image == stencil_image::generated ? generated::stencil_branch_fixups.size()
+                                             : asm_generated::stencil_branch_fixups.size();
   }
 
   constexpr bool branch_range_valid() const {
@@ -48,17 +48,14 @@ struct stencil_view {
   }
 
   constexpr stencil_branch_fixup_view branch_fixup(std::size_t index) const {
+    assert(index < branch_count && branch_range_valid());
     const auto table_index = branch_offset + index;
-    if (index >= branch_count || !branch_range_valid())
-      return {};
     if (image == stencil_image::generated) {
       const auto &branch = generated::stencil_branch_fixups[table_index];
-      return {branch.instruction_offset, branch.instruction_size,
-              branch.target_offset};
+      return {branch.instruction_offset, branch.instruction_size, branch.target_offset};
     }
     const auto &branch = asm_generated::stencil_branch_fixups[table_index];
-    return {branch.instruction_offset, branch.instruction_size,
-            branch.target_offset};
+    return {branch.instruction_offset, branch.instruction_size, branch.target_offset};
   }
 };
 

@@ -1,0 +1,52 @@
+
+>>> Running WASM workload suite: test_wasi_guest.py
+....................................................
+52 passed in 2.35s
+
+>>> Running WASM workload suite: test_driver_stubs_guest.py
+...........
+11 passed in 0.36s
+
+>>> Running WASM workload suite: test_wasm_core_spec.py
+address: 256 Core assertions executed, 0 skipped ()
+.comments: 3 Core assertions executed, 0 skipped ()
+.const: 376 Core assertions executed, 0 skipped ()
+.endianness: 68 Core assertions executed, 0 skipped ()
+.f32: 2513 Core assertions executed, 0 skipped ()
+.f32_bitwise: 363 Core assertions executed, 0 skipped ()
+.f32_cmp: 2406 Core assertions executed, 0 skipped ()
+.f64: 2513 Core assertions executed, 0 skipped ()
+.f64_bitwise: 363 Core assertions executed, 0 skipped ()
+.f64_cmp: 2406 Core assertions executed, 0 skipped ()
+.float_exprs: 819 Core assertions executed, 0 skipped ()
+.float_literals: 177 Core assertions executed, 0 skipped ()
+.float_memory: 60 Core assertions executed, 0 skipped ()
+.float_misc: 470 Core assertions executed, 0 skipped ()
+.forward: 4 Core assertions executed, 0 skipped ()
+.i32: 459 Core assertions executed, 0 skipped ()
+.i64: 415 Core assertions executed, 0 skipped ()
+.int_exprs: 89 Core assertions executed, 0 skipped ()
+.int_literals: 50 Core assertions executed, 0 skipped ()
+.labels: 28 Core assertions executed, 0 skipped ()
+.left-to-right: 95 Core assertions executed, 0 skipped ()
+.load: 96 Core assertions executed, 0 skipped ()
+.local_get: 35 Core assertions executed, 0 skipped ()
+.local_set: 52 Core assertions executed, 0 skipped ()
+.memory_redundancy: 4 Core assertions executed, 0 skipped ()
+.memory_size: 38 Core assertions executed, 0 skipped ()
+.memory_trap: 180 Core assertions executed, 0 skipped ()
+.nop: 87 Core assertions executed, 0 skipped ()
+.return: 83 Core assertions executed, 0 skipped ()
+.stack: 5 Core assertions executed, 0 skipped ()
+.store: 67 Core assertions executed, 0 skipped ()
+.switch: 27 Core assertions executed, 0 skipped ()
+.traps: 32 Core assertions executed, 0 skipped ()
+.unreachable: 63 Core assertions executed, 0 skipped ()
+.utf8-custom-section-id: 176 Core assertions executed, 0 skipped ()
+.utf8-import-field: 176 Core assertions executed, 0 skipped ()
+.utf8-import-module: 176 Core assertions executed, 0 skipped ()
+.left-to-right (native): 95 Core assertions executed, 0 skipped
+.Official Core Spec selection: 37/37 files, 15230 assertions, 0 skipped ()
+
+38 passed in 2.05s
+WASM workload suites: 3/3 passed (0 failed, 5.41s)

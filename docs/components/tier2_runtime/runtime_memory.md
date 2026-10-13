@@ -131,7 +131,7 @@ flowchart TD
 
 ARMv8-Mで用いるメモリ保護機構、物理領域数・配置・属性、コードキャッシュ領域の物理アドレス、パッチ中と実行中の保護属性、命令キャッシュ同期、必要なメモリバリアはすべてTBDとする。
 
-W^Xの抽象不変条件は別途定義する。ハードウェア機構と実機での達成方法は、x64でのランタイム契約検証後に改めて設計する。
+W^Xの抽象不変条件は別途定義する。x64参照構成はRWXを初期設定するため、この不変条件への適合を主張しない。ARMv8-Mで採用する保護方策と実機での達成方法は対象確定後に設計する。
 
 
 ## 7. 形式検証・テスト仕様との対応
@@ -141,7 +141,7 @@ W^Xの抽象不変条件は別途定義する。ハードウェア機構と実�
 - **非所有者アクセストラップ**: 所有権未取得（未マッピング）スロットへのアクセスが `TRAP_UNREGISTERED_PAGE` で拒絶されること（`TEST-MEM-16`, `GOTCHA-MEM-02`）。同モデルの `non_owner_access_traps` が不正アクセス状態への到達を禁止する。
 - **移譲済みハンドルの失効**: 所有権移譲後に送信側が保持する古い `SharedBlock` ハンドルでアクセスできないこと（`GOTCHA-MEM-02`）。同モデルの `transferred_owner_cannot_use_stale_handle` が失効ガードを外した経路を反証する。
 - **転送の完了性**: 共有メモリ層は相手タスクの到達を保証しない。`s_in_flight`から無期限に待機する経路が存在するため、転送完了は受信側到達・回復処理を環境条件とする上位契約で検証する。
-- **抽象W^X不変条件**: 書込可能状態と実行可能状態を同時に許可しない抽象状態遷移を [`jit_cache_model.py`](docs/components/tier3_plugins/formal/jit_cache_model.py) で表す。x64実行可能バッファの挙動はJITテスト仕様が定める。ARMv8-Mの物理保護方式と実機受け入れ条件はTBDである。形式モデルの3面バンク回転・2ビットホットスポットFSM・遅延チェイニングは [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)/[`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) の対象である。
+- **抽象W^X不変条件**: 書込可能状態と実行可能状態を同時に許可しない別方策の抽象状態遷移を [`jit_cache_model.py`](docs/components/tier3_plugins/formal/jit_cache_model.py) で表す。x64実行可能バッファはRWXを使用し、その実権限はJITテスト仕様で検証する。ARMv8-Mの物理保護方式と実機受け入れ条件はTBDである。形式モデルの3面バンク回転・2ビットホットスポットFSM・遅延チェイニングは [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)/[`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) の対象である。
 
 ### 7.2 テスト仕様書との連携
 本コンポーネントのテストケース（TEST-MEM-01〜TEST-MEM-19）の検証手順・期待結果は、[`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) を正本とする。同書は、本書で定義する実装上の注意点を参照して検証する。

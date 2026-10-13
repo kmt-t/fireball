@@ -270,9 +270,7 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         ctypes.c_uint32,
         ctypes.POINTER(NativeJitTrace),
     )
-    JitObserve = ctypes.CFUNCTYPE(
-        ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_uint32
-    )
+    JitObserve = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_uint32)
     JitFinish = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_uint32)
     callbacks = [0, 0, 0]
 

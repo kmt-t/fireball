@@ -237,7 +237,7 @@ line/branch coverageは、抜けた経路を探す診断情報として記録す
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-VSOC-20 | ロード失敗でError状態 | 不正なWASM | `prepare(module)` | `Loading→Error`に遷移 | `VSOC_Lifecycle` |
 | TEST-VSOC-21 | LOOP後方分岐しきい値到達でscheduler境界へ復帰 | C++ InterpreterまたはHybrid JIT実行中 | Interpreter設定の回数しきい値まで取得後方辺を実行する | しきい値到達後にC++ dispatchがyield statusを返す。JIT有効時のホットスポット記録とcompile queue処理はInterpreter拡張が境界処理として行い、RuntimeEngineは結果をSystemへ渡す | `{JIT_BackedgeYield}` |
-| TEST-VSOC-22 | LOOPしきい値到達時にC++ handlerを通ってCOOSへ戻る | 同一制御フレームのLOOP後方分岐を実行するJITトレース | Interpreterの`FB_CONF_INTERPRETER_YIELD_THRESHOLD`へ`loop_jump_count`が達するまで実行する | C++ dispatcherは取得済み後方辺ごとにC++ Interpreter handlerを実行し、Interpreter設定のしきい値に達した後にyield statusを返す。RuntimeEngineは`yield_requested`をSystemへ渡し、`System.run_guest()`は`on_yield()`後にCOOSへ制御を返す。イベント配送はCOOS境界の別処理として行う | TEST-VSOC-10, `{ADR_LoopBackedgeYield}` |
+| TEST-VSOC-22 | LOOPしきい値到達時にC++ handlerを通ってCOOSへ戻る | 同一LOOPの後方分岐を実行するJITトレース | Interpreterの`FB_CONF_INTERPRETER_YIELD_THRESHOLD`へ`loop_jump_count`が達するまで実行する | C++ dispatcherは取得済み後方辺ごとにC++ Interpreter handlerを実行し、Interpreter設定のしきい値に達した後にyield statusを返す。RuntimeEngineは`yield_requested`をSystemへ渡し、`System.run_guest()`は`on_yield()`後にCOOSへ制御を返す。イベント配送はCOOS境界の別処理として行う | TEST-VSOC-10, `{ADR_LoopBackedgeYield}` |
 | TEST-VSOC-23 | デバッガとInterpreter拡張の同時接続拒否 | JITネイティブ実行拡張を接続したNativeInterpreter | native dispatch前にDebuggerをattachする | 接続時 `assert` で拒否され、DebuggerとJIT拡張は同じInterpreterに存在しない | `{DebuggerInterpreterComposition}` |
 | TEST-VSOC-24 | アタッチ中のインタープリタ専用実行 | `Interpreter + Debugger` 構成 | デバッガをアタッチして `step()` または `continue` を実行する | PCを保持したままインタープリタだけが実行され、JITの動的切替とキャッシュ操作は発生しない | `{DebuggerInterpreterComposition}` |
 

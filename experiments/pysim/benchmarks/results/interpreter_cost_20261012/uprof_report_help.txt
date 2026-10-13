@@ -1,0 +1,363 @@
+/opt/AMDuProf_5.3-521/bin/AMDuProfCLI
+AMDUPROFCLI-REPORT(1)          AMDuProfCLI Manual         AMDUPROFCLI-REPORT(1)
+
+NAME
+       AMDuProfCLI  report  - Read collected data files (created by AMDuProfCLI
+       collect) and generate the profile report.
+
+SYNOPSIS
+       AMDuProfCLI report [<options>]
+
+DESCRIPTION
+       This report command process the profile-data file and generates the pro‐
+       file report.
+
+OPTIONS
+       -h, --help
+              Displays this help information.
+
+       -i, --input-dir <directory-path>
+              Path to the directory containing collected data.
+
+       --category <PROFILE>
+              Generate report only for specific profiling category. Comma sepa‐
+              rated multiple categories can be specified. If  this  option  not
+              used, then report for all categories gets generated. Multiple in‐
+              stance of --category is allowed. Supported categories are:
+
+              •  cpu - Generate report specific to CPU Profiling
+
+              •  mpi - Generate report specific to MPI Tracing
+
+              •  openmp - Generate report specific to OpenMP Tracing
+
+              •  os - Generate report specific to OS Tracing
+
+              •  gputrace - Generate report specific to GPU Tracing
+
+              •  gpuprof - Generate report specific to GPU Profiling
+
+              Example:
+
+              •  --category cpu,mpi,os,gputrace,gpuprof
+
+              •  --category  mpi  --category  cpu --category os --category gpu‐
+                 trace --category gpuprof
+
+       --detail
+              Generate detailed report.
+
+       -p, --pid <PID,..>
+              Generate report for the specified PID. Process IDs are  separated
+              by  comma.   Note:  This option is only applicable to CpuProfiler
+              specific reports.
+
+       -g     Print callstack. Use with options --detail or  --pid  (-p).  With
+              --pid (-p)  option callstack will be generated only if the speci‐
+              fied PIDs contains callstack samples.
+
+       --db  <duckdb  | sqlite> Use this option to specify the database type to
+       be used  for  report  generation.  Supported  options  are  'duckdb'  or
+       'sqlite'. Default is 'duckdb'.
+
+       --host <host-name>
+              This  option  is used along with the --input-dir option. Generate
+              report belonging to a specific host. Supported options are:
+
+              •  <hostname>: Report process belonging to a specific host.
+
+              •  all: Report all processes
+
+              Note: If --host is not used then only the processes belonging  to
+              the  system  from  which report is generated is reported. Incase,
+              the system is a master node in a cluster, then the report will be
+              generated for the lexicographically first host in that cluster.
+
+       --group-by <section>
+              Specify the report to be generated. Supported options are:
+
+              •  process: Report process details.
+
+              •  module: Report module details.
+
+              •  thread: Report thread.
+
+              Default will be group-by process.
+
+       --view <view-config>
+              Report only the events present in the given view-config. Use com‐
+              mand 'info --list view-configs' to get the list of supported view
+              configurations.
+
+       --disasm
+              Report only the source code and the assembly  instructions  of  a
+              function  having  samples. This option only works with (--detail)
+              option. If (--detail) option is not passed, then (--detail)  gets
+              enabled implicitly.
+
+       --disasm-full
+              Report  all  the source code and assembly instructions of a func‐
+              tion with or without samples. This option only works with  (--de‐
+              tail) option. If (--detail) option is not passed, then (--detail)
+              gets enabled implicitly.
+
+       --disasm-only
+              Report  function detail showing only assembly instructions having
+              samples and excluding the source code  attribution.  This  option
+              only  works  with  (--detail) option. If (--detail) option is not
+              passed, then (--detail) gets enabled implicitly.
+
+       --disasm-style <att | intel>
+              Choose the syntax of assembly instructions. Supported options are
+              'att' or 'intel'. This  option  only  works  with  (--disasm)  or
+              (--disasm-only) or (disasm-full). If this option is not used, the
+              default style used is 'att'.
+
+       --show-sys-src
+              Generate detailed function report of system module functions with
+              source statements. This option only works with --detail option.
+
+       --inline
+              Inline function extraction for C, C++ executables.
+
+              Note: If you are interested in the inlined functions, then use this option.
+
+       --sort-by <EVENT>
+              Specify the Timer, PMC or IBS event on which the reported profile
+              data will be sorted with arguments in the form of comma separated
+              key=value pairs. Supported keys are:
+
+              •  event=<timer  |  ibs-fetch | ibs-op> or <pmu-event> or <cache‐
+                 line-event>
+
+              •  umask=<unit-mask>
+
+              •  user=<0 | 1>
+
+              •  os=<0 | 1>
+
+              •  cmask=<count-mask>
+
+              •  inv=<0 | 1>
+
+              •  metric=<cpu_time | total_cpu_time |  self_time  |  total_time>
+                 cpu_time  is  applicable  only if CPU_TIME event is collected.
+                 total_cpu_time is applicable only with hotspots (or) threading
+                 analysis, if callstack collection (-g) is enabled for  dynami‐
+                 cally linked launch application.  self_time and total_time are
+                 applicable only if function tracing is collected.  If both the
+                 event  and  metric  are  enabled, the event will take priority
+                 over the metric.
+
+              Use command 'info --list cacheline-events' for the list  of  sup‐
+              ported Cacheline events.
+
+              Use  command  'info  --list pmu-events' for the list of supported
+              PMC events. Details about the arguments:
+
+              •  umask - Unit mask in decimal or hexadecimal.  Applicable  only
+                 to PMC events.
+
+              •  cmask  - Count mask in decimal or hexadecimal. Applicable only
+                 to PMC events.
+
+              •  user,os,inv - User, OS mode,  Invert  count  mask.  Applicable
+                 only to PMC events.
+
+              Multiple occurrences of --sort-by (-s) are not allowed.
+
+       --time-filter <T1:T2>
+              Restricts  report  generation to the time interval between T1 and
+              T2, where T1, T2 are time in seconds from profile start time.
+
+       --agg-interval <low | medium | high | INTERVAL>
+              Use this option to  configure  the  sample  aggregation  interval
+              which  is  useful  when  the session gets imported to GUI.  ’low'
+              level of aggregation interval generates better timeline  view  in
+              GUI  but increases the DB size.  Aggregation INTERVAL can also be
+              be specified as numeric value in milliseconds.
+
+       --imix Report Instruction Mix (only for  native  binaries).  Default  is
+              module-wise IMIX.
+
+       --imix-group-by <module | thread | function>
+              IMIX report generation. Supported group-by options are:
+
+              •  module: Report module-wise IMIX.
+
+              •  thread: Report thread-wise IMIX.
+
+              •  function: Report function-wise IMIX.
+
+       --ignore-system-module
+              Ignore samples from System Modules.
+
+       --show-percentage
+              Show samples in percentages.
+
+       --show-sample-count
+              Show the number of samples. This option is enabled by default.
+
+       --show-event-count
+              Show number of events occurred.
+
+       --bin-path <path>
+              Binary file path. Multiple use of --bin-path is allowed.
+
+       --src-path <path>
+              Source file path. Multiple use of --src-path is allowed.
+
+       --symbol-path <path>
+              Debug symbol path. Multiple use of --symbol-path is allowed.
+
+       --cutoff <n>
+              Cutoff to limit the number of process, modules, threads and func‐
+              tions  to be reported. 'n' is the minimum number of entries to be
+              reported in various report sections. Default value is 10.
+
+              •  --cutoff 0 will generate the report for all data.
+
+       --show-all-cachelines
+              Show all cachelines in report sections for cache analysis. By de‐
+              fault only cachelines accessed by more  than  one  process/thread
+              are listed. Use this option for false cache sharing analysis.
+
+       --limit-cacheinfo <n>
+              Show   the   shared   cachelines   accessed   by  more  than  one
+              process/thread for cache analysis.  Set  'n'  to  the  number  of
+              shared  cacheline  addresses  to be reported. Use this option for
+              false cache sharing analysis.
+
+       --log-path <path-to-log-dir>
+              Specify the path to where log file should be created. If this op‐
+              tion is not provided, by default the log file will be created ei‐
+              ther in path set by AMDUPROF_LOGDIR environment variable or $TEMP
+              path.  The log file name will be of  the  format  $USER-AMDuProf‐
+              CLI.log.
+
+       --log-level <LEVEL>
+              LEVEL  refers  to  the  verbosity  of the log messages generated.
+              Level values are clamped between 1 and 5, and the  default  value
+              of level is 2. where level 1 to 5 is described are follows
+
+              •  1 - Errors
+
+              •  2 - Warnings
+
+              •  3 - Info
+
+              •  4 - Debugging
+
+              •  5  - Tracing Note: Levels are accumulated, for example select‐
+                 ing level 4 means enabling all the levels 1 to 4.
+
+       --log LEVEL,ts,PATH
+              This is a shorthand option for all relevant log settings
+
+              o      LEVEL refers to the verbosity of  log  messages,  same  as
+                     --log-level option.
+
+              o      ts  refers  to  the addition of timestamp to each log mes‐
+                     sage.
+
+              o      PATH refers to the path where log files will be generated.
+                     Note: --log option must be passed with at least one  argu‐
+                     ment.
+
+       --enable-logts
+              Use this option to capture the timestamp of the log records.
+
+       --funccount-interval  <funccount-interval>  Specify the time interval in
+       seconds to list the function count detail report. If this option is  not
+       specified, function count will be generated for entire profile duration.
+
+       --report-output <path>
+              Use  this  option  to  write  a report to file. If the path has a
+              ".csv" extension, the path is assumed to be a file  path  and  is
+              used unchanged.  If the ".csv" extension is not used, the path is
+              assumed to be a directory and the report file is generated in the
+              directory with the default name.
+
+       --stdout
+              Use this option to print the report in stdout.
+
+       --retranslate
+              Use  this  option to perform the re-translation of collected data
+              files possibly with different set of translation options.
+
+       --ascii <ibsop-event-dump | ibsfetch-event-dump | raw-dump>
+              Use this option to generate ASCII dump of IBS profile samples.
+
+              o      ibsop-event-dump: ASCII dump of IBS OP profile samples.
+
+              o      ibsfetch-event-dump: ASCII dump of IBS Fetch profile  sam‐
+                     ples.
+
+              o      raw-dump: Raw data dump of IBS profile samples.
+
+              Note: This option might delay the translation.
+
+       --export-session
+              Use  this  option to create a compressed archive of required ses‐
+              sion files which can be taken to another system for analysis.
+
+       --remove-raw-files
+              Use this option to remove the raw data files to reclaim the  disk
+              space.
+
+       --python-show-all
+              Use this option to show python interpreter functions in the call‐
+              graph/flamegraph when translation is performed on python profiled
+              data.
+
+PREDEFINED VIEW CONFIGURATIONS
+       A  view  configuration  (view-config) is a set of sampled event data and
+       computed performance metrics displayed in the text report  generated  by
+       the  CLI.  Each  predefined profile configuration (collect-config) has a
+       list of associated predefined views like: ipc_assess - To find  hotspots
+       with low instruction level parallelism. Provides performance indicators-
+       IPC and CPI.
+
+ENVIRONMENT
+       AMDUPROF_LOGDIR
+              If  AMDUPROF_LOGDIR is set, its value is used as the path to cre‐
+              ate log file.
+
+EXAMPLES
+       1.  Generate report from the raw datafile:
+
+              $ AMDuProfCLI report -i /tmp/cpuprof-tbp/<SESSION-DIR>
+
+       2.  Generate report from the raw datafile sorted on pmc event:
+
+              $ AMDuProfCLI report -s event=pmcxc0,user=1,os=0 -i /tmp/cpuprof-ebp/<SESSION-DIR>
+
+       3.  Generate report from the raw datafile sorted on ibs-op event:
+
+              $ AMDuProfCLI report -s event=ibs-op -i /tmp/cpuprof-ibs/<SESSION-DIR>
+
+       4.  Generate OS Trace report from the raw datafile:
+
+              $ AMDuProfCLI report -i /tmp/cpuprof-os/<SESSION-DIR> --category os
+
+       5.  Generate function count details report from the OS trace rawdata for
+           every 5 sec interval:
+
+              $ AMDuProfCLI report -i /tmp/cpuprof-tbp/<SESSION-DIR> --detail --funccount-interval 5
+
+       6.  Generate GPU Trace report from the raw datafile:
+
+              $ AMDuProfCLI report -i /tmp/cpuprof-gpu/<SESSION-DIR> --category gputrace
+
+       7.  Generate GPU Profile report from the raw datafile:
+
+              $ AMDuProfCLI report -i /tmp/cpuprof-gpu/<SESSION-DIR> --category gpuprof
+
+       8.  Generate thread-wise IMIX report from the raw datafile:
+
+              $ AMDuProfCLI report --imix --imix-group-by thread -i /tmp/cpuprof-tbp/<SESSION-DIR>
+
+SEE ALSO
+       AMDuProfCLI collect(1), AMDuProfCLI timechart(1), AMDuProfCLI info(1).
+
+AMDuProfCLI                       21 Nov 2025             AMDUPROFCLI-REPORT(1)

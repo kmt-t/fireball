@@ -1,0 +1,89 @@
+{
+  "completed_at_utc": "2026-10-13T04:53:21.298911+00:00",
+  "unit": {
+    "groups_passed": 30,
+    "groups_failed": 0,
+    "tests_passed": 1267,
+    "log": "unit.log"
+  },
+  "integration": {
+    "suites_passed": 4,
+    "scenarios_passed": 12,
+    "failed": 0,
+    "log": "integration.log"
+  },
+  "workloads": {
+    "suites_passed": 3,
+    "core_files": 37,
+    "core_assertions": 15230,
+    "core_skipped": 0,
+    "log": "workloads.log"
+  },
+  "native_release_regression": {
+    "cases_passed": 2,
+    "compile_flags": [
+      "-O2",
+      "-DNDEBUG"
+    ],
+    "log": "release_regression.log"
+  },
+  "python_optimization_modes": {
+    "levels": [
+      0,
+      1,
+      2
+    ],
+    "covered_by": "unit.log"
+  },
+  "types": {
+    "errors": 0,
+    "warnings": 0,
+    "log": "types.log"
+  },
+  "source_gate": {
+    "groups": [
+      "cpp",
+      "python_concepts",
+      "python_formal",
+      "python_pysim"
+    ],
+    "warnings": 0,
+    "log": "source_gate.log"
+  },
+  "document_gate": {
+    "scope": "docs",
+    "errors": 0,
+    "warnings": 74,
+    "obligations_discharged": 44,
+    "obligations_total": 44,
+    "log": "document_gate.log"
+  },
+  "verification_tools": {
+    "passed": 169,
+    "warnings": 2,
+    "log": "verification_tools.log"
+  },
+  "cmake": {
+    "targets": [
+      "fireball",
+      "uvwasi"
+    ],
+    "build_passed": true,
+    "boot_passed": true,
+    "log": "cmake.log"
+  },
+  "document_database": {
+    "built": true,
+    "log": "document_build.log"
+  },
+  "registered_benchmarks": {
+    "suites_passed": 6,
+    "skipped": 0,
+    "log": "unified.log"
+  },
+  "report": {
+    "formatter_passed": true,
+    "links_checked": true,
+    "gate_scope_note": "check-doc is limited to docs; the experiments report is checked by formatter, data reconciliation and relative-link validation"
+  }
+}

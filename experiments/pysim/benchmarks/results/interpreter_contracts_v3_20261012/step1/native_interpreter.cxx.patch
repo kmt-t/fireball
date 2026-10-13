@@ -1,0 +1,62 @@
+--- experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx
++++ experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx
+@@ -17,6 +17,15 @@
+ #include <initializer_list>
+ #include <limits>
+ #include <type_traits>
++
++#if defined(FB_COST_DIAGNOSTIC)
++namespace fireball::measurement {
++extern std::uint64_t counters[12];
++}
++#define FB_COST_COUNT(index) (++fireball::measurement::counters[index])
++#else
++#define FB_COST_COUNT(index) ((void)0)
++#endif
+ 
+ #define FIREBALL_CPS_CALL FIREBALL_NATIVE_CPS_CALL
+ 
+@@ -716,6 +725,7 @@
+   assert(function.module_view != nullptr);
+   const auto absolute_pc = static_cast<std::uint64_t>(function.code_pc_offset) + ip;
+   assert(absolute_pc <= std::numeric_limits<std::uint32_t>::max());
++  FB_COST_COUNT(0);
+   const auto head_pc = static_cast<std::uint32_t>(absolute_pc);
+ #if FB_CONF_NATIVE_BLOCK_SEARCH_CACHE
+   constexpr auto kCacheSize = FIREBALL_NATIVE_BLOCK_SEARCH_CACHE_SIZE;
+@@ -728,9 +738,11 @@
+     if constexpr (CollectStats) {
+       ++state.metrics.stats.block_search_cache_hits;
+     }
++    FB_COST_COUNT(1);
+     return entry.block_index;
+   }
+ #endif
++  FB_COST_COUNT(2);
+   const auto folded_pc = head_pc * UINT32_C(0x9E3779B1);
+   const auto block_index =
+       fb_native_find_block_index_folded(function.module_view, head_pc, folded_pc);
+@@ -783,6 +795,7 @@
+                   const std::uint8_t *&dispatch_rel) {
+   auto &context = state.context;
+   fb_native_jit_trace trace{};
++  FB_COST_COUNT(8);
+   const auto lookup =
+       state.jit_provider->lookup(state.jit_provider->owner, block_index, pc, &trace);
+   assert(lookup == 0 || lookup == 1);
+@@ -976,6 +989,7 @@
+   auto &context = *static_cast<execution_context *>(call.context);
+   native_dispatch_state<CollectStats, WithJit, WithExtension, ReturnAtBlockBoundary, ResultType>
+       state{call, extension, jit_provider, context, kNativeErrorInternal, 0, {}};
++  FB_COST_COUNT(11);
+   prepare_native_dispatch(state);
+   // Boundary overrides are valid only within one Runtime dispatch.
+   for (std::uint32_t index = 0; index < context.call_stack->size; ++index) {
+@@ -999,6 +1013,7 @@
+     context.runtime_flags &= ~kStopAfterControlFlag;
+   }
+   while (true) {
++    FB_COST_COUNT(7);
+     auto &frame = active_frame(context);
+     std::uint32_t executed_bodies = 0;
+     const std::uint8_t *dispatch_rel = nullptr;

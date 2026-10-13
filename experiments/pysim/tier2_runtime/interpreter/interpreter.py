@@ -21,18 +21,14 @@ recursion depth for long-running loops. So the continuation
 is *returned* rather than tail-called, and a small trampoline in `_step`
 re-dispatches it -- indirect threading instead of direct threading, same
 handler-per-opcode shape, no stack growth per WASM instruction.
-`R1: sp` addresses, in the real design, a fixed buffer shared by two
-independently-growing stacks (ADR-INTERP-03, interpreter.md §3.1):
-call frames/locals/operand values grow from the bottom, while block/loop/if
-control frames grow from the top in a dedicated region of their own --
-never interleaved with the operand values, since a JIT-resolved loop/block
-exit never pops a control frame at all, and letting the two share one
-growing region would let that leave operand-stack addressing corrupted.
-`ExecutionContext` owns the fixed-capacity operand, local, control-frame, and
-call-frame storage shared by interpreter, JIT, and debugger execution. A
-`CallFrame` is an activation descriptor and a window into that storage; it does
-not own a per-function stack. The descriptor also carries decoded instruction
-metadata needed to resume at `ip`, without adding a fifth handler argument.
+`ExecutionContext` owns fixed-capacity operand, local, and call-frame storage
+shared by interpreter, JIT, and debugger execution. Control delimiters,
+branch targets, and operand restoration points are resolved at load time;
+opcode execution does not create or search a runtime control-frame stack. A
+`CallFrame` is an activation descriptor and a window into the shared storage;
+it does not own a per-function stack. The descriptor also carries decoded
+instruction metadata needed to resume at `ip`, without adding a fifth handler
+argument.
 """
 
 from __future__ import annotations
@@ -47,6 +43,7 @@ from typing import Protocol
 from bump_allocator import BumpAllocator
 from config import (
     FB_CONF_INTERPRETER_YIELD_THRESHOLD,
+    FB_CONF_MAX_NESTING_DEPTH,
     FB_CONF_MAX_VALUE_STACK,
 )
 from system_containers import SequenceView as Sequence
@@ -63,16 +60,11 @@ from tier2_runtime.abi.interpreter_abi import (
     NativeGlobalStorage,
     NativeValueStack,
     TableExecutionViewNative,
+    UInt32Pointer,
 )
 from tier2_runtime.abi.native_stack_abi import (
     NativeCallFrameStack,
-    NativeControlStack,
-    _ControlFrameWindow,
     _LocalStackWindow,
-)
-from tier2_runtime.interpreter.control_flow import (
-    FB_CONF_MAX_NESTING_DEPTH,
-    iter_scan_instrs,
 )
 from tier2_runtime.interpreter.errors import (
     LOG_EVT_TRAP_BASE,
@@ -101,7 +93,7 @@ from tier2_runtime.runtime.python_api import (
 )
 from tier2_runtime.syscall.hostcall import VdmaTransfer
 from tier2_runtime.vmmio.controller import VMMIOController
-from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
+from tier2_runtime.wasm.leb128 import decode_unsigned
 from tier2_runtime.wasm.module import (
     F32,
     F64,
@@ -118,7 +110,6 @@ from tier2_runtime.wasm.opcodes import (
     FC_MEMORY_FILL,
     FC_PREFIX,
     I32_LOAD,
-    LOOP,
     MEMORY_GROW,
 )
 
@@ -129,42 +120,6 @@ WasmHostFunction = HostFunction
 
 
 FB_CONF_MAX_LOCAL_STACK = NATIVE_VALUE_STACK_CAPACITY
-
-
-def _link_validate_indirect_call_tables(module: Module, tables: Sequence[FunctionTable]) -> None:
-    """Check call_indirect targets once, after imported and active tables are linked."""
-
-    function_count = len(module.imports) + len(module.functions)
-    for function_index in range(len(module.imports), function_count):
-        code = module.code_for(function_index)
-        for instruction in iter_scan_instrs(code):
-            if instruction.opcode != CALL_INDIRECT:
-                continue
-
-            expected_type_index = instruction.operand
-            assert expected_type_index is not None
-            expected = module.type_at(expected_type_index)
-            _, table_index_offset = decode_unsigned(code, instruction.offset + 1)
-            table_index, _ = decode_unsigned(code, table_index_offset)
-            assert table_index < len(tables)
-
-            for target_index in tables[table_index]:
-                if target_index is None:
-                    continue
-                assert target_index < function_count
-                actual = module.func_type(target_index)
-                assert expected.params == actual.params and expected.results == actual.results, (
-                    "call_indirect table contains a function with an incompatible signature"
-                )
-
-    for function_index in range(len(module.imports), function_count):
-        code = module.code_for(function_index)
-        for instruction in iter_scan_instrs(code):
-            if instruction.opcode != CALL_INDIRECT:
-                continue
-            _, table_index_offset = decode_unsigned(code, instruction.offset + 1)
-            table_index, _ = decode_unsigned(code, table_index_offset)
-            tables[table_index].seal()
 
 
 def _encode_public_args(
@@ -335,14 +290,10 @@ class CallFrameStack:
             frame = self._frames[common]
             native_local_base = int(native_frame.local_base or 0)
             native_local_offset = (native_local_base - context.local_stack.address) // 4
-            native_control_base = context.control_frame_stack.frame_index(
-                int(native_frame.control_frame_base or 0)
-            )
             if (
                 frame._native_slot != common
                 or frame.func_index != native_frame.func_index
                 or frame.frame_offset != native_local_offset
-                or frame.control_base != native_control_base
             ):
                 break
             common += 1
@@ -393,7 +344,6 @@ class ExecutionContext(ExecutionContextABI):
         "_native_step_call",
         "_workspace_released",
         "call_frame_stack",
-        "control_frame_stack",
         "local_stack",
         "module",
         "module_execution",
@@ -413,6 +363,7 @@ class ExecutionContext(ExecutionContextABI):
         self.stack: NativeValueStack = NativeValueStack(capacity=FB_CONF_MAX_VALUE_STACK)
         self.local_stack: NativeValueStack = NativeValueStack(capacity=FB_CONF_MAX_LOCAL_STACK)
         self.debug_control = debug_control
+        self.current_block_index = 0xFFFF
         self._context_ptr = ctypes.cast(ctypes.pointer(self), ctypes.c_void_p)
         self._context_view = memoryview(self)
         self._ip_pointer = ctypes.cast(
@@ -435,22 +386,15 @@ class ExecutionContext(ExecutionContextABI):
             self.native_call_frames,
             FB_CONF_MAX_NESTING_DEPTH,
         )
-        self.control_frame_stack = NativeControlStack(
-            FB_CONF_MAX_NESTING_DEPTH,
-            stack_base_address=self.stack.address,
-        )
         self.call_stack = self.native_call_frames.address
         self.call_frame_base = self.native_call_frames.frame_address(0)
         self.stack_base = self.stack.address
         self.stack_pointer = self.stack.value_ptr(len(self.stack)).value
         self.stack_limit = self.stack.address + self.stack.capacity * 4
-        self.stack_checkpoint = self.stack_pointer
         self.local_stack_base = self.local_stack.address
         self.local_stack_pointer = self.local_stack.value_ptr(0).value
         self.local_stack_limit = self.local_stack.address + self.local_stack.capacity * 4
         self.local_base = self.local_stack_base
-        self.control_stack = self.control_frame_stack.address
-        self.control_frame_base = self.control_frame_stack.frame_address(0)
         self._allocator = allocator
         self._arena_offset: int | None = None
         self._arena_size = (
@@ -458,7 +402,6 @@ class ExecutionContext(ExecutionContextABI):
             + ctypes.sizeof(self.stack.native)
             + ctypes.sizeof(self.local_stack.native)
             + ctypes.sizeof(self.native_call_frames.native)
-            + ctypes.sizeof(self.control_frame_stack.native)
             + ctypes.sizeof(self._native_step_call)
             + ctypes.sizeof(self._native_dispatch_call)
             + ctypes.sizeof(self._native_result)
@@ -490,7 +433,7 @@ class ExecutionContext(ExecutionContextABI):
         return self._context_ptr
 
     @property
-    def ip_ptr(self) -> ctypes.POINTER(ctypes.c_uint32):
+    def ip_ptr(self) -> UInt32Pointer:
         """Pointer to the instruction cursor stored in this execution context."""
         return self._ip_pointer
 
@@ -554,6 +497,9 @@ class ExecutionContext(ExecutionContextABI):
         if not self.local_stack.push_zeroed(local_slot_count):
             self.call_frame_stack.pop_back()
             assert False, "local stack capacity exceeded"
+        assert self.module is not None
+        function = self.module.functions[func_index - len(self.module.imports)]
+        self.current_block_index = function.entry_block_index
         raw_offset = 0
         for index in range(frame.param_count):
             width = frame.local_layout.size_words(index)
@@ -599,27 +545,22 @@ def _native_buffer_address(view: memoryview) -> int:
 
 class CallFrame:
     """
-    Activation descriptor for one function. `values`, `locals`, and `frames`
-    are windows into the three independent stacks owned by `ExecutionContext`;
-    this object never owns a per-function stack.
+    Activation descriptor for one function. `values` and `locals` are windows
+    into `ExecutionContext` stacks; branch metadata is resolved at load time.
     """
 
     __slots__ = (
-        "_frames",
         "_locals",
         "_native",
-        "_native_control_map",
         "_native_function_view",
-        "_native_interpreter_constants",
+        "_native_interpreter_annotations",
         "_native_slot",
         "code",
         "code_pc_offset",
         "context",
-        "control_base",
         "control_map",
         "env",
         "frame_offset",
-        "func_index",
         "local_count",
         "local_layout",
         "local_slot_count",
@@ -653,12 +594,6 @@ class CallFrame:
         assert local_layout is not None
         self.context = context
         self.values = context.stack
-        self.control_base = (
-            context.control_frame_stack.frame_index(int(native_frame.control_frame_base or 0))
-            if native_frame is not None
-            else len(context.control_frame_stack)
-        )
-        self.func_index = func_index
         self.frame_offset = frame_offset
         self.local_count = len(local_layout)
         self.local_layout = local_layout
@@ -684,54 +619,40 @@ class CallFrame:
         self.code_pc_offset = module.function_pc_offset(func_index)
         assert function.control_map is not None
         self.control_map = function.control_map
-        self._frames = _ControlFrameWindow(context.control_frame_stack, self.control_base)
         if template is None:
-            native_control_map = self.control_map.native_entries
-            constants = function.interpreter_constant_pool
-            assert constants is not None
-            self._native_interpreter_constants = constants
-            self._native_control_map = native_control_map
+            annotations = function.interpreter_annotation_pool
+            assert annotations is not None
+            self._native_interpreter_annotations = annotations
             function_view = native_function_view
             if function_view is None:
                 function_view = FunctionExecutionViewNative()
             function_view.code = _native_buffer_address(self.code)
             function_view.code_size = len(self.code)
             function_view.code_pc_offset = self.code_pc_offset
-            function_view.control_map = (
-                0 if len(self.code) == 0 else ctypes.addressof(native_control_map)
-            )
             function_view.local_offsets = self.local_layout.offsets_address
-            function_view.local_sizes = self.local_layout.sizes_address
             function_view.local_types = self.local_layout.types_address
             function_view.local_count = self.local_count
             function_view.local_slot_count = self.local_slot_count
             function_view.param_count = self.param_count
             function_view.param_packed_slot_count = self.param_packed_slot_count
             function_view.result_arity = self.result_arity
+            function_view.function_index = func_index
             function_view.type_index = function.type_index
             function_view.is_import = 0
             function_view.module_view = 0
-            function_view.interpreter_constant_pool = constants.native_address
-            function_view.interpreter_constant_byte_count = len(constants)
+            function_view.interpreter_annotation_pool = annotations.native_address
+            function_view.interpreter_annotation_byte_count = len(annotations)
+            function_view.max_operand_stack_words = function.max_operand_stack_words
+            function_view.entry_block_index = function.entry_block_index
             self._native_function_view = function_view
         else:
             assert native_function_view is None
             assert template.func_index == func_index
-            self._native_control_map = template._native_control_map
-            self._native_interpreter_constants = template._native_interpreter_constants
+            self._native_interpreter_annotations = template._native_interpreter_annotations
             self._native_function_view = template._native_function_view
         self.env = env
-        # Set by RuntimeEngine.run() right before each interp.step() call,
-        # from that step's BasicBlock's own statically-computed next_pc /
-        # loops_to (extract_basic_blocks -- the same static resolution the
-        # JIT already uses, unified pc format) -- overrides the runtime
-        # frame.frames-based target in _h_br / _h_br_if / _h_else below.
-        # A JIT trace's computed jumps never touch frame.frames, so its
-        # content can desync from reality across a JIT/interpreter boundary
-        # (see RuntimeEngine.run()); the static BasicBlock target this step
-        # is dispatching never can, since it is a pure function of `pc`
-        # alone. Stays None for a bare Interpreter.call() run with no
-        # owning RuntimeEngine, so that path is byte-for-byte unchanged.
+        # Boundary PCs are retained for the scheduler contract. Branch edges
+        # and stack restoration are loader-resolved in ControlMap.
         execution = context.module_execution
         function_view_address = (
             execution.function_view_address(func_index)
@@ -742,11 +663,11 @@ class CallFrame:
             self._native = CallFrameNative(
                 function_view=function_view_address,
                 local_base=context.local_stack.value_ptr(self.frame_offset).value,
-                control_frame_base=context.control_frame_stack.frame_address(self.control_base),
-                func_index=self.func_index,
+                operand_stack_base=context.stack.value_ptr(len(context.stack)).value,
                 return_ip=0xFFFF_FFFF,
                 boundary_next_pc=0xFFFF_FFFF,
                 boundary_loops_to=0xFFFF_FFFF,
+                return_block_index=0xFFFF,
             )
             assert native_slot == -1
         else:
@@ -754,15 +675,17 @@ class CallFrame:
             assert native_frame.func_index == func_index
             assert native_frame.function_view == function_view_address
             assert native_frame.local_base == context.local_stack.value_ptr(frame_offset).value
-            assert native_frame.control_frame_base == context.control_frame_stack.frame_address(
-                self.control_base
-            )
             self._native = None
             self._native_slot = native_slot
 
     @property
     def context_ptr(self) -> ctypes.c_void_p:
         return self.context.context_ptr
+
+    @property
+    def func_index(self) -> int:
+        """Read function identity from the shared immutable function view."""
+        return int(self._native_function_view.function_index)
 
     @property
     def native(self) -> CallFrameNative:
@@ -789,16 +712,6 @@ class CallFrame:
     @boundary_loops_to.setter
     def boundary_loops_to(self, value: int | None) -> None:
         self.native.boundary_loops_to = 0xFFFF_FFFF if value is None else value
-
-    @property
-    def frames(self) -> _ControlFrameWindow:
-        return self._frames
-
-    def control_frame_metadata(self, start: int) -> tuple[bool, int, int, int]:
-        """Resolve opener properties from the function's static control map."""
-        match_end, _, result_arity = self.control_map.block(start)
-        _, next_pc = decode_signed(self.code, start + 1, bits=32)
-        return self.code[start] == LOOP, match_end, result_arity, next_pc
 
     @property
     def locals(self) -> _LocalStackWindow:
@@ -859,12 +772,11 @@ class NativeModuleExecution:
             view.code = 0
             view.code_size = 0
             view.code_pc_offset = 0
-            view.control_map = 0
             view.local_offsets = 0
-            view.local_sizes = 0
             view.local_types = 0
             view.local_count = 0
             view.local_slot_count = 0
+            view.function_index = import_index
             view.param_count = len(function_type.params)
             view.param_packed_slot_count = sum(
                 value_slot_width(value_type) for value_type in function_type.params
@@ -874,8 +786,10 @@ class NativeModuleExecution:
             )
             view.type_index = import_record.type_index
             view.is_import = 1
-            view.interpreter_constant_pool = 0
-            view.interpreter_constant_byte_count = 0
+            view.interpreter_annotation_pool = 0
+            view.interpreter_annotation_byte_count = 0
+            view.max_operand_stack_words = 0
+            view.entry_block_index = 0xFFFF
 
         self._templates: StaticVector[CallFrame] = StaticVector(capacity=len(module.functions))
         for local_index in range(len(module.functions)):
@@ -919,18 +833,6 @@ class NativeModuleExecution:
             blocks=module.blocks.native_address,
             block_count=len(module.blocks),
             block_execution_counts=0,
-            block_index_entries=(
-                0
-                if module.block_index_entries is None
-                else module.block_index_entries.native_address
-            ),
-            block_radix_table=(
-                0 if module.block_radix_table is None else module.block_radix_table.native_address
-            ),
-            block_radix_table_count=(
-                0 if module.block_radix_table is None else len(module.block_radix_table)
-            ),
-            block_radix_shift=module.block_radix_shift,
         )
         module_view_address = ctypes.addressof(self._module_view)
         for function_index in range(function_count):
@@ -1157,7 +1059,10 @@ class Interpreter:
                 self.tables.append(
                     module.table_contents(table_index, self.globals, allocator=self.bump_allocator)
                 )
-        _link_validate_indirect_call_tables(module, self.tables)
+        function_count = len(module.imports) + len(module.functions)
+        for table in self.tables:
+            assert all(index is None or 0 <= index < function_count for index in table)
+            table.seal()
         self.debugger: DebuggerAttachment | None = None
         self.vmmio = vmmio
         self.phys_mem = phys_mem
@@ -1225,7 +1130,6 @@ class Interpreter:
             )
         while call_state.context.call_frame_stack:
             frame = call_state.context.call_frame_stack[-1]
-            frame.frames.truncate(0)
             call_state.context.end_call_frame(frame)
         while call_state.call_stack:
             call_state.call_stack.pop_back()
@@ -1270,11 +1174,17 @@ class Interpreter:
 
         self._prepare_native_execution(context)
         raw_args = _encode_public_args(args, self.module.func_type(func_index).params)
-        try:
-            frame, locals_arr = self._build_frame(func_index, raw_args, context)
-        except Trap as trap:
+        built = self._build_frame(func_index, raw_args, context)
+        if built is None:
             context.release_workspace()
-            return InterpreterCall(func_index, context, cont=None, finished=True, trap=trap)
+            return InterpreterCall(
+                func_index,
+                context,
+                cont=None,
+                finished=True,
+                trap=Trap(TrapCode.OPERAND_STACK_CAPACITY),
+            )
+        frame, locals_arr = built
         return InterpreterCall(func_index, context, cont=(0, frame, locals_arr))
 
     def _new_context(self) -> ExecutionContext:
@@ -1287,7 +1197,7 @@ class Interpreter:
 
     def _build_frame(
         self, func_index: int, raw_args: StaticVector[int], context: ExecutionContext
-    ) -> tuple[CallFrame, _LocalStackWindow]:
+    ) -> tuple[CallFrame, _LocalStackWindow] | None:
         """
         Builds the initial frame + locals for a WASM (non-import) function
         activation. `raw_args` contains the packed parameter values as
@@ -1306,6 +1216,8 @@ class Interpreter:
         assert param_packed_slot_count is not None
         assert len(raw_args) == param_packed_slot_count
         assert fn.control_map is not None
+        if fn.max_operand_stack_words > context.stack.capacity - len(context.stack):
+            return None
         frame = context.begin_call_frame(
             raw_args,
             func_index=func_index,
@@ -1440,20 +1352,53 @@ class Interpreter:
         assert handler is not None
         context = call_state.context
         assert context.call_frame_stack and context.call_frame_stack[-1] is frame
+        self._set_current_block_index_at_ip(context, frame, ip)
         context.ip = ip
         trap = handler(context, context.ip_ptr, frame.values)
         if trap is not None:
             self._abort_call(call_state, trap, ip)
             return call_state
         next_ip = int(context.ip)
+        block_changed = self._set_current_block_index_at_ip(context, frame, next_ip)
+        if block_changed:
+            context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
         call_state._ip = RETURN_SENTINEL_IP if next_ip >= len(frame.code) else next_ip
         return call_state
+
+    def _set_current_block_index_at_ip(
+        self, context: ExecutionContext, frame: CallFrame, instruction_ip: int
+    ) -> bool:
+        """Advance through the active block's precomputed edge metadata."""
+        if instruction_ip >= len(frame.code):
+            context.current_block_index = 0xFFFF
+            return True
+        target_pc = frame.code_pc_offset + instruction_ip
+        current_index = int(context.current_block_index)
+        assert current_index < len(self.module.blocks)
+        source = self.module.blocks[current_index]
+        if source.head_pc == target_pc:
+            return True
+        if source.next_pc == target_pc:
+            target_index = source.next_block_index
+        elif source.loops_to == target_pc:
+            target_index = source.loops_to_block_index
+        elif source.head_pc < target_pc <= source.head_pc + source.byte_span:
+            return False
+        else:
+            assert False, (
+                "native Runtime API continuation is outside its loader-known block: "
+                f"index={current_index} head={source.head_pc} span={source.byte_span} "
+                f"next={source.next_pc} loops={source.loops_to} target={target_pc}"
+            )
+        assert target_index is not None
+        assert self.module.blocks[target_index].head_pc == target_pc
+        context.current_block_index = target_index
+        return True
 
     def _finish_native_frame(self, call_state: InterpreterCall) -> InterpreterCall:
         """Complete one C++ return boundary and restore its suspended caller."""
         frame = call_state._frame
         assert frame is not None and call_state._ip == RETURN_SENTINEL_IP
-        frame.frames.truncate(0)
         call_state.context.end_call_frame(frame)
         if not call_state.call_stack:
             func_type = self.module.func_type(call_state.func_index)
@@ -1495,12 +1440,13 @@ class Interpreter:
         context = call_state.context
         if context.runtime_flags & EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD:
             pc = frame.code_pc_offset + call_state._ip
-            block = self.module.get_block(pc)
-            assert block is not None
+            block_index = int(context.current_block_index)
+            assert block_index < len(self.module.blocks)
+            block = self.module.blocks[block_index]
             assert block.func_index == frame.func_index and block.head_pc == pc
-            constants = frame._native_interpreter_constants
-            assert constants is not None and constants.native_address != 0
-            return constants.native_address + block.interpreter_constant_byte_offset
+            annotations = frame._native_interpreter_annotations
+            assert annotations is not None and annotations.native_address != 0
+            return annotations.native_address + block.interpreter_annotation_byte_offset
         rel = int(context.rel or 0)
         assert rel != 0
         return rel
@@ -1530,13 +1476,10 @@ class Interpreter:
                 frame.values.native_bytes,
                 locals_arr._storage.address,
                 locals_arr._storage.native_bytes,
-                context.control_frame_stack.address,
-                context.control_frame_stack.native_bytes,
                 len(frame.values),
                 frame.values.capacity,
                 call_state._ip,
                 frame.local_slot_count,
-                context.control_frame_stack.frame_address(frame.control_base),
                 call=context._native_step_call,
                 result=context._native_result,
                 rel=rel,
@@ -1586,12 +1529,9 @@ class Interpreter:
         context.stack_base = frame.values.address
         context.stack_pointer = frame.values.value_ptr(len(frame.values)).value
         context.stack_limit = frame.values.address + frame.values.capacity * 4
-        context.stack_checkpoint = context.stack_pointer
         context.local_stack_base = context.local_stack.address
         context.local_stack_pointer = context.local_stack.value_ptr(len(context.local_stack)).value
         context.local_stack_limit = context.local_stack.address + context.local_stack.capacity * 4
-        context.control_stack = context.control_frame_stack.address
-        context.control_frame_base = context.control_frame_stack.frame_address(frame.control_base)
         context.local_base = context.local_stack.value_ptr(frame.frame_offset).value
         context.loop_jump_threshold = self.yield_threshold
         with _native_linear_memory_scope(context, frame.env.memory):
@@ -1654,13 +1594,10 @@ class Interpreter:
                     frame.values.native_bytes,
                     locals_arr._storage.address,
                     locals_arr._storage.native_bytes,
-                    context.control_frame_stack.address,
-                    context.control_frame_stack.native_bytes,
                     len(frame.values),
                     frame.values.capacity,
                     call_state._ip,
                     frame.local_slot_count,
-                    context.control_frame_stack.frame_address(frame.control_base),
                     call=context._native_step_call,
                     result=context._native_result,
                     rel=rel,
@@ -1751,10 +1688,6 @@ class Interpreter:
                     return call_state
 
             ft = self.module.func_type(call_state.func_index)
-            # The context-owned control-frame window is independent from the
-            # LocalStack frame lifetime; discard any frames left by a JIT
-            # boundary before releasing this call activation.
-            frame.frames.truncate(0)
             call_state.context.end_call_frame(frame)
             if not call_state.call_stack:
                 results: StaticVector[WasmNumber] = StaticVector(capacity=4)
@@ -1823,7 +1756,10 @@ class Interpreter:
             callee_func_index = table[table_slot]
             if callee_func_index is None:
                 return Trap(TrapCode.TABLE_SLOT_UNINITIALIZED, table_slot)
-            callee_ft = self.module.type_at(typeidx)
+            expected = self.module.type_at(typeidx)
+            callee_ft = self.module.func_type(callee_func_index)
+            if expected.params != callee_ft.params or expected.results != callee_ft.results:
+                return Trap(TrapCode.INDIRECT_CALL_TYPE_MISMATCH)
 
         if self.module.is_import(callee_func_index):
             call_args: StaticVector[WasmNumber] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
@@ -1869,12 +1805,10 @@ class Interpreter:
                 popped_raw_args.append(value)
         popped_raw_args.reverse_in_place()
         resume_cont = (next_ip, frame, locals_arr)
-        try:
-            callee_frame, callee_locals = self._build_frame(
-                callee_func_index, popped_raw_args, call_state.context
-            )
-        except Trap as trap:
-            return trap
+        built = self._build_frame(callee_func_index, popped_raw_args, call_state.context)
+        if built is None:
+            return Trap(TrapCode.OPERAND_STACK_CAPACITY)
+        callee_frame, callee_locals = built
         callee_frame.native.return_ip = next_ip
         if not call_state.call_stack.push_back((call_state.func_index, resume_cont)):
             return Trap(TrapCode.CALL_STACK_CAPACITY)

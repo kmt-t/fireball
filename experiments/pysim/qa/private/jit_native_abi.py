@@ -40,7 +40,6 @@ class NativeByteView:
 @dataclass(frozen=True, slots=True)
 class NativeLocalLayout:
     offsets: NativeByteView
-    sizes: NativeByteView
     types: NativeByteView
     local_count: int
     total_words: int
@@ -58,13 +57,16 @@ class WasmBlock:
     loops_to: int | None
     locals: NativeLocalLayout
     frame_depth: int = 0
-    block_index: int = 0xFFFF_FFFF
+    block_index: int = 0xFFFF
+    next_block_index: int | None = None
+    loops_to_block_index: int | None = None
+    interpreter_annotations: NativeByteView = NativeByteView(0, 0)
+    interpreter_annotation_byte_offset: int = 0
 
 
 class CacheField(IntEnum):
     """Scalar fields shared with the native cache ABI."""
 
-    PROMOTIONS = 3
     EVICTIONS = 4
     GENERATION = 5
     AGING_STEPS = 6
@@ -97,9 +99,35 @@ class NativeTraceHeader(ctypes.Structure):
         ("result_words", ctypes.c_uint8),
         ("chain_words", ctypes.c_uint8),
         ("chain_body_count", ctypes.c_uint8),
-        ("frame_depth", ctypes.c_uint32),
-        ("block_index", ctypes.c_uint32),
+        ("frame_depth", ctypes.c_uint8),
+        ("block_index", ctypes.c_uint16),
         ("const_rel_offset", ctypes.c_uint32),
+    )
+
+
+class NativeTraceExit(ctypes.Structure):
+    """Code-adjacent metadata consumed by the native interpreter on trace exit."""
+
+    _fields_ = (
+        ("body_end_ip", ctypes.c_uint32),
+        ("next_pc", ctypes.c_uint32),
+        ("loops_to", ctypes.c_uint32),
+        ("interpreter_rel_bytes", ctypes.c_uint32),
+        ("block_index", ctypes.c_uint16),
+        ("frame_depth", ctypes.c_uint8),
+        ("result_words", ctypes.c_uint8),
+    )
+
+
+class NativeConstPoolDiagnostics(ctypes.Structure):
+    """Counters enabled only in the QA JIT build for pool layout studies."""
+
+    _fields_ = (
+        ("trace_count", ctypes.c_uint64),
+        ("instruction_count", ctypes.c_uint64),
+        ("runtime_api_count", ctypes.c_uint64),
+        ("runtime_api_opcodes", ctypes.c_uint64 * 512),
+        ("item_bytes", ctypes.c_uint64 * 7),
     )
 
 
@@ -120,10 +148,14 @@ assert NativeTraceHeader.result_words.offset == 21
 assert NativeTraceHeader.chain_words.offset == 22
 assert NativeTraceHeader.chain_body_count.offset == 23
 assert NativeTraceHeader.frame_depth.offset == 24
-assert NativeTraceHeader.frame_depth.size == 4
-assert NativeTraceHeader.block_index.offset == 28
-assert NativeTraceHeader.const_rel_offset.offset == 32
-assert ctypes.sizeof(NativeTraceHeader) == 40
+assert NativeTraceHeader.frame_depth.size == 1
+assert NativeTraceHeader.block_index.offset == 26
+assert NativeTraceHeader.const_rel_offset.offset == 28
+assert ctypes.sizeof(NativeTraceHeader) == 32
+assert NativeTraceExit.block_index.offset == 16
+assert NativeTraceExit.frame_depth.offset == 18
+assert NativeTraceExit.result_words.offset == 19
+assert ctypes.sizeof(NativeTraceExit) == 20
 
 
 @dataclass(slots=True)
@@ -163,10 +195,9 @@ class _NativeByteView(ctypes.Structure):
 class _NativeLocalLayout(ctypes.Structure):
     _fields_ = (
         ("offsets", _NativeByteView),
-        ("sizes", _NativeByteView),
         ("types", _NativeByteView),
-        ("count", ctypes.c_uint32),
-        ("total_words", ctypes.c_uint32),
+        ("count", ctypes.c_uint16),
+        ("total_words", ctypes.c_uint16),
     )
 
 
@@ -177,13 +208,29 @@ class _NativeWasmBlock(ctypes.Structure):
         ("byte_length", ctypes.c_uint32),
         ("next_pc", ctypes.c_uint32),
         ("loops_to", ctypes.c_uint32),
-        ("frame_depth", ctypes.c_uint32),
+        ("frame_depth", ctypes.c_uint8),
         ("jit_score", ctypes.c_int64),
         ("code", _NativeByteView),
         ("locals", _NativeLocalLayout),
         ("extension_data", ctypes.c_void_p),
-        ("block_index", ctypes.c_uint32),
+        ("block_index", ctypes.c_uint16),
+        ("next_block_index", ctypes.c_uint16),
+        ("loops_to_block_index", ctypes.c_uint16),
+        ("interpreter_annotations", _NativeByteView),
+        ("interpreter_annotation_byte_offset", ctypes.c_uint32),
     )
+
+
+assert _NativeLocalLayout.count.offset == 32
+assert ctypes.sizeof(_NativeLocalLayout) == 40
+assert _NativeWasmBlock.jit_score.offset == 24
+assert _NativeWasmBlock.code.offset == 32
+assert _NativeWasmBlock.locals.offset == 48
+assert _NativeWasmBlock.extension_data.offset == 88
+assert _NativeWasmBlock.block_index.offset == 96
+assert _NativeWasmBlock.interpreter_annotations.offset == 104
+assert _NativeWasmBlock.interpreter_annotation_byte_offset.offset == 120
+assert ctypes.sizeof(_NativeWasmBlock) == 128
 
 
 RUNTIME_BIND_BLOCKS = _NATIVE_LIBRARY.fb_qa_runtime_bind_blocks
@@ -234,9 +281,13 @@ BLOCK_COUNTERS_ENABLED = _NATIVE_LIBRARY.fb_jit_block_counters_enabled
 BLOCK_COUNTERS_ENABLED.argtypes = ()
 BLOCK_COUNTERS_ENABLED.restype = ctypes.c_int
 
-RUNTIME_ERROR = _NATIVE_LIBRARY.fb_jit_runtime_error
-RUNTIME_ERROR.argtypes = (ctypes.c_void_p,)
-RUNTIME_ERROR.restype = ctypes.c_int
+CONST_POOL_DIAGNOSTICS_RESET = _NATIVE_LIBRARY.fb_jit_const_pool_diagnostics_reset
+CONST_POOL_DIAGNOSTICS_RESET.argtypes = ()
+CONST_POOL_DIAGNOSTICS_RESET.restype = None
+CONST_POOL_DIAGNOSTICS_READ = _NATIVE_LIBRARY.fb_jit_const_pool_diagnostics_read
+CONST_POOL_DIAGNOSTICS_READ.argtypes = (ctypes.POINTER(NativeConstPoolDiagnostics),)
+CONST_POOL_DIAGNOSTICS_READ.restype = None
+
 
 RUNTIME_SCALAR = _NATIVE_LIBRARY.fb_jit_runtime_scalar
 
@@ -502,10 +553,10 @@ def install_common_trace(
     memory: NativeExecutableMemory,
     offset: int,
     blob: bytes,
-    block_index: int = 0xFFFF_FFFF,
+    block_index: int = 0xFFFF,
 ) -> int:
     assert 0 <= offset <= 0xFFFF_FFFF and len(blob) <= 0xFFFF_FFFF
-    assert 0 <= block_index <= 0xFFFF_FFFF
+    assert 0 <= block_index <= 0xFFFF
     source = ctypes.cast(ctypes.c_char_p(blob), ctypes.POINTER(ctypes.c_uint8))
     entry = ctypes.c_size_t()
     assert (
@@ -562,6 +613,24 @@ MEMORY_FINALIZE.argtypes = (ctypes.POINTER(NativeExecutableMemory),)
 
 
 MEMORY_FINALIZE.restype = ctypes.c_int
+
+
+MEMORY_NO_RWX = _NATIVE_LIBRARY.fb_jit_memory_no_rwx
+
+
+MEMORY_NO_RWX.argtypes = (ctypes.POINTER(NativeExecutableMemory),)
+
+
+MEMORY_NO_RWX.restype = ctypes.c_int
+
+
+MEMORY_VALID_PROTECTION = _NATIVE_LIBRARY.fb_jit_memory_valid_protection
+
+
+MEMORY_VALID_PROTECTION.argtypes = (ctypes.POINTER(NativeExecutableMemory),)
+
+
+MEMORY_VALID_PROTECTION.restype = ctypes.c_int
 
 
 MEMORY_WRITE = _NATIVE_LIBRARY.fb_jit_memory_write
@@ -739,13 +808,22 @@ def compile_wasm(block: WasmBlock, trace: TraceQaState) -> bytes | None:
     assert block.code.address != 0
     assert block.next_pc is None or 0 <= block.next_pc < 0xFFFF_FFFF
     assert block.locals.offsets.byte_length == block.locals.local_count * 2
-    assert block.locals.sizes.byte_length == block.locals.local_count
     assert block.locals.offsets.byte_length == 0 or block.locals.offsets.address != 0
-    assert block.locals.sizes.byte_length == 0 or block.locals.sizes.address != 0
+    assert block.locals.types.byte_length == block.locals.local_count
+    assert block.locals.types.byte_length == 0 or block.locals.types.address != 0
     assert 0 <= block.locals.local_count <= 0xFFFF_FFFF
     assert 0 <= block.locals.total_words <= 0xFFFF_FFFF
     request = marshal_block(block)
-    output = (ctypes.c_uint8 * (_COMPILE_MAX_BODY_BYTES + COMMON_LAYOUT.header_bytes + 16))()
+    output = (
+        ctypes.c_uint8
+        * (
+            _COMPILE_MAX_BODY_BYTES
+            + COMMON_LAYOUT.header_bytes
+            + ctypes.sizeof(NativeTraceExit)
+            + ctypes.alignment(ctypes.c_void_p)
+            - 1
+        )
+    )()
     body_scratch = (ctypes.c_uint8 * _COMPILE_MAX_BODY_BYTES)()
     status = int(
         _COMPILE_BLOCK(
@@ -802,13 +880,19 @@ def marshal_block(block: WasmBlock) -> _NativeWasmBlock:
         _NativeByteView(block.code.address, block.code.byte_length),
         _NativeLocalLayout(
             _NativeByteView(block.locals.offsets.address, block.locals.offsets.byte_length),
-            _NativeByteView(block.locals.sizes.address, block.locals.sizes.byte_length),
             _NativeByteView(block.locals.types.address, block.locals.types.byte_length),
             block.locals.local_count,
             block.locals.total_words,
         ),
         0,
         block.block_index,
+        0xFFFF if block.next_block_index is None else block.next_block_index,
+        0xFFFF if block.loops_to_block_index is None else block.loops_to_block_index,
+        _NativeByteView(
+            block.interpreter_annotations.address,
+            block.interpreter_annotations.byte_length,
+        ),
+        block.interpreter_annotation_byte_offset,
     )
 
 
@@ -874,13 +958,21 @@ def compile_instructions(
         count,
         _NativeLocalLayout(
             _NativeByteView(local_layout.offsets_address, local_layout.count * 2),
-            _NativeByteView(local_layout.sizes_address, local_layout.count),
             _NativeByteView(local_layout.types_address, local_layout.count),
             local_layout.count,
             local_layout.total_words,
         ),
     )
-    output = (ctypes.c_uint8 * (_COMPILE_MAX_BODY_BYTES + COMMON_LAYOUT.header_bytes + 16))()
+    output = (
+        ctypes.c_uint8
+        * (
+            _COMPILE_MAX_BODY_BYTES
+            + COMMON_LAYOUT.header_bytes
+            + ctypes.sizeof(NativeTraceExit)
+            + ctypes.alignment(ctypes.c_void_p)
+            - 1
+        )
+    )()
     body_scratch = (ctypes.c_uint8 * _COMPILE_MAX_BODY_BYTES)()
     status = int(
         _COMPILE_INSTRUCTIONS(

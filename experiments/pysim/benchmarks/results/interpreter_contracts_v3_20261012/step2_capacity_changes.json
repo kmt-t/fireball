@@ -1,0 +1,20 @@
+{
+  "removed_instruction_failure_paths": 12,
+  "helper_upper_checks": 2,
+  "conditions": [
+    "!pop(current, sp, condition)",
+    "sp == current.stack_limit",
+    "current.stack_limit - sp < width",
+    "current.stack_limit - sp < width",
+    "!pop(current, sp, selector)",
+    "!push(current, sp, static_cast<std::uint32_t>(value))",
+    "!push_u64(current, sp, static_cast<std::uint64_t>(value))",
+    "!push(*context, sp, static_cast<std::uint32_t>(bits))",
+    "!push_u64(*context, sp, bits)",
+    "!Operation(current, sp)",
+    "current.stack_limit - (sp - 1) < ResultWords",
+    "!pop(current, sp, condition)",
+    "current.stack_limit - sp < 2",
+    "sp >= current.stack_limit"
+  ]
+}

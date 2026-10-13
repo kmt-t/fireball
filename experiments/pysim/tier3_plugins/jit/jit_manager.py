@@ -47,27 +47,18 @@ class JITRuntimeManager:
         assert execution is not None and execution.module is self.module
         if self._pointer is not None:
             return self._pointer
+        assert self._lease is None and self._execution is None
         view = ctypes.byref(execution._module_view)
-        self.close()
-        try:
-            size = native_abi.REQUIRED_BYTES(view)
-            region = self._region_provider(size, native_abi.REGION_ALIGNMENT())
-            assert not region.readonly and region.c_contiguous, (
-                "plugin region must be writable and contiguous"
-            )
-            assert region.nbytes == size, "plugin region size must match its request"
-            self._lease = BufferLease(region)
-            pointer = native_abi.RUNTIME_INIT(
-                self._lease.address,
-                region.nbytes,
-                view,
-                self.module_id,
-            )
-            assert pointer is not None
-        except Exception as error:
-            self.close()
-            assert False, f"native JIT plugin initialization failed: {error}"
+        size = native_abi.REQUIRED_BYTES(view)
+        region = self._region_provider(size, native_abi.REGION_ALIGNMENT())
+        assert not region.readonly and region.c_contiguous, (
+            "plugin region must be writable and contiguous"
+        )
+        assert region.nbytes == size, "plugin region size must match its request"
+        lease = BufferLease(region)
+        pointer = native_abi.RUNTIME_INIT(lease.address, region.nbytes, view, self.module_id)
         assert pointer is not None
+        self._lease = lease
         self._pointer = pointer
         self._execution = execution
         return pointer

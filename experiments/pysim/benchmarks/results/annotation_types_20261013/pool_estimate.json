@@ -1,0 +1,273 @@
+{
+  "method": "loader byte-count formula; no runtime or source changes",
+  "modules": [
+    {
+      "path": "/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/benchmarks/aobench/aobench.wasm",
+      "sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "functions": 6,
+      "blocks": 107,
+      "instructions": 510,
+      "per_function": [
+        {
+          "function_index": 1,
+          "instruction_count": 6,
+          "current_pool_bytes": 15,
+          "proposed_pool_bytes": 15
+        },
+        {
+          "function_index": 2,
+          "instruction_count": 12,
+          "current_pool_bytes": 30,
+          "proposed_pool_bytes": 30
+        },
+        {
+          "function_index": 3,
+          "instruction_count": 67,
+          "current_pool_bytes": 191,
+          "proposed_pool_bytes": 191
+        },
+        {
+          "function_index": 4,
+          "instruction_count": 69,
+          "current_pool_bytes": 223,
+          "proposed_pool_bytes": 223
+        },
+        {
+          "function_index": 5,
+          "instruction_count": 102,
+          "current_pool_bytes": 355,
+          "proposed_pool_bytes": 355
+        },
+        {
+          "function_index": 6,
+          "instruction_count": 254,
+          "current_pool_bytes": 906,
+          "proposed_pool_bytes": 906
+        }
+      ],
+      "current_pool_bytes": 1720,
+      "proposed_pool_bytes": 1720,
+      "saved_bytes": 0,
+      "saved_percent": 0.0,
+      "metadata_estimate": {
+        "basic_block_bytes_each_before": 32,
+        "basic_block_bytes_each_after": 32,
+        "basic_block_bytes_before": 3424,
+        "basic_block_bytes_after": 3424,
+        "block_index_entry_count": 107,
+        "block_index_bytes_before": 856,
+        "block_index_bytes_after": 856,
+        "radix_entry_count": 17,
+        "radix_table_bytes_before": 68,
+        "radix_table_bytes_after": 34,
+        "loader_arena_bytes_before": 25414,
+        "loader_arena_bytes_after_estimate": 25380,
+        "loader_arena_saved_bytes_estimate": 34
+      },
+      "jit_boundary_metadata_bytes_before_after": [
+        24,
+        24
+      ]
+    },
+    {
+      "path": "/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/benchmarks/profile/guest/suite.wasm",
+      "sha256": "15be324af0ae7708c3b25515b88173fb52a02dd750b1518a5f69704ea23511f6",
+      "functions": 28,
+      "blocks": 885,
+      "instructions": 6573,
+      "per_function": [
+        {
+          "function_index": 0,
+          "instruction_count": 385,
+          "current_pool_bytes": 1175,
+          "proposed_pool_bytes": 1175
+        },
+        {
+          "function_index": 1,
+          "instruction_count": 243,
+          "current_pool_bytes": 730,
+          "proposed_pool_bytes": 730
+        },
+        {
+          "function_index": 2,
+          "instruction_count": 798,
+          "current_pool_bytes": 2549,
+          "proposed_pool_bytes": 2549
+        },
+        {
+          "function_index": 3,
+          "instruction_count": 232,
+          "current_pool_bytes": 715,
+          "proposed_pool_bytes": 715
+        },
+        {
+          "function_index": 4,
+          "instruction_count": 254,
+          "current_pool_bytes": 724,
+          "proposed_pool_bytes": 724
+        },
+        {
+          "function_index": 5,
+          "instruction_count": 457,
+          "current_pool_bytes": 1511,
+          "proposed_pool_bytes": 1511
+        },
+        {
+          "function_index": 6,
+          "instruction_count": 143,
+          "current_pool_bytes": 366,
+          "proposed_pool_bytes": 366
+        },
+        {
+          "function_index": 7,
+          "instruction_count": 581,
+          "current_pool_bytes": 1859,
+          "proposed_pool_bytes": 1859
+        },
+        {
+          "function_index": 8,
+          "instruction_count": 253,
+          "current_pool_bytes": 795,
+          "proposed_pool_bytes": 795
+        },
+        {
+          "function_index": 9,
+          "instruction_count": 314,
+          "current_pool_bytes": 970,
+          "proposed_pool_bytes": 970
+        },
+        {
+          "function_index": 10,
+          "instruction_count": 177,
+          "current_pool_bytes": 586,
+          "proposed_pool_bytes": 586
+        },
+        {
+          "function_index": 11,
+          "instruction_count": 90,
+          "current_pool_bytes": 314,
+          "proposed_pool_bytes": 314
+        },
+        {
+          "function_index": 12,
+          "instruction_count": 404,
+          "current_pool_bytes": 1366,
+          "proposed_pool_bytes": 1366
+        },
+        {
+          "function_index": 13,
+          "instruction_count": 63,
+          "current_pool_bytes": 204,
+          "proposed_pool_bytes": 204
+        },
+        {
+          "function_index": 14,
+          "instruction_count": 442,
+          "current_pool_bytes": 1411,
+          "proposed_pool_bytes": 1411
+        },
+        {
+          "function_index": 15,
+          "instruction_count": 151,
+          "current_pool_bytes": 456,
+          "proposed_pool_bytes": 456
+        },
+        {
+          "function_index": 16,
+          "instruction_count": 385,
+          "current_pool_bytes": 1162,
+          "proposed_pool_bytes": 1162
+        },
+        {
+          "function_index": 17,
+          "instruction_count": 263,
+          "current_pool_bytes": 847,
+          "proposed_pool_bytes": 847
+        },
+        {
+          "function_index": 18,
+          "instruction_count": 249,
+          "current_pool_bytes": 733,
+          "proposed_pool_bytes": 733
+        },
+        {
+          "function_index": 19,
+          "instruction_count": 645,
+          "current_pool_bytes": 1891,
+          "proposed_pool_bytes": 1891
+        },
+        {
+          "function_index": 20,
+          "instruction_count": 4,
+          "current_pool_bytes": 11,
+          "proposed_pool_bytes": 11
+        },
+        {
+          "function_index": 21,
+          "instruction_count": 6,
+          "current_pool_bytes": 16,
+          "proposed_pool_bytes": 16
+        },
+        {
+          "function_index": 22,
+          "instruction_count": 6,
+          "current_pool_bytes": 15,
+          "proposed_pool_bytes": 15
+        },
+        {
+          "function_index": 23,
+          "instruction_count": 4,
+          "current_pool_bytes": 11,
+          "proposed_pool_bytes": 11
+        },
+        {
+          "function_index": 24,
+          "instruction_count": 4,
+          "current_pool_bytes": 11,
+          "proposed_pool_bytes": 11
+        },
+        {
+          "function_index": 25,
+          "instruction_count": 6,
+          "current_pool_bytes": 15,
+          "proposed_pool_bytes": 15
+        },
+        {
+          "function_index": 26,
+          "instruction_count": 4,
+          "current_pool_bytes": 11,
+          "proposed_pool_bytes": 11
+        },
+        {
+          "function_index": 27,
+          "instruction_count": 10,
+          "current_pool_bytes": 25,
+          "proposed_pool_bytes": 25
+        }
+      ],
+      "current_pool_bytes": 20479,
+      "proposed_pool_bytes": 20479,
+      "saved_bytes": 0,
+      "saved_percent": 0.0,
+      "metadata_estimate": {
+        "basic_block_bytes_each_before": 32,
+        "basic_block_bytes_each_after": 32,
+        "basic_block_bytes_before": 28320,
+        "basic_block_bytes_after": 28320,
+        "block_index_entry_count": 885,
+        "block_index_bytes_before": 7080,
+        "block_index_bytes_after": 7080,
+        "radix_entry_count": 17,
+        "radix_table_bytes_before": 68,
+        "radix_table_bytes_after": 34,
+        "loader_arena_bytes_before": 347334,
+        "loader_arena_bytes_after_estimate": 347300,
+        "loader_arena_saved_bytes_estimate": 34
+      },
+      "jit_boundary_metadata_bytes_before_after": [
+        24,
+        24
+      ]
+    }
+  ]
+}

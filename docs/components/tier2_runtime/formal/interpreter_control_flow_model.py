@@ -1,9 +1,9 @@
-"""Interpreter の分岐時スタック復元を検証する抽象CTLモデル。"""
+"""CTL model for loader-resolved Interpreter branch metadata."""
 
 from typing import Literal, TypedDict
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AF, AG, And, AtomicProposition, Formula, Imply, Not
+from pyModelChecking.CTL import AG, AtomicProposition, Formula, Not
 
 BACKS = ["components/tier2_runtime/interpreter.md"]
 
@@ -18,122 +18,72 @@ class FormalProperty(TypedDict):
 
 
 def build_model(*, guards: bool = True) -> Kripke:
-    """if偽分岐、loop脱出、block脱出の制御スタック効果を抽象化する。"""
-    states = [
+    """Model static branch targets, operand restoration, and if fallthrough."""
+    states = (
         "s_start",
-        "s_if_false",
-        "s_if_false_complete",
-        "s_loop_target",
-        "s_loop_pruned",
-        "s_loop_branch_complete",
-        "s_block_target",
-        "s_block_pruned",
-        "s_block_branch_complete",
-        "s_bad_branch_state",
-        "s_if_frame_leaked",
-    ]
+        "s_branch_edge_loaded",
+        "s_branch_state_restored",
+        "s_loop_target_selected",
+        "s_if_false_selected",
+        "s_bad_branch_pc",
+        "s_bad_stack_restore",
+        "s_bad_if_target",
+    )
     transitions = [
-        ("s_start", "s_if_false"),
-        ("s_start", "s_loop_target"),
-        ("s_start", "s_block_target"),
-        ("s_if_false", "s_if_false_complete"),
-        ("s_loop_target", "s_loop_pruned"),
-        ("s_loop_pruned", "s_loop_branch_complete"),
-        ("s_block_target", "s_block_pruned"),
-        ("s_block_pruned", "s_block_branch_complete"),
-        ("s_if_false_complete", "s_if_false_complete"),
-        ("s_loop_branch_complete", "s_loop_branch_complete"),
-        ("s_block_branch_complete", "s_block_branch_complete"),
-        ("s_bad_branch_state", "s_bad_branch_state"),
-        ("s_if_frame_leaked", "s_if_frame_leaked"),
+        ("s_start", "s_branch_edge_loaded"),
+        ("s_branch_edge_loaded", "s_branch_state_restored"),
+        ("s_branch_state_restored", "s_loop_target_selected"),
+        ("s_loop_target_selected", "s_branch_edge_loaded"),
+        ("s_start", "s_if_false_selected"),
+        ("s_if_false_selected", "s_start"),
+        ("s_bad_branch_pc", "s_bad_branch_pc"),
+        ("s_bad_stack_restore", "s_bad_stack_restore"),
+        ("s_bad_if_target", "s_bad_if_target"),
     ]
     if not guards:
-        # 分岐対象までの中間frame/operandを巻き戻さない変異。
         transitions.extend(
             [
-                ("s_loop_target", "s_bad_branch_state"),
-                ("s_block_target", "s_bad_branch_state"),
-                # if条件偽でelseがない場合に、スキップ対象のif frameを残す変異。
-                ("s_if_false", "s_if_frame_leaked"),
+                ("s_branch_edge_loaded", "s_bad_branch_pc"),
+                ("s_branch_edge_loaded", "s_bad_stack_restore"),
+                ("s_if_false_selected", "s_bad_if_target"),
             ]
         )
-
     labels = {
-        "s_start": {"entry"},
-        "s_if_false": {"if_false"},
-        "s_if_false_complete": {"if_frame_absent"},
-        "s_loop_target": {"loop_branch"},
-        "s_loop_pruned": {"operand_height_restored", "branch_arity_preserved"},
-        "s_loop_branch_complete": {
-            "loop_target_frame_retained",
-            "operand_height_restored",
-            "branch_arity_preserved",
-            "loop_branch_complete",
-        },
-        "s_block_target": {"block_branch"},
-        "s_block_pruned": {"operand_height_restored", "branch_arity_preserved"},
-        "s_block_branch_complete": {
-            "block_target_frame_removed",
-            "operand_height_restored",
-            "branch_arity_preserved",
-            "block_branch_complete",
-        },
-        "s_bad_branch_state": {"bad_branch_state"},
-        "s_if_frame_leaked": {"if_frame_leaked"},
+        "s_branch_edge_loaded": {"annotated_edge_selected", "edge_pc_matches"},
+        "s_branch_state_restored": {"operand_height_restored", "branch_results_preserved"},
+        "s_loop_target_selected": {"loop_body_target_selected"},
+        "s_if_false_selected": {"if_else_or_end_target_selected"},
+        "s_bad_branch_pc": {"edge_pc_mismatch"},
+        "s_bad_stack_restore": {"operand_height_mismatch"},
+        "s_bad_if_target": {"if_false_target_mismatch"},
     }
     return Kripke(S=states, S0={"s_start"}, R=transitions, L=labels)
 
 
 def properties() -> list[FormalProperty]:
-    loop_branch = AtomicProposition("loop_branch")
-    block_branch = AtomicProposition("block_branch")
-    if_false = AtomicProposition("if_false")
-    loop_complete = AtomicProposition("loop_branch_complete")
-    block_complete = AtomicProposition("block_branch_complete")
-    if_frame_absent = AtomicProposition("if_frame_absent")
-    loop_complete_contract = And(
-        loop_complete,
-        AtomicProposition("loop_target_frame_retained"),
-        AtomicProposition("operand_height_restored"),
-        AtomicProposition("branch_arity_preserved"),
-    )
-    block_complete_contract = And(
-        block_complete,
-        AtomicProposition("block_target_frame_removed"),
-        AtomicProposition("operand_height_restored"),
-        AtomicProposition("branch_arity_preserved"),
-    )
     return [
         {
-            "name": "loop_branch_restores_operands_and_retains_target_frame",
-            "kind": "liveness",
-            "logic": "CTL",
-            "formula": AG(Imply(loop_branch, AF(loop_complete_contract))),
-            "violation": Imply(loop_branch, Not(AF(loop_complete_contract))),
-            "expect": True,
-        },
-        {
-            "name": "block_branch_restores_operands_and_removes_target_frame",
-            "kind": "liveness",
-            "logic": "CTL",
-            "formula": AG(Imply(block_branch, AF(block_complete_contract))),
-            "violation": Imply(block_branch, Not(AF(block_complete_contract))),
-            "expect": True,
-        },
-        {
-            "name": "false_if_without_else_leaves_no_control_frame",
+            "name": "branch_index_resolves_to_its_annotated_pc",
             "kind": "safety",
             "logic": "CTL",
-            "formula": AG(Imply(if_false, AF(if_frame_absent))),
-            "violation": Imply(if_false, Not(AF(if_frame_absent))),
+            "formula": AG(Not(AtomicProposition("edge_pc_mismatch"))),
+            "violation": AtomicProposition("edge_pc_mismatch"),
             "expect": True,
         },
         {
-            "name": "no_invalid_control_frame_state_is_reachable",
+            "name": "branch_restores_operand_height_and_results",
             "kind": "safety",
             "logic": "CTL",
-            "formula": AG(Not(AtomicProposition("bad_branch_state"))),
-            "violation": AtomicProposition("bad_branch_state"),
+            "formula": AG(Not(AtomicProposition("operand_height_mismatch"))),
+            "violation": AtomicProposition("operand_height_mismatch"),
+            "expect": True,
+        },
+        {
+            "name": "false_if_uses_its_static_else_or_end_target",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(AtomicProposition("if_false_target_mismatch"))),
+            "violation": AtomicProposition("if_false_target_mismatch"),
             "expect": True,
         },
     ]

@@ -122,6 +122,8 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     output_bytes = len(native_output.encode("utf-8"))
     assert output_bytes == (WIDTH + 1) * HEIGHT
 
+    jit_runtime.close()
+
     # Collect diagnostic path counters after the timed run so profiling code
     # does not contribute to the reported execution time.
     diagnostic_engine = RuntimeStatsEngine(
@@ -181,6 +183,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
             "trace_exits_to_interp": diagnostic_engine.stat_trace_exits_to_interp,
         }
     )
+    diagnostic_engine.jit_runtime.close()
     return result
 
 

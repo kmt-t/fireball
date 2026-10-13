@@ -66,7 +66,7 @@
 - **Phase 1.3: x64 Assembly Stencil JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)**
   - x64 JIT契約を検証する。ARMv8-MのABIと物理命令生成はTBDとする。
   - x64で検証したJIT領域と3面キャッシュ契約を管理する。ARMv8-Mの物理配置と保護方式はTBD。
-  - BasicBlock入口はLoaderのRadix索引で先に解決し、COMPILEDカードだけJITへ進む。BasicBlock内の8bit参照を使い、未設定時だけ最大96件のJIT常駐索引を二分探索する（JIT索引にRadix/XORキャッシュなし）
+  - BasicBlock入口はLoaderのRadix索引で先に解決し、COMPILEDカードだけJITへ進む。BasicBlock内の8bit参照を使い、未設定時だけ最大72件のJIT常駐索引を二分探索する（JIT索引にRadix/XORキャッシュなし）
   - C++ native dispatchによるInterpreter/JIT継続とLOOP後方分岐回数yieldを実装・検証する `{JIT_BackedgeYield}` `{JIT_RuntimeAPI}`
 - **Phase 1.4: Standalone vSoC Harness & WAMR Benchmark (`runtime_vsoc`)**
   - ホスト (x86_64 / Linux / macOS / Windows) 実行ハーネス

@@ -10,20 +10,15 @@ from tier2_runtime.abi.interpreter_abi import (
     NATIVE_STACK_ALIGNMENT_BYTES,
     CallFrameNative,
     CallStackNative,
-    ConstBufferViewNative,
-    ControlFrameNative,
-    ControlStackNative,
     ExecutionContextABI,
     NativeValueStack,
     ValueStackNative,
-    WasmFunctionViewNative,
-    WasmModuleViewNative,
-    WasmRunRequestNative,
-    WasmRunResultNative,
 )
 from tier2_runtime.abi.native_abi import NativeResult
-from tier2_runtime.abi.native_stack_abi import ControlFrameWindow, LocalStackWindow
-from tier2_runtime.interpreter.interpreter import ExecutionContext, NativeControlStack
+from tier2_runtime.abi.native_stack_abi import (
+    LocalStackWindow,
+)
+from tier2_runtime.interpreter.interpreter import ExecutionContext
 from tier2_runtime.wasm.module import F32, F64, I32, I64, LocalLayout
 
 
@@ -33,7 +28,7 @@ def _resolve_two_result_block(start: int) -> tuple[bool, int, int, int]:
 
 
 def test_native_layout_matches_x64_jit_context():
-    assert ctypes.sizeof(ExecutionContextABI) == 160
+    assert ctypes.sizeof(ExecutionContextABI) == 144
     assert ExecutionContextABI.ip.offset == 0x00
     assert ExecutionContextABI.stack_base.offset == 0x08
     assert ExecutionContextABI.stack_pointer.offset == 0x10
@@ -44,21 +39,18 @@ def test_native_layout_matches_x64_jit_context():
     assert ExecutionContextABI.runtime_flags.offset == 0x38
     assert ExecutionContextABI.code_size.offset == 0x3C
     assert ExecutionContextABI.code.offset == 0x40
-    assert ExecutionContextABI.control_stack.offset == 0x48
-    assert ExecutionContextABI.control_frame_base.offset == 0x50
-    assert ExecutionContextABI.stack_checkpoint.offset == 0x58
-    assert ExecutionContextABI.call_stack.offset == 0x60
-    assert ExecutionContextABI.call_frame_base.offset == 0x68
-    assert ExecutionContextABI.loop_jump_count.offset == 0x70
-    assert ExecutionContextABI.loop_jump_threshold.offset == 0x74
-    assert ExecutionContextABI.linear_memory_host_base.offset == 0x78
-    assert ExecutionContextABI.linear_memory_size.offset == 0x80
-    assert ExecutionContextABI.trap_code.offset == 0x88
-    assert ExecutionContextABI.local_base.offset == 0x90
-    assert ExecutionContextABI.rel.offset == 0x98
-    assert ctypes.sizeof(ControlFrameNative) == 16
-    assert ctypes.sizeof(ControlStackNative) == 520
+    assert ExecutionContextABI.call_stack.offset == 0x48
+    assert ExecutionContextABI.call_frame_base.offset == 0x50
+    assert ExecutionContextABI.loop_jump_count.offset == 0x58
+    assert ExecutionContextABI.loop_jump_threshold.offset == 0x5C
+    assert ExecutionContextABI.linear_memory_host_base.offset == 0x60
+    assert ExecutionContextABI.linear_memory_size.offset == 0x68
+    assert ExecutionContextABI.trap_code.offset == 0x70
+    assert ExecutionContextABI.local_base.offset == 0x78
+    assert ExecutionContextABI.rel.offset == 0x80
+    assert ExecutionContextABI.current_block_index.offset == 0x88
     assert ctypes.sizeof(CallFrameNative) == 40
+    assert CallFrameNative.return_block_index.offset == 36
     assert ctypes.sizeof(CallStackNative) == 1288
     assert CallStackNative.size.offset == 1280
 
@@ -101,42 +93,6 @@ def test_product_dispatch_asserts_on_invalid_entry():
         check=False,
     )
     assert process.returncode == -signal.SIGABRT
-
-
-def test_native_views_are_non_owning_fixed_width_records():
-    code = ctypes.create_string_buffer(b"\x41\x01")
-    code_view = ConstBufferViewNative(
-        data=ctypes.addressof(code),
-        size=2,
-    )
-    function = WasmFunctionViewNative(code=code_view, type_index=3, locals_count=5)
-    functions = (WasmFunctionViewNative * 1)(function)
-    module = WasmModuleViewNative(
-        function_table=ctypes.addressof(functions),
-        function_count=1,
-        imported_function_count=0,
-        start_function=0xFFFF_FFFF,
-        flags=0,
-    )
-    context = ExecutionContextABI()
-    request = WasmRunRequestNative(
-        module_view=ctypes.addressof(module),
-        execution_context=ctypes.addressof(context),
-        arguments=0,
-        results=0,
-        function_index=0,
-        argument_count=0,
-        result_capacity=0,
-        max_blocks=16,
-    )
-    result = WasmRunResultNative(status=0, fault_code=0, value_count=0, results=0)
-
-    assert code_view.data == ctypes.addressof(code)
-    assert function.code.size == 2
-    assert module.function_table == ctypes.addressof(functions)
-    assert request.module_view == ctypes.addressof(module)
-    assert request.max_blocks == 16
-    assert result.status == 0
 
 
 def test_execution_context_extends_abi_record():
@@ -207,63 +163,6 @@ def test_native_value_stack_owns_the_fixed_storage():
     assert not typed_stack
 
 
-def test_native_control_stack_owns_flat_frame_records():
-    stack = NativeControlStack(capacity=2)
-    assert stack.capacity == 2
-    pushed = stack.push_back(start=3, stack_height=4)
-    assert pushed
-    assert stack.native.size == 1
-    assert isinstance(stack.native, ControlStackNative)
-    restored = stack[-1]
-    assert (
-        restored.start,
-        stack.stack_height_index(int(restored.stack_height or 0)),
-    ) == (3, 4)
-    assert stack.pop_back().start == 3
-    pushed = stack.push_back(start=4, stack_height=0)
-    assert pushed
-    stack.truncate(0)
-    assert len(stack) == 0
-    with expect_assertion():
-        stack.pop_back()
-
-
-def test_control_frame_branch_preserves_label_result_slots():
-    storage = NativeControlStack(capacity=2)
-    pushed = storage.push_back(start=0, stack_height=1)
-    assert pushed
-    window = ControlFrameWindow(storage, base=0)
-    values = NativeValueStack(capacity=8)
-    assert values.extend((99, 10, 20, 77))
-
-    assert window.branch(depth=0, values=values, resolve_control=_resolve_two_result_block) == 5
-    assert tuple(values) == (99, 20, 77)
-
-
-def test_control_frame_window_rewinds_multiple_frames_with_one_size_update():
-    storage = NativeControlStack(capacity=4)
-    pushed = storage.push_back(start=0, stack_height=0)
-    assert pushed
-    window = ControlFrameWindow(storage, base=0)
-    pushed = window.push_back(start=4, stack_height=0)
-    assert pushed
-    pushed = window.push_back(start=8, stack_height=0)
-    assert pushed
-    assert len(window) == 3
-
-    window.truncate(0)
-
-    assert len(window) == 0
-    assert len(storage) == 0
-
-
-def test_runtime_contexts_expose_native_stack_records():
-    context = ExecutionContext()
-    assert isinstance(context.stack, NativeValueStack)
-    assert isinstance(context.local_stack, NativeValueStack)
-    assert isinstance(context.control_frame_stack, NativeControlStack)
-
-
 def test_local_stack_window_uses_packed_offsets_and_typed_accessors():
     storage = NativeValueStack(capacity=8)
     assert storage.extend((0, 0, 0, 0, 0, 0, 0, 0))
@@ -283,11 +182,7 @@ def test_local_stack_window_uses_packed_offsets_and_typed_accessors():
 
 if __name__ == "__main__":
     test_native_layout_matches_x64_jit_context()
-    test_native_views_are_non_owning_fixed_width_records()
     test_execution_context_extends_abi_record()
     test_native_value_stack_owns_the_fixed_storage()
-    test_native_control_stack_owns_flat_frame_records()
-    test_control_frame_window_rewinds_multiple_frames_with_one_size_update()
-    test_runtime_contexts_expose_native_stack_records()
     test_local_stack_window_uses_packed_offsets_and_typed_accessors()
     print("[PASS] test_interpreter_abi")

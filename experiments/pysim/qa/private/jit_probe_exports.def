@@ -11,6 +11,7 @@ EXPORTS
     fb_jit_memory_commit
     fb_jit_memory_finalize
     fb_jit_memory_no_rwx
+    fb_jit_memory_valid_protection
     fb_jit_memory_write
     fb_jit_memory_close
     fb_jit_memory_address

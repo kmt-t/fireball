@@ -156,6 +156,7 @@ class JITCompilerBenchmark:
             t1 = time.perf_counter()
             jit_times_ms.append((t1 - t0) * 1000)
             jit_results.append(int(res_jit[0]))
+            plugin.close()
         assert python_results[0] == python_results[1] == python_results[2]
         assert native_results[0] == native_results[1] == native_results[2]
         assert jit_results[0] == jit_results[1] == jit_results[2]

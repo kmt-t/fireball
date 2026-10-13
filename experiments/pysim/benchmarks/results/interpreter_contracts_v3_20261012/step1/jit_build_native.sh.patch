@@ -1,0 +1,11 @@
+--- experiments/pysim/native/tier3_plugins/jit/build_native.sh
++++ experiments/pysim/native/tier3_plugins/jit/build_native.sh
+@@ -84,7 +84,7 @@
+     --assembly-output "${stencil_output_dir}/common_code.preprocessed.S"
+ 
+ echo ">>> Compiling Tier 3 JIT"
+-clang++ -std=c++23 -O3 -flto=thin -fuse-ld=lld -fomit-frame-pointer -g -Wall -Wextra -Wpedantic -shared -fPIC \
++clang++ -DFB_COST_DIAGNOSTIC=1 -std=c++23 -O3 -flto=thin -fuse-ld=lld -fomit-frame-pointer -g -Wall -Wextra -Wpedantic -shared -fPIC \
+     "${visibility_flags[@]}" \
+     "${release_define[@]}" \
+     "${measurement_flags[@]}" \

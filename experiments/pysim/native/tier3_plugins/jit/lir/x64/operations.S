@@ -22,11 +22,14 @@
 #ifndef FB_CONTEXT_SP_OFFSET
 #error "FB_CONTEXT_SP_OFFSET must come from the production C++ ABI probe"
 #endif
+#ifndef FB_CONTEXT_REL_OFFSET
+#error "FB_CONTEXT_REL_OFFSET must come from the production C++ ABI probe"
+#endif
 #ifndef FB_TRACE_COMMON_RELATIVE_OFFSET
 #error "FB_TRACE_COMMON_RELATIVE_OFFSET must come from the production C++ ABI probe"
 #endif
-#ifndef FB_TRACE_RUNTIME_API_TABLE_OFFSET
-#error "FB_TRACE_RUNTIME_API_TABLE_OFFSET must come from the common-area layout"
+#ifndef FB_TRACE_RUNTIME_API_TABLE_POINTER_OFFSET
+#error "FB_TRACE_RUNTIME_API_TABLE_POINTER_OFFSET must come from the common-area layout"
 #endif
 
 .intel_syntax noprefix
@@ -283,13 +286,14 @@ FB_LOCAL_TEE_WIDE f64
 /* Call one opcode API through the common-area table; false exits the trace. */
 .macro FB_RUNTIME_API_STENCIL name, rel_advance
 FB_STENCIL_BEGIN \name
-  movsxd r10, dword ptr [FB_REL_REG]
-  lea r11, [FB_REL_REG + r10]
-  mov eax, dword ptr [FB_REL_REG + 4]
-  mov r10d, dword ptr [FB_REL_REG + 8]
+  movzx eax, byte ptr [FB_REL_REG]
+  mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET]
+  movsxd r10, dword ptr [r11]
+  lea r11, [r11 + r10]
+  mov r10d, dword ptr [FB_REL_REG + 3]
   mov dword ptr [FB_CTX_REG + FB_CONTEXT_IP_OFFSET], r10d
   movsxd r10, dword ptr [r11 + FB_TRACE_COMMON_RELATIVE_OFFSET]
-  lea r11, [r11 + r10 + FB_TRACE_RUNTIME_API_TABLE_OFFSET]
+  mov r11, qword ptr [r11 + r10 + FB_TRACE_RUNTIME_API_TABLE_POINTER_OFFSET]
   mov rax, qword ptr [r11 + rax * 8]
   push FB_CTX_REG
   push FB_IP_REG
@@ -307,12 +311,12 @@ FB_STENCIL_BEGIN \name
   mov rcx, qword ptr [rsp + 88]
   lea rdx, [rsp + 32]
   lea r8, [rsp + 40]
-  lea r9, [FB_REL_REG + 12]
+  lea r9, [FB_REL_REG + 7]
 #else
   mov rdi, qword ptr [rsp + 88]
   lea rsi, [rsp + 32]
   lea rdx, [rsp + 40]
-  lea rcx, [FB_REL_REG + 12]
+  lea rcx, [FB_REL_REG + 7]
 #endif
   call rax
   mov r11, qword ptr [rsp + 88]
@@ -331,7 +335,8 @@ FB_STENCIL_BEGIN \name
 .Lruntime_api_exit\@:
   mov r10, qword ptr [rsp + 32]
   mov r11, qword ptr [rsp + 64]
-  add r11, \rel_advance
+  movzx eax, byte ptr [r11 + 2]
+  lea r11, [r11 + rax + 7]
   add rsp, 64
   pop FB_REL_REG
   pop FB_SP_REG

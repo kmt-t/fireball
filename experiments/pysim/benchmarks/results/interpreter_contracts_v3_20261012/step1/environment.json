@@ -1,0 +1,8 @@
+{
+  "compiler": "Ubuntu clang version 21.1.8 (6ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/lib/llvm-21/bin\n",
+  "profiler": "/opt/AMDuProf_5.3-521/bin/AMDuProfCLI\nAMDuProfCLI Version 5.3.521.0 \n",
+  "baseline_libraries": {
+    "baseline_interpreter.so": "ae971b951511ac65560314ec7edeea24a0a8e106478305fd5a34c7f1d4bfc05d",
+    "baseline_jit.so": "b4ff99ad2ca30b31dd31b91e9de99f2e08bb33c98aee86857a966bdad126ab15"
+  }
+}

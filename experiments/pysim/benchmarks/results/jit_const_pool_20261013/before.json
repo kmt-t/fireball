@@ -1,0 +1,196 @@
+{
+  "aobench": [
+    {
+      "diagnostics": {
+        "average_instructions_per_trace": 5.671232876712328,
+        "instruction_count": 2070,
+        "item_bytes": {
+          "duplicated_interpreter_annotations": 1005,
+          "runtime_immediates": 112,
+          "slot_and_immediate_count": 1516,
+          "source_ip": 1516,
+          "trace_header_references": 2976
+        },
+        "pool_bytes": 7125,
+        "runtime_api_count": 379,
+        "runtime_api_opcodes": {
+          "0x02": 18,
+          "0x04": 120,
+          "0x05": 26,
+          "0x0b": 108,
+          "0x0c": 58,
+          "0x0d": 35,
+          "0x3a": 14
+        },
+        "trace_count": 365
+      },
+      "frame_sha256": "d44fed786dbb555722932e901bd3f56c56aa2daca6c594a67a858c4591e24567",
+      "height": 36,
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "width": 64
+    },
+    {
+      "diagnostics": {
+        "average_instructions_per_trace": 5.610081541882876,
+        "instruction_count": 7568,
+        "item_bytes": {
+          "duplicated_interpreter_annotations": 3694,
+          "runtime_immediates": 488,
+          "slot_and_immediate_count": 5640,
+          "source_ip": 5640,
+          "trace_header_references": 11036
+        },
+        "pool_bytes": 26498,
+        "runtime_api_count": 1410,
+        "runtime_api_opcodes": {
+          "0x02": 65,
+          "0x04": 432,
+          "0x05": 99,
+          "0x0b": 412,
+          "0x0c": 209,
+          "0x0d": 132,
+          "0x3a": 61
+        },
+        "trace_count": 1349
+      },
+      "frame_sha256": "e9f20b8f0414f7406aa2f3ea96738e1c7755d0148090bf72f8703cffd3d374a4",
+      "height": 72,
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "width": 128
+    },
+    {
+      "diagnostics": {
+        "average_instructions_per_trace": 5.619755533531549,
+        "instruction_count": 17011,
+        "item_bytes": {
+          "duplicated_interpreter_annotations": 8279,
+          "runtime_immediates": 1008,
+          "slot_and_immediate_count": 12612,
+          "source_ip": 12612,
+          "trace_header_references": 24720
+        },
+        "pool_bytes": 59231,
+        "runtime_api_count": 3153,
+        "runtime_api_opcodes": {
+          "0x02": 149,
+          "0x04": 967,
+          "0x05": 214,
+          "0x0b": 936,
+          "0x0c": 470,
+          "0x0d": 291,
+          "0x3a": 126
+        },
+        "trace_count": 3027
+      },
+      "frame_sha256": "9f2df94afaad4a3750053789ce6be52a0b9b14d66d9b8584edf2718d1ac3c4f1",
+      "height": 108,
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "width": 192
+    },
+    {
+      "diagnostics": {
+        "average_instructions_per_trace": 5.585835694050991,
+        "instruction_count": 29577,
+        "item_bytes": {
+          "duplicated_interpreter_annotations": 14476,
+          "runtime_immediates": 1824,
+          "slot_and_immediate_count": 22092,
+          "source_ip": 22092,
+          "trace_header_references": 43272
+        },
+        "pool_bytes": 103756,
+        "runtime_api_count": 5523,
+        "runtime_api_opcodes": {
+          "0x02": 254,
+          "0x04": 1689,
+          "0x05": 369,
+          "0x0b": 1668,
+          "0x0c": 807,
+          "0x0d": 508,
+          "0x3a": 228
+        },
+        "trace_count": 5295
+      },
+      "frame_sha256": "f35a578dc277b57ca3bb5f74bc9381297fab5afce787bc92c54e46536fa8d2a4",
+      "height": 144,
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "width": 256
+    },
+    {
+      "diagnostics": {
+        "average_instructions_per_trace": 5.625679187337585,
+        "instruction_count": 47627,
+        "item_bytes": {
+          "duplicated_interpreter_annotations": 23077,
+          "runtime_immediates": 2784,
+          "slot_and_immediate_count": 35256,
+          "source_ip": 35256,
+          "trace_header_references": 69120
+        },
+        "pool_bytes": 165493,
+        "runtime_api_count": 8814,
+        "runtime_api_opcodes": {
+          "0x02": 422,
+          "0x04": 2665,
+          "0x05": 606,
+          "0x0b": 2643,
+          "0x0c": 1315,
+          "0x0d": 815,
+          "0x3a": 348
+        },
+        "trace_count": 8466
+      },
+      "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "height": 180,
+      "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+      "width": 320
+    }
+  ],
+  "diagnostic_build": "/home/t-matsu/workspace/mysrc/fireball/experiments/pysim/qa/private/libjit_probe.so",
+  "diagnostic_library_sha256": "644db79ed53a1676047a021c2b0b45272e871e5449db7a13ca05dcf579a0c286",
+  "other_module_compile_all_blocks": {
+    "blocks_attempted": 519,
+    "diagnostics": {
+      "average_instructions_per_trace": 9.525252525252526,
+      "instruction_count": 2829,
+      "item_bytes": {
+        "duplicated_interpreter_annotations": 867,
+        "runtime_immediates": 1316,
+        "slot_and_immediate_count": 1864,
+        "source_ip": 1864,
+        "trace_header_references": 3052
+      },
+      "pool_bytes": 8963,
+      "runtime_api_count": 466,
+      "runtime_api_opcodes": {
+        "0x02": 30,
+        "0x03": 54,
+        "0x0b": 43,
+        "0x0c": 36,
+        "0x0d": 119,
+        "0x0e": 10,
+        "0x0f": 4,
+        "0x11": 1,
+        "0x28": 40,
+        "0x2c": 1,
+        "0x2d": 49,
+        "0x2f": 1,
+        "0x36": 40,
+        "0x37": 4,
+        "0x3a": 20,
+        "0x3b": 5,
+        "0x52": 1,
+        "0x65": 2,
+        "0x82": 1,
+        "0x88": 1,
+        "0xa7": 1,
+        "0xaa": 2,
+        "0xb7": 1
+      },
+      "trace_count": 297
+    },
+    "path": "experiments/pysim/benchmarks/profile/guest/suite.wasm",
+    "traces_compiled": 297,
+    "wasm_sha256": "15be324af0ae7708c3b25515b88173fb52a02dd750b1518a5f69704ea23511f6"
+  }
+}

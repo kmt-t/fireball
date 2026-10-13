@@ -38,14 +38,14 @@ graph LR
 | キーワード | 内容 | 優先度 | 検証方法 |
 | :--- | :--- | :--- | :--- |
 | `{JIT_AssemblyStencilCodegen}` | x64の操作、trace入口・出口、共通chain dispatcherをアセンブリsourceで記述し、ビルド時にPIC raw binaryとC++ byte arrayへ変換する。trace生成時は選択したステンシル本体で成功接続markerを置き換え、命令間をfall-throughで実行する。operation間call/jumpによる接続はしない。実行時に次opcodeや次操作を取得してディスパッチしない。JITでコード生成時に確定する即値はtrace codeへ直接埋め込む。Runtime APIが実行時に必要とする引数recordはtrace末尾の定数領域に置き、`rel`で読む。trace形成上限と対応する定数pool容量は、通常の全対応命令列を収容する。 | 高 | レビュー <!-- definition: {JIT_AssemblyStencilCodegen} --> |
-| `{JIT_MultiBuffer_Cache}` | 連続8KB（4KBページ×2）のJITコード領域を、共通コード2KB（非エビクション）とActive/Warm/Oldest各2KBの3面循環キャッシュへ固定分割する。Interpreterはブロック開始時にLoaderのBasicBlockをRadix索引で先に検索する。BasicBlockは有効なJITエントリ位置を8bitで保持し、未設定時だけ最大96件のソート済みJIT索引を二分探索する。カード状態がCOMPILEDでない場合はJITエントリ検索と位置更新を行わない。JIT常駐索引用のRadix表は持たない。 | 高 | テスト <!-- definition: {JIT_MultiBuffer_Cache} --> |
+| `{JIT_MultiBuffer_Cache}` | 連続8KB（4KBページ×2）のJITコード領域を、共通コード2KB（非エビクション）とActive/Warm/Oldest各2KBの3面循環キャッシュへ固定分割する。Interpreterはブロック開始時にLoaderのBasicBlockをRadix索引で先に検索する。BasicBlockは有効なJITエントリ位置を8bitで保持し、未設定時だけ最大72件のソート済みJIT索引を二分探索する。カード状態がCOMPILEDでない場合はJITエントリ検索と位置更新を行わない。JIT常駐索引用のRadix表は持たない。 | 高 | テスト <!-- definition: {JIT_MultiBuffer_Cache} --> |
 | `{PositionIndependentCode}` | 出力バイナリはPIC（位置独立コード）とする。 | 高 | テスト <!-- definition: {PositionIndependentCode} --> |
 | `{WasmCodeSectionPC}` | WASM PCは各モジュールのCode section payload先頭を0とし、payload内にある命令先頭バイトのオフセットで表す。PC単独はモジュールを越えて一意ではなく、モジュール横断の識別には`(module_id, pc)`を使う。 | 高 | テスト <!-- definition: {WasmCodeSectionPC} --> |
 | `{NativeAPI_Export}` | 最小限のトラップ命令とvMMIOによるホストサービス提供をサポートする。 | 高 | テスト <!-- definition: {NativeAPI_Export} --> |
 | `{MultiModule_Support}` | 複数WASMモジュールのロードと、モジュール間の動的リンクをサポートする。 | 中 | テスト <!-- definition: {MultiModule_Support} --> |
-| `{ThreadedInterpreter}` | 命令意味論を処理するRuntime APIと、そのAPIを実行して末尾継続するCPS命令ハンドラを分離する。主要変数のレジスタ保持、関数ポインタ表によるディスパッチ、JITコードとの呼び出し規約整合を実現する。LoaderはBasicBlockごとにWASM命令をパースし、Interpreter定数プールへデコード済みLEB128即値と各命令幅を格納する。Interpreterは`rel`を順に進めてこれらを読み、実行時に元WASMのLEB128を再走査しない。 | 高 | テスト <!-- definition: {ThreadedInterpreter} --> |
-| `{JIT_LazyChaining}` | 常駐traceの直線後続へ進む際、共通コード領域のchain dispatcherがTraceヘッダのtarget bodyへtail-jumpする。opcode別の条件評価・C++ Interpreter handler実行はchainに含めない。 | 高 | レビュー <!-- definition: {JIT_LazyChaining} --> |
-| `{Interpreter_LazyJITSwitch}` | 制御命令はC++ Interpreterの命令別handlerで処理する。yieldしきい値はInterpreterが所有し、C++ dispatcherはその値へ達するまで常駐JIT traceまたはC++ handlerを続けて実行する。しきい値到達時にyield statusを返す。接続中のJIT候補観測・cache更新・コンパイルはTier 3 JIT拡張が行い、Tier 2 Runtimeは拡張の境界結果をvSoCへ伝える。分岐handlerからvSoCへは復帰しない。 | 高 | レビュー <!-- definition: {Interpreter_LazyJITSwitch} --> |
+| `{ThreadedInterpreter}` | 命令意味論を処理するRuntime APIと、そのAPIを実行して末尾継続するCPS命令ハンドラを分離する。主要変数のレジスタ保持、関数ポインタ表によるディスパッチ、JITコードとの呼び出し規約整合を実現する。LoaderはBasicBlockごとにWASM命令をパースし、Interpreter注釈プールへ実行時に使う導出値を格納する。LEB128の復号結果は保持せず、Interpreterは`rel`を順に進めて導出値を読み、実行時に元WASMのLEB128を再走査しない。 | 高 | テスト <!-- definition: {ThreadedInterpreter} --> |
+| `{JIT_LazyChaining}` | 命令意味論で確定した遷移先の常駐traceへ、共通コード領域のchain dispatcherからtail-jumpする。条件分岐と後方分岐も対象にできる。接続前に必要なスタック・フレーム更新を完了する。C++ Interpreter handler実行後のdispatcher遷移はchainに含めない。 | 高 | レビュー <!-- definition: {JIT_LazyChaining} --> |
+| `{Interpreter_LazyJITSwitch}` | 制御命令はJIT生成コード、JIT Runtime API、またはC++ Interpreter handlerで処理できる。各経路は同じWASM意味論と共有状態を保つ。yieldしきい値はInterpreterが所有し、到達時にyield statusを返す。接続中のJIT候補観測・cache更新・コンパイルはTier 3 JIT拡張が行う。Tier 2 Runtimeは拡張の境界結果をvSoCへ伝える。 | 高 | レビュー <!-- definition: {Interpreter_LazyJITSwitch} --> |
 | `{vMMIO_TrapAndEmulate}` | ゲストからのメモリアクセスをトラップし、ホスト側のフックを呼び出す。 | 高 | テスト <!-- definition: {vMMIO_TrapAndEmulate} --> |
 | `{VDMA}` | host call によるゲストリニアメモリと仮想・物理アドレス間の転送に加え、WASM `memory.copy` ではvMMIO管理下のDYNAMIC・SHM・PASSTHROUGHアドレスを含むコピーを内部転送経路で扱う。リニアメモリ端点同士はCPUでコピーする。vMMIOアドレスは既存の権限・所有権検査を通し、VDMAの制御要求はvMMIOレジスタを経由しない。 | 中 | テスト <!-- definition: {VDMA} --> |
 | `{JIT_ReverseCompilationOrder}` | キューを逆順（LIFO）で処理し、コンパイル直後の即時チェイニング率を向上させる。 | 高 | レビュー <!-- definition: {JIT_ReverseCompilationOrder} --> |
@@ -65,7 +65,7 @@ graph LR
 | `{System_Allocator}` | カーネル・仮想化基盤（COOS, vMMIO, IPC Router等）が常駐・運用するシステムコンテナの内部ストレージを dlmalloc（`mspace`）により動的アロケートし、個別解放・自動合体によるメモリ再利用を可能にする。 | 高 | レビュー <!-- definition: {System_Allocator} --> |
 | `{Shm_Allocator}` | IPC共有メモリプールから、タスクが要求する可変長（`size`）の `shared_block` バッファを切り出し、独立した4KB仮想予約スロット単位の権限分離を維持しつつ、要求サイズ分の物理バック領域をRAII解放時に再利用する。 | 高 | テスト <!-- definition: {Shm_Allocator} --> |
 | `InterpreterContextStackless` | Cスタックを使わないスタックレスなインタープリタ実行。 | 高 | レビュー |
-| `{JIT_OldestOnly_Promote}` | 3面循環コードキャッシュにおいて Oldest バンクでヒットしたコードのみを Active バンクへ昇格させるキャッシュ追い出し・代謝ポリシー（Oldest 限定昇格）。 | 高 | レビュー <!-- definition: {JIT_OldestOnly_Promote} --> |
+| `{JIT_OldestExecuteOnly}` | 3面循環コードキャッシュは各バンク24件、合計72件の記述枠を持つ。Oldestヒットは所在とコードアドレスを変えず実行する。新規chainのリンク先はActiveまたはWarmに限定する。WarmからOldestへ移った既存chainは維持し、Oldest破棄直前に解除する。 | 高 | レビュー <!-- definition: {JIT_OldestExecuteOnly} --> |
 
 #### 3.1.2 タスク管理・通信 (COOS)
 
@@ -136,7 +136,7 @@ graph LR
 | `{COOS_Scheduling_Refine}` | スケジューリングアルゴリズムの継続的な改善と最適化。 | 中 | レビュー <!-- definition: {COOS_Scheduling_Refine} --> |
 | `{vMMIO_TLB}` | ソフトウェアTLBによるvMMIOアクセスの高速化。 | 中 | レビュー <!-- definition: {vMMIO_TLB} --> |
 | `{ZeroCopyIndexing}` | LoaderによるWASMセクションのゼロコピー索引化。 | 高 | テスト <!-- definition: {ZeroCopyIndexing} --> |
-| `{JIT_BackedgeYield}` | C++ Interpreter handlerが取得したLOOP後方辺を記録し、Interpreterが所有する回数しきい値までC++ dispatcher内で処理する。到達時にyield statusを返す。handler自身はCOOSへ制御を戻さず、割り込みイベントを読み取らない。接続中のTier 3 JIT拡張は同じ境界結果を処理する。 | 中 | レビュー <!-- definition: {JIT_BackedgeYield} --> |
+| `{JIT_BackedgeYield}` | InterpreterとJITは取得したLOOP後方辺を共通contextで数える。後方分岐chainでもInterpreterが所有する回数しきい値を守り、到達時にyield statusを返す。制御はRuntimeEngineとSystemを経てCOOSへ戻る。命令処理中に割り込みイベントを読み取らない。接続中のTier 3 JIT拡張は同じ境界結果を処理する。 | 中 | レビュー <!-- definition: {JIT_BackedgeYield} --> |
 | `{WASI_Async_Bridge}` | 同期WASIと非同期IPCの連携ブリッジ。 | 高 | テスト <!-- definition: {WASI_Async_Bridge} --> |
 | `{ConceptHarnessDI}` | C++20/23 Conceptsを用いた静的依存性注入。 | 高 | レビュー <!-- definition: {ConceptHarnessDI} --> |
 | `{FlatViewNarrowing}` | ソート済み静的コンテナに対し、粗索引で探索区間を非所有ビュー(`fireball::flat_map_view` / `fireball::flat_set_view`) へ狭めてから二分探索することで、比較回数と参照範囲を削減する。絞り込みは単調縮小であり多段に合成できる。 | 高 | レビュー <!-- definition: {FlatViewNarrowing} --> |

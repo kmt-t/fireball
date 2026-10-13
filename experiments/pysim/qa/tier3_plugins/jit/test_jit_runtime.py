@@ -455,12 +455,14 @@ if sys.argv[1] == 'invalid_pc':
 elif sys.argv[1] == 'invalid_chain':
     cache = JitRuntimeBoundary()
     trace = JITTrace(head_pc=0x100)
-    assert cache.insert(trace)
+    inserted = cache.insert(trace)
+    assert inserted
     ctypes.c_uint64.from_address(trace.raw_addr - JIT_TRACE_HEADER_BYTES).value = 1
     cache.insert(JITTrace(head_pc=0x200))
 elif sys.argv[1] == 'duplicate_pc':
     cache = JitRuntimeBoundary()
-    assert cache.insert(JITTrace(head_pc=0x100))
+    inserted = cache.insert(JITTrace(head_pc=0x100))
+    assert inserted
     cache.rotate()
     cache.insert(JITTrace(head_pc=0x100))
 else:

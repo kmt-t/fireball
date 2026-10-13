@@ -158,7 +158,7 @@ def test_scenario_comprehensive_storage_and_debugger():
         module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
     )
     fn_mem_test = module.export_func_index("test_memory_widths")
-    res_mem = interp.call(fn_mem_test, [])
+    res_mem = interp.call(fn_mem_test, []).unwrap()
     # 254 (u8) + (-2 s8) + 65520 (u16) + (-16 s16) + 1 (eq) = 252 + 65504 + 1 = 65757
     assert res_mem == [65757], f"Memory width calculation mismatch: {res_mem}"
     print(
@@ -175,14 +175,14 @@ def test_scenario_comprehensive_storage_and_debugger():
         interp.memory[offset : offset + 4] = val.to_bytes(4, "little")
 
     fn_pipeline = module.export_func_index("pipeline_process")
-    res_pipe1 = interp.call(fn_pipeline, [5, base_ptr])
+    res_pipe1 = interp.call(fn_pipeline, [5, base_ptr]).unwrap()
     assert res_pipe1 == [550], f"Pipeline process mismatch: {res_pipe1}"
     assert interp.globals[0] == 550, f"Global counter was not updated: {interp.globals[0]}"
     print(
         "    [Phase 2] Globals & Local Storage Pipeline -> Acc=550 (Global mutated to 550) [PASS]"
     )
     # Second run with same global state: 550 + 450 = 1000
-    res_pipe2 = interp.call(fn_pipeline, [5, base_ptr])
+    res_pipe2 = interp.call(fn_pipeline, [5, base_ptr]).unwrap()
     assert res_pipe2 == [1000] and interp.globals[0] == 1000
     print("    [Phase 2.1] Global Mutation Persistence Across Invocations -> Acc=1000 [PASS]")
     # -------------------------------------------------------------------------

@@ -575,7 +575,7 @@ def test_jitr_native_trace_lookup_uses_resident_snapshot():
 
     JitRuntimeBoundary.lookup = spy
     try:
-        assert engine.call(interp, fn_idx, [50]) == [1225]
+        assert engine.call(interp, fn_idx, [50]).unwrap() == [1225]
     finally:
         JitRuntimeBoundary.lookup = real_lookup
 
@@ -995,7 +995,7 @@ def test_jitr_83_uncompiled_block_skips_runtime_cache_lookup():
     lookup_calls = manager.cache.scalar(native_abi.CacheField.LOOKUP_CALLS)
     assert lookup_calls == 0
 
-    assert engine.call(Interpreter(module), module.export_func_index("add"), []) == [42]
+    assert engine.call(Interpreter(module), module.export_func_index("add"), []).unwrap() == [42]
     assert manager.cache.scalar(native_abi.CacheField.LOOKUP_CALLS) == lookup_calls
 
 
@@ -1075,7 +1075,7 @@ def test_jitr_br_if_loop_exit_jit_result_correct():
     interp = Interpreter(module, yield_threshold=8)
 
     n = 50
-    results = engine.call(interp, fn_idx, [n])
+    results = engine.call(interp, fn_idx, [n]).unwrap()
     assert results == [sum(range(n))], (
         f"sum_to({n}) via JIT-driven RuntimeEngine.call() = {results}, "
         f"expected [{sum(range(n))}] -- the compiled loop-exit trace's "
@@ -1136,7 +1136,7 @@ def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
     assert first_boundary.call_state._frame is not None
     assert first_boundary.call_state._frame.context.loop_jump_count == 0
 
-    results = engine.complete_call(interpreter, first_boundary.call_state)
+    results = engine.complete_call(interpreter, first_boundary.call_state).unwrap()
     assert list(results) == [15]
 
 
@@ -1239,7 +1239,7 @@ def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
     oldest_snapshot = steady_manager.native_dispatch_state()
     assert oldest_snapshot.entry_count == 1
     address = steady_trace.raw_addr
-    assert list(steady_engine.call(Interpreter(module), function_index, [5])) == [15]
+    assert list(steady_engine.call(Interpreter(module), function_index, [5]).unwrap()) == [15]
     assert steady_trace.raw_addr == address
     assert steady_manager.native_dispatch_state() is oldest_snapshot
 
@@ -1273,8 +1273,8 @@ def test_jitr_native_compiler_scans_queued_traces_without_python_opcode_marshall
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
 
-    assert list(engine.call(interpreter, module.export_func_index("add"), [])) == [42]
-    assert list(engine.call(interpreter, module.export_func_index("add"), [])) == [42]
+    assert list(engine.call(interpreter, module.export_func_index("add"), []).unwrap()) == [42]
+    assert list(engine.call(interpreter, module.export_func_index("add"), []).unwrap()) == [42]
 
     manager = engine.jit_runtime
     assert manager is not None
@@ -1373,7 +1373,7 @@ def test_jitr_clang_wasm_ngrams_embed_i32_immediates_in_trace_code():
         function_index = module.export_func_index(name)
         invocations_before = engine.stat_jit_invocations
         for _ in range(3):
-            assert list(engine.call(interpreter, function_index, [argument])) == [expected]
+            assert list(engine.call(interpreter, function_index, [argument]).unwrap()) == [expected]
 
         head_pc = module.function_pc_offset(function_index)
         trace = manager.cache.find_trace(head_pc)
@@ -1490,7 +1490,9 @@ def test_jitr_local_pair_ngrams_use_x64_memory_operand_stencils():
         function_index = module.export_func_index(name)
         invocations_before = engine.stat_jit_invocations
         for _ in range(3):
-            assert list(engine.call(interpreter, function_index, [left, right])) == [expected]
+            assert list(engine.call(interpreter, function_index, [left, right]).unwrap()) == [
+                expected
+            ]
 
         trace = manager.cache.find_trace(module.function_pc_offset(function_index))
         assert trace is not None and trace.raw_addr is not None
@@ -1538,7 +1540,7 @@ def test_jitr_cross_frame_loop_branch_skips_special_link_but_keeps_trace_body():
     assert_result_18 = engine.jit_runtime.cache.insert(trace)
     assert assert_result_18
 
-    result = engine.call(Interpreter(module), function_index, [3])
+    result = engine.call(Interpreter(module), function_index, [3]).unwrap()
 
     assert list(result) == [0]
     if engine.collect_runtime_stats:
@@ -1583,7 +1585,7 @@ def test_interpreter_only_runtime_uses_interpreter_backedge_yield_threshold():
     assert first.call_state.current_pc() == loop_head_pc
     if engine.collect_runtime_stats:
         assert engine.stat_native_control_handlers >= 2
-    assert list(engine.complete_call(interpreter, first.call_state)) == [15]
+    assert list(engine.complete_call(interpreter, first.call_state).unwrap()) == [15]
 
 
 def test_runtime_profile_counters_are_disabled_by_default_without_changing_results():
@@ -1611,7 +1613,7 @@ def test_runtime_profile_counters_are_disabled_by_default_without_changing_resul
     function_index = module.export_func_index("sum")
     engine.register_module_blocks(module)
     interpreter = Interpreter(module, bump_allocator=engine.bump_allocator)
-    result = interpreter.call(function_index, [5])
+    result = interpreter.call(function_index, [5]).unwrap()
 
     assert list(result) == [15]
     assert not hasattr(engine, "call")
@@ -1654,7 +1656,7 @@ def test_native_interpreter_with_jit_runtime_matches_interpreter_only_execution(
     """
     module = parse(wat_to_wasm(wat))
     function_index = module.export_func_index("sum_to")
-    expected = Interpreter(module).call(function_index, [50])
+    expected = Interpreter(module).call(function_index, [50]).unwrap()
     engine = make_runtime_engine(jit_compiler=TraceCompiler())
     engine.register_module_blocks(module)
     native_interpreter = NativeInterpreter(
@@ -1664,7 +1666,7 @@ def test_native_interpreter_with_jit_runtime_matches_interpreter_only_execution(
         yield_threshold=8,
     )
 
-    assert engine.call(native_interpreter, function_index, [50]) == expected
+    assert engine.call(native_interpreter, function_index, [50]).unwrap() == expected
     assert engine.stat_jit_invocations > 0
 
 
@@ -1710,7 +1712,7 @@ def test_jitr_backward_branch_block_byte_span_not_disqualified():
     interp = Interpreter(module, yield_threshold=8)
 
     n = 50
-    results = engine.call(interp, fn_idx, [n])
+    results = engine.call(interp, fn_idx, [n]).unwrap()
     assert results == [sum(range(n))]
     compiled_heads = {pc for pc, _ in resident_module_traces(engine.jit_runtime.cache, module)}
     assert len(compiled_heads) >= 2, (
@@ -1796,7 +1798,7 @@ def test_jitr_if_then_skipped_when_condition_false_after_jit():
     interp = Interpreter(module, yield_threshold=4)
 
     n = 20
-    results = engine.call(interp, fn_idx, [n])
+    results = engine.call(interp, fn_idx, [n]).unwrap()
     expected = sum(abs(i - 5) for i in range(n))
     assert results == [expected], (
         f"abs_sum({n}) via JIT-driven RuntimeEngine.call() = {results}, expected [{expected}] -- "
@@ -1852,7 +1854,7 @@ def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
     interp = Interpreter(module, yield_threshold=4)
 
     n = 20
-    results = engine.call(interp, fn_idx, [n])
+    results = engine.call(interp, fn_idx, [n]).unwrap()
     even_count = sum(1 for i in range(n) if i % 2 == 0)
     expected = even_count * 3
     assert results == [expected], (
@@ -1906,7 +1908,7 @@ def test_jitr_return_terminated_block_jit_result_correct():
     interp = Interpreter(module, yield_threshold=2)
 
     n = 20
-    results = engine.call(interp, fn_idx, [n])
+    results = engine.call(interp, fn_idx, [n]).unwrap()
     assert results == [60]
     _assert_single_control_trace_executed(engine, target_pc)
 
@@ -1996,7 +1998,7 @@ def test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack():
     interp = Interpreter(module, yield_threshold=4)
 
     caller = module.export_func_index("caller")
-    assert engine.call(interp, caller, [20]) == [2]
+    assert engine.call(interp, caller, [20]).unwrap() == [2]
     assert any(
         module.function_index_for_pc(pc) == 0
         for pc, _ in resident_module_traces(engine.jit_runtime.cache, module)
@@ -2041,13 +2043,13 @@ def test_jitr_hotspot_collection_continues_defined_calls_in_cpp():
 
     function_index = module.export_func_index("sum_inc")
     interpreter = Interpreter(module)
-    assert engine.call(interpreter, function_index, [8]) == [36]
+    assert engine.call(interpreter, function_index, [8]).unwrap() == [36]
     assert manager.cache.find_trace(callee_pc) is not None
     assert engine.stat_trace_exits_to_interp < 8, (
         "defined guest calls must not return to Python once per invocation"
     )
     engine.reset_stats()
-    assert engine.call(interpreter, function_index, [8]) == [36]
+    assert engine.call(interpreter, function_index, [8]).unwrap() == [36]
     assert engine.stat_jit_invocations > 0
     assert engine.stat_trace_exits_to_interp < 8
 
@@ -2428,7 +2430,7 @@ def test_jitr_empty_yield_skips_python_control_work():
     engine = RuntimeEngine(jit_runtime=manager)
     engine.register_module_blocks(module)
 
-    assert engine.call(Interpreter(module), module.export_func_index("sum"), [5]) == [15]
+    assert engine.call(Interpreter(module), module.export_func_index("sum"), [5]).unwrap() == [15]
     assert manager.snapshot_calls == 0
     assert manager.idle_calls == 1
     assert manager.record_calls == 0
@@ -2468,8 +2470,10 @@ def test_jitr_if_else_loop_matches_interpreter_after_jit_compilation():
 
     inputs = (0, 1, 2, 17, 30)
     expected = [sum(i if i % 2 == 0 else -i for i in range(n)) for n in inputs]
-    reference = [list(interpreter_engine.call(interpreter, function_index, [n])) for n in inputs]
-    actual = [list(jit_engine.call(jit_interpreter, function_index, [n])) for n in inputs]
+    reference = [
+        list(interpreter_engine.call(interpreter, function_index, [n]).unwrap()) for n in inputs
+    ]
+    actual = [list(jit_engine.call(jit_interpreter, function_index, [n]).unwrap()) for n in inputs]
 
     assert reference == [[value] for value in expected]
     assert actual == reference
@@ -2534,8 +2538,8 @@ def test_jitr_br_table_uses_native_handler_and_preserves_every_target():
     interpreter = Interpreter(module)
     jit_interpreter = Interpreter(jit_module)
     for selector, expected in ((0, 10), (1, 20), (2, 30), (3, 30)):
-        reference = list(interpreter_engine.call(interpreter, 0, [selector]))
-        actual = list(jit_engine.call(jit_interpreter, 0, [selector]))
+        reference = list(interpreter_engine.call(interpreter, 0, [selector]).unwrap())
+        actual = list(jit_engine.call(jit_interpreter, 0, [selector]).unwrap())
         assert reference == [expected]
         assert actual == reference
     assert jit_engine.stat_native_control_handlers > 0, (
@@ -2574,7 +2578,7 @@ def test_jitr_mixed_typed_stack_uses_runtime_apis_inside_jit_trace():
     assert trace is not None
     assert_result_20 = engine.jit_runtime.cache.insert(trace)
     assert assert_result_20
-    result = engine.call(Interpreter(module), 0, [])
+    result = engine.call(Interpreter(module), 0, []).unwrap()
 
     assert list(result) == [12]
     assert engine.stat_jit_invocations == 1
@@ -2613,7 +2617,7 @@ def test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized():
     )
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
-    actual = [list(engine.call(interpreter, 4, [])) for _ in range(6)]
+    actual = [list(engine.call(interpreter, 4, []).unwrap()) for _ in range(6)]
     compiled_heads = {pc for pc, _ in resident_module_traces(engine.jit_runtime.cache, module)}
 
     assert actual == [[12]] * 6
@@ -2644,7 +2648,7 @@ def test_jitr_runtime_engine_preserves_typed_top_level_results():
     expected = ([7], [70], [7.5], [8.5])
     for function_index, values in enumerate(expected):
         for _ in range(3):
-            result = engine.call(interp, function_index, [])
+            result = engine.call(interp, function_index, []).unwrap()
         assert list(result) == list(values)
     assert engine.stat_jit_invocations > 0
 
@@ -2671,7 +2675,7 @@ def test_jitr_host_import_stays_on_interpreter_runtime_boundary():
 
     host_functions = StaticVector.of((lambda value: int(value) + 1,), capacity=1)
     interp = Interpreter(module, host_functions=host_functions)
-    assert engine.call(interp, 1, []) == [43]
+    assert engine.call(interp, 1, []).unwrap() == [43]
 
 
 def test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary():
@@ -2699,9 +2703,9 @@ def test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary():
     function_index = module.export_func_index("main")
     try:
         for _ in range(2):
-            with pytest.raises(AssertionError) as failure:
-                interp._complete_call(interp.start(function_index, []), idle_budget=0)
-            assert failure.value.args == (15,)
+            outcome = interp._complete_call(interp.start(function_index, []), idle_budget=0)
+            assert not outcome.is_ok
+            assert outcome.error is not None and outcome.error.code == 15
 
         assert plugin.idle_hook(1) == 1
         call_state = interp.start(function_index, [])
@@ -2738,10 +2742,10 @@ def test_jitr_runtime_api_continues_into_following_jit_operations():
     interp = Interpreter(module, execution_plugin=plugin)
     function_index = module.export_func_index("f")
     try:
-        assert interp.call(function_index, [], idle_budget=0) == [29]
-        assert interp.call(function_index, [], idle_budget=0) == [29]
+        assert interp.call(function_index, [], idle_budget=0).unwrap() == [29]
+        assert interp.call(function_index, [], idle_budget=0).unwrap() == [29]
         assert plugin.idle_hook(1) == 1
-        assert interp.call(function_index, [], idle_budget=0) == [29]
+        assert interp.call(function_index, [], idle_budget=0).unwrap() == [29]
     finally:
         plugin.close()
         for backing in backings:
@@ -2774,7 +2778,7 @@ def test_jitr_api_lowered_operation_can_start_a_jit_trace():
     assert_result_21 = engine.jit_runtime.cache.insert(trace)
     assert assert_result_21
 
-    assert list(engine.call(Interpreter(module), 0, [])) == [3.75]
+    assert list(engine.call(Interpreter(module), 0, []).unwrap()) == [3.75]
     assert engine.stat_jit_invocations == 1
 
 
@@ -2795,7 +2799,7 @@ def test_jitr_trace_header_resolves_loader_block_by_index():
         index for index, candidate in enumerate(module.blocks) if candidate.head_pc == block.head_pc
     )
     assert cached.header._native.block_index == expected_index
-    assert engine.call(Interpreter(module), 0, []) == [1]
+    assert engine.call(Interpreter(module), 0, []).unwrap() == [1]
 
 
 def _pc(i, func=0):
@@ -3369,7 +3373,7 @@ def test_jitr_trace_execution_count_excludes_invalid_static_depth():
     assert assert_result_32
     assert trace.header._native.frame_depth == 0xFF
     assert block.frame_depth != 0xFF
-    assert engine.call(Interpreter(module), 0, []) == [5]
+    assert engine.call(Interpreter(module), 0, []).unwrap() == [5]
     assert trace.exec_count == 0
     assert engine.stat_jit_invocations == 0
 
@@ -3447,13 +3451,13 @@ def test_native_product_plugin_is_opaque_and_executes_compiled_code():
     interpreter = Interpreter(module)
     function = module.export_func_index("sum")
     for value in (5, 10, 20):
-        assert engine.call(interpreter, function, [value]) == [value * (value + 1) // 2]
+        assert engine.call(interpreter, function, [value]).unwrap() == [value * (value + 1) // 2]
     assert engine.stat_jit_invocations > 0
     second_interpreter = Interpreter(module)
-    assert engine.call(second_interpreter, function, [11]) == [66]
-    assert engine.call(interpreter, function, [12]) == [78]
+    assert engine.call(second_interpreter, function, [11]).unwrap() == [66]
+    assert engine.call(interpreter, function, [12]).unwrap() == [78]
     plugin.flush_all()
-    assert engine.call(interpreter, function, [7]) == [28]
+    assert engine.call(interpreter, function, [7]).unwrap() == [28]
     plugin.close()
 
 
@@ -3481,10 +3485,10 @@ def test_native_product_plugin_close_clears_borrowed_block_references():
             module, InterpreterBindings.empty(), execution_plugin=plugin
         )
         try:
-            assert interpreter.call(0, [100]) == [5050]
+            assert interpreter.call(0, [100]).unwrap() == [5050]
             plugin.idle_hook(16)
             assert any(block.jit_cache_reference != 0xFF for block in module.blocks)
-            assert interpreter.call(0, [50], idle_budget=0) == [1275]
+            assert interpreter.call(0, [50], idle_budget=0).unwrap() == [1275]
         finally:
             plugin.close()
         assert all(block.jit_cache_reference == 0xFF for block in module.blocks)

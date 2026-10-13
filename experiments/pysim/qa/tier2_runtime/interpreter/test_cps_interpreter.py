@@ -256,7 +256,7 @@ def test_release_bulk_memory_preserves_annotation_cursor(
     interpreter = NativeInterpreter(
         module, InterpreterBindings.with_memory(memory), native_dispatcher=release_dispatcher
     )
-    assert interpreter.call(0, []) == [42]
+    assert interpreter.call(0, []).unwrap() == [42]
     assert memory[8:12] == (b"data" if operation == "copy" else b"****")
     assert memory[:4] == b"data"
     assert memory[12:16] == b"\x00" * 4

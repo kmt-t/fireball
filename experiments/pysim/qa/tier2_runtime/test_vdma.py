@@ -332,7 +332,9 @@ class VdmaFixture:
     ) -> Generator[tuple[ChannelAction, None], None, Outcome]:
         args = (source, destination, count, int(probe))
         if not inspect_trap:
-            results = yield from self.system.run_guest(self.interpreter, self.function_index, args)
+            results = (
+                yield from self.system.run_guest(self.interpreter, self.function_index, args)
+            ).unwrap()
             return Outcome(tuple(int(value) for value in results))
         # Inspect the actual structured trap at the existing runtime boundary.
         # complete_call converts it to fail-fast AssertionError; do not catch that.
@@ -457,9 +459,11 @@ def test_guest_store_and_dma_use_same_managed_shm(entry: Entry) -> None:
     def scenario(fixture: VdmaFixture) -> Generator[tuple[ChannelAction, None], None, None]:
         before = fixture.snapshot()
         value = 0xAABBCCDD
-        result = yield from fixture.system.run_guest(
-            fixture.interpreter, fixture.store_function_index, (fixture.shared_base + 65, value)
-        )
+        result = (
+            yield from fixture.system.run_guest(
+                fixture.interpreter, fixture.store_function_index, (fixture.shared_base + 65, value)
+            )
+        ).unwrap()
         assert tuple(int(item) & 0xFFFFFFFF for item in result) == (value,)
         shared = bytearray(before.shared)
         shared[fixture.shared_address + 65 : fixture.shared_address + 69] = value.to_bytes(

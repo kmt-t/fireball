@@ -13,6 +13,7 @@ from qa.private.interpreter_native_abi import (
     select_runtime_dispatch_entry,
 )
 from system_containers import StaticVector
+from tier2_runtime.interpreter.errors import Trap
 from tier2_runtime.interpreter.execution_plugin import NativeExecutionPlugin
 from tier2_runtime.interpreter.interpreter import (
     RETURN_SENTINEL_IP,
@@ -21,6 +22,7 @@ from tier2_runtime.interpreter.interpreter import (
     WasmNumber,
 )
 from tier2_runtime.runtime.engine import RuntimeBoundaryResult, RuntimeDriveMode, RuntimeEngine
+from tier2_runtime.runtime.recovery import Result
 from tier2_runtime.wasm.module import Module
 
 
@@ -121,25 +123,25 @@ class RuntimeStatsEngine(RuntimeEngine):
         func_index: int,
         args: tuple[WasmNumber, ...] | list[WasmNumber],
         idle_budget: int = 4,
-    ) -> StaticVector[WasmNumber]:
+    ) -> Result[StaticVector[WasmNumber], Trap]:
         """QA-only driver for collecting native dispatch counters around a call."""
         self._activate_interpreter(interp)
         return self.complete_call(interp, interp.start(func_index, args), idle_budget)
 
     def complete_call(
         self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int = 4
-    ) -> StaticVector[WasmNumber]:
+    ) -> Result[StaticVector[WasmNumber], Trap]:
         self._activate_interpreter(interp)
         while not call_state.finished:
             call_state = self.run(interp, call_state, idle_budget).call_state
         self.idle_hook(idle_budget)
         if call_state.trap is not None:
-            assert False, call_state.trap.code
+            return Result.err(call_state.trap)
         assert call_state.results is not None
         results = call_state.results
         if self.debug:
             self.dump_internal_state()
-        return results
+        return Result.ok(results)
 
     def reset_stats(self) -> None:
         """Begin a new QA measurement interval without changing product behavior."""

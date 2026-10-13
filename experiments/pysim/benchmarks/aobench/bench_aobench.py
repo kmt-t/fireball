@@ -62,7 +62,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
         InterpreterBindings.with_memory_and_functions(wasi_python.guest_memory, funcs_python),
     )
     t0_python = time.perf_counter()
-    interp_python.call(main_fn, [WIDTH, HEIGHT])
+    interp_python.call(main_fn, [WIDTH, HEIGHT]).unwrap()
     t1_python = time.perf_counter()
     python_output = sysv_python.transport.drain_output().decode("utf-8", errors="replace")
     python_time_ms = (t1_python - t0_python) * 1000
@@ -79,7 +79,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
         InterpreterBindings.with_memory_and_functions(wasi_native.guest_memory, funcs_native),
     )
     t0_native = time.perf_counter()
-    interp_native.call(main_fn, [WIDTH, HEIGHT])
+    interp_native.call(main_fn, [WIDTH, HEIGHT]).unwrap()
     t1_native = time.perf_counter()
     native_output = sysv_native.transport.drain_output().decode("utf-8", errors="replace")
     native_time_ms = (t1_native - t0_native) * 1000
@@ -106,7 +106,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     )
 
     t0_t3 = time.perf_counter()
-    interp_t3.call(main_fn, [WIDTH, HEIGHT])
+    interp_t3.call(main_fn, [WIDTH, HEIGHT]).unwrap()
     t1_t3 = time.perf_counter()
     render_output_t3 = sysv_t3.transport.drain_output().decode("utf-8", errors="replace")
     t3_time_ms = (t1_t3 - t0_t3) * 1000
@@ -147,7 +147,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
         ),
         bump_allocator=diagnostic_engine.bump_allocator,
     )
-    diagnostic_engine.call(interp_diagnostic, main_fn, [WIDTH, HEIGHT])
+    diagnostic_engine.call(interp_diagnostic, main_fn, [WIDTH, HEIGHT]).unwrap()
     diagnostic_output = sysv_diagnostic.transport.drain_output().decode("utf-8", errors="replace")
     assert diagnostic_output == render_output_t3
     assert diagnostic_engine.stat_jit_invocations > 0

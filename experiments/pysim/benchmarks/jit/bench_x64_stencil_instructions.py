@@ -310,7 +310,7 @@ def run_measurement(
         for _ in range(3):
             actual = [
                 value & 0xFFFF_FFFF
-                for value in engine.call(interpreter, function_index, [left, right])
+                for value in engine.call(interpreter, function_index, [left, right]).unwrap()
             ]
             assert actual == [expected], (operation, left, right, expected, actual)
         trace = manager.cache.find_trace(module.function_pc_offset(function_index))

@@ -107,8 +107,16 @@ def test_scenario_coos_multitask():
         system.scheduler.run_until_idle()
         prod = system.scheduler.get_task(prod_id)
         cons = system.scheduler.get_task(cons_id)
-        assert prod is not None and prod.state == TaskState.TERMINATED and prod.result == [100]
-        assert cons is not None and cons.state == TaskState.TERMINATED and cons.result == [50500]
+        assert (
+            prod is not None
+            and prod.state == TaskState.TERMINATED
+            and prod.result.unwrap() == [100]
+        )
+        assert (
+            cons is not None
+            and cons.state == TaskState.TERMINATED
+            and cons.result.unwrap() == [50500]
+        )
         assert observed == [(value, value) for value in range(4, 100, 4)]
         assert struct.unpack_from("<2I", memory) == (100, 100)
         assert struct.unpack_from("<100I", memory, 512) == tuple(range(10, 1001, 10))

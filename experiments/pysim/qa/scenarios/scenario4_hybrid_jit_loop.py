@@ -101,7 +101,7 @@ def test_scenario_hybrid_jit():
     interp_t2 = Interpreter(
         module, InterpreterBindings.with_memory_and_functions(wasi_t2.guest_memory, funcs_t2)
     )
-    res_t2 = interp_t2.call(fn_idx, [LIMIT])
+    res_t2 = interp_t2.call(fn_idx, [LIMIT]).unwrap()
     assert res_t2 == [168], f"Tier 2 prime count mismatch: expected 168, got {res_t2}"
     # 2. Tier 3 Hybrid Execution with Card Marking and idle_hook JIT
     sysv_t3 = System()
@@ -118,7 +118,7 @@ def test_scenario_hybrid_jit():
     interp_t3 = NativeInterpreter(
         module, InterpreterBindings.with_memory_and_functions(wasi_t3.guest_memory, funcs_t3)
     )
-    res_t3 = runtime_engine.call(interp_t3, fn_idx, [LIMIT])
+    res_t3 = runtime_engine.call(interp_t3, fn_idx, [LIMIT]).unwrap()
 
     assert res_t3 == [168], f"Tier 3 prime count mismatch: expected 168, got {res_t3}"
     assert res_t2 == res_t3, "Tier 2 and Tier 3 calculation diverged!"

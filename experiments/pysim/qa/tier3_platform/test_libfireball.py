@@ -298,7 +298,7 @@ def test_wit_generated_static_guest_raw_four_imports(compiled_raw_guest: Path, r
         system.scheduler.run_until_idle()
         task = system.scheduler.get_task(task_id)
         assert task is not None and task.state == TaskState.TERMINATED
-        assert tuple(task.result) == (10,)
+        assert tuple(task.result.unwrap()) == (10,)
         assert bytes(host.guest_memory[128:168]) == result.to_bytes(4, "little") * 10
         assert recorder.calls == [
             (16, 0, 0, 0, 0, 0, 0),

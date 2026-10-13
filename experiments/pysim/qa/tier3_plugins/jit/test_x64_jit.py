@@ -333,7 +333,7 @@ def test_trace_chaining_between_traces():
     engine.jit_runtime.cache.insert(trace_a)
     assert trace_a.chain_next == block_b.head_pc
     _assert_trace_uses_common_chain_dispatcher(trace_a)
-    results = engine.call(Interpreter(mod), 0, [10])
+    results = engine.call(Interpreter(mod), 0, [10]).unwrap()
     assert results[0] == 30
     assert engine.stat_jit_invocations >= 2
 
@@ -364,7 +364,7 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
     engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = next(block.head_pc for block in instruction_blocks(mod) if block.loops_to is not None)
-    results = engine.call(Interpreter(mod, yield_threshold=3), 0, [5])
+    results = engine.call(Interpreter(mod, yield_threshold=3), 0, [5]).unwrap()
     assert results[0] == 15
     # The C++ dispatcher repeats the JIT body and invokes its C++ branch handler
     # before returning at the count-based yield boundary.
@@ -412,7 +412,7 @@ def test_jit_chaining_uses_loader_resolved_successors():
     _assert_trace_uses_common_chain_dispatcher(trace_a)
 
     # Execute from A: the common chain dispatcher tail-jumps into B; result is (5 + 10) * 3.
-    results = engine.call(Interpreter(mod), 0, [5])
+    results = engine.call(Interpreter(mod), 0, [5]).unwrap()
     assert results[0] == 45
     assert engine.stat_jit_invocations >= 2
 

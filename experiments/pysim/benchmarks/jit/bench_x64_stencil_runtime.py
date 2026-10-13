@@ -93,7 +93,7 @@ def run_worker(compiler_library: Path, iterations: int, warmup_calls: int) -> No
     expected = expected_sum(iterations)
 
     for _ in range(warmup_calls):
-        warmup_result = engine.call(interpreter, function_index, [WARMUP_ITERATIONS])
+        warmup_result = engine.call(interpreter, function_index, [WARMUP_ITERATIONS]).unwrap()
         assert int(warmup_result[0]) == expected_sum(WARMUP_ITERATIONS)
 
     loop_block = next(block for block in module.blocks if block.loops_to is not None)
@@ -106,7 +106,7 @@ def run_worker(compiler_library: Path, iterations: int, warmup_calls: int) -> No
 
     engine.reset_stats()
     start_ns = time.perf_counter_ns()
-    result = engine.call(interpreter, function_index, [iterations])
+    result = engine.call(interpreter, function_index, [iterations]).unwrap()
     elapsed_ns = time.perf_counter_ns() - start_ns
     assert int(result[0]) == expected
     loop_trace = engine.jit_runtime.cache.find_trace(loop_block.head_pc)

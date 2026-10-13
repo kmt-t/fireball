@@ -105,7 +105,7 @@ def test_scenario_multimodule_unified_pc():
     interp_t2 = Interpreter(
         module, InterpreterBindings.with_memory_and_functions(wasi_t2.guest_memory, funcs_t2)
     )
-    res_t2 = interp_t2.call(fn_idx, [ITERS])
+    res_t2 = interp_t2.call(fn_idx, [ITERS]).unwrap()
     # 2. Tier 3 Hybrid Execution
     sysv_t3 = System()
     wasi_t3 = WasiHostContext(sysv_t3)
@@ -121,7 +121,7 @@ def test_scenario_multimodule_unified_pc():
     interp_t3 = NativeInterpreter(
         module, InterpreterBindings.with_memory_and_functions(wasi_t3.guest_memory, funcs_t3)
     )
-    res_t3 = runtime_engine.call(interp_t3, fn_idx, [ITERS])
+    res_t3 = runtime_engine.call(interp_t3, fn_idx, [ITERS]).unwrap()
 
     assert res_t2 == res_t3, f"Calculations diverged: T2={res_t2} vs T3={res_t3}"
     assert len(resident_module_traces(runtime_engine.jit_runtime.cache, module)) > 0, (

@@ -356,7 +356,7 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         yield_threshold=2,
     )
     for _ in range(2):
-        assert engine.call(interpreter, 0, [9], idle_budget=3) == [0]
+        assert engine.call(interpreter, 0, [9], idle_budget=3).unwrap() == [0]
     assert len(plugin.bindings) == 1
     assert (callbacks[0] >= 8) == (card_state == 3)
     assert callbacks[1] >= 8

@@ -76,24 +76,24 @@ def test_scenario_loader_memory():
     # 4. Test Memory Read / Write via WASM guest functions
     fn_write = module.export_func_index("write_u32")
     fn_read = module.export_func_index("read_u32")
-    interp.call(fn_write, [2048, 0x12345678])
-    res = interp.call(fn_read, [2048])
+    interp.call(fn_write, [2048, 0x12345678]).unwrap()
+    res = interp.call(fn_read, [2048]).unwrap()
     assert res == [0x12345678], f"read_u32 mismatch: {res}"
     # 5. Test Memory Grow
     fn_grow = module.export_func_index("test_grow")
-    res_grow = interp.call(fn_grow, [2])  # grow by 2 pages -> total 3 pages
+    res_grow = interp.call(fn_grow, [2]).unwrap()  # grow by 2 pages -> total 3 pages
     assert res_grow == [3], f"memory.grow result mismatch: {res_grow}"
     assert len(wasi_ctx.guest_memory) >= 3 * 65536, "Guest memory size not expanded"
     # Test writing to newly grown page (Page 2: offset 131072)
     val_cafebabe = 0xCAFEBABE - 0x100000000  # signed i32 representation
-    interp.call(fn_write, [131072, val_cafebabe])
-    res_page2 = interp.call(fn_read, [131072])
+    interp.call(fn_write, [131072, val_cafebabe]).unwrap()
+    res_page2 = interp.call(fn_read, [131072]).unwrap()
     assert (res_page2[0] & 0xFFFFFFFF) == 0xCAFEBABE, f"Page 2 memory access failed: {res_page2}"
     # 6. Test Globals Mutation
     fn_global = module.export_func_index("inc_global")
-    res_g1 = interp.call(fn_global, [25])
+    res_g1 = interp.call(fn_global, [25]).unwrap()
     assert res_g1 == [125], f"Global increment failed: {res_g1}"
-    res_g2 = interp.call(fn_global, [-50])
+    res_g2 = interp.call(fn_global, [-50]).unwrap()
     assert res_g2 == [75], f"Global decrement failed: {res_g2}"
     print("    [PASS] Scenario 1 (Loader & Memory) succeeded seamlessly.")
 

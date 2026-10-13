@@ -91,7 +91,7 @@ def measure(
             started = time.perf_counter_ns()
             interpreter.call(
                 function_index, [width, height], idle_budget=4 if frame_index < warmup else 0
-            )
+            ).unwrap()
             elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000
             frame = system.transport.drain_output()
             assert len(frame) == (width + 1) * height

@@ -177,13 +177,13 @@ def _measure(
             result = tuple(
                 interpreter.call(
                     module.export_func_index(workload.export), list(workload.arguments)
-                )
+                ).unwrap()
             )
         else:
             result = tuple(
                 engine.call(
                     interpreter, module.export_func_index(workload.export), list(workload.arguments)
-                )
+                ).unwrap()
             )
         output = sysv.transport.drain_output()
         if expected_result is None:

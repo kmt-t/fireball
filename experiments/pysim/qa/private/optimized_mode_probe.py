@@ -84,8 +84,8 @@ def main() -> None:
         ("table", ()),
     ):
         index = module.export_func_index(name)
-        reference_results.append(interpreter.call(index, arguments)[0])
-        native_results.append(engine.call(native, index, arguments)[0])
+        reference_results.append(interpreter.call(index, arguments).unwrap()[0])
+        native_results.append(engine.call(native, index, arguments).unwrap()[0])
 
     vmmio = VMMIOController(scheduler=scheduler)
     vmmio.map_static_device(0xC0000)

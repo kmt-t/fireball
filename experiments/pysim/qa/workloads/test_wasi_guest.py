@@ -201,7 +201,7 @@ class GuestSession:
         self.system.scheduler.run_until_idle()
         task = self.system.scheduler.get_task(task_id)
         assert task is not None and task.state == TaskState.TERMINATED
-        return tuple(int(value) for value in task.result)
+        return tuple(int(value) for value in task.result.unwrap())
 
     def result(self) -> tuple[int, int, int, bytes]:
         rc, error, clock = struct.unpack_from("<iiQ", self.host.guest_memory, self.result_address)

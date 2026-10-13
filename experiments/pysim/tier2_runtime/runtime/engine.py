@@ -131,10 +131,13 @@ class RuntimeEngine:
     ) -> int:
         if self._virq_interp is None:
             return int(VirqDispatchResult.REJECT)
-        results = self._virq_interp.call(
+        outcome = self._virq_interp.call(
             function_index,
             (vector_id, source_id, cause_code, payload0, payload1),
         )
+        if not outcome.is_ok:
+            return int(VirqDispatchResult.REJECT)
+        results = outcome.unwrap()
         if not results:
             return int(VirqDispatchResult.REJECT)
         return int(results[0]) & 0xFFFF_FFFF

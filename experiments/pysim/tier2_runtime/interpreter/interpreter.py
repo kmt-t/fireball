@@ -91,6 +91,7 @@ from tier2_runtime.runtime.python_api import (
     RuntimeAPI,
     WasmNumber,
 )
+from tier2_runtime.runtime.recovery import Result
 from tier2_runtime.syscall.hostcall import VdmaTransfer
 from tier2_runtime.vmmio.controller import VMMIOController
 from tier2_runtime.wasm.leb128 import decode_unsigned
@@ -476,7 +477,7 @@ class ExecutionContext(ExecutionContextABI):
         raw_args: Sequence[int],
         func_index: int,
         env: ExecEnv,
-    ) -> CallFrame:
+    ) -> Result[CallFrame, Trap]:
         """Push one frame's locals directly into the context-owned Native stack."""
         frame_offset = len(self.local_stack)
         template = None
@@ -491,12 +492,13 @@ class ExecutionContext(ExecutionContextABI):
         )
         local_slot_count = frame.local_slot_count
         assert len(raw_args) == frame.param_packed_slot_count
-        assert frame_offset + local_slot_count <= self.local_stack.capacity
+        if frame_offset + local_slot_count > self.local_stack.capacity:
+            return Result.err(Trap(TrapCode.LOCAL_STACK_CAPACITY))
         if not self.call_frame_stack.push_back(frame):
-            assert False, "call-frame stack capacity exceeded"
+            return Result.err(Trap(TrapCode.CALL_FRAME_CAPACITY))
         if not self.local_stack.push_zeroed(local_slot_count):
             self.call_frame_stack.pop_back()
-            assert False, "local stack capacity exceeded"
+            return Result.err(Trap(TrapCode.LOCAL_STACK_CAPACITY))
         assert self.module is not None
         function = self.module.functions[func_index - len(self.module.imports)]
         self.current_block_index = function.entry_block_index
@@ -510,7 +512,7 @@ class ExecutionContext(ExecutionContextABI):
         assert raw_offset == len(raw_args)
         self.local_stack_pointer = self.local_stack.value_ptr(len(self.local_stack)).value
         self.local_base = self.local_stack.value_ptr(frame_offset).value
-        return frame
+        return Result.ok(frame)
 
     def end_call_frame(self, frame: CallFrame) -> None:
         """Pop the active frame and its locals from the context stacks."""
@@ -978,6 +980,7 @@ class Interpreter:
         "bump_allocator",
         "debugger",
         "globals",
+        "initialization_trap",
         "logger",
         "memory",
         "memory_decl",
@@ -1004,6 +1007,7 @@ class Interpreter:
         assert 1 <= yield_threshold <= 0xFFFF_FFFF
         self.yield_threshold = yield_threshold
         self.module = module
+        self.initialization_trap: Trap | None = None
         self.bump_allocator = (
             bump_allocator if bump_allocator is not None else module.allocator
         ) or BumpAllocator()
@@ -1082,7 +1086,8 @@ class Interpreter:
             vdma_transfer=bindings.vdma_transfer,
         )
         if self.module.start_function is not None:
-            self.call(self.module.start_function, ())
+            outcome = self.call(self.module.start_function, ())
+            self.initialization_trap = outcome.error
 
     def attach_debugger(self, debugger: DebuggerAttachment) -> None:
         """
@@ -1097,19 +1102,21 @@ class Interpreter:
     def detach_debugger(self) -> None:
         self.debugger = None
 
-    def call(self, func_index: int, args: Sequence[WasmNumber]) -> StaticVector[WasmNumber]:
+    def call(
+        self, func_index: int, args: Sequence[WasmNumber]
+    ) -> Result[StaticVector[WasmNumber], Trap]:
         """Runs a function to completion in one call."""
         call_state = self.start(func_index, args)
         return self._complete_call(call_state)
 
-    def _complete_call(self, call_state: InterpreterCall) -> StaticVector[WasmNumber]:
+    def _complete_call(self, call_state: InterpreterCall) -> Result[StaticVector[WasmNumber], Trap]:
         """Run the Python reference interpreter until the call completes."""
         while not call_state.finished:
             call_state = self._step(call_state, stop_at_boundary=False)
         if call_state.trap is not None:
-            assert False, call_state.trap.code
+            return Result.err(call_state.trap)
         assert call_state.results is not None
-        return call_state.results
+        return Result.ok(call_state.results)
 
     def _abort_call(self, call_state: InterpreterCall, trap: Trap, ip: int) -> None:
         """Terminate every active frame and publish a runtime trap outcome.
@@ -1158,6 +1165,11 @@ class Interpreter:
                 right here, so the returned call is already finished.
         """
         context = self._new_context()
+        if self.initialization_trap is not None:
+            context.release_workspace()
+            return InterpreterCall(
+                func_index, context, cont=None, finished=True, trap=self.initialization_trap
+            )
         if self.module.is_import(func_index):
             results = self._env.runtime_api.invoke_import(func_index, args)
             trap = Trap(TrapCode.NO_HOST_HANDLER, func_index) if results is None else None
@@ -1175,16 +1187,16 @@ class Interpreter:
         self._prepare_native_execution(context)
         raw_args = _encode_public_args(args, self.module.func_type(func_index).params)
         built = self._build_frame(func_index, raw_args, context)
-        if built is None:
+        if not built.is_ok:
             context.release_workspace()
             return InterpreterCall(
                 func_index,
                 context,
                 cont=None,
                 finished=True,
-                trap=Trap(TrapCode.OPERAND_STACK_CAPACITY),
+                trap=built.error,
             )
-        frame, locals_arr = built
+        frame, locals_arr = built.unwrap()
         return InterpreterCall(func_index, context, cont=(0, frame, locals_arr))
 
     def _new_context(self) -> ExecutionContext:
@@ -1197,7 +1209,7 @@ class Interpreter:
 
     def _build_frame(
         self, func_index: int, raw_args: StaticVector[int], context: ExecutionContext
-    ) -> tuple[CallFrame, _LocalStackWindow] | None:
+    ) -> Result[tuple[CallFrame, _LocalStackWindow], Trap]:
         """
         Builds the initial frame + locals for a WASM (non-import) function
         activation. `raw_args` contains the packed parameter values as
@@ -1217,13 +1229,17 @@ class Interpreter:
         assert len(raw_args) == param_packed_slot_count
         assert fn.control_map is not None
         if fn.max_operand_stack_words > context.stack.capacity - len(context.stack):
-            return None
-        frame = context.begin_call_frame(
+            return Result.err(Trap(TrapCode.OPERAND_STACK_CAPACITY))
+        outcome = context.begin_call_frame(
             raw_args,
             func_index=func_index,
             env=self._env,
         )
-        return frame, frame.locals
+        if not outcome.is_ok:
+            assert outcome.error is not None
+            return Result.err(outcome.error)
+        frame = outcome.unwrap()
+        return Result.ok((frame, frame.locals))
 
     def step(self, call_state: InterpreterCall) -> InterpreterCall:
         """
@@ -1806,9 +1822,10 @@ class Interpreter:
         popped_raw_args.reverse_in_place()
         resume_cont = (next_ip, frame, locals_arr)
         built = self._build_frame(callee_func_index, popped_raw_args, call_state.context)
-        if built is None:
-            return Trap(TrapCode.OPERAND_STACK_CAPACITY)
-        callee_frame, callee_locals = built
+        if not built.is_ok:
+            assert built.error is not None
+            return built.error
+        callee_frame, callee_locals = built.unwrap()
         callee_frame.native.return_ip = next_ip
         if not call_state.call_stack.push_back((call_state.func_index, resume_cont)):
             return Trap(TrapCode.CALL_STACK_CAPACITY)
@@ -1904,7 +1921,7 @@ class NativeInterpreter(Interpreter):
         func_index: int,
         args: Sequence[WasmNumber],
         idle_budget: int = 4,
-    ) -> StaticVector[WasmNumber]:
+    ) -> Result[StaticVector[WasmNumber], Trap]:
         """Run native dispatch to completion and service JIT compilation once."""
         return self._complete_call(self.start(func_index, args), idle_budget)
 
@@ -1926,17 +1943,17 @@ class NativeInterpreter(Interpreter):
 
     def _complete_call(
         self, call_state: InterpreterCall, idle_budget: int = 4
-    ) -> StaticVector[WasmNumber]:
+    ) -> Result[StaticVector[WasmNumber], Trap]:
         while not call_state.finished:
             call_state = self.step_native_boundary(
                 call_state,
                 idle_budget=idle_budget,
             ).call_state
         if call_state.trap is not None:
-            assert False, call_state.trap.code
+            return Result.err(call_state.trap)
         assert call_state.results is not None
         self.idle_hook(idle_budget)
-        return call_state.results
+        return Result.ok(call_state.results)
 
     def step(self, call_state: InterpreterCall) -> InterpreterCall:
         return self.step_native(call_state)

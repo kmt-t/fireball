@@ -229,7 +229,7 @@ def phase_suite_interp(scale: float, kernels: list[str] | None, oracle: bool) ->
     ref = SuiteOracle(SUITE_WASM_PATH.read_bytes()) if oracle else None
 
     def call(interp, _engine, module, index, units):
-        return interp.call(index, [units])[0]
+        return interp.call(index, [units]).unwrap()[0]
 
     return _run_suite(picked, ref, call, "suite_interp", _new_interpreter_guest)
 
@@ -240,7 +240,7 @@ def phase_suite_jit(scale: float, kernels: list[str] | None, oracle: bool) -> Ph
     ref = SuiteOracle(SUITE_WASM_PATH.read_bytes()) if oracle else None
 
     def call(interp, engine, module, index, units):
-        return interp.call(index, [units])[0]
+        return interp.call(index, [units]).unwrap()[0]
 
     return _run_suite(picked, ref, call, "suite_jit", _new_jit_guest)
 
@@ -343,7 +343,7 @@ def phase_ao_interp(scale: float, kernels: list[str] | None, oracle: bool) -> Ph
     module, sysv, bindings, sink = _ao_guest("ao_interp")
     interp = Interpreter(module, bindings)
     t0 = time.perf_counter()
-    interp.call(module.export_func_index("main"), [width, height])
+    interp.call(module.export_func_index("main"), [width, height]).unwrap()
     seconds = time.perf_counter() - t0
     sysv.logger.flush()
     sink.close()
@@ -366,7 +366,7 @@ def phase_ao_jit(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
         execution_plugin=JITRuntimeManager(reserve_native_region),
     )
     t0 = time.perf_counter()
-    interp.call(module.export_func_index("main"), [width, height])
+    interp.call(module.export_func_index("main"), [width, height]).unwrap()
     seconds = time.perf_counter() - t0
     sysv.logger.flush()
     sink.close()

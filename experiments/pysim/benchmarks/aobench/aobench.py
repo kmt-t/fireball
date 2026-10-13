@@ -426,7 +426,7 @@ def run_aobench():
     )
     main_func_idx = module.export_func_index("main")
     t0_t2 = time.perf_counter()
-    interp_t2.call(main_func_idx, [WIDTH, HEIGHT])
+    interp_t2.call(main_func_idx, [WIDTH, HEIGHT]).unwrap()
     t1_t2 = time.perf_counter()
     render_output = sysv.transport.drain_output().decode("utf-8", errors="replace")
     print("\n--- [Render Output from Guest WASM via WASI stdout] ---")
@@ -458,7 +458,7 @@ def run_aobench():
         execution_plugin=jit_runtime,
     )
     t0_t3 = time.perf_counter()
-    interp_t3.call(main_func_idx, [WIDTH, HEIGHT])
+    interp_t3.call(main_func_idx, [WIDTH, HEIGHT]).unwrap()
     t1_t3 = time.perf_counter()
     render_output_t3 = sysv_t3.transport.drain_output().decode("utf-8", errors="replace")
     t3_time_ms = (t1_t3 - t0_t3) * 1000
@@ -524,7 +524,7 @@ if __name__ == "__main__":
                 wasi_ctx_float.guest_memory, host_funcs_float
             ),
         )
-        hits = interp_float.call(module_float.export_func_index("run_ao_float"), [32, 32])
+        hits = interp_float.call(module_float.export_func_index("run_ao_float"), [32, 32]).unwrap()
         print(
             f"    [PASS] Float32 Raytracer executed successfully: {hits[0]} primary sphere hits on 32x32 grid."
         )

@@ -84,20 +84,22 @@ def test_scenario_recursion_and_tables():
     )
     # 1. Test Recursive Fibonacci (fib(12) = 144)
     fn_fib = module.export_func_index("fib")
-    res_fib = interp.call(fn_fib, [12])
+    res_fib = interp.call(fn_fib, [12]).unwrap()
     assert res_fib == [144], f"Fibonacci(12) expected 144, got {res_fib}"
     # 2. Test Indirect Call Dispatch via Table
     fn_dispatch = module.export_func_index("dispatch_calc")
-    assert interp.call(fn_dispatch, [0, 40, 2]) == [42], "call_indirect (add) failed"
-    assert interp.call(fn_dispatch, [1, 50, 8]) == [42], "call_indirect (sub) failed"
-    assert interp.call(fn_dispatch, [2, 6, 7]) == [42], "call_indirect (mul) failed"
-    assert interp.call(fn_dispatch, [3, 0x55, 0x7F]) == [0x2A], "call_indirect (xor) failed"
+    assert interp.call(fn_dispatch, [0, 40, 2]).unwrap() == [42], "call_indirect (add) failed"
+    assert interp.call(fn_dispatch, [1, 50, 8]).unwrap() == [42], "call_indirect (sub) failed"
+    assert interp.call(fn_dispatch, [2, 6, 7]).unwrap() == [42], "call_indirect (mul) failed"
+    assert interp.call(fn_dispatch, [3, 0x55, 0x7F]).unwrap() == [0x2A], (
+        "call_indirect (xor) failed"
+    )
     # 3. Test br_table switch
     fn_br_table = module.export_func_index("test_br_table")
-    assert interp.call(fn_br_table, [0]) == [100], "br_table case 0 failed"
-    assert interp.call(fn_br_table, [1]) == [200], "br_table case 1 failed"
-    assert interp.call(fn_br_table, [2]) == [300], "br_table case 2 failed"
-    assert interp.call(fn_br_table, [99]) == [999], "br_table default failed"
+    assert interp.call(fn_br_table, [0]).unwrap() == [100], "br_table case 0 failed"
+    assert interp.call(fn_br_table, [1]).unwrap() == [200], "br_table case 1 failed"
+    assert interp.call(fn_br_table, [2]).unwrap() == [300], "br_table case 2 failed"
+    assert interp.call(fn_br_table, [99]).unwrap() == [999], "br_table default failed"
     print("    [PASS] Scenario 3 (Recursion & Table Dispatch) succeeded seamlessly.")
 
 

@@ -22,7 +22,6 @@ _TESTS_DIR = _TEST_FILE.parents[2]
 _PYSIM_DIR = _TESTS_DIR.parent
 
 
-import pytest
 import wasmtime
 from bump_allocator import BumpAllocator
 from qa.shared.helpers import make_interpreter, make_native_interpreter, wat_to_wasm
@@ -60,7 +59,7 @@ def _tier2_result(wasm: bytes, export: str, args: list[int]) -> int:
     if memory is not None:
         module.init_memory_data(memory, ())
     interpreter = make_interpreter(module, memory=memory)
-    return interpreter.call(module.export_func_index(export), args)[0] & MASK32
+    return interpreter.call(module.export_func_index(export), args).unwrap()[0] & MASK32
 
 
 def _tier3(
@@ -85,7 +84,7 @@ def _tier3(
         engine.jit_runtime.trackable.clear()
         for head_pc in compile_only:
             engine.jit_runtime.trackable.mark(head_pc)
-    result = engine.call(_guest(module), module.export_func_index(export), args)
+    result = engine.call(_guest(module), module.export_func_index(export), args).unwrap()
     return result[0] & MASK32, engine
 
 
@@ -380,15 +379,15 @@ def test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_inter
     """
     wasm = wat_to_wasm(_operand_overflow_wat())
     interpreter_module = parse(wasm)
-    with pytest.raises(AssertionError) as interpreter_failure:
-        _guest(interpreter_module).call(interpreter_module.export_func_index("main"), [])
-    assert interpreter_failure.value.args == (TrapCode.OPERAND_STACK_CAPACITY,)
+    outcome = _guest(interpreter_module).call(interpreter_module.export_func_index("main"), [])
+    assert not outcome.is_ok
+    assert outcome.error is not None and outcome.error.code == TrapCode.OPERAND_STACK_CAPACITY
     engine = make_runtime_engine(candidate_threshold=0, jit_compiler=TraceCompiler())
     module = engine.load_wasm(wasm)
     work_pc = next(block.head_pc for block in module.blocks if block.func_index == 0)
-    with pytest.raises(AssertionError) as hybrid_failure:
-        engine.call(_guest(module), module.export_func_index("main"), [])
-    assert hybrid_failure.value.args == (TrapCode.OPERAND_STACK_CAPACITY,)
+    outcome = engine.call(_guest(module), module.export_func_index("main"), [])
+    assert not outcome.is_ok
+    assert outcome.error is not None and outcome.error.code == TrapCode.OPERAND_STACK_CAPACITY
     work_trace = engine.jit_runtime.cache.find_trace(work_pc)
     assert work_trace is not None, "`work` never compiled"
     assert work_trace.stack_words > 1

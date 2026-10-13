@@ -423,7 +423,7 @@ def _invoke(
     native: bool,
 ) -> StaticVector[WasmNumber]:
     if native:
-        return interpreter.call(function_index, arguments)
+        return interpreter.call(function_index, arguments).unwrap()
     return _call_python(interpreter, function_index, arguments)
 
 
@@ -549,7 +549,7 @@ def _verify_conversion_semantics(module: Module) -> int:
     memory = bytearray(PAGE_SIZE)
     verified = 0
     for subopcode, value, expected in cases:
-        native = NativeInterpreter(module, _bindings(memory)).call(subopcode, (value,))
+        native = NativeInterpreter(module, _bindings(memory)).call(subopcode, (value,)).unwrap()
         reference = _call_python(Interpreter(module, _bindings(memory)), subopcode, (value,))
         assert len(native) == 1 and len(reference) == 1
         assert native[0] == reference[0] == expected, (subopcode, value, native, reference)

@@ -122,11 +122,11 @@ class GuestDriverClient:
         task = system.scheduler.get_task(task_id)
         assert task is not None and task.state == TaskState.TERMINATED
         if export == "_initialize":
-            assert tuple(task.result) == ()
+            assert tuple(task.result.unwrap()) == ()
             return 0
-        assert len(task.result) == 1
+        assert len(task.result.unwrap()) == 1
         mask = 0xFFFF_FFFF_FFFF_FFFF if export == "command_probe" else 0xFFFF_FFFF
-        return int(task.result[0]) & mask
+        return int(task.result.unwrap()[0]) & mask
 
     def send(self, cmd: int, entries: Sequence[tuple[int, int]] = ()) -> int:
         assert len(entries) <= 3

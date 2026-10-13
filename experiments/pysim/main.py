@@ -203,7 +203,7 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
     )
 
     print("  [Stage 1-3] Running the Interpreter with its JIT execution plugin...")
-    result = interp.call(0, (6,))
+    result = interp.call(0, (6,)).unwrap()
     result_val = result[0]
     print(f"  [Result] fact(6) = {result_val} (expected 720) [OK]")
     assert result_val == 720

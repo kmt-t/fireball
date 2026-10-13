@@ -134,14 +134,14 @@ def main() -> None:
         observed_result = int(result[0])
     elif args.path == "native-interpreter":
         interpreter = NativeInterpreter(module, InterpreterBindings.empty())
-        warmup_result = interpreter.call(function_index, [1_000])
+        warmup_result = interpreter.call(function_index, [1_000]).unwrap()
         assert int(warmup_result[0]) == 499_500
         arguments = [LOOP_COUNT]
         perf_stat.set_enabled(True)
         batch_start = time.perf_counter()
         try:
             for _ in range(repetitions):
-                result = interpreter.call(function_index, arguments)
+                result = interpreter.call(function_index, arguments).unwrap()
         finally:
             elapsed_ms = (time.perf_counter() - batch_start) * 1000.0
             perf_stat.set_enabled(False)
@@ -167,9 +167,11 @@ def main() -> None:
             yield_threshold=FB_CONF_INTERPRETER_YIELD_THRESHOLD,
         )
         if measured_stats is None:
-            warmup_result = interpreter.call(function_index, [100], idle_budget=0)
+            warmup_result = interpreter.call(function_index, [100], idle_budget=0).unwrap()
         else:
-            warmup_result = runtime_engine.call(interpreter, function_index, [100], idle_budget=0)
+            warmup_result = runtime_engine.call(
+                interpreter, function_index, [100], idle_budget=0
+            ).unwrap()
         assert int(warmup_result[0]) == 4_950
         if measured_stats is None:
             interpreter.idle_hook(budget=10)
@@ -184,11 +186,11 @@ def main() -> None:
         try:
             for _ in range(repetitions):
                 if measured_stats is None:
-                    result = interpreter.call(function_index, arguments, idle_budget=0)
+                    result = interpreter.call(function_index, arguments, idle_budget=0).unwrap()
                 else:
                     result = runtime_engine.call(
                         interpreter, function_index, arguments, idle_budget=0
-                    )
+                    ).unwrap()
         finally:
             elapsed_ms = (time.perf_counter() - batch_start) * 1000.0
             perf_stat.set_enabled(False)
@@ -212,11 +214,13 @@ def main() -> None:
         diagnostic_interpreter = NativeInterpreter(
             module, InterpreterBindings.empty(), bump_allocator=diagnostic.bump_allocator
         )
-        assert int(diagnostic.call(diagnostic_interpreter, function_index, [100])[0]) == 4_950
+        assert (
+            int(diagnostic.call(diagnostic_interpreter, function_index, [100]).unwrap()[0]) == 4_950
+        )
         diagnostic.idle_hook(budget=10)
         diagnostic.reset_stats()
         assert (
-            int(diagnostic.call(diagnostic_interpreter, function_index, arguments)[0])
+            int(diagnostic.call(diagnostic_interpreter, function_index, arguments).unwrap()[0])
             == expected_result
         )
         assert diagnostic.stat_jit_invocations > 0

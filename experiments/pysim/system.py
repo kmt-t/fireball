@@ -60,12 +60,14 @@ from system_containers import (
     StaticVector,
 )
 from tier1_core.fnv1a import fnv1a_32
+from tier2_runtime.interpreter.errors import Trap
 from tier2_runtime.memory.manager import (
     FB_CONF_MEMORY_POOL_SIZE,
     MemoryManager,
 )
 from tier2_runtime.observability.logger import LogDictionary, Logger, LogLevel
 from tier2_runtime.runtime.engine import RuntimeDriveMode, RuntimeEngine
+from tier2_runtime.runtime.recovery import Result
 from tier2_runtime.vmmio.controller import (
     FC_DYNAMIC,
     FC_SHM,
@@ -310,7 +312,7 @@ class System:
         func_index: int,
         args: SequenceView[WasmNumber],
         idle_budget: int = 4,
-    ) -> Generator[tuple[ChannelAction, None], None, StaticVector[WasmNumber]]:
+    ) -> Generator[tuple[ChannelAction, None], None, Result[StaticVector[WasmNumber], Trap]]:
         """Drive one shared runtime boundary at a time and own COOS handoffs."""
         call_state = interp.start(func_index, args)
         while not call_state.finished:
@@ -326,10 +328,10 @@ class System:
             ):
                 yield (ChannelAction.YIELD, None)
         if call_state.trap is not None:
-            assert False, call_state.trap.code
+            return Result.err(call_state.trap)
         assert call_state.results is not None
         interp.idle_hook(idle_budget)
-        return call_state.results
+        return Result.ok(call_state.results)
 
     def bind_runtime(self, memory: bytearray | None, role: Role = Role.RUNTIME) -> None:
         """

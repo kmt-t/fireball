@@ -308,7 +308,7 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = next(block.head_pc for block in instruction_blocks(mod) if block.loops_to is not None)
-    results = engine.call(make_native_interpreter(mod, yield_threshold=3), 0, [5])
+    results = engine.call(make_native_interpreter(mod, yield_threshold=3), 0, [5]).unwrap()
     assert results[0] == 15
     assert engine.stat_jit_invocations >= 2
     assert engine.stat_interp_steps >= 3

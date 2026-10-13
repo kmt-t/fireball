@@ -133,11 +133,11 @@ def main() -> None:
         for workload in workloads:
             function_index = funcs[workload]
             # The untimed warmup validates the same result for every measured call.
-            assert interpreter.call(function_index, [args.iterations]) == [expected]
+            assert interpreter.call(function_index, [args.iterations]).unwrap() == [expected]
             samples_ms: list[float] = []
             for _ in range(args.repeats):
                 start_ns = time.perf_counter_ns()
-                value = interpreter.call(function_index, [args.iterations])
+                value = interpreter.call(function_index, [args.iterations]).unwrap()
                 elapsed_ns = time.perf_counter_ns() - start_ns
                 assert value == [expected]
                 samples_ms.append(elapsed_ns / 1_000_000)

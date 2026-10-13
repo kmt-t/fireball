@@ -134,7 +134,7 @@ def test_control_opcodes_use_static_metadata_without_control_frames():
         )
     )
     interpreter = Interpreter(module)
-    assert interpreter.call(0, []) == [17]
+    assert interpreter.call(0, []).unwrap() == [17]
 
 
 def test_loader_builds_control_map_before_interpreter_creation():
@@ -190,7 +190,7 @@ def test_loader_builds_control_map_before_interpreter_creation():
     from qa.shared.helpers import make_native_interpreter
 
     native = make_native_interpreter(module)
-    assert native.call(module.export_func_index("main"), []) == []
+    assert native.call(module.export_func_index("main"), []).unwrap() == []
     native_execution = native._module_execution
     assert native_execution is not None
     assert native_execution._module_view.blocks == module.blocks.native_address
@@ -254,7 +254,7 @@ def test_intp_73_wide_frame_uses_compact_per_local_layout():
     assert tuple(layout.size_words(i) for i in range(len(layout))) == (1, 2, 2, 1, 2)
     assert layout.total_words == 8
     assert function.local_slot_count_cache == 8
-    assert Interpreter(module).call(0, [7, 42, 3.5]) == [42]
+    assert Interpreter(module).call(0, [7, 42, 3.5]).unwrap() == [42]
 
 
 def test_interpreter_annotation_pool_stores_derived_operands_compactly():
@@ -324,7 +324,7 @@ def test_native_br_table_with_255_labels_preserves_branch_result():
     module = parse(memoryview(wasm_bytes))
     interpreter = make_native_interpreter(module)
     for selector in (0, 254, 255, 256):
-        assert interpreter.call(module.export_func_index("dispatch"), [selector]) == []
+        assert interpreter.call(module.export_func_index("dispatch"), [selector]).unwrap() == []
 
 
 def test_native_br_table_single_label_preserves_branch_result():
@@ -336,7 +336,10 @@ def test_native_br_table_single_label_preserves_branch_result():
             )
         )
     )
-    assert make_native_interpreter(module).call(module.export_func_index("dispatch"), [0]) == []
+    assert (
+        make_native_interpreter(module).call(module.export_func_index("dispatch"), [0]).unwrap()
+        == []
+    )
 
 
 def test_native_br_table_default_only_preserves_branch_result():
@@ -351,7 +354,7 @@ def test_native_br_table_default_only_preserves_branch_result():
 
     interpreter = make_native_interpreter(module)
     for selector in (0, 1, 0xFFFF_FFFF):
-        assert interpreter.call(module.export_func_index("dispatch"), [selector]) == []
+        assert interpreter.call(module.export_func_index("dispatch"), [selector]).unwrap() == []
 
 
 def test_native_single_byte_local_boundary_and_multibyte_call():
@@ -368,7 +371,9 @@ def test_native_single_byte_local_boundary_and_multibyte_call():
         )
     )
 
-    assert make_native_interpreter(module).call(module.export_func_index("main"), []) == [37]
+    assert make_native_interpreter(module).call(module.export_func_index("main"), []).unwrap() == [
+        37
+    ]
 
 
 def test_native_call_dispatch_resolves_callee_and_caller_blocks(monkeypatch):
@@ -408,7 +413,7 @@ def test_native_call_dispatch_resolves_callee_and_caller_blocks(monkeypatch):
         native_dispatcher=RUN_DISPATCH_STATS,
     )
 
-    assert interpreter.call(module.export_func_index("main"), []) == [42]
+    assert interpreter.call(module.export_func_index("main"), []).unwrap() == [42]
     assert len(observations) == 1
     assert observations[0].block_search_cache_hits == 0
     assert observations[0].block_search_cache_misses == 0
@@ -425,10 +430,12 @@ def test_native_runtime_api_false_stops_before_following_store():
     memory = bytearray(65536)
     interpreter = make_native_interpreter(module, memory=memory)
 
-    with pytest.raises(AssertionError) as failure:
-        interpreter.call(module.export_func_index("main"), [])
-
-    assert failure.value.args == (InterpreterTrapCode.INTEGER_DIVIDE_BY_ZERO,)
+    outcome = interpreter.call(module.export_func_index("main"), [])
+    assert not outcome.is_ok
+    assert (
+        outcome.error is not None
+        and outcome.error.code == InterpreterTrapCode.INTEGER_DIVIDE_BY_ZERO
+    )
     assert memory[:4] == b"\x00\x00\x00\x00"
 
 
@@ -503,9 +510,9 @@ def test_typed_block_results_keep_wide_native_slots():
         )
     )
     interp = Interpreter(module)
-    assert interp.call(0, []) == [42]
-    assert interp.call(1, []) == [1.5]
-    assert interp.call(2, []) == [2.5]
+    assert interp.call(0, []).unwrap() == [42]
+    assert interp.call(1, []).unwrap() == [1.5]
+    assert interp.call(2, []).unwrap() == [2.5]
 
 
 def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
@@ -556,8 +563,10 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
 
     monkeypatch.setattr(NativeInterpreter, "run_native_dispatch", record_native_dispatch)
     iteration_count = FB_CONF_INTERPRETER_YIELD_THRESHOLD * 2 + 1
-    results = NativeInterpreter(module, InterpreterBindings.empty()).call(
-        function_index, [iteration_count]
+    results = (
+        NativeInterpreter(module, InterpreterBindings.empty())
+        .call(function_index, [iteration_count])
+        .unwrap()
     )
 
     assert results == [sum(range(1, iteration_count + 1))]
@@ -606,7 +615,7 @@ def test_native_dispatch_reuses_block_search_results_within_dispatch(monkeypatch
         yield_threshold=64,
     )
 
-    assert interpreter.call(module.export_func_index("sum_to"), [8]) == [36]
+    assert interpreter.call(module.export_func_index("sum_to"), [8]).unwrap() == [36]
     assert len(observations) == 1
     assert observations[0].block_search_cache_misses == 0
     assert observations[0].block_search_cache_hits == 0
@@ -644,11 +653,11 @@ def test_intp_16_nested_return_consumes_sentinel_and_restores_caller():
     assert get_call_cont(state) is not None
     assert state.func_index == 1
     assert get_call_cont(state)[0] != RETURN_SENTINEL_IP
-    completed = interp.call(1, [])
+    completed = interp.call(1, []).unwrap()
     assert completed == [8]
-    assert interp.call(3, []) == [71]
-    assert interp.call(5, []) == [8.5]
-    assert interp.call(7, []) == [8.5]
+    assert interp.call(3, []).unwrap() == [71]
+    assert interp.call(5, []).unwrap() == [8.5]
+    assert interp.call(7, []).unwrap() == [8.5]
 
 
 def test_intp_06_memory_traps_are_handler_results():
@@ -695,7 +704,7 @@ def test_intp_07_host_call_and_vmmio_separation():
             vmmio=sysv.vmmio,
             phys_mem=sysv.phys_mem,
         )
-        result = interp.call(1, [])
+        result = interp.call(1, []).unwrap()
         assert result[0] == WasiErrno.SUCCESS
         assert sysv.halted
 
@@ -719,7 +728,7 @@ def test_wasm_01_to_06_unsupported_features_rejected():
     with pytest.raises(InvalidWasm, match="ERR_WASM_UNSUPPORTED_FEATURE"):
         mod = parse(wasm_bytes)
         interp = Interpreter(mod)
-        interp.call(0, [])
+        interp.call(0, []).unwrap()
 
 
 def test_wasm_10_to_15_control_flow_and_calls():
@@ -765,16 +774,16 @@ def test_wasm_10_to_15_control_flow_and_calls():
     mod = parse(wasm_bytes)
     interp = Interpreter(mod)
     # TEST-WASM-10: unreachable traps
-    with pytest.raises(AssertionError) as failure:
-        interp.call(mod.export_func_index("unreachable_fn"), [])
-    assert failure.value.args == (InterpreterTrapCode.UNREACHABLE,)
+    outcome = interp.call(mod.export_func_index("unreachable_fn"), [])
+    assert not outcome.is_ok
+    assert outcome.error is not None and outcome.error.code == InterpreterTrapCode.UNREACHABLE
     # TEST-WASM-13: br_table branch resolution
-    assert interp.call(mod.export_func_index("calc_fn"), [0]) == [100]
-    assert interp.call(mod.export_func_index("calc_fn"), [1]) == [200]
-    assert interp.call(mod.export_func_index("loop_exit"), []) == [5]
+    assert interp.call(mod.export_func_index("calc_fn"), [0]).unwrap() == [100]
+    assert interp.call(mod.export_func_index("calc_fn"), [1]).unwrap() == [200]
+    assert interp.call(mod.export_func_index("loop_exit"), []).unwrap() == [5]
     # TEST-WASM-15: call_indirect
-    assert interp.call(mod.export_func_index("call_ind"), [0, 0]) == [100]
-    assert interp.call(mod.export_func_index("call_ind"), [1, 1]) == [200]
+    assert interp.call(mod.export_func_index("call_ind"), [0, 0]).unwrap() == [100]
+    assert interp.call(mod.export_func_index("call_ind"), [1, 1]).unwrap() == [200]
 
 
 def test_wasm_20_21_drop_and_select():
@@ -793,8 +802,8 @@ def test_wasm_20_21_drop_and_select():
         return
     mod = parse(wasm_bytes)
     interp = Interpreter(mod)
-    assert interp.call(mod.export_func_index("sel"), [1, 10, 20]) == [10]
-    assert interp.call(mod.export_func_index("sel"), [0, 10, 20]) == [20]
+    assert interp.call(mod.export_func_index("sel"), [1, 10, 20]).unwrap() == [10]
+    assert interp.call(mod.export_func_index("sel"), [0, 10, 20]).unwrap() == [20]
 
 
 def test_wasm_30_31_locals_and_globals():
@@ -816,7 +825,7 @@ def test_wasm_30_31_locals_and_globals():
         return
     mod = parse(wasm_bytes)
     interp = Interpreter(mod)
-    assert interp.call(mod.export_func_index("loc_glob"), [5]) == [10]
+    assert interp.call(mod.export_func_index("loc_glob"), [5]).unwrap() == [10]
     assert interp.globals[0] == 5
 
 
@@ -848,22 +857,24 @@ def test_wasm_40_to_46_memory_load_store_grow_and_data():
     # Initial data check
     assert bytes(mem[0:9]) == b"WASM_INIT"
     # Execution
-    pages = interp.call(mod.export_func_index("mem_ops"), [])
+    pages = interp.call(mod.export_func_index("mem_ops"), []).unwrap()
     assert pages == [2]
     assert struct.unpack_from("<I", mem, 16)[0] == 0x12345678
 
     native_mem = bytearray(65536)
     mod.init_memory_data(native_mem, ())
     native_interp = make_native_interpreter(mod, memory=native_mem)
-    assert native_interp.call(mod.export_func_index("mem_ops"), []) == [2]
+    assert native_interp.call(mod.export_func_index("mem_ops"), []).unwrap() == [2]
     assert struct.unpack_from("<I", native_mem, 16)[0] == 0x12345678
     assert len(native_mem) == 2 * 65536
 
     # OOB trap check
     before = bytes(mem)
-    with pytest.raises(AssertionError) as failure:
-        interp.call(mod.export_func_index("trap_oob"), [])
-    assert failure.value.args == (InterpreterTrapCode.MEMORY_OUT_OF_BOUNDS,)
+    outcome = interp.call(mod.export_func_index("trap_oob"), [])
+    assert not outcome.is_ok
+    assert (
+        outcome.error is not None and outcome.error.code == InterpreterTrapCode.MEMORY_OUT_OF_BOUNDS
+    )
     assert bytes(mem) == before
 
 
@@ -889,14 +900,17 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
     mod = parse(wasm_bytes)
     interp = Interpreter(mod)
     # TEST-WASM-54: Div by zero traps
-    with pytest.raises(AssertionError) as failure:
-        interp.call(mod.export_func_index("div_s"), [10, 0])
-    assert failure.value.args == (InterpreterTrapCode.INTEGER_DIVIDE_BY_ZERO,)
+    outcome = interp.call(mod.export_func_index("div_s"), [10, 0])
+    assert not outcome.is_ok
+    assert (
+        outcome.error is not None
+        and outcome.error.code == InterpreterTrapCode.INTEGER_DIVIDE_BY_ZERO
+    )
     # Normal div
-    assert interp.call(mod.export_func_index("div_s"), [10, 2]) == [5]
+    assert interp.call(mod.export_func_index("div_s"), [10, 2]).unwrap() == [5]
     # TEST-WASM-52, 55, 56: Bit ops
     # x = 0x80000001 -> popcnt=2, clz=0 -> sum=2. rotl(x, 4) = 0x00000018. 2 ^ 0x18 = 0x1A (26)
-    assert interp.call(mod.export_func_index("bit_ops"), [0x80000001]) == [26]
+    assert interp.call(mod.export_func_index("bit_ops"), [0x80000001]).unwrap() == [26]
 
 
 def test_wasm_f32_arithmetic_min_max_and_precision():
@@ -927,28 +941,28 @@ def test_wasm_f32_arithmetic_min_max_and_precision():
     interp = Interpreter(mod)
 
     # 1. Single precision rounding: 1.0 + 1e-8 in double is > 1.0, but in f32 it rounds to 1.0
-    res = interp.call(mod.export_func_index("f32_add"), [1.0, 1e-8])
+    res = interp.call(mod.export_func_index("f32_add"), [1.0, 1e-8]).unwrap()
     assert res[0] == 1.0
 
     # 2. Signed zero min/max: min(-0.0, +0.0) must preserve -0.0
-    res_min = interp.call(mod.export_func_index("f32_min"), [-0.0, 0.0])
+    res_min = interp.call(mod.export_func_index("f32_min"), [-0.0, 0.0]).unwrap()
     assert math.copysign(1.0, res_min[0]) == -1.0
-    res_min_rev = interp.call(mod.export_func_index("f32_min"), [0.0, -0.0])
+    res_min_rev = interp.call(mod.export_func_index("f32_min"), [0.0, -0.0]).unwrap()
     assert math.copysign(1.0, res_min_rev[0]) == -1.0
 
-    res_max = interp.call(mod.export_func_index("f32_max"), [-0.0, 0.0])
+    res_max = interp.call(mod.export_func_index("f32_max"), [-0.0, 0.0]).unwrap()
     assert math.copysign(1.0, res_max[0]) == 1.0
-    res_max_rev = interp.call(mod.export_func_index("f32_max"), [0.0, -0.0])
+    res_max_rev = interp.call(mod.export_func_index("f32_max"), [0.0, -0.0]).unwrap()
     assert math.copysign(1.0, res_max_rev[0]) == 1.0
 
     # 3. NaN propagation
-    res_nan = interp.call(mod.export_func_index("f32_min"), [float("nan"), 42.0])
+    res_nan = interp.call(mod.export_func_index("f32_min"), [float("nan"), 42.0]).unwrap()
     assert math.isnan(res_nan[0])
-    res_nan2 = interp.call(mod.export_func_index("f32_max"), [42.0, float("nan")])
+    res_nan2 = interp.call(mod.export_func_index("f32_max"), [42.0, float("nan")]).unwrap()
     assert math.isnan(res_nan2[0])
 
     # 4. f32.demote_f64 rounding
-    demote_res = interp.call(mod.export_func_index("f32_demote"), [1.0000000000000002])
+    demote_res = interp.call(mod.export_func_index("f32_demote"), [1.0000000000000002]).unwrap()
     assert demote_res[0] == 1.0
 
 
@@ -987,7 +1001,7 @@ def test_intp_70_to_72_direct_bytecode_execution():
 
     # 1. TEST-INTP-18/75: independent call descriptors and local storage follow the native ABI.
     context = ExecutionContext(module)
-    built = interp._build_frame(0, StaticVector.of((15,), capacity=64), context)
+    built = interp._build_frame(0, StaticVector.of((15,), capacity=64), context).unwrap()
     assert built is not None
     frame, locals_arr = built
     assert frame.code == module.code_for(0)
@@ -1013,11 +1027,11 @@ def test_intp_70_to_72_direct_bytecode_execution():
     assert len(context.local_stack) == 0
 
     # 2. TEST-INTP-71 & TEST-INTP-72: Execution proceeds by direct byte reading and ip addition
-    res = interp.call(0, [15])
+    res = interp.call(0, [15]).unwrap()
     # 15 + 10 + 100 = 125
     assert res == [125]
 
-    res2 = interp.call(0, [3])
+    res2 = interp.call(0, [3]).unwrap()
     # 3 + 10 + 200 = 213
     assert res2 == [213]
 
@@ -1075,35 +1089,43 @@ def test_wasm_mvp_packed_memory_and_i64_float_conversions():
     module.init_memory_data(memory, ())
     interp = Interpreter(module, memory=memory)
 
-    assert interp.call(module.export_func_index("load8s"), []) == [-128]
-    assert interp.call(module.export_func_index("load8u"), []) == [255]
-    assert interp.call(module.export_func_index("load16s"), []) == [0x1234]
-    assert interp.call(module.export_func_index("load16u"), []) == [0xFF80]
-    assert interp.call(module.export_func_index("load32s"), []) == [0x12345678]
-    assert interp.call(module.export_func_index("load32u"), []) == [0x1234FF80]
+    assert interp.call(module.export_func_index("load8s"), []).unwrap() == [-128]
+    assert interp.call(module.export_func_index("load8u"), []).unwrap() == [255]
+    assert interp.call(module.export_func_index("load16s"), []).unwrap() == [0x1234]
+    assert interp.call(module.export_func_index("load16u"), []).unwrap() == [0xFF80]
+    assert interp.call(module.export_func_index("load32s"), []).unwrap() == [0x12345678]
+    assert interp.call(module.export_func_index("load32u"), []).unwrap() == [0x1234FF80]
 
-    interp.call(module.export_func_index("store8"), [])
-    interp.call(module.export_func_index("store16"), [])
-    interp.call(module.export_func_index("store32"), [])
+    interp.call(module.export_func_index("store8"), []).unwrap()
+    interp.call(module.export_func_index("store16"), []).unwrap()
+    interp.call(module.export_func_index("store32"), []).unwrap()
     assert bytes(memory[16:24]) == b"\xff\x00\x34\x12\x78\x56\x34\x12"
 
-    assert interp.call(module.export_func_index("trunc_f32_s"), [-3.75]) == [-3]
-    assert interp.call(module.export_func_index("trunc_f32_u"), [3.75]) == [3]
-    assert interp.call(module.export_func_index("trunc_f64_s"), [-3.75]) == [-3]
-    assert interp.call(module.export_func_index("trunc_f64_u"), [3.75]) == [3]
-    assert interp.call(module.export_func_index("f32_from_s"), [-7]) == [-7.0]
+    assert interp.call(module.export_func_index("trunc_f32_s"), [-3.75]).unwrap() == [-3]
+    assert interp.call(module.export_func_index("trunc_f32_u"), [3.75]).unwrap() == [3]
+    assert interp.call(module.export_func_index("trunc_f64_s"), [-3.75]).unwrap() == [-3]
+    assert interp.call(module.export_func_index("trunc_f64_u"), [3.75]).unwrap() == [3]
+    assert interp.call(module.export_func_index("f32_from_s"), [-7]).unwrap() == [-7.0]
     max_u64 = 0xFFFF_FFFF_FFFF_FFFF
     expected_max_u64_f32 = struct.unpack("<f", struct.pack("<f", float(max_u64)))[0]
-    assert interp.call(module.export_func_index("f32_from_u"), [max_u64]) == [expected_max_u64_f32]
-    assert interp.call(module.export_func_index("f64_from_s"), [-7]) == [-7.0]
-    assert interp.call(module.export_func_index("f64_from_u"), [max_u64]) == [float(max_u64)]
+    assert interp.call(module.export_func_index("f32_from_u"), [max_u64]).unwrap() == [
+        expected_max_u64_f32
+    ]
+    assert interp.call(module.export_func_index("f64_from_s"), [-7]).unwrap() == [-7.0]
+    assert interp.call(module.export_func_index("f64_from_u"), [max_u64]).unwrap() == [
+        float(max_u64)
+    ]
 
-    with pytest.raises(AssertionError) as failure:
-        interp.call(module.export_func_index("trunc_f32_s"), [float("nan")])
-    assert failure.value.args == (InterpreterTrapCode.INVALID_CONVERSION,)
-    with pytest.raises(AssertionError) as failure:
-        interp.call(module.export_func_index("trunc_f64_u"), [-1.0])
-    assert failure.value.args == (InterpreterTrapCode.INVALID_CONVERSION,)
+    outcome = interp.call(module.export_func_index("trunc_f32_s"), [float("nan")])
+    assert not outcome.is_ok
+    assert (
+        outcome.error is not None and outcome.error.code == InterpreterTrapCode.INVALID_CONVERSION
+    )
+    outcome = interp.call(module.export_func_index("trunc_f64_u"), [-1.0])
+    assert not outcome.is_ok
+    assert (
+        outcome.error is not None and outcome.error.code == InterpreterTrapCode.INVALID_CONVERSION
+    )
 
 
 def test_wasm_mvp_select_preserves_wide_operands():
@@ -1124,13 +1146,17 @@ def test_wasm_mvp_select_preserves_wide_operands():
     interp = Interpreter(module)
     import math
 
-    assert interp.call(module.export_func_index("pick_i64"), [-9, 17, 1]) == [-9]
-    assert interp.call(module.export_func_index("pick_i64"), [-9, 17, 0]) == [17]
-    selected_negative_zero = interp.call(module.export_func_index("pick_f64"), [-0.0, 4.5, 1])
+    assert interp.call(module.export_func_index("pick_i64"), [-9, 17, 1]).unwrap() == [-9]
+    assert interp.call(module.export_func_index("pick_i64"), [-9, 17, 0]).unwrap() == [17]
+    selected_negative_zero = interp.call(
+        module.export_func_index("pick_f64"), [-0.0, 4.5, 1]
+    ).unwrap()
     assert selected_negative_zero == [-0.0]
     assert math.copysign(1.0, selected_negative_zero[0]) == -1.0
-    assert interp.call(module.export_func_index("pick_f64"), [-0.0, 4.5, 0]) == [4.5]
-    assert interp.call(module.export_func_index("sum_with_pick"), [10.0, 1.25, 2.5, 0]) == [12.5]
+    assert interp.call(module.export_func_index("pick_f64"), [-0.0, 4.5, 0]).unwrap() == [4.5]
+    assert interp.call(
+        module.export_func_index("sum_with_pick"), [10.0, 1.25, 2.5, 0]
+    ).unwrap() == [12.5]
 
 
 def test_wasm_mvp_typed_global_initializers_and_access():
@@ -1151,18 +1177,18 @@ def test_wasm_mvp_typed_global_initializers_and_access():
     """
     module = parse(wat_to_wasm(wat))
     interp = Interpreter(module)
-    assert interp.call(module.export_func_index("get_i32"), []) == [-7]
-    assert interp.call(module.export_func_index("get_i64"), []) == [-1234567890123]
-    assert interp.call(module.export_func_index("get_f32"), []) == [-0.0]
+    assert interp.call(module.export_func_index("get_i32"), []).unwrap() == [-7]
+    assert interp.call(module.export_func_index("get_i64"), []).unwrap() == [-1234567890123]
+    assert interp.call(module.export_func_index("get_f32"), []).unwrap() == [-0.0]
     import math
 
-    f32_value = interp.call(module.export_func_index("get_f32"), [])[0]
+    f32_value = interp.call(module.export_func_index("get_f32"), []).unwrap()[0]
     assert math.copysign(1.0, f32_value) == -1.0
-    assert interp.call(module.export_func_index("get_f64"), []) == [1.25]
-    interp.call(module.export_func_index("set_i64"), [0x123456789ABCDEF])
-    assert interp.call(module.export_func_index("get_i64"), []) == [0x123456789ABCDEF]
-    interp.call(module.export_func_index("set_f64"), [-2.5])
-    assert interp.call(module.export_func_index("get_f64"), []) == [-2.5]
+    assert interp.call(module.export_func_index("get_f64"), []).unwrap() == [1.25]
+    interp.call(module.export_func_index("set_i64"), [0x123456789ABCDEF]).unwrap()
+    assert interp.call(module.export_func_index("get_i64"), []).unwrap() == [0x123456789ABCDEF]
+    interp.call(module.export_func_index("set_f64"), [-2.5]).unwrap()
+    assert interp.call(module.export_func_index("get_f64"), []).unwrap() == [-2.5]
 
 
 def test_native_interpreter_executes_typed_global_get_set():
@@ -1188,24 +1214,26 @@ def test_native_interpreter_executes_typed_global_get_set():
     )
     interpreter = NativeInterpreter(module, InterpreterBindings.empty())
 
-    assert interpreter.call(module.export_func_index("get_i32"), []) == [-7]
-    assert interpreter.call(module.export_func_index("get_i64"), []) == [-1234567890123]
-    f32_initial = interpreter.call(module.export_func_index("get_f32"), [])[0]
+    assert interpreter.call(module.export_func_index("get_i32"), []).unwrap() == [-7]
+    assert interpreter.call(module.export_func_index("get_i64"), []).unwrap() == [-1234567890123]
+    f32_initial = interpreter.call(module.export_func_index("get_f32"), []).unwrap()[0]
     assert f32_initial == -0.0
     import math
 
     assert math.copysign(1.0, f32_initial) == -1.0
-    assert interpreter.call(module.export_func_index("get_f64"), []) == [1.25]
+    assert interpreter.call(module.export_func_index("get_f64"), []).unwrap() == [1.25]
 
-    interpreter.call(module.export_func_index("set_i32"), [0x12345678])
-    interpreter.call(module.export_func_index("set_i64"), [0x0123456789ABCDEF])
-    interpreter.call(module.export_func_index("set_f32"), [3.25])
-    interpreter.call(module.export_func_index("set_f64"), [-2.5])
+    interpreter.call(module.export_func_index("set_i32"), [0x12345678]).unwrap()
+    interpreter.call(module.export_func_index("set_i64"), [0x0123456789ABCDEF]).unwrap()
+    interpreter.call(module.export_func_index("set_f32"), [3.25]).unwrap()
+    interpreter.call(module.export_func_index("set_f64"), [-2.5]).unwrap()
 
-    assert interpreter.call(module.export_func_index("get_i32"), []) == [0x12345678]
-    assert interpreter.call(module.export_func_index("get_i64"), []) == [0x0123456789ABCDEF]
-    assert interpreter.call(module.export_func_index("get_f32"), []) == [3.25]
-    assert interpreter.call(module.export_func_index("get_f64"), []) == [-2.5]
+    assert interpreter.call(module.export_func_index("get_i32"), []).unwrap() == [0x12345678]
+    assert interpreter.call(module.export_func_index("get_i64"), []).unwrap() == [
+        0x0123456789ABCDEF
+    ]
+    assert interpreter.call(module.export_func_index("get_f32"), []).unwrap() == [3.25]
+    assert interpreter.call(module.export_func_index("get_f64"), []).unwrap() == [-2.5]
     assert interpreter.globals[0] == 0x12345678
     assert interpreter.globals[1] == 0x0123456789ABCDEF
     assert interpreter.globals[2] == struct.unpack("<I", struct.pack("<f", 3.25))[0]
@@ -1224,7 +1252,9 @@ def test_wasm_mvp_imported_immutable_global_initializer():
     module = parse(wat_to_wasm(wat))
     imported_globals = StaticVector.of((0xFEDC_BA98_7654_3210,), capacity=1)
     interp = Interpreter(module, imported_globals=imported_globals)
-    assert interp.call(module.export_func_index("get_copy"), []) == [-0x0123_4567_89AB_CDF0]
+    assert interp.call(module.export_func_index("get_copy"), []).unwrap() == [
+        -0x0123_4567_89AB_CDF0
+    ]
 
 
 def test_wasm_mvp_imported_linear_memory():
@@ -1243,9 +1273,9 @@ def test_wasm_mvp_imported_linear_memory():
         memory=memory,
         imported_memory=Memory(min_pages=1, max_pages=2),
     )
-    interp.call(module.export_func_index("write"), [])
+    interp.call(module.export_func_index("write"), []).unwrap()
     assert memory[8:12] == b"\x78\x56\x34\x12"
-    assert interp.call(module.export_func_index("read"), []) == [0x12345678]
+    assert interp.call(module.export_func_index("read"), []).unwrap() == [0x12345678]
 
 
 def test_wasm_mvp_imported_table_and_active_element_segment():
@@ -1268,7 +1298,7 @@ def test_wasm_mvp_imported_table_and_active_element_segment():
     )
     assert interp.tables[0] is external_table
     assert external_table[0] == 0
-    assert interp.call(module.export_func_index("call"), []) == [42]
+    assert interp.call(module.export_func_index("call"), []).unwrap() == [42]
     with pytest.raises(AssertionError, match="immutable"):
         external_table[0] = None
 
@@ -1294,7 +1324,7 @@ def test_call_indirect_accepts_unselected_targets_with_other_signatures(native: 
     interpreter = make_native_interpreter(module) if native else Interpreter(module)
     assert interpreter.tables[0][0] == 0
     assert interpreter.tables[0][1] == 1
-    assert interpreter.call(module.export_func_index("call"), []) == [42]
+    assert interpreter.call(module.export_func_index("call"), []).unwrap() == [42]
 
 
 @pytest.mark.parametrize("native", (False, True), ids=("python", "native"))
@@ -1320,7 +1350,7 @@ def test_call_indirect_reads_wide_function_index_from_table_slot_two(native: boo
     )
     interpreter = make_native_interpreter(module) if native else Interpreter(module)
     assert list(interpreter.tables[0]) == [0, 1, 2]
-    assert interpreter.call(module.export_func_index("call"), []) == [42]
+    assert interpreter.call(module.export_func_index("call"), []).unwrap() == [42]
 
 
 @pytest.mark.parametrize("native", (False, True), ids=("python", "native"))
@@ -1419,7 +1449,7 @@ def test_call_indirect_links_structurally_equal_duplicate_signatures(native: boo
     module = parse(wat_to_wasm(wat))
     interpreter = make_native_interpreter(module) if native else Interpreter(module)
 
-    assert interpreter.call(module.export_func_index("call"), []) == [42]
+    assert interpreter.call(module.export_func_index("call"), []).unwrap() == [42]
 
 
 def test_runtime_arena_accounts_wasm_native_tables_and_reuses_call_stacks():
@@ -1442,12 +1472,12 @@ def test_runtime_arena_accounts_wasm_native_tables_and_reuses_call_stacks():
     assert module.arena_size == loaded_high_water
 
     interpreter = make_native_interpreter(module)
-    result = interpreter.call(module.export_func_index("call"), [])
+    result = interpreter.call(module.export_func_index("call"), []).unwrap()
     first_call_high_water = runtime.bump_allocator.offset
     assert result == [42]
     assert first_call_high_water > loaded_high_water
 
-    repeated_result = interpreter.call(module.export_func_index("call"), [])
+    repeated_result = interpreter.call(module.export_func_index("call"), []).unwrap()
     assert repeated_result == [42]
     assert runtime.bump_allocator.offset == first_call_high_water
 
@@ -1476,7 +1506,7 @@ def test_wasm_mvp_host_function_arguments_keep_declared_types():
         return float(i64_value) + f32_value + f64_value + i32_value
 
     interp = Interpreter(module, host_functions=StaticVector.of((mix,), capacity=1))
-    assert interp.call(module.export_func_index("call"), []) == [4294967300.25]
+    assert interp.call(module.export_func_index("call"), []).unwrap() == [4294967300.25]
     assert received == [4294967297, 1.5, -2.25, 4]
 
     native_received: StaticVector[WasmNumber] = StaticVector(capacity=4)
@@ -1492,7 +1522,7 @@ def test_wasm_mvp_host_function_arguments_keep_declared_types():
         module,
         host_functions=StaticVector.of((native_mix,), capacity=1),
     )
-    assert native_interp.call(module.export_func_index("call"), []) == [4294967300.25]
+    assert native_interp.call(module.export_func_index("call"), []).unwrap() == [4294967300.25]
     assert native_received == [4294967297, 1.5, -2.25, 4]
 
 
@@ -1571,13 +1601,13 @@ def test_intp_73_local_layout_precomputes_offsets_and_sizes():
             )
         )
     )
-    assert Interpreter(narrow_module).call(0, [30, 12]) == [42]
+    assert Interpreter(narrow_module).call(0, [30, 12]).unwrap() == [42]
     wide_module = parse(
         memoryview(
             wat_to_wasm("(module (func (param i32 i64) (result i64) (local i64) local.get 1))")
         )
     )
-    assert Interpreter(wide_module).call(0, [1, 5_000_000_000]) == [5_000_000_000]
+    assert Interpreter(wide_module).call(0, [1, 5_000_000_000]).unwrap() == [5_000_000_000]
 
 
 def test_intp_74_wide_local_adds_only_its_own_word_to_the_frame():
@@ -1600,15 +1630,17 @@ def test_intp_74_wide_local_adds_only_its_own_word_to_the_frame():
     assert narrow_module.functions[0].local_slot_count_cache == 16
     # Sixteen i32 values per frame exactly fit eight active frames.
     assert 8 * 16 == local_stack_words
-    assert Interpreter(narrow_module).call(0, [7]) == [7]
-    assert make_native_interpreter(narrow_module).call(0, [7]) == [7]
+    assert Interpreter(narrow_module).call(0, [7]).unwrap() == [7]
+    assert make_native_interpreter(narrow_module).call(0, [7]).unwrap() == [7]
     wide_module = parse(recursion("(local $w f64)"))
     assert wide_module.functions[0].local_slot_count_cache == 18
     # The f64 adds two words; eight frames then exceed the fixed 128-word region.
     assert 8 * 18 > local_stack_words
-    with pytest.raises(AssertionError) as failure:
-        make_native_interpreter(wide_module).call(0, [7])
-    assert failure.value.args == (InterpreterTrapCode.LOCAL_STACK_CAPACITY,)
+    outcome = make_native_interpreter(wide_module).call(0, [7])
+    assert not outcome.is_ok
+    assert (
+        outcome.error is not None and outcome.error.code == InterpreterTrapCode.LOCAL_STACK_CAPACITY
+    )
 
 
 def test_runtime_keeps_constructor_arena_and_rejects_foreign_interpreter():

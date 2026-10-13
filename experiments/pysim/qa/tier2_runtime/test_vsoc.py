@@ -398,7 +398,7 @@ def test_system_guest_interpreter_returns_to_coos_and_resumes():
         system.scheduler.run_until_idle()
         guest = system.scheduler.get_task(guest_task_id)
         assert guest is not None and guest.state == TaskState.TERMINATED
-        assert guest.result == [10]
+        assert guest.result.unwrap() == [10]
         assert struct.unpack_from("<I", memory)[0] == 10
         assert observed == [(3, TaskState.READY), (6, TaskState.READY), (9, TaskState.READY)]
     finally:
@@ -590,7 +590,7 @@ def test_coop_01_wasm_coroutine_yields_on_loop_threshold(threshold: int):
         system.scheduler.spawn("monitor", monitor())
         system.scheduler.run_until_idle()
         task = system.scheduler.get_task(guest_id)
-        assert task is not None and task.result == [10]
+        assert task is not None and task.result.unwrap() == [10]
         assert values == list(range(threshold, 10, threshold))
     finally:
         system.shutdown()
@@ -709,7 +709,7 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
         system.scheduler.spawn("monitor", monitor())
         system.scheduler.run_until_idle()
         guest = system.scheduler.get_task(guest_id)
-        assert guest is not None and guest.result == [12]
+        assert guest is not None and guest.result.unwrap() == [12]
         # Scheduler handoffs occur after every two LOOP backedges.
         assert observed == [2, 4, 6, 8, 10]
         assert reported == list(range(1, 13))
@@ -761,7 +761,7 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     engine = make_runtime_engine(card_shift=2, jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[1].head_pc
-    results = engine.call(make_native_interpreter(mod, yield_threshold=3), 0, [5])
+    results = engine.call(make_native_interpreter(mod, yield_threshold=3), 0, [5]).unwrap()
     assert results[0] == 120
     assert engine.stat_interp_steps >= 3
     assert engine.stat_jit_invocations >= 2
@@ -808,7 +808,7 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
     engine.jit_runtime.cache.insert(trace_a)
     # Assert trace A chained directly into trace B
     assert trace_a.chain_next == block_b.head_pc
-    results = engine.call(make_native_interpreter(mod), 0, [100])
+    results = engine.call(make_native_interpreter(mod), 0, [100]).unwrap()
     assert results[0] == 160
     assert engine.stat_jit_invocations >= 2
     assert engine.stat_interp_steps >= 1
@@ -847,7 +847,7 @@ def test_guest_wasi_01_interpreter_fd_write():
         host_funcs = ctx.build_interpreter_host_functions(mod)
         mod.init_memory_data(ctx.guest_memory, ())
         interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)
-        res = interp.call(mod.export_func_index("main"), [])
+        res = interp.call(mod.export_func_index("main"), []).unwrap()
         assert res == [0], f"Expected WASI SUCCESS (0), got {res}"
         assert sysv.transport.drain_output() == msg
         nwritten = struct.unpack_from("<I", ctx.guest_memory, 32)[0]
@@ -876,7 +876,7 @@ def test_guest_wasi_02_interpreter_clock_and_random():
         host_funcs = ctx.build_interpreter_host_functions(mod)
         mod.init_memory_data(ctx.guest_memory, ())
         interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)
-        res = interp.call(mod.export_func_index("main"), [])
+        res = interp.call(mod.export_func_index("main"), []).unwrap()
         assert res == [0]
         t = struct.unpack_from("<Q", ctx.guest_memory, 16)[0]
         assert t > 0
@@ -906,7 +906,7 @@ def test_guest_wasi_03_interpreter_proc_exit():
         mod.init_memory_data(ctx.guest_memory, ())
         interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)
         assert sysv.halted is False
-        interp.call(mod.export_func_index("main"), [])
+        interp.call(mod.export_func_index("main"), []).unwrap()
         assert sysv.halted is True
         assert sysv.exit_code == 99
     finally:

@@ -141,6 +141,37 @@ def test_optimized_qa_setup_preserves_real_fixture_state(optimization: int) -> N
 
 
 @pytest.mark.parametrize("optimization", (0, 1, 2))
+def test_optimized_guest_traps_preserve_results_and_side_effects(optimization: int) -> None:
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(str(Path(path).resolve()) for path in sys.path)
+    environment.pop("PYTHONOPTIMIZE", None)
+    result = subprocess.run(
+        [sys.executable, *(["-O"] * optimization), "-m", "qa.private.optimized_trap_probe"],
+        cwd=_PYSIM_DIR.parent.parent,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout.splitlines()[-1]) == {
+        "optimization": optimization,
+        "outcomes": [
+            [name, False, code, [0, 0, 0, 0]]
+            for name, code in (
+                ("unreachable", 9),
+                ("divide", 15),
+                ("memory", 13),
+                ("conversion", 17),
+                ("start", 9),
+            )
+            for _ in range(2)
+        ],
+    }
+
+
+@pytest.mark.parametrize("optimization", (0, 1, 2))
 def test_runner_propagates_optimization_to_its_child(optimization: int) -> None:
     environment = os.environ.copy()
     environment["PYTHONPATH"] = os.pathsep.join(str(Path(path).resolve()) for path in sys.path)

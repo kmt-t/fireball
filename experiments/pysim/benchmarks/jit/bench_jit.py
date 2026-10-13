@@ -131,7 +131,7 @@ class JITCompilerBenchmark:
             # separate baseline from the Python handlers above.
             interp_native = NativeInterpreter(module, InterpreterBindings.empty())
             t0 = time.perf_counter()
-            res_native = interp_native.call(fn_idx, [LOOP_COUNT])
+            res_native = interp_native.call(fn_idx, [LOOP_COUNT]).unwrap()
             t1 = time.perf_counter()
             native_times_ms.append((t1 - t0) * 1000)
             native_results.append(int(res_native[0]))
@@ -148,11 +148,11 @@ class JITCompilerBenchmark:
             )
 
             # Warm up and compile the hot traces before measuring native execution.
-            interp_jit.call(fn_idx, [100], idle_budget=0)
+            interp_jit.call(fn_idx, [100], idle_budget=0).unwrap()
             interp_jit.idle_hook(budget=10)
 
             t0 = time.perf_counter()
-            res_jit = interp_jit.call(fn_idx, [LOOP_COUNT], idle_budget=0)
+            res_jit = interp_jit.call(fn_idx, [LOOP_COUNT], idle_budget=0).unwrap()
             t1 = time.perf_counter()
             jit_times_ms.append((t1 - t0) * 1000)
             jit_results.append(int(res_jit[0]))
@@ -174,10 +174,12 @@ class JITCompilerBenchmark:
             InterpreterBindings.empty(),
             bump_allocator=diagnostic_engine.bump_allocator,
         )
-        diagnostic_engine.call(diagnostic_interpreter, fn_idx, [100])
+        diagnostic_engine.call(diagnostic_interpreter, fn_idx, [100]).unwrap()
         diagnostic_engine.idle_hook(budget=10)
         diagnostic_engine.reset_stats()
-        diagnostic_result = diagnostic_engine.call(diagnostic_interpreter, fn_idx, [LOOP_COUNT])
+        diagnostic_result = diagnostic_engine.call(
+            diagnostic_interpreter, fn_idx, [LOOP_COUNT]
+        ).unwrap()
         assert int(diagnostic_result[0]) == jit_results[0]
         assert diagnostic_engine.stat_jit_invocations > 0, (
             "diagnostic run did not execute a JIT trace"

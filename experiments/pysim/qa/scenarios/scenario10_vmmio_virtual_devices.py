@@ -157,13 +157,13 @@ def test_scenario_vmmio_virtual_devices():
     fn_r = module.export_func_index("dev_read")
 
     # 4.1 Normal RAM write (Bit 31 == 0) -> Fast Bypass
-    interp.call(fn_w, [0x1000, 0x11223344])
+    interp.call(fn_w, [0x1000, 0x11223344]).unwrap()
     assert int.from_bytes(guest_ram[0x1000:0x1004], "little") == 0x11223344
     print("    [Phase 4.1] WASM Guest RAM Write (Bit 31 == 0) -> Linear RAM Fast Bypass [PASS]")
 
     # 4.2 vMMIO Device Write (Bit 31 == 1, FC=0xC) -> Trigger Device Handler
     prev_events_len = len(handled_events)
-    interp.call(fn_w, [0xC000_1020, 0x55])
+    interp.call(fn_w, [0xC000_1020, 0x55]).unwrap()
     assert len(handled_events) == prev_events_len + 1
     assert handled_events[-1] == (0, 0x020, True)
     print(
@@ -171,7 +171,7 @@ def test_scenario_vmmio_virtual_devices():
     )
 
     # 4.3 vMMIO Physical Memory Read (Bit 31 == 1, FC=0xF) -> OK_PHYSICAL read
-    read_res = interp.call(fn_r, [0xF000_3040])
+    read_res = interp.call(fn_r, [0xF000_3040]).unwrap()
     assert read_res == [0xCAFEBABE - 0x1_0000_0000 if 0xCAFEBABE >= 0x8000_0000 else 0xCAFEBABE]
     print("    [Phase 4.3] WASM Guest vMMIO Read (Bit 31 == 1) -> Physical Memory Read [PASS]")
 

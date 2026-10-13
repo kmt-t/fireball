@@ -388,7 +388,7 @@ def test_dbg_09_interior_breakpoint_stops_before_side_effect_and_resumes() -> No
     assert response == GDBRspProtocol.format_packet("W00")
     assert execution.call.results == [17]
     debugger.detach()
-    assert execution.interpreter.call(0, (2,)) == [12]
+    assert execution.interpreter.call(0, (2,)).unwrap() == [12]
 
 
 @pytest.mark.parametrize("indirect", (False, True), ids=("call", "call_indirect"))
@@ -670,7 +670,7 @@ def test_dbg_13_two_compositions_keep_stop_state_and_storage_independent() -> No
     first_rsp.handle_packet(f"Z0,{first_base + 2:x},0", first_base, first.context, {})
     response, first_pc = first_rsp.handle_packet("c", first_base, first.context, {})
     assert response == GDBRspProtocol.format_packet("S05") and first_pc == first_base + 2
-    assert normal.call(0, (30,)) == [40]
+    assert normal.call(0, (30,)).unwrap() == [40]
     response, second_pc = second_rsp.handle_packet(
         "c", second.call.current_pc(), second.context, {}
     )

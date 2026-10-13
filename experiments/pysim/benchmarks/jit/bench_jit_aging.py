@@ -141,10 +141,10 @@ class JITAgingBenchmark:
         t0 = time.perf_counter()
         for pass_index in range(self.passes):
             for func in hot:
-                checksum += engine.call(interp, func, [self.hot_iterations])[0]
+                checksum += engine.call(interp, func, [self.hot_iterations]).unwrap()[0]
             for j in range(cold_per_pass):
                 func = cold[(pass_index * cold_per_pass + j) % len(cold)]
-                checksum += engine.call(interp, func, [pass_index])[0]
+                checksum += engine.call(interp, func, [pass_index]).unwrap()[0]
         time_ms = (time.perf_counter() - t0) * 1000
 
         jit = engine.stat_jit_invocations

@@ -350,7 +350,7 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
                 yielded_pcs.append(state.current_pc())
                 schedule.append("guest-yield")
                 yield (ChannelAction.YIELD, None)
-        result = engine.complete_call(interp, state, idle_budget=2)
+        result = engine.complete_call(interp, state, idle_budget=2).unwrap()
         schedule.append("guest-done")
         return tuple(result)
 
@@ -372,7 +372,7 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
         pte = sysv.vmmio.ptes.view().find(0xE0001)
         assert pte is not None and pte.owner_id == task.task_id and pte.physical_base_addr == 4096
     if sched_mode == "noint":
-        results = engine.call(interp, main_index, (n_iters,), idle_budget=2)
+        results = engine.call(interp, main_index, (n_iters,), idle_budget=2).unwrap()
         assert sysv.scheduler.current_task is task
         assert schedule == [] and yielded_pcs == []
     else:

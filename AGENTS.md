@@ -10,6 +10,7 @@
 - `docs/components/**`: コンポーネント設計書（Tier 1〜3）
 - `docs/components/<tier>/formal/**`: 形式検証モデル（pyModelChecking）
 - `.agents/rules/**`: 開発・設計ルール
+- 同じ事実は一箇所だけに書く（単一の正本）。詳細は `.agents/rules/development-policy.md` と `.agents/rules/documentation-standards.md` の §1.2。
 - `tools/README.md`: 検証入口（spec-integrator パイプライン）
 
 ## 作業前に読むもの

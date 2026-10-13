@@ -497,6 +497,9 @@ source_verification:
             - "experiments/pysim/tier2_runtime/observability/logger.py"
             - "experiments/pysim/qa/**"
             - "experiments/pysim/benchmarks/**"
+          object_type_exclude_paths:
+            - "experiments/pysim/qa/**"
+            - "experiments/pysim/benchmarks/**"
         - id: "pysim_imports"
           enabled: true
         - id: "pysim_assert_side_effects"

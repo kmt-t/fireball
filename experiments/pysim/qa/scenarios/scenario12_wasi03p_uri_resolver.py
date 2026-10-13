@@ -95,7 +95,8 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
 
     # 3. Test WASI 0.3p IPC Command Protocol: Stream Write via HAL buffer (0x01)
     buffer_handle = sysv.pool.buffer(0)
-    assert sysv.pool.map_for_io(buffer_handle.buffer_id).name == "MAPPED"
+    assert_result_1 = sysv.pool.map_for_io(buffer_handle.buffer_id)
+    assert assert_result_1.name == "MAPPED"
     buffer_view = sysv.pool.view(buffer_handle, offset=0, length=24)
     msg = b"IPC-CMD-SHM-STREAM-OK!"
     buffer_view[0 : len(msg)] = msg
@@ -121,7 +122,8 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         (ARG_OFFSET, 0),
         (ARG_BUFFER_HANDLE, buffer_handle.buffer_id),
     )
-    assert sysv.pool.map_for_io(buffer_handle.buffer_id).name == "MAPPED"
+    assert_result_2 = sysv.pool.map_for_io(buffer_handle.buffer_id)
+    assert assert_result_2.name == "MAPPED"
     nwritten_fmap = engine.dispatch_command(
         "fireball://hal/stdout/0", WasiIpcCmd.STREAM_WRITE_BUFFER, fmap_view
     )

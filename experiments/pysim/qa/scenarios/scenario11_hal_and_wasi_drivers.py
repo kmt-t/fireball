@@ -49,13 +49,15 @@ def test_scenario_hal_and_wasi_drivers():
     sysv.scheduler.current_task = runtime_task
     rx = sysv.pool.buffer(0)
     tx = sysv.pool.buffer(1)
-    assert sysv.pool.map_for_io(tx.buffer_id).name == "MAPPED"
+    assert_result_1 = sysv.pool.map_for_io(tx.buffer_id)
+    assert assert_result_1.name == "MAPPED"
     tx_view = sysv.pool.view(tx, 0, 28)
     tx_view[:] = b"stdout-chunk-1stdout-chunk-2"
     payload = bytes(tx_view)
     sysv.pool.unmap_after_io(tx.buffer_id)
     assert stdio.feed_stdin(b"stdin-chunk-1stdin-chunk-2") == 26
-    assert sysv.pool.map_for_io(rx.buffer_id).name == "MAPPED"
+    assert_result_2 = sysv.pool.map_for_io(rx.buffer_id)
+    assert assert_result_2.name == "MAPPED"
     assert (
         stdio.dispatch(
             WasiIpcCmd.STREAM_READ_BUFFER,
@@ -67,7 +69,8 @@ def test_scenario_hal_and_wasi_drivers():
     )
     assert bytes(sysv.pool.view(rx, 0, 26)) == b"stdin-chunk-1stdin-chunk-2"
     sysv.pool.unmap_after_io(rx.buffer_id)
-    assert sysv.pool.map_for_io(tx.buffer_id).name == "MAPPED"
+    assert_result_3 = sysv.pool.map_for_io(tx.buffer_id)
+    assert assert_result_3.name == "MAPPED"
     sysv.pool.view(tx, 0, len(payload))[:] = payload
     assert (
         stdio.dispatch(

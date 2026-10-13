@@ -151,7 +151,8 @@ class GuestDriverClient:
             requested = params(entries).find(ARG_TX_BUFFER_HANDLE)
             assert requested is not None
             handle = requested
-            assert pool.map_for_io(handle) == HalBufferMapStatus.MAPPED
+            assert_result_2 = pool.map_for_io(handle)
+            assert assert_result_2 == HalBufferMapStatus.MAPPED
         try:
             response = self.platform.engine.send_ipc_command(
                 self.address, values[0], params(entries)
@@ -166,7 +167,8 @@ class GuestDriverClient:
         cmd, handle, offset, length = (int(value) & 0xFFFF_FFFF for value in args)
         assert cmd in (WasiIpcCmd.STREAM_READ_BUFFER, WasiIpcCmd.STREAM_WRITE_BUFFER)
         pool = self.platform.system.pool
-        assert pool.map_for_io(handle) == HalBufferMapStatus.MAPPED
+        assert_result_1 = pool.map_for_io(handle)
+        assert assert_result_1 == HalBufferMapStatus.MAPPED
         try:
             key = ARG_MAX_LEN if cmd == WasiIpcCmd.STREAM_READ_BUFFER else ARG_LENGTH
             response = self.platform.engine.send_ipc_command(

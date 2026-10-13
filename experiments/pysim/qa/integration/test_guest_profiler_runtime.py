@@ -103,7 +103,9 @@ def _run_guest_history(
         inc_index = module.export_func_index("inc")
         block = next(block for block in module.blocks if block.func_index == inc_index)
         trace = compile_runtime_block(engine.jit_runtime, block)
-        assert trace is not None and engine.jit_runtime.cache.insert(trace)
+        assert trace is not None
+        assert_result_1 = engine.jit_runtime.cache.insert(trace)
+        assert assert_result_1
     factories = RuntimeFactories(
         interpreter=lambda: executor,
         logger=GuestProfiler,

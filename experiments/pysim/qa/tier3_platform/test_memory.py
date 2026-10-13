@@ -191,7 +191,8 @@ def test_mem_08_claim_rejection_preserves_live_storage():
         address = block.get_address()
         valid_id = block.release()
         scheduler.current_task = scheduler.get_task(2)
-        assert manager.grant_shared(valid_id)
+        assert_result_7 = manager.grant_shared(valid_id)
+        assert assert_result_7
         claimed = manager.claim(valid_id).unwrap()
         assert claimed.get_owner() == 2
         assert claimed.get_address() == address
@@ -233,14 +234,16 @@ def test_mem_10d_owner_notifications_match_each_lifecycle_boundary():
     assert changed == [(page_idx, address, 1, FB_TASK_ID_FLIGHT)]
     assert mapped == [(page_idx, address, 1, 64)]
     scheduler.current_task = scheduler.get_task(2)
-    assert manager.grant_shared(shm_id)
+    assert_result_1 = manager.grant_shared(shm_id)
+    assert assert_result_1
     expected_changes = [
         (page_idx, address, 1, FB_TASK_ID_FLIGHT),
         (page_idx, address, FB_TASK_ID_FLIGHT, 2),
     ]
     assert changed == expected_changes
     assert mapped == [(page_idx, address, 1, 64)]
-    assert manager.grant_shared(shm_id)
+    assert_result_2 = manager.grant_shared(shm_id)
+    assert assert_result_2
     assert changed == expected_changes, "unchanged owners must not emit a change notification"
     received = manager.claim(shm_id).unwrap()
     assert received.read_bytes(0, 64) == bytes(range(64))
@@ -372,7 +375,8 @@ def test_mem_10d_resource_revoke_invalidates_old_handle():
     sender_block.write_bytes(0, b"resource payload")
     shm_id = sender_block.shm_id
 
-    assert mm.revoke_shared(shm_id)
+    assert_result_3 = mm.revoke_shared(shm_id)
+    assert assert_result_3
     with expect_assertion("revoked or transferred"):
         sender_block.read_u8(0)
     with expect_assertion("revoked or transferred"):
@@ -380,7 +384,8 @@ def test_mem_10d_resource_revoke_invalidates_old_handle():
 
     scheduler.current_task = scheduler.get_task(2)
     assert scheduler.current_task is not None
-    assert mm.grant_shared(shm_id)
+    assert_result_4 = mm.grant_shared(shm_id)
+    assert assert_result_4
     receiver_block = mm.claim(shm_id).unwrap()
     assert receiver_block.read_bytes(0, 16) == b"resource payload"
     scheduler.current_task = scheduler.get_task(1)
@@ -392,7 +397,8 @@ def test_mem_10d_resource_revoke_invalidates_old_handle():
     # Returning ownership to the same task must not revive its old handle.
     assert receiver_block.release() == shm_id
     scheduler.current_task = scheduler.get_task(1)
-    assert mm.grant_shared(shm_id)
+    assert_result_5 = mm.grant_shared(shm_id)
+    assert assert_result_5
     returned_block = mm.claim(shm_id).unwrap()
     assert returned_block.read_bytes(0, 16) == b"resource payload"
     with expect_assertion("stale after ownership changed"):
@@ -483,7 +489,8 @@ def test_mem_15_vmmio_fc14_tlb_sync():
 
     # Grant changes ownership and therefore unmaps the page again.
     sched.current_task = sched.get_task(2)
-    assert mm.grant_shared(shm_id)
+    assert_result_6 = mm.grant_shared(shm_id)
+    assert assert_result_6
     status, _ = vmmio.access(raw_addr, is_write=False)
     assert status == TrapCode.UNREGISTERED_PAGE
 

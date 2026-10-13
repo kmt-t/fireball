@@ -166,7 +166,9 @@ def _prepare_cache(
 
     def install() -> None:
         trace = compile_runtime_block(manager, block)
-        assert trace is not None and cache.insert(trace)
+        assert trace is not None
+        assert_result_1 = cache.insert(trace)
+        assert assert_result_1
         assert cache.find_trace(block.head_pc) is trace
 
     if cache_mode != "cold":
@@ -275,7 +277,8 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
             expected_memory[1100:1104] = (8).to_bytes(4, "little")
         else:
             handle = sysv.pool.buffer(0)
-            assert sysv.pool.map_for_io(handle.buffer_id).name == "MAPPED"
+            assert_result_2 = sysv.pool.map_for_io(handle.buffer_id)
+            assert assert_result_2.name == "MAPPED"
             sysv.pool.view(handle, 0, len(payload))[:] = payload
             params = ReadOnlyFlatMapView(
                 sorted(

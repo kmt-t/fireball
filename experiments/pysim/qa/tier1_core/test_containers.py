@@ -235,17 +235,21 @@ def test_cont_11_storage_and_view_ownership_separation():
         ReadOnlyFlatMapStorage.create([(1, "first"), (1, "duplicate")])
 
     mut_map = MutableFlatMapStorage(capacity=8)
-    assert mut_map.insert(100, "X")
-    assert mut_map.insert(200, "Y")
+    assert_result_1 = mut_map.insert(100, "X")
+    assert assert_result_1
+    assert_result_2 = mut_map.insert(200, "Y")
+    assert assert_result_2
     v_mut = mut_map.view()
     assert type(v_mut) is ReadOnlyFlatMapView
     assert not hasattr(mut_map, "find")
     assert v_mut.find(100) == "X"
     assert v_mut.find(200) == "Y"
     # Mutation on storage propagates to borrowed view
-    assert mut_map.insert(150, "Z")
+    assert_result_3 = mut_map.insert(150, "Z")
+    assert assert_result_3
     assert v_mut.find(150) == "Z"
-    assert mut_map.remove(100) == "X"
+    assert_result_4 = mut_map.remove(100)
+    assert assert_result_4 == "X"
     assert v_mut.find(100) is None
 
     # 2. FlatSet: ReadOnly vs Mutable Storage vs non-owning View
@@ -257,13 +261,16 @@ def test_cont_11_storage_and_view_ownership_separation():
     assert not hasattr(v_set_ro, "remove")
 
     mut_set = MutableFlatSetStorage(capacity=8)
-    assert mut_set.insert(42)
-    assert mut_set.insert(99)
+    assert_result_5 = mut_set.insert(42)
+    assert assert_result_5
+    assert_result_6 = mut_set.insert(99)
+    assert assert_result_6
     v_set_mut = mut_set.view()
     assert type(v_set_mut) is ReadOnlyFlatSetView
     assert not hasattr(mut_set, "contains")
     assert v_set_mut.contains(42)
-    assert mut_set.remove(42)
+    assert_result_7 = mut_set.remove(42)
+    assert assert_result_7
     assert not v_set_mut.contains(42)
 
     # 3. RadixBinaryTree: ReadOnly vs Mutable Storage vs non-owning View
@@ -288,8 +295,10 @@ def test_cont_11_storage_and_view_ownership_separation():
         radix_entries.append((30, "C"))
 
     mut_radix = MutableRadixBinaryTreeStorage(capacity=16, radix_shift=4)
-    assert mut_radix.insert(10, "A")
-    assert mut_radix.insert(30, "C")
+    assert_result_8 = mut_radix.insert(10, "A")
+    assert assert_result_8
+    assert_result_9 = mut_radix.insert(30, "C")
+    assert assert_result_9
     rv_mut = mut_radix.view()
     assert type(rv_mut) is ReadOnlyRadixBinaryTreeView
     assert not hasattr(mut_radix, "find")
@@ -297,9 +306,11 @@ def test_cont_11_storage_and_view_ownership_separation():
     assert rv_mut.find(30) == "C"
     assert rv_mut.find(20) is None
     # Dynamic insert on mutable storage automatically updates radix table
-    assert mut_radix.insert(20, "B")
+    assert_result_10 = mut_radix.insert(20, "B")
+    assert assert_result_10
     assert rv_mut.find(20) == "B"
-    assert mut_radix.remove(10) == "A"
+    assert_result_11 = mut_radix.remove(10)
+    assert assert_result_11 == "A"
     assert rv_mut.find(10) is None
 
     # 4. BitStorage: ReadOnly vs Mutable Storage vs non-owning View
@@ -344,11 +355,16 @@ def test_cont_13_mutable_flat_map_sorted_insert_remove():
     assert len(storage) == 0
 
     # Insert elements out of order
-    assert storage.insert(30, "thirty") is True
-    assert storage.insert(10, "ten") is True
-    assert storage.insert(50, "fifty") is True
-    assert storage.insert(20, "twenty") is True
-    assert storage.insert(40, "forty") is True
+    assert_result_12 = storage.insert(30, "thirty")
+    assert assert_result_12 is True
+    assert_result_13 = storage.insert(10, "ten")
+    assert assert_result_13 is True
+    assert_result_14 = storage.insert(50, "fifty")
+    assert assert_result_14 is True
+    assert_result_15 = storage.insert(20, "twenty")
+    assert assert_result_15 is True
+    assert_result_16 = storage.insert(40, "forty")
+    assert assert_result_16 is True
 
     # Maintained sorted order at all times
     assert storage.is_sorted()
@@ -357,28 +373,33 @@ def test_cont_13_mutable_flat_map_sorted_insert_remove():
     assert list(storage_view.values) == ["ten", "twenty", "thirty", "forty", "fifty"]
 
     # Updating existing key replaces value, returns True (size stays 5)
-    assert storage.insert(30, "THIRTY_UPDATED") is True
+    assert_result_17 = storage.insert(30, "THIRTY_UPDATED")
+    assert assert_result_17 is True
     assert len(storage) == 5
     assert list(storage_view.keys) == [10, 20, 30, 40, 50]
     assert list(storage_view.values) == ["ten", "twenty", "THIRTY_UPDATED", "forty", "fifty"]
 
     # Removal maintains sorted order
-    assert storage.remove(10) == "ten"
+    assert_result_18 = storage.remove(10)
+    assert assert_result_18 == "ten"
     assert list(storage_view.keys) == [20, 30, 40, 50]
     assert list(storage_view.values) == ["twenty", "THIRTY_UPDATED", "forty", "fifty"]
     assert storage.is_sorted()
 
-    assert storage.remove(30) == "THIRTY_UPDATED"
+    assert_result_19 = storage.remove(30)
+    assert assert_result_19 == "THIRTY_UPDATED"
     assert list(storage_view.keys) == [20, 40, 50]
     assert list(storage_view.values) == ["twenty", "forty", "fifty"]
     assert storage.is_sorted()
 
-    assert storage.remove(50) == "fifty"
+    assert_result_20 = storage.remove(50)
+    assert assert_result_20 == "fifty"
     assert list(storage_view.keys) == [20, 40]
     assert list(storage_view.values) == ["twenty", "forty"]
     assert storage.is_sorted()
 
-    assert storage.remove(999) is None
+    assert_result_21 = storage.remove(999)
+    assert assert_result_21 is None
     assert len(storage) == 2
 
     # View remains valid and functional
@@ -401,26 +422,33 @@ def test_cont_14_mutable_storages_fixed_array_and_entry_count():
     assert len(m) == 0
     assert m._buffer == [None, None, None, None]
 
-    assert m.insert(30, "thirty") is True
-    assert m.insert(10, "ten") is True
-    assert m.insert(40, "forty") is True
-    assert m.insert(20, "twenty") is True
+    assert_result_22 = m.insert(30, "thirty")
+    assert assert_result_22 is True
+    assert_result_23 = m.insert(10, "ten")
+    assert assert_result_23 is True
+    assert_result_24 = m.insert(40, "forty")
+    assert assert_result_24 is True
+    assert_result_25 = m.insert(20, "twenty")
+    assert assert_result_25 is True
     assert m.count == 4
     assert len(m._buffer) == 4  # Array length strictly unchanged
     assert list(m.view().keys) == [10, 20, 30, 40]
 
     # Exceeding capacity returns False without altering storage
-    assert m.insert(50, "fifty") is False
+    assert_result_26 = m.insert(50, "fifty")
+    assert assert_result_26 is False
     assert m.count == 4
     assert len(m._buffer) == 4
 
     # In-place key update succeeds without increasing count
-    assert m.insert(30, "THIRTY") is True
+    assert_result_27 = m.insert(30, "THIRTY")
+    assert assert_result_27 is True
     assert m.count == 4
     assert m.view().find(30) == "THIRTY"
 
     # Removal shifts in-place and zeroes vacated trailing slot
-    assert m.remove(20) == "twenty"
+    assert_result_28 = m.remove(20)
+    assert assert_result_28 == "twenty"
     assert m.count == 3
     assert len(m._buffer) == 4
     assert m._buffer[3] is None
@@ -432,18 +460,23 @@ def test_cont_14_mutable_storages_fixed_array_and_entry_count():
     assert s.count == 0
     assert s._buffer == [None, None, None]
 
-    assert s.insert(200) is True
-    assert s.insert(100) is True
-    assert s.insert(300) is True
+    assert_result_29 = s.insert(200)
+    assert assert_result_29 is True
+    assert_result_30 = s.insert(100)
+    assert assert_result_30 is True
+    assert_result_31 = s.insert(300)
+    assert assert_result_31 is True
     assert s.count == 3
     assert len(s._buffer) == 3
 
     # Exceeding capacity returns False
-    assert s.insert(400) is False
+    assert_result_32 = s.insert(400)
+    assert assert_result_32 is False
     assert s.count == 3
 
     # Removal decrements count and sets vacated slot to None
-    assert s.remove(100) is True
+    assert_result_33 = s.remove(100)
+    assert assert_result_33 is True
     assert s.count == 2
     assert len(s._buffer) == 3
     assert s._buffer[2] is None
@@ -456,18 +489,23 @@ def test_cont_14_mutable_storages_fixed_array_and_entry_count():
     assert r.count == 0
     assert r._buffer == [None, None, None]
 
-    assert r.insert(30, "C") is True
-    assert r.insert(10, "A") is True
-    assert r.insert(20, "B") is True
+    assert_result_34 = r.insert(30, "C")
+    assert assert_result_34 is True
+    assert_result_35 = r.insert(10, "A")
+    assert assert_result_35 is True
+    assert_result_36 = r.insert(20, "B")
+    assert assert_result_36 is True
     assert r.count == 3
     assert len(r._buffer) == 3
 
     # Exceeding capacity returns False
-    assert r.insert(40, "D") is False
+    assert_result_37 = r.insert(40, "D")
+    assert assert_result_37 is False
     assert r.count == 3
 
     # Removal decrements count
-    assert r.remove(10) == "A"
+    assert_result_38 = r.remove(10)
+    assert assert_result_38 == "A"
     assert r.count == 2
     assert len(r._buffer) == 3
     assert r._buffer[2] is None
@@ -528,14 +566,18 @@ def test_cont_16_radix_projection_keeps_lookup_ranges_ordered_and_bounded():
         key_transform=bswap32,
     )
     assert len(mutable.radix_table) == 256
-    assert mutable.insert(0x00000002, "two")
-    assert mutable.insert(0x01000000, "high")
-    assert mutable.insert(0x00000001, "one")
+    assert_result_39 = mutable.insert(2, "two")
+    assert assert_result_39
+    assert_result_40 = mutable.insert(16777216, "high")
+    assert assert_result_40
+    assert_result_41 = mutable.insert(1, "one")
+    assert assert_result_41
     mutable_view = mutable.view()
     assert mutable_view.find(0x00000001) == "one"
     assert mutable_view.find(0x00000002) == "two"
     assert mutable_view.find(0x01000000) == "high"
-    assert mutable.remove(0x00000001) == "one"
+    assert_result_42 = mutable.remove(1)
+    assert assert_result_42 == "one"
     assert mutable_view.find(0x00000001) is None
     assert mutable_view.find(0x00000002) == "two"
 
@@ -651,11 +693,14 @@ def test_cont_17_lookup_operation_histories_preserve_contract(
     for operation, key, value in operations:
         if operation == "insert":
             accepted = key in model or len(model) < capacity
-            assert storage.insert(key, value) is accepted
+            assert_result_43 = storage.insert(key, value)
+            assert assert_result_43 is accepted
             if accepted:
                 model[key] = value
         elif operation == "remove":
-            assert storage.remove(key) == model.pop(key, None)
+            assert_result_45 = storage.remove(key)
+            assert_result_46 = model.pop(key, None)
+            assert assert_result_45 == assert_result_46
         else:
             storage.clear()
             model.clear()
@@ -695,11 +740,13 @@ def test_cont_18_set_operation_histories_preserve_contract(
     for operation, key in operations:
         if operation == "insert":
             accepted = key in model or len(model) < capacity
-            assert storage.insert(key) is accepted
+            assert_result_44 = storage.insert(key)
+            assert assert_result_44 is accepted
             if accepted:
                 model.add(key)
         elif operation == "remove":
-            assert storage.remove(key) is (key in model)
+            assert_result_47 = storage.remove(key)
+            assert assert_result_47 is (key in model)
             model.discard(key)
         else:
             storage.clear()

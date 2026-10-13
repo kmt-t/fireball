@@ -473,7 +473,8 @@ def test_hal_task_ipc_communication():
     try:
         runtime_task = sysv.start_runtime_task(name="hal_ipc_guest")
         buffer_handle = sysv.pool.buffer(0)
-        assert sysv.pool.map_for_io(buffer_handle.buffer_id).name == "MAPPED"
+        assert_result_1 = sysv.pool.map_for_io(buffer_handle.buffer_id)
+        assert assert_result_1.name == "MAPPED"
         sysv.pool.view(buffer_handle, 0, 128)[:] = b"x" * 128
         sysv.scheduler.current_task = runtime_task
         sysv.start_hal_driver(DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT)

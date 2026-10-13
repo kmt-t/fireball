@@ -51,7 +51,8 @@ def _run_step(
             boundary_next_pc=0xFFFF_FFFF,
             boundary_loops_to=0xFFFF_FFFF,
         )
-        assert call_stack.push_back(frame)
+        assert_result_1 = call_stack.push_back(frame)
+        assert assert_result_1
         context.call_stack = call_stack.address
         context.call_frame_base = call_stack.frame_address(0)
         return native_abi.run_step(

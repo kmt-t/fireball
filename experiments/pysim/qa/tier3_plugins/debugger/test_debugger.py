@@ -47,14 +47,21 @@ def test_dbg_01_query_halt_reason():
     assert pc == 0x100
 
 
+def _make_register_test_view() -> DebugTestView:
+    """Prepare the same register fixture in normal and optimized Python."""
+    ctx = DebugTestView()
+    ctx.locals[:3] = (10, 20, 30)
+    assert_result_1 = ctx.stack.push_back(999)
+    assert assert_result_1  # tos
+    return ctx
+
+
 def test_dbg_02_read_virtual_registers():
     """TEST-DBG-02: 'g' command reads 20 virtual registers (0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15)."""
     dbg = DebuggerManager()
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
-    ctx = DebugTestView()
-    ctx.locals[:3] = (10, 20, 30)
-    assert ctx.stack.push_back(999)  # tos
+    ctx = _make_register_test_view()
     res, pc = rsp.handle_packet("g", 0x100, ctx, {})
     # Strip framing
     raw = res[1 : res.index("#")]

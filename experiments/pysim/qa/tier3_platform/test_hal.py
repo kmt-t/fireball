@@ -69,14 +69,16 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
     try:
         rx = pool.buffer(0)
         tx = pool.buffer(1)
-        assert pool.map_for_io(tx.buffer_id) == HalBufferMapStatus.MAPPED
+        assert_result_1 = pool.map_for_io(tx.buffer_id)
+        assert assert_result_1 == HalBufferMapStatus.MAPPED
         tx_view = pool.view(tx, 0, 10)
         tx_view[:] = b"out-1out-2"
         pool.unmap_after_io(tx.buffer_id)
         assert driver.is_supported(WasiIpcCmd.STREAM_WRITE_BUFFER) == 1
         assert driver.is_supported(0xFFFF) == 0
         assert driver.feed_stdin(b"in-1in-2") == 8
-        assert pool.map_for_io(rx.buffer_id) == HalBufferMapStatus.MAPPED
+        assert_result_2 = pool.map_for_io(rx.buffer_id)
+        assert assert_result_2 == HalBufferMapStatus.MAPPED
         assert (
             driver.dispatch(
                 WasiIpcCmd.STREAM_READ_BUFFER,
@@ -88,7 +90,8 @@ def test_hal_02_dummy_stdio_driver_streams_stdin_and_stdout():
         )
         assert bytes(pool.view(rx, 0, 8)) == b"in-1in-2"
         pool.unmap_after_io(rx.buffer_id)
-        assert pool.map_for_io(tx.buffer_id) == HalBufferMapStatus.MAPPED
+        assert_result_3 = pool.map_for_io(tx.buffer_id)
+        assert assert_result_3 == HalBufferMapStatus.MAPPED
         assert (
             driver.dispatch(
                 WasiIpcCmd.STREAM_WRITE_BUFFER,
@@ -175,14 +178,16 @@ def test_hal_05_hal_buffer_slice_bounds_and_guest_mapping():
         scheduler.current_task = scheduler.get_task(other_id)
         scheduler.current_task = scheduler.get_task(owner_id)
         h = pool.buffer(0)
-        assert pool.map_for_io(h.buffer_id) == HalBufferMapStatus.MAPPED
+        assert_result_4 = pool.map_for_io(h.buffer_id)
+        assert assert_result_4 == HalBufferMapStatus.MAPPED
         status, _ = vmmio.access(h.virtual_address, is_write=False)
         assert status == VmmioStatus.OK_PHYSICAL
         view = pool.view(h, 0, 16)
         assert len(view) == 16
         assert pool.can_view(h, 0, 16)
         scheduler.current_task = scheduler.get_task(other_id)
-        assert pool.map_for_io(h.buffer_id) == HalBufferMapStatus.BUSY
+        assert_result_5 = pool.map_for_io(h.buffer_id)
+        assert assert_result_5 == HalBufferMapStatus.BUSY
         status, _ = vmmio.access(h.virtual_address, is_write=False)
         assert status == VmmioStatus.OWNER_MISMATCH
         assert not pool.can_view(h, 0, 16)
@@ -196,7 +201,8 @@ def test_hal_05_hal_buffer_slice_bounds_and_guest_mapping():
         assert pool.view(h, 0, 4).tobytes() == b"HAL!"
         pool.unmap_after_io(h.buffer_id)
         assert not pool.can_view(h, 0, 16)
-        assert pool.map_for_io(h.buffer_id) == HalBufferMapStatus.MAPPED
+        assert_result_6 = pool.map_for_io(h.buffer_id)
+        assert assert_result_6 == HalBufferMapStatus.MAPPED
         pool.unmap_after_io(h.buffer_id)
         status, _ = vmmio.access(h.virtual_address, is_write=False)
         assert status == TrapCode.UNREGISTERED_PAGE
@@ -229,14 +235,16 @@ def test_hal_06_rejection_preserves_mapping_and_all_slot_bytes(rejection: str) -
     handles = tuple(pool.buffer(index) for index in range(FB_CONF_HAL_MAX_BUFFERS))
     try:
         for index, handle in enumerate(handles):
-            assert pool.map_for_io(handle.buffer_id) == HalBufferMapStatus.MAPPED
+            assert_result_10 = pool.map_for_io(handle.buffer_id)
+            assert assert_result_10 == HalBufferMapStatus.MAPPED
             pool.view(handle, 0, handle.capacity)[:] = bytes(
                 (offset + index * 29) % 256 for offset in range(handle.capacity)
             )
             pool.unmap_after_io(handle.buffer_id)
         before = tuple(bytes(handle._storage) for handle in handles)
         current, other = handles[:2]
-        assert pool.map_for_io(current.buffer_id) == HalBufferMapStatus.MAPPED
+        assert_result_7 = pool.map_for_io(current.buffer_id)
+        assert assert_result_7 == HalBufferMapStatus.MAPPED
 
         def assert_preserved() -> None:
             assert tuple(bytes(handle._storage) for handle in handles) == before
@@ -252,7 +260,8 @@ def test_hal_06_rejection_preserves_mapping_and_all_slot_bytes(rejection: str) -
                 assert status == expected
 
         if rejection == "other-slot":
-            assert pool.map_for_io(other.buffer_id) == HalBufferMapStatus.BUSY
+            assert_result_11 = pool.map_for_io(other.buffer_id)
+            assert assert_result_11 == HalBufferMapStatus.BUSY
         elif rejection in ("negative-id", "past-id"):
             invalid_id = -1 if rejection == "negative-id" else FB_CONF_HAL_MAX_BUFFERS
             with expect_assertion():
@@ -297,7 +306,8 @@ def test_hal_06_rejection_preserves_mapping_and_all_slot_bytes(rejection: str) -
         pool.unmap_after_io(current.buffer_id)
         status, _ = vmmio.access(current.virtual_address, is_write=False)
         assert status == TrapCode.UNREGISTERED_PAGE
-        assert pool.map_for_io(other.buffer_id) == HalBufferMapStatus.MAPPED
+        assert_result_8 = pool.map_for_io(other.buffer_id)
+        assert assert_result_8 == HalBufferMapStatus.MAPPED
         assert pool.view(other, 0, other.capacity).tobytes() == before[1]
         pool.unmap_after_io(other.buffer_id)
         status, _ = vmmio.access(other.virtual_address, is_write=False)
@@ -328,7 +338,8 @@ def test_hal_task_ipc_communication(offset: int, payload: bytes):
         runtime_task = sysv.start_runtime_task(name="hal_ipc_guest")
         sysv.scheduler.current_task = runtime_task
         buffer_handle = sysv.pool.buffer(0)
-        assert sysv.pool.map_for_io(buffer_handle.buffer_id) == HalBufferMapStatus.MAPPED
+        assert_result_9 = sysv.pool.map_for_io(buffer_handle.buffer_id)
+        assert assert_result_9 == HalBufferMapStatus.MAPPED
         buffer_view = sysv.pool.view(buffer_handle, 0, buffer_handle.capacity)
         buffer_view[:] = b"\xa5" * buffer_handle.capacity
         buffer_view[offset : offset + len(payload)] = payload

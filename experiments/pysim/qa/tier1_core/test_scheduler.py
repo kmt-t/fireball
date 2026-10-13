@@ -199,19 +199,24 @@ def test_sched_13_detached_task_reattaches_once():
     queue = BoundedReadyQueue(capacity=2)
     first = Task(1)
     second = Task(2)
-    assert queue.enqueue(first)
-    assert queue.enqueue_front(second)
+    assert_result_1 = queue.enqueue(first)
+    assert assert_result_1
+    assert_result_2 = queue.enqueue_front(second)
+    assert assert_result_2
     assert len(queue) == 2
     assert first in queue
     assert list(queue) == [second, first]
-    assert queue.remove(second)
+    assert_result_3 = queue.remove(second)
+    assert assert_result_3
     assert not queue.contains(second)
     assert list(queue) == [first]
     queue.clear()
     assert first.ready_prev is None and first.ready_next is None
     assert not queue
-    assert queue.enqueue(first)
-    assert queue.remove(first)
+    assert_result_4 = queue.enqueue(first)
+    assert assert_result_4
+    assert_result_5 = queue.remove(first)
+    assert assert_result_5
     assert not queue
 
     scheduler = Scheduler(max_tasks=3)
@@ -232,25 +237,36 @@ def test_sched_13_ready_queue_intrusive_ring_two_ended_fifo():
     tasks = tuple(Task(task_id) for task_id in range(1, 6))
     first, second, third, fourth, fifth = tasks
 
-    assert queue.enqueue(first)
-    assert queue.enqueue(second)
-    assert queue.enqueue(third)
-    assert queue.dequeue() is first
-    assert queue.enqueue(fourth)
-    assert queue.enqueue_front(first)
+    assert_result_6 = queue.enqueue(first)
+    assert assert_result_6
+    assert_result_7 = queue.enqueue(second)
+    assert assert_result_7
+    assert_result_8 = queue.enqueue(third)
+    assert assert_result_8
+    assert_result_9 = queue.dequeue()
+    assert assert_result_9 is first
+    assert_result_10 = queue.enqueue(fourth)
+    assert assert_result_10
+    assert_result_11 = queue.enqueue_front(first)
+    assert assert_result_11
     expected = [first, second, third, fourth]
     assert list(queue) == expected
     for index, task in enumerate(expected):
         assert task.ready_next is expected[(index + 1) % len(expected)]
         assert task.ready_prev is expected[(index - 1) % len(expected)]
-    assert not queue.enqueue(fifth)
-    assert not queue.enqueue_front(fifth)
+    assert_result_12 = queue.enqueue(fifth)
+    assert not assert_result_12
+    assert_result_13 = queue.enqueue_front(fifth)
+    assert not assert_result_13
     assert list(queue) == expected
     assert fifth.ready_prev is None and fifth.ready_next is None
-    assert queue.dequeue() is first
-    assert queue.enqueue_front(fifth)
+    assert_result_14 = queue.dequeue()
+    assert assert_result_14 is first
+    assert_result_15 = queue.enqueue_front(fifth)
+    assert assert_result_15
     assert list(queue) == [fifth, second, third, fourth]
-    assert queue.remove(third)
+    assert_result_16 = queue.remove(third)
+    assert assert_result_16
     expected_after_remove = [fifth, second, fourth]
     assert list(queue) == expected_after_remove
     for index, task in enumerate(expected_after_remove):
@@ -266,38 +282,46 @@ def test_sched_08_ready_queue_link_operations_are_bounded():
         initial = tasks[:count]
         tail, front, overflow = tasks[count:]
         for task in initial:
-            assert queue.enqueue(task)
+            assert_result_28 = queue.enqueue(task)
+            assert assert_result_28
 
         _reset_ready_link_counts(tasks)
-        assert queue.enqueue(tail)
+        assert_result_21 = queue.enqueue(tail)
+        assert assert_result_21
         _assert_bounded_ready_link_counts(tasks)
         assert tuple(queue) == (*initial, tail)
 
         _reset_ready_link_counts(tasks)
-        assert queue.enqueue_front(front)
+        assert_result_22 = queue.enqueue_front(front)
+        assert assert_result_22
         _assert_bounded_ready_link_counts(tasks)
         expected = (front, *initial, tail)
         assert tuple(queue) == expected
 
         _reset_ready_link_counts(tasks)
-        assert not queue.enqueue(overflow)
-        assert not queue.enqueue_front(overflow)
+        assert_result_23 = queue.enqueue(overflow)
+        assert not assert_result_23
+        assert_result_24 = queue.enqueue_front(overflow)
+        assert not assert_result_24
         assert sum(task.link_reads + task.link_writes for task in tasks) == 0
         assert tuple(queue) == expected
 
         _reset_ready_link_counts(tasks)
-        assert queue.dequeue() is front
+        assert_result_25 = queue.dequeue()
+        assert assert_result_25 is front
         _assert_bounded_ready_link_counts(tasks)
         assert tuple(queue) == (*initial, tail)
 
         _reset_ready_link_counts(tasks)
-        assert queue.remove(tail)
+        assert_result_26 = queue.remove(tail)
+        assert assert_result_26
         _assert_bounded_ready_link_counts(tasks)
         assert tuple(queue) == initial
         if count > 2:
             middle = initial[count // 2]
             _reset_ready_link_counts(tasks)
-            assert queue.remove(middle)
+            assert_result_29 = queue.remove(middle)
+            assert assert_result_29
             _assert_bounded_ready_link_counts(tasks)
             assert tuple(queue) == tuple(task for task in initial if task is not middle)
 
@@ -384,7 +408,8 @@ def test_sched_16_reused_task_ids_preserve_shared_memory_transfers():
         assert task is not None
         block = manager.allocate_shared(size=8).unwrap()
         shm_id = block.release()
-        assert manager.grant_shared(shm_id)
+        assert_result_27 = manager.grant_shared(shm_id)
+        assert assert_result_27
         received = manager.claim(shm_id).unwrap()
         assert received.owner == task.task_id
         received.write_u32(0, len(completed))
@@ -710,11 +735,15 @@ def test_sched_17_interrupt_fifo_rejects_overflow_then_reuses_consumed_slot() ->
     assert queue.push(b)
     assert not queue.push(c)
     assert len(queue) == 2
-    assert queue.pop() == a
+    assert_result_17 = queue.pop()
+    assert assert_result_17 == a
     assert queue.push(c)
-    assert queue.pop() == b
-    assert queue.pop() == c
-    assert queue.pop() is None
+    assert_result_18 = queue.pop()
+    assert assert_result_18 == b
+    assert_result_19 = queue.pop()
+    assert assert_result_19 == c
+    assert_result_20 = queue.pop()
+    assert assert_result_20 is None
     assert len(queue) == 0
 
 

@@ -337,7 +337,8 @@ def test_sdk_busy_mapping_preserves_owner_and_recovers_after_owner_unmaps(
     assert owner is not None
     session.system.scheduler.detach(owner)
     with session.system.scheduler.task_context(owner):
-        assert session.system.pool.map_for_io(0) == HalBufferMapStatus.MAPPED
+        assert_result_1 = session.system.pool.map_for_io(0)
+        assert assert_result_1 == HalBufferMapStatus.MAPPED
     before = session.slots()
     assert session.call("write_probe", (1, 513)) == (-1,)
     assert session.result()[:2] == (-1, int(WasiErrno.AGAIN))

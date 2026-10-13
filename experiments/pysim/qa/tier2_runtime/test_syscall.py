@@ -367,7 +367,8 @@ def test_syscall_04_vdma_host_call_transfer(destination_kind: str, transport: st
 
         def guest():
             if destination_kind == "dynamic":
-                assert system.pool.map_for_io(handle.buffer_id) == HalBufferMapStatus.MAPPED
+                assert_result_3 = system.pool.map_for_io(handle.buffer_id)
+                assert assert_result_3 == HalBufferMapStatus.MAPPED
                 system.pool.view(handle, 0, handle.capacity)[:] = b"\xa5" * handle.capacity
             else:
                 system.phys_mem[0x1000:0x1010] = b"\xa5" * 16
@@ -405,7 +406,8 @@ def test_vdma_dynamic_bounds_rejection_preserves_real_buffer(offset: int, count:
         host = WasiHostContext(system)
         host.guest_memory[:] = b"\x5a" * len(host.guest_memory)
         handle = system.pool.buffer(1)
-        assert system.pool.map_for_io(handle.buffer_id) == HalBufferMapStatus.MAPPED
+        assert_result_1 = system.pool.map_for_io(handle.buffer_id)
+        assert assert_result_1 == HalBufferMapStatus.MAPPED
         view = system.pool.view(handle, 0, handle.capacity)
         view[:] = b"\xa5" * handle.capacity
         before = bytes(view)
@@ -443,7 +445,8 @@ def test_dynamic_guest_access_checks_full_instruction_width(operation: str, widt
     owner = system.start_runtime_task(name="dynamic_width_owner")
     try:
         handle = system.pool.buffer(1)
-        assert system.pool.map_for_io(handle.buffer_id) == HalBufferMapStatus.MAPPED
+        assert_result_2 = system.pool.map_for_io(handle.buffer_id)
+        assert assert_result_2 == HalBufferMapStatus.MAPPED
         view = system.pool.view(handle, 0, handle.capacity)
         original = bytes(index & 0xFF for index in range(handle.capacity))
         scalar = "i64" if width == 8 else "i32"

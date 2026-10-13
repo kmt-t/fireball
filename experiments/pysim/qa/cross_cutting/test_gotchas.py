@@ -217,7 +217,8 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     engine.jit_runtime.on_yield()
     assert engine.jit_runtime.has_pending_compilation()
     resident = JITTrace(pc, lambda: 0, size_bytes=64)
-    assert engine.jit_runtime.cache.insert(resident)
+    assert_result_1 = engine.jit_runtime.cache.insert(resident)
+    assert assert_result_1
 
     compiled = engine.idle_hook(budget=4)
 
@@ -630,7 +631,8 @@ def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     pool = HalBufferPool(scheduler, vmmio)
     handle = pool.buffer(0)
-    assert pool.map_for_io(handle.buffer_id).name == "MAPPED"
+    assert_result_2 = pool.map_for_io(handle.buffer_id)
+    assert assert_result_2.name == "MAPPED"
     assert handle.capacity == 256
     with expect_assertion("escapes fixed buffer"):
         pool.view(handle, 0, 257)

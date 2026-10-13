@@ -133,7 +133,8 @@ class VdmaFixture:
         self.memory[:128] = bytes((37 * i + 11) & 255 for i in range(128))
         self.clear_observation()
         self.handle = system.pool.buffer(1)
-        assert system.pool.map_for_io(self.handle.buffer_id) == HalBufferMapStatus.MAPPED
+        assert_result_1 = system.pool.map_for_io(self.handle.buffer_id)
+        assert assert_result_1 == HalBufferMapStatus.MAPPED
         self.dynamic_size = self.handle.capacity
         system.pool.view_for_driver(1, 0, self.dynamic_size)[:] = bytes(
             (17 * i + 19) & 255 for i in range(self.dynamic_size)
@@ -916,7 +917,8 @@ def test_dynamic_mapping_histories_preserve_bytes_and_access(
             fixture.clear_observation()
             before = fixture.snapshot()
             if operation == "map":
-                assert fixture.system.pool.map_for_io(1) == HalBufferMapStatus.MAPPED
+                assert_result_4 = fixture.system.pool.map_for_io(1)
+                assert assert_result_4 == HalBufferMapStatus.MAPPED
                 mapped = True
                 expected_mappings = tuple(sorted((*before.mappings, initial_mapping)))
                 assert fixture.snapshot() == replace(before, mappings=expected_mappings)
@@ -948,7 +950,8 @@ def test_dynamic_mapping_histories_preserve_bytes_and_access(
                 else:
                     fixture.assert_rejected(result, before)
         if not mapped:
-            assert fixture.system.pool.map_for_io(1) == HalBufferMapStatus.MAPPED
+            assert_result_2 = fixture.system.pool.map_for_io(1)
+            assert assert_result_2 == HalBufferMapStatus.MAPPED
 
     run_case(entry, scenario)
 
@@ -979,7 +982,8 @@ def test_real_shm_release_grant_claim_preserves_data_and_rejects_old_owner(entry
         assert receiver is not None
         fixture.system.scheduler.detach(receiver)
         with fixture.system.scheduler.task_context(receiver):
-            assert fixture.system.memory_manager.grant_shared(shm_id)
+            assert_result_3 = fixture.system.memory_manager.grant_shared(shm_id)
+            assert assert_result_3
             claimed = fixture.system.memory_manager.claim(shm_id).unwrap()
             assert claimed.get_owner() == receiver_id
             assert claimed.read_bytes(68, 8) == before.guest[4:12]

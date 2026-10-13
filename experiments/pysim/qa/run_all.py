@@ -12,6 +12,7 @@ and workload runners. They are intentionally excluded from this unit-test list.
 
 from __future__ import annotations
 
+import argparse
 import ast
 import os
 import sys
@@ -249,5 +250,32 @@ def run_all_tests():
         sys.exit(1)
 
 
+def run_optimized_checks() -> None:
+    """An assertion-enabled parent compares valid product and real QA state in 3 modes."""
+    assert_registered_test_modules(TEST_DIR, tuple(path for _, _, path in TEST_SUITES))
+    result = run_python(
+        [
+            "-m",
+            "pytest",
+            "-q",
+            str(TEST_DIR / "cross_cutting/test_entrypoint.py"),
+            "-k",
+            "optimized or runner",
+        ],
+        cwd=REPO_ROOT,
+    )
+    sys.exit(result.returncode)
+
+
 if __name__ == "__main__":
-    run_all_tests()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--optimized",
+        action="store_true",
+        help="Compare valid behavior and QA setup in normal/-O/-OO children",
+    )
+    args = parser.parse_args()
+    if args.optimized:
+        run_optimized_checks()
+    else:
+        run_all_tests()

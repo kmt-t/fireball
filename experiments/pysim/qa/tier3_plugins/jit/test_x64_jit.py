@@ -294,7 +294,8 @@ def test_trace_compiler_bitwise_and_shifts_pic():
     )
     trace = compile_test_block(compiler, code, block, (I32, I32, I32, I32))
     ctx = ExecutionContext()
-    assert ctx.local_stack.extend((0x0F, 0x07, 0, 0))
+    assert_result_1 = ctx.local_stack.extend((15, 7, 0, 0))
+    assert assert_result_1
     trace.invoke(ctx)
     assert ctx.local_stack[2] == (0x0F & 0x07)
     assert ctx.local_stack[3] == (0x0F << 2)
@@ -474,7 +475,8 @@ def test_trace_local_layout_is_fixed_during_compilation():
     )
     assert get_trace is not None
     context = ExecutionContext()
-    assert context.local_stack.extend(words)
+    assert_result_2 = context.local_stack.extend(words)
+    assert assert_result_2
     get_trace.invoke(context)
     assert tuple(context.stack) == words
     assert context.local_stack.raw_at(0) == words[0]
@@ -491,7 +493,8 @@ def test_trace_local_layout_is_fixed_during_compilation():
     )
     assert add_trace is not None
     context = ExecutionContext()
-    assert context.local_stack.extend(words)
+    assert_result_3 = context.local_stack.extend(words)
+    assert assert_result_3
     add_trace.invoke(context)
     result = value + 1
     assert tuple(context.stack) == (result & 0xFFFF_FFFF, result >> 32)
@@ -507,7 +510,8 @@ def test_trace_local_layout_is_fixed_during_compilation():
         )
         assert trace is not None
         context = ExecutionContext()
-        assert context.local_stack.extend((0, 0))
+        assert_result_7 = context.local_stack.extend((0, 0))
+        assert assert_result_7
         trace.invoke(context)
         assert context.local_stack.raw_at(0) == words[0]
         assert context.local_stack.raw_at(1) == words[1]
@@ -534,8 +538,10 @@ def test_i32_const_local_set_fusion_preserves_existing_stack():
         )
         assert trace is not None
         context = ExecutionContext()
-        assert context.local_stack.extend((0,))
-        assert context.stack.extend((sentinel,))
+        assert_result_8 = context.local_stack.extend((0,))
+        assert assert_result_8
+        assert_result_9 = context.stack.extend((sentinel,))
+        assert assert_result_9
         trace.invoke(context)
         assert context.local_stack[0] == value
         assert tuple(context.stack) == expected_stack
@@ -557,8 +563,10 @@ def test_local_fusions_select_by_offset_without_index_cap():
     )
     assert store_trace is not None
     context = ExecutionContext()
-    assert context.local_stack.extend((0,) * 16)
-    assert context.stack.extend((0xA5A5_5A5A,))
+    assert_result_4 = context.local_stack.extend((0,) * 16)
+    assert assert_result_4
+    assert_result_5 = context.stack.extend((2779077210,))
+    assert assert_result_5
     store_trace.invoke(context)
     assert context.local_stack[8] == value
     assert tuple(context.stack) == (0xA5A5_5A5A,)
@@ -573,7 +581,8 @@ def test_local_fusions_select_by_offset_without_index_cap():
     )
     assert pair_trace is not None
     context = ExecutionContext()
-    assert context.local_stack.extend((0,) * 8 + (17, 25) + (0,) * 6)
+    assert_result_6 = context.local_stack.extend((0,) * 8 + (17, 25) + (0,) * 6)
+    assert assert_result_6
     pair_trace.invoke(context)
     assert tuple(context.stack) == (42,)
 
@@ -612,7 +621,8 @@ def test_local_stencils_encode_each_compact_offset_into_the_trace():
         assert trace is not None
         context = ExecutionContext()
         values = tuple(range(32))
-        assert context.local_stack.extend(values)
+        assert_result_10 = context.local_stack.extend(values)
+        assert assert_result_10
         trace.invoke(context)
         start = wide_layout.offset(operand)
         assert tuple(context.stack) == values[start : start + 2]

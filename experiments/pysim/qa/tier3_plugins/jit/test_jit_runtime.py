@@ -155,7 +155,8 @@ def test_jitr_00_common_apccs_area_survives_rotation_and_flush():
     cache = JitRuntimeBoundary()
     trace_blob = bytes(JIT_TRACE_HEADER_BYTES + 16)
     trace = JITTrace(head_pc=0x100, size_bytes=len(trace_blob), code_blob=trace_blob)
-    assert cache.insert(trace)
+    assert_result_1 = cache.insert(trace)
+    assert assert_result_1
     assert trace.code_offset == JIT_CACHE_ACTIVE_OFFSET_BYTES
     assert trace.raw_addr is not None
     region_base = trace.raw_addr - JIT_TRACE_HEADER_BYTES - trace.code_offset
@@ -322,12 +323,14 @@ def test_jitr_cache_lookup_accepts_unsorted_insertions_and_retirement():
     """Sorted native index preserves lookup until its bank is retired."""
     cache = JitRuntimeBoundary(bank_capacity=2048)
     for pc in (0x300, 0x100, 0x500, 0x200, 0x400):
-        assert cache.insert(JITTrace(head_pc=pc, native_fn=lambda: 0, size_bytes=64))
+        assert_result_33 = cache.insert(JITTrace(head_pc=pc, native_fn=lambda: 0, size_bytes=64))
+        assert assert_result_33
     assert cache.resident_count == 5
     for pc in (0x100, 0x200, 0x300, 0x400, 0x500):
         assert cache.find_trace(pc).head_pc == pc
     replacement = JITTrace(head_pc=0x300, native_fn=lambda: 1, size_bytes=64)
-    assert cache.insert(replacement)
+    assert_result_2 = cache.insert(replacement)
+    assert assert_result_2
     assert cache.resident_count == 5 and cache.find_trace(0x300) is replacement
     cache.rotate()
     cache.rotate()
@@ -345,15 +348,20 @@ def test_jitr_bank_entry_limit_preserves_state_and_reuses_existing_slots():
     cache = JitRuntimeBoundary(bank_capacity=128, entry_capacity=2)
     first = JITTrace(head_pc=0x100, native_fn=lambda: 0, size_bytes=JIT_TRACE_HEADER_BYTES)
     second = JITTrace(head_pc=0x200, native_fn=lambda: 0, size_bytes=JIT_TRACE_HEADER_BYTES)
-    assert cache.insert(first) and cache.insert(second)
+    assert_result_3 = cache.insert(first)
+    assert assert_result_3
+    assert_result_4 = cache.insert(second)
+    assert assert_result_4
     assert cache.entry_capacity == 6
     used = cache.resident_bytes
     replacement = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=JIT_TRACE_HEADER_BYTES)
-    assert cache.insert(replacement)
+    assert_result_5 = cache.insert(replacement)
+    assert assert_result_5
     assert replacement.code_offset == first.code_offset
     assert cache.resident_bytes == used and cache.resident_count == 2
     newcomer = JITTrace(head_pc=0x300, native_fn=lambda: 0, size_bytes=JIT_TRACE_HEADER_BYTES)
-    assert cache.insert(newcomer)
+    assert_result_6 = cache.insert(newcomer)
+    assert assert_result_6
     assert cache.rotations == 1
     assert cache.find_trace(first.head_pc) is replacement
     assert cache.find_trace(second.head_pc) is second
@@ -373,11 +381,13 @@ def test_jitr_bank_entry_limit_preserves_state_and_reuses_existing_slots():
 def test_jitr_entry_limit_rotates_before_code_region_is_full():
     cache = JitRuntimeBoundary()
     for pc in range(JIT_CACHE_BANK_ENTRY_CAPACITY):
-        assert cache.insert(JITTrace(head_pc=pc, size_bytes=JIT_TRACE_HEADER_BYTES))
+        assert_result_34 = cache.insert(JITTrace(head_pc=pc, size_bytes=JIT_TRACE_HEADER_BYTES))
+        assert assert_result_34
     assert cache.resident_bytes < JIT_CACHE_BANK_CAPACITY_BYTES
     assert cache.resident_count == JIT_CACHE_BANK_ENTRY_CAPACITY
     newcomer = JITTrace(head_pc=0x300, size_bytes=JIT_TRACE_HEADER_BYTES)
-    assert cache.insert(newcomer)
+    assert_result_7 = cache.insert(newcomer)
+    assert assert_result_7
     assert cache.rotations == 1
     assert cache.find_trace(0x300) is newcomer
     assert all(cache.find_trace(pc) is not None for pc in range(JIT_CACHE_BANK_ENTRY_CAPACITY))
@@ -399,10 +409,12 @@ def test_jitr_three_banks_hold_72_entries_and_retire_one_generation():
     assert JIT_CACHE_TOTAL_ENTRY_CAPACITY == 72
     assert cache.scalar(native_abi.CacheField.BANK_ENTRY_CAPACITY) == 72
     for pc in range(72):
-        assert cache.insert(JITTrace(head_pc=pc, size_bytes=JIT_TRACE_HEADER_BYTES))
+        assert_result_35 = cache.insert(JITTrace(head_pc=pc, size_bytes=JIT_TRACE_HEADER_BYTES))
+        assert assert_result_35
     assert cache.resident_count == 72 and cache.rotations == 2
     assert all(cache.lookup(pc) is not None for pc in range(72))
-    assert cache.insert(JITTrace(head_pc=72, size_bytes=JIT_TRACE_HEADER_BYTES))
+    assert_result_8 = cache.insert(JITTrace(head_pc=72, size_bytes=JIT_TRACE_HEADER_BYTES))
+    assert assert_result_8
     assert cache.resident_count == 49 and cache.rotations == 3
     assert all(cache.find_trace(pc) is None for pc in range(24))
     assert all(cache.find_trace(pc) is not None for pc in range(24, 73))
@@ -473,7 +485,8 @@ else:
 def test_jitr_insert_preserves_one_resident_trace_per_pc():
     cache = JitRuntimeBoundary()
     trace = JITTrace(head_pc=0x100)
-    assert cache.insert(trace)
+    assert_result_9 = cache.insert(trace)
+    assert assert_result_9
     for _ in range(2):
         cache.rotate()
         before = (cache.resident_bytes, cache.resident_count, cache.generation)
@@ -487,7 +500,8 @@ def test_jitr_insert_preserves_one_resident_trace_per_pc():
     cache.rotate()
     assert cache.find_trace(trace.head_pc) is None
     replacement = JITTrace(head_pc=trace.head_pc)
-    assert cache.insert(replacement)
+    assert_result_10 = cache.insert(replacement)
+    assert assert_result_10
     assert cache.resident_count == 1 and cache.find_trace(trace.head_pc) is replacement
 
 
@@ -507,7 +521,8 @@ def test_jitr_oldest_keeps_existing_chain_and_rejects_new_links():
     assert cache.lookup(0x200) is t2
     assert t2.raw_addr == address and t1.header.chain_target_addr == address
     t3 = JITTrace(head_pc=0x180, native_fn=lambda: 3, size_bytes=64, next_pc=0x200)
-    assert cache.insert(t3)
+    assert_result_11 = cache.insert(t3)
+    assert assert_result_11
     assert t3.chain_next is None and t3.header.chain_target_addr == 0
     assert t1.chain_next == t2.head_pc and t1.header.chain_target_addr == address
     cache.rotate()
@@ -716,8 +731,10 @@ def test_jitr_native_header_chain_executes_successor_body_once(entry_name: str):
     assert source is not None and target is not None
 
     cache = JitRuntimeBoundary()
-    assert cache.insert(target)
-    assert cache.insert(source)
+    assert_result_12 = cache.insert(target)
+    assert assert_result_12
+    assert_result_13 = cache.insert(source)
+    assert assert_result_13
     assert source.chain_next == 0x200
     assert source.header.chain_target_addr != 0
     assert source.code_offset is not None
@@ -734,7 +751,8 @@ def test_jitr_native_header_chain_executes_successor_body_once(entry_name: str):
     assert raw_target == target.raw_addr
 
     context = ExecutionContext()
-    assert context.local_stack.extend((0,))
+    assert_result_14 = context.local_stack.extend((0,))
+    assert assert_result_14
     if entry_name == "execute":
         entry = source.execute
     elif entry_name == "call":
@@ -1103,7 +1121,8 @@ def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
     assert trace is not None
     assert trace.next_pc is None
     assert trace.chain_next is None
-    assert engine.jit_runtime.cache.insert(trace)
+    assert_result_15 = engine.jit_runtime.cache.insert(trace)
+    assert assert_result_15
     interpreter = Interpreter(module, yield_threshold=2)
     call_state = interpreter.start(function_index, [5])
     first_boundary = engine.run(interpreter, call_state)
@@ -1171,7 +1190,9 @@ def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
     )
     arena_used = engine.bump_allocator.offset
     trace = compile_runtime_block(manager, loop_block)
-    assert trace is not None and manager.cache.insert(trace)
+    assert trace is not None
+    assert_result_16 = manager.cache.insert(trace)
+    assert assert_result_16
     compiled_snapshot = manager.native_dispatch_state()
     assert compiled_snapshot.entry_count == 1
     assert compiled_snapshot is not initial_snapshot
@@ -1200,7 +1221,9 @@ def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
     steady_engine.register_module_blocks(module)
     steady_manager = steady_engine.jit_runtime
     steady_trace = compile_runtime_block(steady_manager, loop_block)
-    assert steady_trace is not None and steady_manager.cache.insert(steady_trace)
+    assert steady_trace is not None
+    assert_result_17 = steady_manager.cache.insert(steady_trace)
+    assert assert_result_17
     steady_snapshot = steady_manager.native_dispatch_state()
     assert steady_snapshot.entry_count == 1
     assert steady_snapshot.entries[0].head_pc == compiled_snapshot.entries[0].head_pc
@@ -1510,7 +1533,8 @@ def test_jitr_cross_frame_loop_branch_skips_special_link_but_keeps_trace_body():
     trace = compile_runtime_block(engine.jit_runtime, branch_block)
     assert trace is not None
     assert trace.next_pc is None
-    assert engine.jit_runtime.cache.insert(trace)
+    assert_result_18 = engine.jit_runtime.cache.insert(trace)
+    assert assert_result_18
 
     result = engine.call(Interpreter(module), function_index, [3])
 
@@ -1715,7 +1739,8 @@ def _install_single_control_trace(
     block = candidates[0]
     trace = compile_runtime_block(manager, block)
     assert trace is not None
-    assert manager.cache.insert(trace)
+    assert_result_19 = manager.cache.insert(trace)
+    assert assert_result_19
     assert manager.cache.resident_count == 1
     assert manager.cache.find_trace(block.head_pc) is not None
     assert engine.stat_jit_invocations == 0
@@ -2544,7 +2569,9 @@ def test_jitr_mixed_typed_stack_uses_runtime_apis_inside_jit_trace():
     mixed_block = engine.get_block(module.blocks[0].head_pc)
     assert mixed_block is not None
     trace = compile_runtime_block(engine.jit_runtime, mixed_block)
-    assert trace is not None and engine.jit_runtime.cache.insert(trace)
+    assert trace is not None
+    assert_result_20 = engine.jit_runtime.cache.insert(trace)
+    assert assert_result_20
     result = engine.call(Interpreter(module), 0, [])
 
     assert list(result) == [12]
@@ -2742,7 +2769,8 @@ def test_jitr_api_lowered_operation_can_start_a_jit_trace():
     engine.register_module_blocks(module)
     trace = compile_runtime_block(engine.jit_runtime, block)
     assert trace is not None
-    assert engine.jit_runtime.cache.insert(trace)
+    assert_result_21 = engine.jit_runtime.cache.insert(trace)
+    assert assert_result_21
 
     assert list(engine.call(Interpreter(module), 0, [])) == [3.75]
     assert engine.stat_jit_invocations == 1
@@ -2756,7 +2784,8 @@ def test_jitr_trace_header_resolves_loader_block_by_index():
     block = module.blocks[0]
     trace = compile_runtime_block(engine.jit_runtime, block)
     assert trace is not None
-    assert engine.jit_runtime.cache.insert(trace)
+    assert_result_22 = engine.jit_runtime.cache.insert(trace)
+    assert assert_result_22
 
     cached = engine.jit_runtime.cache.find_trace(block.head_pc)
     assert cached is not None
@@ -3034,7 +3063,8 @@ def test_gotcha_jitr_09_aging_never_drops_compiled_or_hot():
     pc_res, pc_hot, pc_exec = _pc(0), _pc(1), _pc(2)
     engine, _module = _aging_engine((3,))
     trace = JITTrace(head_pc=pc_res, native_fn=lambda: 1, size_bytes=64)
-    assert engine.jit_runtime.cache.insert(trace)
+    assert_result_23 = engine.jit_runtime.cache.insert(trace)
+    assert assert_result_23
     assert engine.jit_runtime.cache.find_trace(pc_res) is not None
     assert engine.jit_runtime.bitmap.get_state(pc_res) == CardState.COMPILED
     _touch_via_yield(engine, pc_hot)
@@ -3123,7 +3153,8 @@ def _chain_stress_run(cache: JitRuntimeBoundary, start: JITTrace) -> None:
         assert successor is not None
         walked = successor
     context = ExecutionContext()
-    assert context.local_stack.extend((0,))
+    assert_result_24 = context.local_stack.extend((0,))
+    assert assert_result_24
     context.local_base = context.local_stack.value_ptr(0).value
     instruction_ip = ctypes.c_void_p(int(context.code or 0) + int(context.ip))
     start.execute(context.context_ptr, instruction_ip, context.sp_ptr)
@@ -3157,7 +3188,8 @@ def test_jitr_62_chain_links_stay_valid_across_lookup_and_rotation():
             action = rng.randrange(10)
             if action < 5:
                 if cache.find_trace(pc) is None:
-                    assert cache.insert(_chain_stress_compile(compiler, index))
+                    assert_result_36 = cache.insert(_chain_stress_compile(compiler, index))
+                    assert assert_result_36
             elif action < 9:
                 found = cache.lookup(pc)
                 if found is not None:
@@ -3201,7 +3233,9 @@ def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, 
     manager = engine.jit_runtime
     block = next(b for b in module.blocks if b.loops_to == b.head_pc)
     trace = compile_runtime_block(manager, block)
-    assert trace is not None and manager.cache.insert(trace)
+    assert trace is not None
+    assert_result_25 = manager.cache.insert(trace)
+    assert assert_result_25
     snapshot = manager.native_dispatch_state()
     assert snapshot.entries[0].exec_count == trace.exec_count_address
     assert trace.exec_count == 0
@@ -3234,7 +3268,9 @@ def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, 
     manager.flush_all()
     assert [count for pc, count in retired if pc == trace.head_pc] == [3]
     replacement = compile_runtime_block(manager, block)
-    assert replacement is not None and manager.cache.insert(replacement)
+    assert replacement is not None
+    assert_result_26 = manager.cache.insert(replacement)
+    assert assert_result_26
     assert replacement.exec_count == 3
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [2]) == [3]
     assert replacement.exec_count == trace.exec_count == 5
@@ -3260,8 +3296,10 @@ def test_jitr_trace_execution_counts_follow_branch_through_runtime_api(collect_s
     blocks = instruction_blocks(module)
     source = compile_module_block(manager.jit_compiler, module, blocks[0])
     target = compile_module_block(manager.jit_compiler, module, blocks[1])
-    assert manager.cache.insert(target)
-    assert manager.cache.insert(source)
+    assert_result_27 = manager.cache.insert(target)
+    assert assert_result_27
+    assert_result_28 = manager.cache.insert(source)
+    assert assert_result_28
     assert source.chain_next is None
     assert _qa_trace_counted_call(engine, manager, Interpreter(module), 0, [10]) == [30]
     assert source.exec_count == target.exec_count == 1
@@ -3275,7 +3313,10 @@ def test_jitr_trace_execution_retirement_records_zero_and_used_traces():
     cache = JitRuntimeBoundary(retire_observer=lambda pc, count: records.append((pc, count)))
     used = JITTrace(0x100)
     unused = JITTrace(0x200)
-    assert cache.insert(used) and cache.insert(unused)
+    assert_result_29 = cache.insert(used)
+    assert assert_result_29
+    assert_result_30 = cache.insert(unused)
+    assert assert_result_30
     assert used.exec_count_address == 0 and unused.exec_count_address == 0
     cache.rotate()
     cache.rotate()
@@ -3288,7 +3329,8 @@ def test_jitr_trace_execution_retirement_records_zero_and_used_traces():
     cache.rotate()
     assert cache.lookup(used.head_pc) is None
     replacement = JITTrace(used.head_pc)
-    assert cache.insert(replacement)
+    assert_result_31 = cache.insert(replacement)
+    assert assert_result_31
     assert records == [(used.head_pc, 0), (unused.head_pc, 0)]
     assert replacement.exec_count == 0 and replacement.exec_count_address == 0
     cache.flush_all()
@@ -3321,7 +3363,8 @@ def test_jitr_trace_execution_count_excludes_invalid_static_depth():
         candidate._native.frame_depth = 0xFFFF
 
     manager.cache.metadata_provider = require_invalid_static_depth
-    assert manager.cache.insert(trace)
+    assert_result_32 = manager.cache.insert(trace)
+    assert assert_result_32
     assert trace.header._native.frame_depth == 0xFF
     assert block.frame_depth != 0xFF
     assert engine.call(Interpreter(module), 0, []) == [5]

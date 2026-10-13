@@ -111,8 +111,10 @@ def test_native_value_stack_owns_the_fixed_storage():
     assert ValueStackNative.size.offset == 512
     stack = NativeValueStack(capacity=2)
     assert isinstance(stack.native, ValueStackNative)
-    assert stack.push_i32(-1)
-    assert stack.push_f32(1.5)
+    assert_result_1 = stack.push_i32(-1)
+    assert assert_result_1
+    assert_result_2 = stack.push_f32(1.5)
+    assert assert_result_2
     pushed = stack.push_back(3)
     assert not pushed
     assert stack.native.size == 2
@@ -120,33 +122,46 @@ def test_native_value_stack_owns_the_fixed_storage():
     assert stack.read_i32(0) == -1
     assert stack.read_f32(1) == 1.5
     assert stack.value_ptr().value == ctypes.addressof(stack.native.values)
-    assert stack.pop_f32() == 1.5
-    assert stack.pop_i32() == -1
+    assert_result_3 = stack.pop_f32()
+    assert assert_result_3 == 1.5
+    assert_result_4 = stack.pop_i32()
+    assert assert_result_4 == -1
     with expect_assertion():
         stack.pop_back()
 
     wide_stack = NativeValueStack(capacity=4)
-    assert wide_stack.push_i64(-1)
+    assert_result_5 = wide_stack.push_i64(-1)
+    assert assert_result_5
     assert wide_stack.native.size == 2
-    assert wide_stack.push_f64(1.25)
+    assert_result_6 = wide_stack.push_f64(1.25)
+    assert assert_result_6
     assert wide_stack.native.size == 4
-    assert wide_stack.pop_f64() == 1.25
-    assert wide_stack.pop_i64() == -1
+    assert_result_7 = wide_stack.pop_f64()
+    assert assert_result_7 == 1.25
+    assert_result_8 = wide_stack.pop_i64()
+    assert assert_result_8 == -1
 
     typed_stack = NativeValueStack(capacity=8)
-    assert typed_stack.push_i32(-1)
-    assert typed_stack.push_i64(-2)
-    assert typed_stack.push_f32(1.25)
-    assert typed_stack.push_f64(2.5)
+    assert_result_9 = typed_stack.push_i32(-1)
+    assert assert_result_9
+    assert_result_10 = typed_stack.push_i64(-2)
+    assert assert_result_10
+    assert_result_11 = typed_stack.push_f32(1.25)
+    assert assert_result_11
+    assert_result_12 = typed_stack.push_f64(2.5)
+    assert assert_result_12
     assert typed_stack.peek_f64() == 2.5
     peek_stack = NativeValueStack(capacity=1)
-    assert peek_stack.push_f32(1.25)
+    assert_result_13 = peek_stack.push_f32(1.25)
+    assert assert_result_13
     assert peek_stack.peek_f32() == 1.25
     i32_peek_stack = NativeValueStack(capacity=1)
-    assert i32_peek_stack.push_i32(-7)
+    assert_result_14 = i32_peek_stack.push_i32(-7)
+    assert assert_result_14
     assert i32_peek_stack.peek_i32() == -7
     i64_peek_stack = NativeValueStack(capacity=2)
-    assert i64_peek_stack.push_i64(-8)
+    assert_result_15 = i64_peek_stack.push_i64(-8)
+    assert assert_result_15
     assert i64_peek_stack.peek_i64() == -8
     assert typed_stack.read_i64(1) == -2
     assert typed_stack.read_f64(4) == 2.5
@@ -165,7 +180,8 @@ def test_native_value_stack_owns_the_fixed_storage():
 
 def test_local_stack_window_uses_packed_offsets_and_typed_accessors():
     storage = NativeValueStack(capacity=8)
-    assert storage.extend((0, 0, 0, 0, 0, 0, 0, 0))
+    assert_result_16 = storage.extend((0, 0, 0, 0, 0, 0, 0, 0))
+    assert assert_result_16
     window = LocalStackWindow(storage, base=0, layout=LocalLayout((I32, I64, F32, F64)))
     assert len(window) == 4
     assert window.raw_slot(2) == 3

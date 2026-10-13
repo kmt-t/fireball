@@ -341,7 +341,8 @@ class VdmaModel:
         self.task = task
         with self.system.scheduler.task_context(self.task):
             self.system.bind_runtime(linear_memory)
-            assert self.system.pool.map_for_io(1) == HalBufferMapStatus.MAPPED
+            assert_result_1 = self.system.pool.map_for_io(1)
+            assert assert_result_1 == HalBufferMapStatus.MAPPED
             shared_result = self.system.memory_manager.allocate_shared(1024)
             assert shared_result.is_ok
             self.shared_block = shared_result.unwrap()

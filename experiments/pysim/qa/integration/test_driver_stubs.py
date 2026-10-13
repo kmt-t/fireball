@@ -76,7 +76,8 @@ def stream(
     length: int,
 ) -> int:
     pool = platform.system.pool
-    assert pool.map_for_io(0) == HalBufferMapStatus.MAPPED
+    assert_result_1 = pool.map_for_io(0)
+    assert assert_result_1 == HalBufferMapStatus.MAPPED
     try:
         key = ARG_MAX_LEN if cmd == WasiIpcCmd.STREAM_READ_BUFFER else ARG_LENGTH
         return command(
@@ -229,7 +230,8 @@ def test_stream_close_flush_and_invalid_slice_preserve_state(name: str) -> None:
         task = platform.system.scheduler.get_task(driver.expected_task_id)
         assert task is not None
         pool = platform.system.pool
-        assert pool.map_for_io(0) == HalBufferMapStatus.MAPPED
+        assert_result_2 = pool.map_for_io(0)
+        assert assert_result_2 == HalBufferMapStatus.MAPPED
         try:
             with platform.system.scheduler.task_context(task), pytest.raises(AssertionError):
                 driver.dispatch(
@@ -324,7 +326,8 @@ def test_bus_stubs_capture_tx_before_in_place_rx_and_preserve_tails(
         before = seed_slots(platform)
         incoming = bytes(index ^ 0x5A for index in range(length))
         driver.feed_reply(incoming)
-        assert platform.system.pool.map_for_io(0) == HalBufferMapStatus.MAPPED
+        assert_result_3 = platform.system.pool.map_for_io(0)
+        assert assert_result_3 == HalBufferMapStatus.MAPPED
         count = length if limit is None else min(length, limit)
         try:
             assert (
@@ -376,7 +379,8 @@ def test_bus_stub_rejection_preserves_reply_and_all_buffers(invalid: str) -> Non
             values[ARG_LENGTH] = 257
         else:
             del values[ARG_RX_BUFFER_HANDLE]
-        assert platform.system.pool.map_for_io(0) == HalBufferMapStatus.MAPPED
+        assert_result_4 = platform.system.pool.map_for_io(0)
+        assert assert_result_4 == HalBufferMapStatus.MAPPED
         task = platform.system.scheduler.get_task(drivers.spi.expected_task_id)
         assert task is not None
         before_calls = tuple(drivers.spi.observations)

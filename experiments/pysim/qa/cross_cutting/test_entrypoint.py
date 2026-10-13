@@ -117,6 +117,30 @@ def test_optimized_valid_operations_preserve_results_and_state(optimization: int
 
 
 @pytest.mark.parametrize("optimization", (0, 1, 2))
+def test_optimized_qa_setup_preserves_real_fixture_state(optimization: int) -> None:
+    """Observe QA helper effects without pytest's assert rewriting in the child."""
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(str(Path(path).resolve()) for path in sys.path)
+    environment.pop("PYTHONOPTIMIZE", None)
+    result = subprocess.run(
+        [sys.executable, *(["-O"] * optimization), "-m", "qa.private.optimized_qa_probe"],
+        cwd=_PYSIM_DIR.parent.parent,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout.splitlines()[-1]) == {
+        "optimization": optimization,
+        "outcome": [1, 6, 1, 0],
+        "top": 7,
+        "registers": [[10, 20, 30], 1, 999],
+    }
+
+
+@pytest.mark.parametrize("optimization", (0, 1, 2))
 def test_runner_propagates_optimization_to_its_child(optimization: int) -> None:
     environment = os.environ.copy()
     environment["PYTHONPATH"] = os.pathsep.join(str(Path(path).resolve()) for path in sys.path)

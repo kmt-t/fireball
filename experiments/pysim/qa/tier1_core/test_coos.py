@@ -266,8 +266,10 @@ def test_coos_09_interrupt_queue_overflow_drops():
             == task_states
         )
         assert tuple(sched._ready) == ready_before
-        assert tuple(sched.interrupt_event_queue.pop() for _ in events) == events
-        assert sched.interrupt_event_queue.pop() is None
+        assert_result_5 = tuple((sched.interrupt_event_queue.pop() for _ in events))
+        assert assert_result_5 == events
+        assert_result_7 = sched.interrupt_event_queue.pop()
+        assert assert_result_7 is None
 
 
 def test_coos_17_interrupt_queue_is_bounded_lock_free_spsc():
@@ -280,11 +282,15 @@ def test_coos_17_interrupt_queue_is_bounded_lock_free_spsc():
     assert queue.push(first)
     assert queue.push(second)
     assert not queue.push(third)
-    assert queue.pop() == first
+    assert_result_1 = queue.pop()
+    assert assert_result_1 == first
     assert queue.push(third)
-    assert queue.pop() == second
-    assert queue.pop() == third
-    assert queue.pop() is None
+    assert_result_2 = queue.pop()
+    assert assert_result_2 == second
+    assert_result_3 = queue.pop()
+    assert assert_result_3 == third
+    assert_result_4 = queue.pop()
+    assert assert_result_4 is None
 
 
 def test_coos_13_interrupt_reschedule_generation_round():

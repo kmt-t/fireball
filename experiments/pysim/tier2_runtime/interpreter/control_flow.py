@@ -714,7 +714,7 @@ def build_control_map(
         elif _NO_OPERAND.at(opcode):
             pass
         else:
-            assert False, (
+            reject_wasm(
                 f"ERR_WASM_UNSUPPORTED_FEATURE: opcode 0x{opcode:02X} at offset {start} is not supported"
             )
 
@@ -1157,7 +1157,7 @@ def iter_block_ops(
         elif _NO_OPERAND.at(opcode):
             arg = None
         else:
-            assert False, (
+            reject_wasm(
                 f"ERR_WASM_UNSUPPORTED_FEATURE: opcode 0x{opcode:02X} at offset {start} "
                 "is not a supported basic-block opcode"
             )

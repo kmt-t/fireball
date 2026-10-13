@@ -166,3 +166,15 @@ Jevでriskと記録付きjudgeを全件実行し、文書ゲート合格後に�
 コミット前は変更ファイルと直接関連する検証を実行する。
 コマンドの終了コードに加え、対象範囲、実行モード、失敗・skip・タイムアウトを確認する。
 未解決の失敗を検証済みとして扱わない。
+
+## 最適化モードと変更規模の確認
+
+`./tools/check-src.sh -g pysim --optimized`（Windows: `powershell tools/check-src.ps1 -group pysim -optimized`）は、通常の検査に加えて有効な操作と QA の準備処理を通常・`-O`・`-OO` の別プロセスで比較する。単独の入口は `uv run --group shared --group qa-shared --group qa-private python experiments/pysim/qa/run_all.py --optimized` である。契約違反を assert で拒否する負例は通常モードの単体テストで確認する。負例を含む全テストの最適化実行を合格条件にはしない。
+
+assert の状態変更検査は QA とベンチマークを含む pysim 全体を対象とする。型注釈と実行時の呼び出しは AST 上で区別する。check-doc は警告ごとのゲート名、ファイル、行、規則識別子を標準出力に表示する。
+
+`uv run --group shared python tools/check_source_size.py --json /tmp/source-size.json` は `inc/` と `src/` のファイル一覧、ハッシュ、SLOC を記録する。上限超過または空の対象一覧は終了コード 1 とする。計数方式と対象の正本は [資源予算評価](../docs/architecture/resource_budget_estimation.md) とする。pysim の参照実装の規模をこの上限へ加算しない。最終ターゲットの適合判定にはビルド構成の固定も必要である。`check-src` の `all` と `cpp` はこの在庫検査を実行する。
+
+ステージ後に `uv run --group shared python tools/check_commit_scope.py` を実行する。既定では 50 ファイル超または変更行数 2,000 超を警告する。しきい値は `--max-files` と `--max-lines` で調整できる。警告は終了コードを変更しない。結果ファイルとコードの混在も警告する。
+
+既存の追跡済みベンチマーク証跡は、仕様からの参照、再現条件、測定ハッシュを保持するために維持する。今後は最新の公開レポートと仕様が必要とする最小限の証跡を追跡し、追加理由を専用コミットに記録する。単発の診断ログや未参照の計測結果は Git 管理外に置く。

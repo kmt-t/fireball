@@ -15,10 +15,37 @@ import bisect
 import ctypes
 from collections.abc import Callable, Iterable, Iterator, Sized
 from dataclasses import dataclass
-from typing import Generic, Protocol, Self, TypeVar, cast, overload
+from typing import Generic, Never, Protocol, Self, TypeVar, cast, overload
 
 from bump_allocator import BumpAllocator
 from config import JIT_CARD_SHIFT
+
+ResultValueT = TypeVar("ResultValueT", covariant=True)
+ResultErrorT = TypeVar("ResultErrorT", covariant=True)
+OkT = TypeVar("OkT")
+ErrorT = TypeVar("ErrorT")
+
+
+@dataclass(frozen=True, slots=True)
+class Result(Generic[ResultValueT, ResultErrorT]):
+    """Generic success/failure value without runtime recovery policy."""
+
+    is_ok: bool
+    value: ResultValueT | None = None
+    error: ResultErrorT | None = None
+
+    @staticmethod
+    def ok(value: OkT) -> Result[OkT, Never]:
+        return Result[OkT, Never](is_ok=True, value=value)
+
+    @staticmethod
+    def err(error: ErrorT) -> Result[Never, ErrorT]:
+        return Result[Never, ErrorT](is_ok=False, error=error)
+
+    def unwrap(self) -> ResultValueT:
+        assert self.is_ok, "Cannot unwrap a failed Result"
+        assert self.value is not None, "Cannot unwrap a Result without a value"
+        return self.value
 
 
 class Comparable(Protocol):

@@ -18,9 +18,10 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Generic, Never, TypeVar
+from typing import Never, TypeVar
 
 from config import FB_CONF_RETRY_BACKOFF_MS, FB_CONF_RETRY_MAX_ATTEMPTS
+from system_containers import Result as CoreResult
 
 T = TypeVar("T", covariant=True)
 E = TypeVar("E", covariant=True)
@@ -36,12 +37,9 @@ class RecoveryStrategy(IntEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class Result(Generic[T, E]):
+class Result(CoreResult[T, E]):
     """Zero-exception Result container representing success or failure with actionable recovery strategy."""
 
-    is_ok: bool
-    value: T | None = None
-    error: E | None = None
     strategy: RecoveryStrategy = RecoveryStrategy.IGNORE
 
     @staticmethod
@@ -53,11 +51,6 @@ class Result(Generic[T, E]):
         error: ErrorT, strategy: RecoveryStrategy = RecoveryStrategy.RETRY
     ) -> Result[Never, ErrorT]:
         return Result[Never, ErrorT](is_ok=False, error=error, strategy=strategy)
-
-    def unwrap(self) -> T:
-        assert self.is_ok, "Cannot unwrap a failed Result"
-        assert self.value is not None, "Cannot unwrap a Result without a value"
-        return self.value
 
 
 def classify_trap_strategy(trap: str) -> RecoveryStrategy:

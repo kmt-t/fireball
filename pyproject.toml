@@ -15,6 +15,7 @@ shared = [
   "mermaidx>=0.9.4",
   "ruff>=0.16.8",
   "pyright>=1.1.390",
+  "pygments>=2.19.0",
 ]
 # Test framework packages shared by the unit, integration, and workload suites.
 qa-shared = [

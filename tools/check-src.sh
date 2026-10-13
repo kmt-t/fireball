@@ -9,6 +9,7 @@ cd "$REPO_ROOT"
 
 GROUP="all"
 CONFIG="spec-integrator.yaml"
+OPTIMIZED=0
 
 usage() {
     cat <<'EOF'
@@ -20,6 +21,7 @@ Usage:
 Options:
   -g, --group <name> Source group to verify: cpp, python, concepts, formal, pysim, all (default: all).
   -c, --config <path> Path to configuration file (default: spec-integrator.yaml).
+  --optimized         Compare valid PySIM/QA behavior under Python 0, -O, and -OO.
   -h, --help          Show this help message.
 EOF
     exit 0
@@ -31,6 +33,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         -g|--group)  GROUP="$2"; shift 2 ;;
         -c|--config) CONFIG="$2"; shift 2 ;;
+        --optimized) OPTIMIZED=1; shift ;;
         -h|--help)   usage ;;
         *) FILES+=("$1"); shift ;;
     esac
@@ -92,7 +95,16 @@ else
     MATRIX_EXIT=$?
 fi
 
-if [[ $SOURCE_EXIT -ne 0 || $MATRIX_EXIT -ne 0 ]]; then
+SIZE_EXIT=0
+if [[ "$GROUP" == "all" || "$GROUP" == "cpp" ]]; then
+    .venv/bin/python tools/check_source_size.py || SIZE_EXIT=$?
+fi
+OPTIMIZED_EXIT=0
+if [[ $OPTIMIZED -eq 1 ]]; then
+    .venv/bin/python experiments/pysim/qa/run_all.py --optimized || OPTIMIZED_EXIT=$?
+fi
+
+if [[ $SOURCE_EXIT -ne 0 || $MATRIX_EXIT -ne 0 || $SIZE_EXIT -ne 0 || $OPTIMIZED_EXIT -ne 0 ]]; then
     exit 1
 fi
 exit 0

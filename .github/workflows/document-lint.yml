@@ -58,7 +58,7 @@ jobs:
       - name: Run full integrations and scenarios
         run: .venv/bin/python experiments/pysim/qa/integration/run_all.py
       - name: Compare valid behavior in normal and optimized child processes
-        run: .venv/bin/python -m pytest -q experiments/pysim/qa/cross_cutting/test_entrypoint.py -k 'optimized or runner'
+        run: .venv/bin/python experiments/pysim/qa/run_all.py --optimized
       - name: Prepare pinned guest workloads
         run: |
           .venv/bin/python tools/guest_bindings/build_wasi_guest.py --prepare-sdk
@@ -71,7 +71,9 @@ jobs:
           .venv/bin/python experiments/pysim/benchmarks/run_all.py
           .venv/bin/python experiments/pysim/benchmarks/profile/bench_vtune_workload.py --scale 0.02 --log-dir reports/ci-profile
       - name: Test the verification tooling
-        run: uv run --system-certs --project tools/spec-integrator --extra dev --extra prose python -m pytest tools/spec-integrator/tests -q
+        run: |
+          uv run --system-certs --project tools/spec-integrator --extra dev --extra prose python -m pytest tools/spec-integrator/tests -q
+          .venv/bin/python -m pytest tools/tests -q
 
   lint:
     name: Document Gates & Audit Evidence

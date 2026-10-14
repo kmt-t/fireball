@@ -438,12 +438,6 @@ struct trace_builder {
 
   bool begin_trace() { return add_trace_header_reference(); }
 
-  bool append_alternate_chain_target_slot() {
-    // The slot trails the Runtime API records so the operation cursor can
-    // continue to start immediately after the header reference.
-    return add_value(0, sizeof(std::uint64_t));
-  }
-
   bool append_runtime_api(std::uint8_t slot, code_ip_t source_ip,
                           const std::uint64_t *immediates = nullptr,
                           const std::uint8_t *immediate_widths = nullptr,
@@ -1781,6 +1775,10 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
   if (!is_trace_terminator_opcode(opcode)) {
     return 1;
   }
+  if (opcode == 0x04 || opcode == 0x0C || opcode == 0x0D) {
+    // Branch instructions remain unexecuted trace exits handled by Interpreter CPS.
+    return 1;
+  }
 
   std::uint8_t slot = 0;
   if (!runtime_api_slot(opcode, slot)) {
@@ -2075,10 +2073,6 @@ int fireball::compile_wasm_trace(
       interpreter_annotation_byte_offset, interpreter_rel_bytes);
   if (terminator_status != 1) {
     return terminator_status;
-  }
-  if (end < code_bytes && (code[end] == 0x04 || code[end] == 0x0D) &&
-      !builder.append_alternate_chain_target_slot()) {
-    return 0;
   }
   const auto status = finish_trace(builder, stack, result);
   if (status == 1) {

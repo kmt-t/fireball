@@ -394,8 +394,8 @@ def test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_inter
     assert engine.stat_jit_invocations > 0, "`work` never ran compiled before the overflow"
 
 
-def test_jitr_69_forward_br_chains_preserve_static_nesting_metadata():
-    """The shared chain dispatcher trims a departed block frame before jumping to its target."""
+def test_jitr_69_forward_br_returns_through_cps_preserving_static_nesting_metadata():
+    """A forward branch leaves JIT and preserves static nesting for Interpreter CPS."""
     wat = """
     (module
       (func (export "main") (result i32) (local $i i32) (local $x i32)
@@ -434,8 +434,8 @@ def test_jitr_69_forward_br_chains_preserve_static_nesting_metadata():
     assert source_trace is not None and target_trace is not None
     assert source_trace.header._native.frame_depth == branch_source.frame_depth
     assert target_trace.header._native.frame_depth == branch_target.frame_depth
-    assert source_trace.chain_next == branch_target.head_pc
-    assert source_trace.header.chain_target_addr != 0
+    assert source_trace.chain_next is None
+    assert source_trace.header.chain_target_addr == 0
 
 
 # ---------------------------------------------------------------------------

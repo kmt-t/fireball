@@ -21,16 +21,6 @@
 #ifndef FB_CONTEXT_REL_OFFSET
 #error "FB_CONTEXT_REL_OFFSET must come from the production C++ ABI probe"
 #endif
-#ifndef FB_TRACE_CONST_REL_OFFSET
-#error "FB_TRACE_CONST_REL_OFFSET must come from the production C++ ABI probe"
-#endif
-#ifndef FB_TRACE_HEADER_BYTES
-#error "FB_TRACE_HEADER_BYTES must come from the production C++ ABI probe"
-#endif
-#ifndef FB_TRACE_CHAIN_ENTRY_OFFSET
-#error "FB_TRACE_CHAIN_ENTRY_OFFSET must come from tier1_core/config.py"
-#endif
-
 .intel_syntax noprefix
 .text
 
@@ -218,29 +208,10 @@ FB_TRACE_END fb_stencil_i32_rem_u
 
 FB_TRACE_BEGIN fb_trace_exit
   mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET]
-  test r11b, 1
-  jnz .Ltrace_exit_alternate
-  test r11b, 2
-  jnz .Ltrace_exit_force_return
   movsxd r10, dword ptr [r11]
   add r11, r10
   movsxd r10, dword ptr [r11 + FB_TRACE_COMMON_RELATIVE_OFFSET]
   lea rax, [r11 + r10]
-  mov FB_REL_REG, r11
-  jmp rax
-.Ltrace_exit_alternate:
-  and r11, -2
-  movsxd r10, dword ptr [r11 - (FB_TRACE_HEADER_BYTES - FB_TRACE_CONST_REL_OFFSET)]
-  lea FB_REL_REG, [r11 + r10 - FB_TRACE_HEADER_BYTES]
-  mov qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET], FB_REL_REG
-  add FB_REL_REG, 4
-  lea rax, [r11 + FB_TRACE_CHAIN_ENTRY_OFFSET]
-  jmp rax
-.Ltrace_exit_force_return:
-  and r11, -4
-  movsxd r10, dword ptr [r11 + FB_TRACE_COMMON_RELATIVE_OFFSET]
-  lea rax, [r11 + r10]
-  or r11, 2
   mov FB_REL_REG, r11
   jmp rax
 FB_TRACE_END fb_trace_exit

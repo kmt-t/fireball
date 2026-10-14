@@ -762,13 +762,13 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     results = engine.call(make_native_interpreter(mod, yield_threshold=3), 0, [5]).unwrap()
     assert results[0] == 120
     assert engine.stat_interp_steps >= 3
-    assert engine.stat_jit_invocations == 1
+    assert engine.stat_jit_invocations == 2
     assert engine.jit_runtime.bitmap.get_state(loop_pc) == CardState.COMPILED
     assert engine.jit_runtime.cache.find_trace(loop_pc) is not None
 
 
-def test_tier_03_trace_chaining_and_interpreter_fallback():
-    """TEST-TIER-03: Traces chain directly into resident successors, and fall back to Interpreter when chain ends."""
+def test_tier_03_branch_transitions_use_interpreter_cps():
+    """TEST-TIER-03: Branch transitions use Interpreter CPS between resident traces."""
     wat = """
     (module
       (func (export "f") (param i32) (result i32)
@@ -799,13 +799,12 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
     engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     block_a, block_b = instruction_blocks(mod)[:2]
-    # Compile block B first, then block A (so A can chain directly into resident B)
+    # Compile B first, then A. The branch terminator returns through Interpreter CPS.
     trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
     engine.jit_runtime.cache.insert(trace_b)
     trace_a = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_a)
     engine.jit_runtime.cache.insert(trace_a)
-    # Assert trace A chained directly into trace B
-    assert trace_a.chain_next == block_b.head_pc
+    assert trace_a.chain_next is None
     results = engine.call(make_native_interpreter(mod), 0, [100]).unwrap()
     assert results[0] == 160
     assert engine.stat_jit_invocations >= 2

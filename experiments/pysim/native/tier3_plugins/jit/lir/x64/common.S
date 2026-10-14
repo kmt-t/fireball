@@ -43,8 +43,6 @@
 .type fb_common_chain_dispatcher,@function
 #endif
 fb_common_chain_dispatcher:
-  test FB_REL_REG, 2
-  jnz .Lchain_abort_return
   mov rax, qword ptr [FB_REL_REG + FB_TRACE_CHAIN_TARGET_OFFSET]
   test rax, rax
   jz .Lchain_return
@@ -77,13 +75,6 @@ fb_common_chain_dispatcher:
   add rsp, 8
   pop r12
   mov eax, 1
-  ret
-.Lchain_abort_return:
-  /* A control Runtime API already committed its condition, stack, PC and block
-   * index. Preserve that state and report the pending CPS exit to C++. */
-  add rsp, 8
-  pop r12
-  xor eax, eax
   ret
 #if !defined(_WIN32)
 .size fb_common_chain_dispatcher,.-fb_common_chain_dispatcher

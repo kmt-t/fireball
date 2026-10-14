@@ -310,7 +310,7 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     loop_pc = next(block.head_pc for block in instruction_blocks(mod) if block.loops_to is not None)
     results = engine.call(make_native_interpreter(mod, yield_threshold=3), 0, [5]).unwrap()
     assert results[0] == 15
-    assert engine.stat_jit_invocations == 1
+    assert engine.stat_jit_invocations == 2
     assert engine.stat_interp_steps >= 3
     assert engine.jit_runtime.bitmap.get_state(loop_pc) == CardState.COMPILED
     assert engine.jit_runtime.cache.find_trace(loop_pc) is not None

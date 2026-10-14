@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from qa.private.interpreter_native_abi import select_native_jit_dispatch_entry
-from tier2_runtime.wasm.reader import parse_standalone
 from qa.shared.jit_abi import dispatch_for_test
+from tier2_runtime.wasm.reader import parse_standalone
 
 """
 Unit tests for Tier 3 JIT: JIT Hotspot Profiling & 3-Bank Cache
@@ -1119,7 +1119,7 @@ def test_jitr_br_if_loop_exit_jit_result_correct():
 
 
 def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
-    """TEST-JITR-63: JIT backedges chain until the shared yield threshold."""
+    """TEST-JITR-63: Interpreter CPS processes backedges until the shared yield threshold."""
     wat = """
     (module
       (func (export "sum") (param i32) (result i32)
@@ -1154,7 +1154,7 @@ def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
     assert trace.chain_next is None
     assert_result_15 = engine.jit_runtime.cache.insert(trace)
     assert assert_result_15
-    assert trace.chain_next == loop_block.head_pc
+    assert trace.chain_next is None
     assert trace.header._native.chain_body_count == 1
     interpreter = Interpreter(module, yield_threshold=2)
     call_state = interpreter.start(function_index, [5])
@@ -1162,7 +1162,7 @@ def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
     assert first_boundary.yield_requested
     assert first_boundary.call_state.current_pc() == loop_block.head_pc
     assert engine.stat_native_control_handlers >= 2
-    assert engine.stat_jit_invocations == 1
+    assert engine.stat_jit_invocations == 2
     assert engine.stat_native_dispatch_trace_transitions > 0
     assert first_boundary.call_state._frame is not None
     assert first_boundary.call_state._frame.context.loop_jump_count == 0
@@ -1548,8 +1548,8 @@ def test_jitr_local_pair_ngrams_use_x64_memory_operand_stencils():
         assert fused_stencil in native_body, f"{name}: {native_blob.hex()}"
 
 
-def test_jitr_cross_frame_loop_branch_chains_and_preserves_state():
-    """TEST-JITR-67: a cross-frame loop branch uses the common chain dispatcher."""
+def test_jitr_cross_frame_loop_branch_returns_through_interpreter_cps():
+    """TEST-JITR-67: a cross-frame loop branch returns to Interpreter CPS."""
     module = parse_standalone(
         wat_to_wasm(
             """(module
@@ -1587,7 +1587,7 @@ def test_jitr_cross_frame_loop_branch_chains_and_preserves_state():
     assert trace.next_pc is None
     assert_result_18 = engine.jit_runtime.cache.insert(trace)
     assert assert_result_18
-    assert trace.chain_next == target_block.head_pc
+    assert trace.chain_next is None
     assert trace.header._native.frame_depth > target_trace.header._native.frame_depth
 
     result = engine.call(Interpreter(module), function_index, [3]).unwrap()
@@ -3415,7 +3415,7 @@ def test_jitr_62_chain_links_stay_valid_across_lookup_and_rotation():
 @pytest.mark.parametrize("collect_stats", [False, True])
 @pytest.mark.parametrize("collect_hotspots", [False, True])
 def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, collect_hotspots):
-    """TEST-JITR-76: distinct chain bodies count once per dispatch, including in Oldest."""
+    """TEST-JITR-76: each loop iteration counts, including a trace resident in Oldest."""
     module = parse_standalone(
         wat_to_wasm("""(module
       (func (export "sum") (param i32) (result i32) (local i32)
@@ -3446,7 +3446,7 @@ def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, 
     interpreter = Interpreter(module)
     function = module.export_func_index("sum")
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [5]) == [15]
-    assert trace.exec_count == 1
+    assert trace.exec_count == 5
     manager.cache.rotate()
     manager.cache.rotate()
     address = trace.raw_addr
@@ -3454,7 +3454,7 @@ def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, 
     assert manager.lookup(trace.head_pc) is trace
     assert trace.raw_addr == address
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [2]) == [3]
-    assert trace.exec_count == 2
+    assert trace.exec_count == 7
     assert manager.cache.find_trace(trace.head_pc) is trace
     assert trace.raw_addr == address
     assert manager.native_dispatch_state() is not snapshot
@@ -3466,20 +3466,20 @@ def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, 
     manager.reset_stats()
     assert trace.exec_count == 0
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [3]) == [6]
-    assert trace.exec_count == 1
+    assert trace.exec_count == 3
     manager.flush_all()
-    assert [count for pc, count in retired if pc == trace.head_pc] == [1]
+    assert [count for pc, count in retired if pc == trace.head_pc] == [3]
     replacement = compile_runtime_block(manager, block)
     assert replacement is not None
     assert_result_26 = manager.cache.insert(replacement)
     assert assert_result_26
-    assert replacement.exec_count == 1
+    assert replacement.exec_count == 3
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [2]) == [3]
-    assert replacement.exec_count == trace.exec_count == 2
+    assert replacement.exec_count == trace.exec_count == 5
 
 
-def test_jitr_trace_execution_counts_follow_branch_through_runtime_api():
-    """TEST-JITR-73: a resident taken branch runs its successor in the native chain."""
+def test_jitr_branch_terminator_returns_through_interpreter_cps():
+    """TEST-JITR-73: a branch terminator leaves the trace through the CPS boundary."""
     module = parse_standalone(
         wat_to_wasm("""(module
       (func (export "f") (param i32) (result i32)
@@ -3503,11 +3503,11 @@ def test_jitr_trace_execution_counts_follow_branch_through_runtime_api():
     assert assert_result_28
     assert source.chain_next is None
     assert _qa_trace_counted_call(engine, manager, Interpreter(module), 0, [10]) == [30]
-    assert source.exec_count == 1
-    assert target.exec_count == 0
-    assert engine.stat_jit_invocations == 2
-    assert engine.stat_native_control_handlers == 2
-    assert engine.stat_native_dispatch_trace_transitions == 1
+    assert _qa_trace_counted_call(engine, manager, Interpreter(module), 0, [-5]) == [0]
+    assert source.exec_count == 2
+    assert engine.stat_jit_invocations >= 1
+    assert engine.stat_native_control_handlers > 0
+    assert engine.stat_trace_exits_to_interp > 0
 
 
 def test_jitr_trace_execution_retirement_records_zero_and_used_traces():

@@ -44,8 +44,6 @@ std::int64_t chain_successor(std::uintptr_t address, code_offset_t bytes, code_o
                              code_offset_t span, wasm_pc_t next_pc);
 int initialize_common_code(executable_memory *memory);
 int patch_trace_chain(executable_memory *memory, code_offset_t offset, std::uint64_t target);
-int patch_trace_alternate_chain(executable_memory *memory, code_offset_t offset,
-                                std::uint64_t target);
 int build_trace(const std::uint8_t *body, code_offset_t body_bytes,
                 const fireball::jit_compile_result *result, wasm_pc_t head_pc,
                 frame_depth_t frame_depth, block_index_t block_index, code_ip_t body_end_ip,

@@ -493,21 +493,19 @@ class NativeRuntimeStorage:
         assert 1 <= units <= 0xFFFF_FFFF and 1 <= scan_bytes <= 0xFFFF_FFFF
         state_view = (ctypes.c_uint8 * len(states)).from_buffer(states)
         dirty_view = (ctypes.c_uint8 * len(dirty)).from_buffer(dirty)
-        assert (
-            RUNTIME_BIND_CARDS(
-                self.pointer,
-                state_view,
-                len(states),
-                dirty_view,
-                len(dirty),
-                cards,
-                shift,
-                ctypes.byref(cursor),
-                units,
-                scan_bytes,
-            )
-            == 1
+        result = RUNTIME_BIND_CARDS(
+            self.pointer,
+            state_view,
+            len(states),
+            dirty_view,
+            len(dirty),
+            cards,
+            shift,
+            ctypes.byref(cursor),
+            units,
+            scan_bytes,
         )
+        assert result == 1
         self._states, self._dirty, self._cursor = state_view, dirty_view, cursor
 
 
@@ -571,17 +569,15 @@ def install_common_trace(
     assert 0 <= block_index <= 0xFFFF
     source = ctypes.cast(ctypes.c_char_p(blob), ctypes.POINTER(ctypes.c_uint8))
     entry = ctypes.c_size_t()
-    assert (
-        _COMMON_INSTALL(
-            ctypes.byref(memory),
-            offset,
-            source,
-            len(blob),
-            block_index,
-            ctypes.byref(entry),
-        )
-        == 1
+    result = _COMMON_INSTALL(
+        ctypes.byref(memory),
+        offset,
+        source,
+        len(blob),
+        block_index,
+        ctypes.byref(entry),
     )
+    assert result == 1
     return entry.value
 
 

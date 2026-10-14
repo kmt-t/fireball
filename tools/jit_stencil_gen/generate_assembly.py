@@ -580,9 +580,6 @@ def role_definitions(role: str, abi: tuple[int, ...], config_path: Path) -> dict
         return {
             "FB_CONTEXT_TRAP_CODE_OFFSET": trap_code,
             "FB_TRACE_COMMON_RELATIVE_OFFSET": common_relative,
-            "FB_TRACE_CONST_REL_OFFSET": const_rel,
-            "FB_TRACE_HEADER_BYTES": header,
-            "FB_TRACE_CHAIN_ENTRY_OFFSET": config["JIT_X64_TRACE_CHAIN_ENTRY_OFFSET"],
             "FB_CONTEXT_REL_OFFSET": context_rel,
         }
     if role == "common":

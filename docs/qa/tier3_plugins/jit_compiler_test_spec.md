@@ -76,10 +76,10 @@
 | TEST-JITC-50 | BasicBlock入口から持ち越すoperand stack値 | 有効なWASM control-flow mergeで既存stack値を消費する命令から始まるBasicBlock | 直前命令が積んだ値を残してBasicBlockへ入り、traceを生成・実行する | 相対stack depthが負になることを拒否理由にせず、traceが入口`sp`を基準に既存値を読み、正しい`sp`と結果を維持してJIT実行を続ける | `TraceBoundaryInvariant`, `test_jitr_trace_consumes_values_from_basic_block_entry_stack` |
 | TEST-JITC-51 | 制御命令と実行境界の状態整合 | `call`, `call_indirect`, `br_table`, import／host call, `return`を含む関数 | Interpreter単独実行と、対応するJIT経路の結果・共有状態・境界理由を比較する | 条件値、結果値、stack、frame、PCが一致する。外部呼出し、trap、関数完了は各契約の境界を守る。JIT処理済み命令をInterpreterで再実行しない | 「制御フロー・コール境界の状態整合不変条件」 |
 | TEST-JITC-52 | トレース境界での共有スタック位置 | JIT トレース実行終了時 | スタック内容とコンテキストを確認 | 融合後に生存するWASM値は共有オペランド領域に保持し、trace脱出時の`ip`と`stack_pointer`が最終状態に一致する | 「共有スタック範囲不変条件」 |
-| TEST-JITC-53 | 制御分岐の意味論とmachine-code chain | `br`、`br_if`、`br_table`で終わるtraceと常駐target | 条件値、stack、遷移先とchain経路を観測する | 制御状態がInterpreter単独実行と一致する。JITで処理した制御命令をhandlerで再実行しない。chainは共通dispatcherから常駐targetへ直接移る。handler後のC++ dispatcher遷移はchainとして数えない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md), `{JIT_LazyChaining}` |
+| TEST-JITC-53 | 制御分岐の意味論とInterpreter CPS境界 | `if`、`br`、`br_if`、`br_table`で終わるtraceと常駐target | 条件値、stack、遷移先、CPS handlerとnative chainの有無を観測する | `if`、`br`、`br_if`はtraceとRuntime APIに含めず、Interpreter CPS handlerが一度だけ実行する。分岐先へnative chainせず、制御状態はInterpreter単独実行と一致する | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md), `TraceBoundaryInvariant` |
 | TEST-JITC-54 | x64共通コード領域chain dispatcher経由のtrace遷移 | 直線後続ブロックのtraceが常駐 | trace終端の相対分岐とchain targetを確認して実行 | trace末尾の`rel32`が共通コード領域のchain dispatcherを指す。dispatcherはヘッダ`+0x00`のtarget bodyへtail-jumpし、未接続なら現在traceへ戻る。C++ handler実行後のdispatcher遷移はchainに含めない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 | TEST-JITC-55 | x64 JIT対応命令と制御終端のhandler経由 | x64 JITが対応する算術・ローカル命令、および`BR`/`BR_IF`/`BR_TABLE`等の制御終端 | 各traceの生成・実行とC++ handler呼出しを確認する | 対応命令はx64 trace bodyで実行され、制御終端はC++ Interpreter handlerが一度処理する。構文終端を無条件に消去せず、条件値を一度消費し、静的branch metadataからstackと遷移先を復元する | `jit_abi.md`, `test_jit_differential.py` |
-| TEST-JITC-58 | 分岐時のstack巻き戻しと結果値保持 | ラベル脱出に伴うstack巻き戻しを持つ`br` / `br_if` | 対応するJIT生成コード・Runtime API経路とInterpreter単独実行を比較する | 条件値の消費、結果値保持、stack復元、遷移先PCが一致する。各命令の状態更新は一度だけ行う | 「制御フロー・コール境界の状態整合不変条件」 |
+| TEST-JITC-58 | Interpreter CPS分岐時のstack巻き戻しと結果値保持 | ラベル脱出に伴うstack巻き戻しを持つ`br` / `br_if` | Interpreter単独実行と、分岐直前trace後にCPS handlerを実行する経路を比較する | 分岐opcodeはtrace外で一度だけ実行する。条件値の消費、結果値保持、stack復元、遷移先PCが一致する | 「制御フロー・コール境界の状態整合不変条件」 |
 | TEST-JITC-59 | 事前計算したオフセットに従うローカルアドレス | ローカルを読み書きするブロック。i32だけのフレームと、i64ローカルを含むフレームの2通り | Loader相当のローカル表からJIT traceをコンパイルし、配列を指定して実行する | 書き込み先は各ローカルの表引き済みワードオフセットになる。混在幅のフレームではi64後のローカル位置が詰められ、未更新wordのsentinelも保持される | `test_trace_local_addressing_uses_precomputed_compact_offsets` |
 | TEST-JITC-60 | 深い式の値順序と共有スタック範囲 | 乱数で生成した逆ポーランド式（最大深さ3〜11） | 各式をコンパイルして実行し、参照実装と比較する。実書込領域も検査する | 結果が参照実装と一致する。実書込領域は`[sp, sp + stack_words)`に収まり、`stack_words`は結果を含む生成コードの実使用量以上である。定数畳込みと命令融合で意味論上の最大深さより小さくなることがある | ``, TraceBoundaryInvariant |
 | TEST-JITC-61 | 動的値を使う深い式の共有スタック順序 | 11個のローカル読出しからなる右ネスト`i32.sub`とローカル読出しのシフト連鎖 | コンパイルして実行し、結果、`stack_words`、実書込領域を確認する | 被演算子は共有スタックから正しい順序で読み込まれ、結果が参照実装と一致する。融合できない深さ11の式では`stack_words`が11語となり、全実書込が宣言範囲内に収まる | TraceBoundaryInvariant |
@@ -118,7 +118,7 @@ UV_CACHE_DIR=/tmp/fireball-test-design-uv uv run --offline --no-sync python -m p
 
 ## 4. 未検証・スコープ外
 
-一般の制御命令のJIT処理と後方分岐chainは実装・実行検証が未完了である。TEST-JITC-51、53、58の既存handler経路の結果は、JIT内の制御命令処理を検証した証拠にはならない。対象経路の実装時に条件値、結果値、stack、frame、PCとyield境界を直接確認する。
+`if`、`br`、`br_if`をJIT機械語またはRuntime APIで直接処理する経路と、分岐先へのnative chainは対象外である。TEST-JITC-51、53、55、58はtrace終端後のInterpreter CPS処理を検証する。`br_table`、関数境界、および他の境界命令はそれぞれのInterpreter復帰契約に従う。
 
 - TEST-JITC-22は本番C++ ABI probeと通常C ABIでコンパイルしたステンシルの関数型、header、body位置を確認する。`local_base`は`execution_context`から読み出す。異なるホストABIの検証は対応する環境で行う。ARMv8-Mの物理配置はTBDとする。
 

@@ -804,7 +804,15 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
   assert(completed_trace_exit->result_words <=
          static_cast<std::uint32_t>(context.stack_limit - context.stack_pointer));
   context.stack_pointer += completed_trace_exit->result_words;
-  context.current_block_index = completed_trace_exit->block_index;
+  const auto branch_terminator_pending =
+      context.ip < context.code_size &&
+      (context.code[context.ip] == 0x04 || context.code[context.ip] == 0x0C ||
+       context.code[context.ip] == 0x0D);
+  // The Interpreter CPS handler still needs the source block for an unexecuted
+  // branch terminator after the trace has returned.
+  if (!branch_terminator_pending) {
+    context.current_block_index = completed_trace_exit->block_index;
+  }
   dispatch_rel = interpreter_rel_after_jit_trace(frame, completed_block_index,
                                                  completed_trace_exit->interpreter_rel_bytes);
   context.rel = dispatch_rel;

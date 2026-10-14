@@ -123,27 +123,6 @@ int fireball::patch_trace_chain(fireball::executable_memory *memory, code_offset
   return 1;
 }
 
-int fireball::patch_trace_alternate_chain(fireball::executable_memory *memory, code_offset_t offset,
-                                          std::uint64_t target) {
-  using namespace fireball;
-  assert(fb_jit_memory_valid_protection(memory) && memory->bytes == region_bytes);
-  auto *region = reinterpret_cast<std::uint8_t *>(memory->base);
-  assert(offset >= common_bytes && offset <= memory->bytes - header_bytes);
-  auto *header = reinterpret_cast<jit_trace_header *>(region + offset);
-  assert(header->const_rel_offset >= header_bytes && header->blob_bytes >= sizeof(target) &&
-         header->blob_bytes <= memory->bytes - offset);
-  const auto slot_offset = header->blob_bytes - sizeof(target);
-  const auto began = !memory->patching;
-  if (began) {
-    fb_jit_memory_begin(memory);
-  }
-  little_endian(region + offset + slot_offset, target);
-  if (began) {
-    fb_jit_memory_commit(memory);
-  }
-  return 1;
-}
-
 int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
                           const fireball::jit_compile_result *r, wasm_pc_t head_pc,
                           frame_depth_t frame_depth, block_index_t block_index,

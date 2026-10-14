@@ -1,0 +1,43 @@
+{
+  "scope": "authored firmware inc/ and src/",
+  "sloc": 3704,
+  "limit": 20000,
+  "files": [
+    {
+      "path": "inc/allocator/bump_allocator.hxx",
+      "sha256": "545d652bb4fa7e27bdce31706c8073c68004d1772a4d371a22b5b518b1e3a460",
+      "sloc": 25
+    },
+    {
+      "path": "inc/allocator/host_allocator.hxx",
+      "sha256": "000c42635bb6559978383c0b1830da6764590fc627b4db974d787ec2e0a53032",
+      "sloc": 7
+    },
+    {
+      "path": "inc/allocator/specified_allocator.hxx",
+      "sha256": "cad7afe0732b262d667061439144267bb349266a0e385b0cab376e707eaca781",
+      "sloc": 52
+    },
+    {
+      "path": "inc/utils/backtrace.hxx",
+      "sha256": "e679b9f3cbc122d362f3ac310b30c63dff6829be3ce2bf17d26e8e6218ab1425",
+      "sloc": 24
+    },
+    {
+      "path": "src/allocator/malloc.c",
+      "sha256": "07f6b505c712eeb4ac9f641cab67e574d4177c98536e02a08b8c9e62f2b1d95f",
+      "sloc": 3581
+    },
+    {
+      "path": "src/main.cxx",
+      "sha256": "beceea794895c6eea54aa3d09507430feb7a920fe527f55d814c4dd74fe73254",
+      "sloc": 5
+    },
+    {
+      "path": "src/utils/backtrace.cxx",
+      "sha256": "25dbe2fd1f3709a5ca9dd0efd89c43d5e46c7b29dec25eac14f8a7e72454e7da",
+      "sloc": 10
+    }
+  ],
+  "limitation": "Final target conformity also requires a fixed build configuration."
+}

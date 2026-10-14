@@ -1,0 +1,238 @@
+{
+  "metadata": {
+    "baseline_head": "37253e695d62bd9d4d9c6ab54eb31f81defe1ec8",
+    "measurement_architecture": "x86_64",
+    "qa_build": "Clang C++23 -O3 -flto=thin --qa --block-counters",
+    "source_sha256": {
+      "experiments/pysim/benchmarks/results/20261014/req020_phase0/measure_chain_reasons.py": "170a4ea5840ceabd57c421d5031ff11e7701a730c2bfa0317dc16219eab596c4",
+      "experiments/pysim/native/tier3_plugins/jit/jit_chain_diagnostics.hxx": "ffc79d66c3e22926de383205a7d63288858c7da8e748272e56d03b17b37c9e1d",
+      "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "1b57026a8743be13d33da738b1e2db7d56c830f32ccb89fc33f7de4f2bbd078c",
+      "experiments/pysim/native/tier3_plugins/jit/jit_runtime.hxx": "c1dfdb30e69462703bd040af7a4a95a9e76a30da2cc54937ad0bff5c784d8ecf",
+      "experiments/pysim/qa/private/jit_measurements.hxx": "08afb2f761a7f55834a6df78076653f2df177a7a8bd86414520a801e363b8261",
+      "experiments/pysim/qa/private/jit_native_abi.py": "af2c8e11870e116057a08ec86d25b4f4be7572301a999dd69606fb70bc203a11",
+      "experiments/pysim/qa/private/native_jit_probe.cxx": "40852567e586630143c8551c0724561b8998d3c6d4c00024467fd95ddbe533cf",
+      "experiments/pysim/qa/shared/jit_abi.py": "f4152f12cf9f010120084f8ea62282f950d66dff6e6be235c2e1e3112fba5957"
+    }
+  },
+  "runs": [
+    {
+      "iterations": 100000,
+      "jit_body_count": 200074,
+      "measurements": {
+        "chain_construction.backedge": 2,
+        "chain_construction.frame_depth_mismatch": 0,
+        "chain_construction.linked": 0,
+        "chain_construction.loop_target": 1,
+        "chain_construction.oldest_bank": 0,
+        "chain_construction.result_words": 0,
+        "chain_construction.self_loop": 0,
+        "chain_construction.successor_block_index_mismatch": 0,
+        "chain_construction.successor_not_resident": 0,
+        "chain_construction.unsupported_control_flow": 0,
+        "chain_construction_attempts": 3,
+        "chain_runtime.backedge": 100000,
+        "chain_runtime.frame_depth_mismatch": 0,
+        "chain_runtime.linked": 0,
+        "chain_runtime.loop_target": 1,
+        "chain_runtime.oldest_bank": 0,
+        "chain_runtime.result_words": 0,
+        "chain_runtime.self_loop": 0,
+        "chain_runtime.successor_block_index_mismatch": 0,
+        "chain_runtime.successor_not_resident": 0,
+        "chain_runtime.unsupported_control_flow": 100000,
+        "chain_runtime_transitions": 200001,
+        "chain_runtime_unclassified": 0,
+        "chain_runtime_unobserved_trace_exits": 0
+      },
+      "result": 704982704,
+      "workload": "arithmetic_loop"
+    },
+    {
+      "height": 16,
+      "jit_body_count": 56692,
+      "measurements": {
+        "chain_construction.backedge": 279,
+        "chain_construction.frame_depth_mismatch": 0,
+        "chain_construction.linked": 0,
+        "chain_construction.loop_target": 696,
+        "chain_construction.oldest_bank": 0,
+        "chain_construction.result_words": 0,
+        "chain_construction.self_loop": 0,
+        "chain_construction.successor_block_index_mismatch": 0,
+        "chain_construction.successor_not_resident": 0,
+        "chain_construction.unsupported_control_flow": 526,
+        "chain_construction_attempts": 1501,
+        "chain_runtime.backedge": 9728,
+        "chain_runtime.frame_depth_mismatch": 0,
+        "chain_runtime.linked": 0,
+        "chain_runtime.loop_target": 2712,
+        "chain_runtime.oldest_bank": 0,
+        "chain_runtime.result_words": 29297,
+        "chain_runtime.self_loop": 0,
+        "chain_runtime.successor_block_index_mismatch": 0,
+        "chain_runtime.successor_not_resident": 0,
+        "chain_runtime.unsupported_control_flow": 12012,
+        "chain_runtime_transitions": 53749,
+        "chain_runtime_unclassified": 0,
+        "chain_runtime_unobserved_trace_exits": 0
+      },
+      "output_bytes": 528,
+      "result_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "width": 32,
+      "workload": "aobench"
+    },
+    {
+      "height": 180,
+      "jit_body_count": 6003592,
+      "measurements": {
+        "chain_construction.backedge": 29146,
+        "chain_construction.frame_depth_mismatch": 0,
+        "chain_construction.linked": 0,
+        "chain_construction.loop_target": 72223,
+        "chain_construction.oldest_bank": 0,
+        "chain_construction.result_words": 0,
+        "chain_construction.self_loop": 0,
+        "chain_construction.successor_block_index_mismatch": 0,
+        "chain_construction.successor_not_resident": 0,
+        "chain_construction.unsupported_control_flow": 55498,
+        "chain_construction_attempts": 156867,
+        "chain_runtime.backedge": 1062587,
+        "chain_runtime.frame_depth_mismatch": 0,
+        "chain_runtime.linked": 0,
+        "chain_runtime.loop_target": 292658,
+        "chain_runtime.oldest_bank": 0,
+        "chain_runtime.result_words": 3124565,
+        "chain_runtime.self_loop": 0,
+        "chain_runtime.successor_block_index_mismatch": 0,
+        "chain_runtime.successor_not_resident": 0,
+        "chain_runtime.unsupported_control_flow": 1520839,
+        "chain_runtime_transitions": 6000649,
+        "chain_runtime_unclassified": 0,
+        "chain_runtime_unobserved_trace_exits": 0
+      },
+      "output_bytes": 57780,
+      "result_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+      "width": 320,
+      "workload": "aobench"
+    },
+    {
+      "jit_body_count": 494845,
+      "kernel_count": 17,
+      "kernels": [
+        {
+          "kernel": "k_sha256",
+          "result": 2842752457,
+          "units": 120
+        },
+        {
+          "kernel": "k_crc32",
+          "result": 3078617431,
+          "units": 20
+        },
+        {
+          "kernel": "k_sort",
+          "result": 1529817442,
+          "units": 1
+        },
+        {
+          "kernel": "k_matmul",
+          "result": 13640577,
+          "units": 12
+        },
+        {
+          "kernel": "k_fmatmul",
+          "result": 1112168416,
+          "units": 10
+        },
+        {
+          "kernel": "k_nbody",
+          "result": 495099,
+          "units": 700
+        },
+        {
+          "kernel": "k_mandel",
+          "result": 566863463,
+          "units": 75
+        },
+        {
+          "kernel": "k_lz",
+          "result": 3927895415,
+          "units": 12
+        },
+        {
+          "kernel": "k_sieve",
+          "result": 2738654948,
+          "units": 7
+        },
+        {
+          "kernel": "k_expr",
+          "result": 692934623,
+          "units": 500
+        },
+        {
+          "kernel": "k_vm",
+          "result": 3198557613,
+          "units": 34
+        },
+        {
+          "kernel": "k_dispatch",
+          "result": 1243096738,
+          "units": 15000
+        },
+        {
+          "kernel": "k_hash",
+          "result": 3262740226,
+          "units": 50
+        },
+        {
+          "kernel": "k_int64",
+          "result": 2905146970,
+          "units": 2700
+        },
+        {
+          "kernel": "k_life",
+          "result": 3591692637,
+          "units": 22
+        },
+        {
+          "kernel": "k_text",
+          "result": 728293460,
+          "units": 25
+        },
+        {
+          "kernel": "k_fir",
+          "result": 4045029290,
+          "units": 17
+        }
+      ],
+      "measurements": {
+        "chain_construction.backedge": 82,
+        "chain_construction.frame_depth_mismatch": 0,
+        "chain_construction.linked": 842,
+        "chain_construction.loop_target": 2845,
+        "chain_construction.oldest_bank": 209,
+        "chain_construction.result_words": 1,
+        "chain_construction.self_loop": 0,
+        "chain_construction.successor_block_index_mismatch": 0,
+        "chain_construction.successor_not_resident": 947,
+        "chain_construction.unsupported_control_flow": 2167,
+        "chain_construction_attempts": 7093,
+        "chain_runtime.backedge": 70249,
+        "chain_runtime.frame_depth_mismatch": 0,
+        "chain_runtime.linked": 0,
+        "chain_runtime.loop_target": 15229,
+        "chain_runtime.oldest_bank": 0,
+        "chain_runtime.result_words": 167372,
+        "chain_runtime.self_loop": 188539,
+        "chain_runtime.successor_block_index_mismatch": 0,
+        "chain_runtime.successor_not_resident": 72,
+        "chain_runtime.unsupported_control_flow": 15040,
+        "chain_runtime_transitions": 456501,
+        "chain_runtime_unclassified": 0,
+        "chain_runtime_unobserved_trace_exits": 0
+      },
+      "result_checksum": 1118658437,
+      "workload": "kernel_suite"
+    }
+  ]
+}

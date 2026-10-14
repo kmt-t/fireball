@@ -19,8 +19,18 @@ for trial in range(3):
         worker = bench / ("bench_wamr.py" if engine == "wamr" else "bench_native_build.py")
         options = ["--library", str(library)] if engine == "wamr" else ["--engine", engine]
         command = [
-            "taskset", "-c", "2", sys.executable, str(worker), *options,
-            "--width", "32", "--warmup", "3", "--repeats", "7",
+            "taskset",
+            "-c",
+            "2",
+            sys.executable,
+            str(worker),
+            *options,
+            "--width",
+            "32",
+            "--warmup",
+            "3",
+            "--repeats",
+            "7",
         ]
         row = json.loads(subprocess.check_output(command, text=True))
         assert row["engine"] == engine and row["width"] == 32

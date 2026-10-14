@@ -13,7 +13,7 @@ from qa.shared.runtime_stats import RuntimeStatsEngine
 from scheduler import Scheduler
 from tier2_runtime.abi.interpreter_abi import NativeValueStack
 from tier2_runtime.vmmio.controller import VMMIOController
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_plugins.debugger.debugger import DebuggerManager
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
 
@@ -32,7 +32,7 @@ def main() -> None:
     scheduler.activate_task(receiver)
     action, target = channel.recv()
 
-    module = parse(
+    module = parse_standalone(
         wasmtime.wat2wasm("""(module
       (func (export "id") (param i32) (result i32) local.get 0)
       (func (export "sum") (param $n i32) (result i64)

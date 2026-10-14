@@ -48,10 +48,10 @@ class RuntimeStatsEngine(RuntimeEngine):
         collect_runtime_stats: bool = False,
         bump_allocator: BumpAllocator | None = None,
     ) -> None:
-        super().__init__(
-            drive_mode=drive_mode,
-            bump_allocator=bump_allocator,
-        )
+        if bump_allocator is None:
+            self._initialize(drive_mode, BumpAllocator())
+        else:
+            self._initialize(drive_mode, bump_allocator)
         self._collect_runtime_stats = collect_runtime_stats
         self.jit_runtime = jit_runtime
         debug_env = os.environ.get("FIREBALL_DEBUG", "").lower()

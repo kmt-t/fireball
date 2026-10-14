@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import bisect
 import ctypes
-from collections.abc import Callable, Iterable, Iterator, Sized
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import Generic, Never, Protocol, Self, TypeVar, cast, overload
+from typing import Generic, Never, Protocol, Self, TypeVar, cast
 
 from bump_allocator import BumpAllocator
 from config import JIT_CARD_SHIFT
@@ -374,10 +374,8 @@ class ReadOnlyBitStorage:
         mask = (1 << self.bits) - 1
         return (self._buffer[bit >> 3] >> (bit & 7)) & mask
 
-    def view(self, origin: int = 0, count: int | None = None) -> ReadOnlyBitView:
-        return ReadOnlyBitView(
-            self._buffer, self.bits, origin=origin, count=count if count is not None else self.count
-        )
+    def view(self) -> ReadOnlyBitView:
+        return ReadOnlyBitView(self._buffer, self.bits, origin=0, count=self.count)
 
 
 class MutableBitStorage:
@@ -430,13 +428,8 @@ class MutableBitStorage:
     def clear(self) -> None:
         self.fill(0)
 
-    def view(self, origin: int = 0, count: int | None = None) -> BitView:
-        return BitView(
-            memoryview(self._buffer),
-            self.bits,
-            origin=origin,
-            count=count if count is not None else self.count,
-        )
+    def view(self) -> BitView:
+        return BitView(memoryview(self._buffer), self.bits, origin=0, count=self.count)
 
 
 # ---------------------------------------------------------------------------
@@ -651,7 +644,9 @@ class ReadOnlyFlatMapView(Generic[KeyT, ValT]):
     def find_index(self, key: KeyT) -> int:
         """Binary search returning index of key or -1 if not found (O(log N))."""
         i = self._locate(key)
-        return -1 if i is None else i
+        if i is None:
+            return -1
+        return i
 
     def __getitem__(self, key: KeyT) -> ValT:
         val = self.find(key)
@@ -990,9 +985,8 @@ class MutableFlatSetStorage(Generic[KeyT]):
         return ReadOnlyFlatSetView(self)
 
     def insert(self, key: KeyT) -> bool:
-        idx = bisect.bisect_left(
-            self._buffer, key, 0, self._count, key=lambda value: value if value is not None else key
-        )
+        active_keys = cast(Sequence[KeyT], self._buffer)
+        idx = bisect.bisect_left(active_keys, key, 0, self._count)
         if idx < self._count and self._buffer[idx] == key:
             return True
         if self._count >= self.capacity:
@@ -1004,9 +998,8 @@ class MutableFlatSetStorage(Generic[KeyT]):
         return True
 
     def remove(self, key: KeyT) -> bool:
-        idx = bisect.bisect_left(
-            self._buffer, key, 0, self._count, key=lambda value: value if value is not None else key
-        )
+        active_keys = cast(Sequence[KeyT], self._buffer)
+        idx = bisect.bisect_left(active_keys, key, 0, self._count)
         if idx >= self._count or self._buffer[idx] != key:
             return False
         for index in range(idx, self._count - 1):
@@ -1383,21 +1376,12 @@ class StaticVector(Generic[T]):
         return self
 
     @classmethod
-    @overload
-    def of(cls, items: SequenceView[T], capacity: None = None) -> StaticVector[T]: ...
-
-    @classmethod
-    @overload
-    def of(cls, items: Iterable[T], capacity: int) -> StaticVector[T]: ...
-
-    @classmethod
-    def of(cls, items: Iterable[T], capacity: int | None = None) -> StaticVector[T]:
-        """Builds a StaticVector pre-populated with `items` (test/setup convenience)."""
-        cap = capacity if capacity is not None else len(cast(Sized, items))
-        vec: StaticVector[T] = cls(capacity=cap)
+    def of(cls, items: Iterable[T], capacity: int) -> StaticVector[T]:
+        """Build a StaticVector with an explicitly selected capacity."""
+        vec: StaticVector[T] = cls(capacity=capacity)
         for item in items:
             if not vec.push_back(item):
-                assert False, f"StaticVector.of: items exceed capacity {cap}"
+                assert False, f"StaticVector.of: items exceed capacity {capacity}"
         return vec
 
     def push_back(self, item: T) -> bool:

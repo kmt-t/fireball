@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from tier2_runtime.wasm.reader import parse_standalone
 
 _TEST_FILE = Path(__file__).resolve()
 _TESTS_DIR = _TEST_FILE.parent.parent
@@ -68,7 +69,6 @@ from qa.shared.runtime_support import (
 )
 from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.vmmio.controller import TrapCode, VMMIOController, VmmioStatus
-from tier2_runtime.wasm.reader import parse
 
 # ==============================================================================
 # 1. Interpreter Gotchas (GOTCHA-INTP-01 ~ 04)
@@ -93,7 +93,7 @@ def test_intp_gotcha_01_native_stack_sync():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    module = parse(wasm_bytes)
+    module = parse_standalone(wasm_bytes)
     interp = Interpreter(module)
 
     call_state = interp.start(0, [])
@@ -141,7 +141,7 @@ def test_intp_gotcha_02_label_arity_pruning_preserves_stack_result():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    module = parse(wasm_bytes)
+    module = parse_standalone(wasm_bytes)
     interp = Interpreter(module)
 
     call_state = interp.start(0, [])
@@ -166,7 +166,7 @@ def test_intp_gotcha_03_if_false_no_else_no_frame_leak():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    module = parse(wasm_bytes)
+    module = parse_standalone(wasm_bytes)
     interp = Interpreter(module)
 
     call_state = interp.start(0, [])
@@ -261,7 +261,7 @@ def test_jitr_gotcha_03_lifo_reverse_compilation_order():
       (func (export "f0") (result i32) i32.const 10 i32.const 20 i32.add)
       (func (export "f1") (result i32) i32.const 30 i32.const 40 i32.add)
       (func (export "f2") (result i32) i32.const 50 i32.const 60 i32.add))"""
-    module = parse(wat_to_wasm(wat))
+    module = parse_standalone(wat_to_wasm(wat))
     engine.register_module_blocks(module)
     pcs = [block.head_pc for block in module.blocks]
     for pc in pcs:
@@ -652,10 +652,10 @@ def test_dbg_gotcha_01_debugger_and_native_execution_plugin_are_rejected_by_inte
     from qa.shared.helpers import expect_assertion, make_native_interpreter, wat_to_wasm
     from qa.shared.jit_manager import JITRuntimeManager
     from qa.shared.x64_jit import TraceCompiler
-    from tier2_runtime.wasm.reader import parse
+    from tier2_runtime.wasm.reader import parse_standalone
     from tier3_plugins.debugger.debugger import DebuggerManager
 
-    module = parse(wat_to_wasm("(module (func))"))
+    module = parse_standalone(wat_to_wasm("(module (func))"))
     interpreter = make_native_interpreter(module)
     plugin = JITRuntimeManager(jit_compiler=TraceCompiler())
     try:

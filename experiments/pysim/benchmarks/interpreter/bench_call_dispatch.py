@@ -28,7 +28,7 @@ from tier2_runtime.interpreter.interpreter import (
     InterpreterBindings,
     NativeInterpreter,
 )
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 
 WAT = r"""(module
   (type $unary (func (param i32) (result i32)))
@@ -106,7 +106,7 @@ def main() -> None:
     assert args.repeats > 0
 
     wasm = bytes(wasmtime.wat2wasm(WAT))
-    module = parse(wasm)
+    module = parse_standalone(wasm)
     expected = args.iterations * (args.iterations + 1) // 2
     funcs = {
         name: module.export_func_index(f"bench_{name}")
@@ -128,8 +128,12 @@ def main() -> None:
     }
 
     for variant in variants:
-        interpreter_type = Interpreter if variant == "python" else NativeInterpreter
-        interpreter = interpreter_type(module, InterpreterBindings.empty())
+        if variant == "python":
+            interpreter = Interpreter.with_module_allocator(module, InterpreterBindings.empty())
+        else:
+            interpreter = NativeInterpreter.with_module_allocator(
+                module, InterpreterBindings.empty()
+            )
         for workload in workloads:
             function_index = funcs[workload]
             # The untimed warmup validates the same result for every measured call.

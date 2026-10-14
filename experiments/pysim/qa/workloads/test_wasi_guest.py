@@ -24,7 +24,7 @@ from system import System
 from tier2_runtime.hal.dispatch import FB_CONF_HAL_BUFFER_SIZE, HalBufferMapStatus, WasiIpcCmd
 from tier2_runtime.observability.logger import LogDictionary
 from tier2_runtime.syscall.hostcall import WasiErrno
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.platform_config import PlatformDriverConfiguration
@@ -158,22 +158,22 @@ class GuestSession:
         self.hardware = ObservedHardware()
         self.log = PrintkBuffer()
         dictionary = LogDictionary()
-        self.system = System(
-            drivers=PlatformDriverConfiguration(
+        self.system = System.configured(
+            PlatformDriverConfiguration(
                 stdout_transport=self.hardware,
                 printk=PrintkSink(self.log, dictionary.decode_record),
                 wasi_backend=self.backend,
             ),
-            log_dictionary=dictionary,
+            dictionary,
         )
         self.hardware.system = self.system
         self.driver = DummyDriver(self.system.pool, transport=self.hardware)
         self.hardware.hal_task_id = self.system.start_hal_driver(
             self.driver, FB_URI_HAL_STDOUT
         ).unwrap()
-        self.module = parse(artifact.wasm.read_bytes())
+        self.module = parse_standalone(artifact.wasm.read_bytes())
         assert self.module.memory is not None and self.module.memory.min_pages == 1
-        self.host = WasiHostContext(self.system)
+        self.host = WasiHostContext.create_default(self.system)
         self.module.init_memory_data(self.host.guest_memory, ())
         functions = self.host.build_interpreter_host_functions(self.module)
         assert all(function is not None for function in functions)

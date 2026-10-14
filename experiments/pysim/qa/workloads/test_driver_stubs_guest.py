@@ -35,7 +35,7 @@ from tier2_runtime.hal.dispatch import (
     WasiIpcCmd,
 )
 from tier2_runtime.interpreter.interpreter import WasmHostFunction, WasmNumber
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 
 ROOT = Path(__file__).resolve().parents[4]
 STREAMS = ("uart", "rtt", "stdout", "adc")
@@ -89,7 +89,7 @@ class GuestDriverClient:
 
     def __init__(self, platform: StubPlatform, address: str, binary: Path) -> None:
         self.platform, self.address = platform, address
-        self.module = parse(binary.read_bytes())
+        self.module = parse_standalone(binary.read_bytes())
         imports = tuple(
             (self.module.import_module_name(i), self.module.import_field_name(i))
             for i in range(len(self.module.imports))

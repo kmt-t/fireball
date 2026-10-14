@@ -67,7 +67,7 @@ from tier2_runtime.observability.logger import (
 )
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.module import Module
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse, parse_standalone
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.logging.file_sink import FileLogSink
 from tier3_platform.drivers.printk import PrintkSink
@@ -161,12 +161,12 @@ def _new_guest():
 
 def _new_interpreter_guest() -> tuple[Module, Interpreter, None]:
     module, bindings = _new_guest()
-    return module, Interpreter(module, bindings), None
+    return module, Interpreter.with_module_allocator(module, bindings), None
 
 
 def _new_jit_guest() -> tuple[Module, NativeInterpreter, RuntimeEngine]:
     module, bindings = _new_guest()
-    engine = RuntimeEngine(bump_allocator=module.allocator)
+    engine = RuntimeEngine.with_allocator(module.require_allocator())
     engine.register_module_blocks(module)
     interpreter = NativeInterpreter(
         module,
@@ -258,9 +258,8 @@ def phase_os_mix(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
     runs: list[KernelRun] = []
     seconds = 0.0
     log_path, sink = _open_log("os_mix")
-    sysv = System(
-        printk_sink=sink,
-        log_dictionary=LogDictionary(entries=((0x200, "KERNEL_DONE: idx=%d result=%d"),)),
+    sysv = System.with_printk_sink(
+        sink, LogDictionary(entries=((0x200, "KERNEL_DONE: idx=%d result=%d"),))
     )
 
     def guest(index: int, name: str, units: int):
@@ -318,10 +317,12 @@ def _ao_size(scale: float) -> tuple[int, int]:
 
 
 def _ao_guest(phase: str):
-    module = parse(AO_WASM_PATH.read_bytes())
+    module = parse_standalone(AO_WASM_PATH.read_bytes())
     _, sink = _open_log(phase)
-    sysv = System(printk_sink=sink)  # keep system logs out of the guest's stdout stream
-    wasi_ctx = WasiHostContext(sysv)
+    sysv = System.with_printk_sink_and_default_dictionary(
+        sink
+    )  # keep system logs out of the guest's stdout stream
+    wasi_ctx = WasiHostContext.create_default(sysv)
     sysv.start_hal_driver(
         DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
     ).unwrap()
@@ -343,7 +344,7 @@ def _check_ao_frame(frame: bytes, width: int, height: int) -> None:
 def phase_ao_interp(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseResult:
     width, height = _ao_size(scale)
     module, sysv, bindings, sink = _ao_guest("ao_interp")
-    interp = Interpreter(module, bindings)
+    interp = Interpreter.with_module_allocator(module, bindings)
     t0 = time.perf_counter()
     interp.call(module.export_func_index("main"), [width, height]).unwrap()
     seconds = time.perf_counter() - t0

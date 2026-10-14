@@ -509,29 +509,27 @@ class Scheduler:
         self.reschedule_pending = False
         self.round_target_generation = 0
 
-    def observe_reschedule_generation(self, task: Task | None = None) -> bool:
+    def observe_reschedule_generation(self, task: Task) -> bool:
         """Observe the current generation at a cooperative execution boundary.
 
         Returns ``True`` exactly once per target task and generation. The caller
         must turn that result into its normal cooperative yield; this method does
         not perform a context switch itself.
         """
-        observed_task = task if task is not None else self.current_task
-        assert observed_task is not None, "generation observation requires an active task"
-        assert self.get_task(observed_task.task_id) is observed_task, (
+        assert self.get_task(task.task_id) is task, (
             "generation observation requires a registered task"
         )
         self._begin_reschedule_round()
         if not self.reschedule_pending:
             return False
-        bit = self._task_bit(observed_task)
+        bit = self._task_bit(task)
         if self.round_target_mask & bit == 0:
             return False
         self.round_target_mask &= ~bit
-        if observed_task.last_seen_generation == self.reschedule_generation:
+        if task.last_seen_generation == self.reschedule_generation:
             self._complete_reschedule_if_ready()
             return False
-        observed_task.last_seen_generation = self.reschedule_generation
+        task.last_seen_generation = self.reschedule_generation
         self._complete_reschedule_if_ready()
         return True
 

@@ -11,6 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tier2_runtime.wasm.reader import parse_standalone
+
 _PYSIM_DIR = Path(__file__).resolve().parents[4]
 _REPO_ROOT = _PYSIM_DIR.parents[1]
 _BENCH_DIR = _PYSIM_DIR / "benchmarks"
@@ -27,7 +29,6 @@ from qa.shared.jit_manager import JITRuntimeManager as QaJitRuntimeManager
 from qa.shared.runtime_stats import RuntimeStatsEngine
 from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
-from tier2_runtime.wasm.reader import parse
 
 _REASONS = (
     "linked",
@@ -137,7 +138,7 @@ def _reset_runtime_counts(manager: QaJitRuntimeManager) -> None:
 def _measure_arithmetic() -> dict[str, object]:
     from bench_jit import JITCompilerBenchmark
 
-    module = parse(memoryview(JITCompilerBenchmark._create_heavy_loop_binary()))
+    module = parse_standalone(memoryview(JITCompilerBenchmark._create_heavy_loop_binary()))
     manager = _new_manager()
     engine, interpreter = _new_engine(module, manager)
     function_index = module.export_func_index("heavy_loop")
@@ -163,15 +164,15 @@ def _measure_aobench(width: int, height: int) -> dict[str, object]:
     from bench_vtune_workload import AO_WASM_PATH, _check_ao_frame
     from ipc_router import FB_URI_HAL_STDOUT
     from system import System
-    from tier2_runtime.wasm.reader import parse
+    from tier2_runtime.wasm.reader import parse_standalone
     from tier3_platform.drivers.hal.dummy import DummyDriver
     from tier3_platform.drivers.hal.stream import StreamTransport
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
-    module = parse(AO_WASM_PATH.read_bytes())
+    module = parse_standalone(AO_WASM_PATH.read_bytes())
     system = System()
     system.transport = StreamTransport((width + 1) * height)
-    wasi_context = WasiHostContext(system)
+    wasi_context = WasiHostContext.create_default(system)
     system.start_hal_driver(
         DummyDriver(system.pool, transport=system.transport), FB_URI_HAL_STDOUT
     ).unwrap()

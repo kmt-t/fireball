@@ -9,18 +9,17 @@ from tier2_runtime.wasm.validation import reject_wasm, require_wasm
 def decode_unsigned(
     data: SequenceView[int],
     offset: int,
-    end: int | None = None,
+    end: int,
     bits: int = 32,
 ) -> tuple[int, int]:
     """Decode a bounded unsigned LEB128 integer and return (value, new_offset)."""
-    limit = len(data) if end is None else end
     assert bits == 32 or bits == 64, "unsigned LEB128 width must be 32 or 64 bits"
-    assert 0 <= offset <= limit <= len(data), "invalid unsigned LEB128 bounds"
+    assert 0 <= offset <= end <= len(data), "invalid unsigned LEB128 bounds"
     result = 0
     shift = 0
     max_bytes = (bits + 6) // 7
     for _ in range(max_bytes):
-        require_wasm(offset < limit, "truncated unsigned LEB128 integer")
+        require_wasm(offset < end, "truncated unsigned LEB128 integer")
         byte = data[offset]
         offset += 1
         payload = byte & 0x7F
@@ -34,21 +33,25 @@ def decode_unsigned(
     reject_wasm(f"unsigned LEB128 integer exceeds maximum {max_bytes} bytes")
 
 
+def decode_unsigned_full(data: SequenceView[int], offset: int, bits: int = 32) -> tuple[int, int]:
+    """Decode an unsigned integer bounded by the complete input view."""
+    return decode_unsigned(data, offset, len(data), bits)
+
+
 def decode_signed(
     data: SequenceView[int],
     offset: int,
-    end: int | None = None,
+    end: int,
     bits: int = 32,
 ) -> tuple[int, int]:
     """Decode a bounded signed LEB128 integer and return (value, new_offset)."""
-    limit = len(data) if end is None else end
     assert bits == 32 or bits == 64, "signed LEB128 width must be 32 or 64 bits"
-    assert 0 <= offset <= limit <= len(data), "invalid signed LEB128 bounds"
+    assert 0 <= offset <= end <= len(data), "invalid signed LEB128 bounds"
     result = 0
     shift = 0
     max_bytes = (bits + 6) // 7
     for _ in range(max_bytes):
-        require_wasm(offset < limit, "truncated signed LEB128 integer")
+        require_wasm(offset < end, "truncated signed LEB128 integer")
         byte = data[offset]
         offset += 1
         payload = byte & 0x7F
@@ -72,3 +75,8 @@ def decode_signed(
         require_wasm(remaining_bits > 7, f"signed LEB128 integer exceeds maximum {max_bytes} bytes")
         shift += 7
     reject_wasm(f"signed LEB128 integer exceeds maximum {max_bytes} bytes")
+
+
+def decode_signed_full(data: SequenceView[int], offset: int, bits: int = 32) -> tuple[int, int]:
+    """Decode a signed integer bounded by the complete input view."""
+    return decode_signed(data, offset, len(data), bits)

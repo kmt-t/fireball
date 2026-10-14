@@ -6,7 +6,7 @@ import math
 import struct
 
 from system_containers import SequenceView as Sequence
-from tier2_runtime.wasm.leb128 import decode_unsigned
+from tier2_runtime.wasm.leb128 import decode_unsigned_full
 
 I32_MASK = 0xFFFFFFFF
 
@@ -79,8 +79,8 @@ def _f32_max(a: float, b: float) -> float:
 
 
 def _read_memarg(code: Sequence[int], ip: int) -> tuple[int, int]:
-    align, off = decode_unsigned(code, ip + 1)
-    mem_offset, next_ip = decode_unsigned(code, off)
+    align, off = decode_unsigned_full(code, ip + 1)
+    mem_offset, next_ip = decode_unsigned_full(code, off)
     return mem_offset, next_ip
 
 

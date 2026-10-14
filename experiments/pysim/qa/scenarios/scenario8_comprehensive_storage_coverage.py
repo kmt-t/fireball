@@ -25,7 +25,7 @@ from qa.private.runtime_test_driver import RuntimeEngineDebugDriver
 from qa.shared.runtime_support import instruction_blocks
 from system import System
 from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterBindings
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.debugger.debugger import DebuggerManager
 from tier3_plugins.debugger.gdb_server import GDBServer
@@ -146,15 +146,15 @@ class GDBClientHelper:
 def test_scenario_comprehensive_storage_and_debugger():
     print("[*] Running Scenario 8: Comprehensive Storage (Globals/Locals/Memory) & GDB Debugger...")
     wasm_bytes = bytes(wasmtime.wat2wasm(SCENARIO8_WAT))
-    module = parse(wasm_bytes)
+    module = parse_standalone(wasm_bytes)
     # -------------------------------------------------------------------------
     # Phase 1: Pure WASM Interpreter Verification (Memory Widths & Sign/Zero Extension)
     # -------------------------------------------------------------------------
     sysv = System()
-    wasi_ctx = WasiHostContext(sysv)
+    wasi_ctx = WasiHostContext.create_default(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
-    interp = Interpreter(
+    interp = Interpreter.with_module_allocator(
         module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
     )
     fn_mem_test = module.export_func_index("test_memory_widths")
@@ -224,7 +224,7 @@ def test_scenario_comprehensive_storage_and_debugger():
     live_mem[0:12] = b"STORAGE_DATA"
     execution = make_debug_execution(debug_mod, 0, (7, 0, 0, 0), memory=live_mem)
     dbg = DebuggerManager(engine=execution)
-    server = GDBServer(dbg=dbg, host="127.0.0.1", port=0)
+    server = GDBServer.with_socket_transport(dbg, host="127.0.0.1", port=0)
     ctx = execution.context
     port = server.start(current_pc=block100.head_pc, ctx=ctx, blocks=blocks)
     time.sleep(0.05)

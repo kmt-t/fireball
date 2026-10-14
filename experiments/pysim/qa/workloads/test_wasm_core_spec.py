@@ -16,7 +16,7 @@ import pytest
 from qa.shared.helpers import make_interpreter, make_native_interpreter
 from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterCall, Trap
 from tier2_runtime.wasm.module import F32, F64, I32, I64, Module
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier2_runtime.wasm.validation import InvalidWasm
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -113,7 +113,7 @@ def _module_globals(module: Module) -> tuple[int, ...]:
 
 
 def _instantiate(binary: bytes, *, native: bool = False) -> tuple[Module, Interpreter]:
-    module = parse(binary)
+    module = parse_standalone(binary)
     if module.imports or module.memory_import is not None or module.table_import_count:
         raise UnsupportedFixture("module requires an imported function, memory, table, or global")
     if module.memory is None:
@@ -138,7 +138,7 @@ def _instantiate(binary: bytes, *, native: bool = False) -> tuple[Module, Interp
 def _assert_rejected_module(binary: bytes, location: str) -> None:
     """Treat only parser rejection as a passing malformed/invalid assertion."""
     try:
-        parse(binary)
+        parse_standalone(binary)
     except InvalidWasm:
         return
     raise AssertionError(f"{location}: loader accepted rejected module")

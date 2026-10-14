@@ -63,13 +63,13 @@ from tier2_runtime.vsoc.virq import (
     VirqNode,
 )
 from tier2_runtime.wasm.module import Module
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.printk import PrintkBuffer
 from tier3_platform.drivers.wasi.context import WasiHostContext
 
 
 def _make_virq_module() -> Module:
-    return parse(
+    return parse_standalone(
         memoryview(
             wat_to_wasm(
                 "(module "
@@ -356,7 +356,7 @@ def test_runtime_has_no_guest_call_entrypoint():
 
 
 def _counter_module() -> Module:
-    return parse(
+    return parse_standalone(
         wat_to_wasm("""(module (memory 1)
       (func (export "count") (param $limit i32) (result i32) (local $index i32)
         (loop $loop
@@ -610,7 +610,7 @@ def test_idle_01_jit_batch_compilation_on_idle():
       (func (export "f0") (result i32) i32.const 10 i32.const 20 i32.add)
       (func (export "f1") (result i32) i32.const 30 i32.const 40 i32.add)
       (func (export "f2") (result i32) i32.const 50 i32.const 60 i32.add))"""
-    module = parse(wat_to_wasm(wat))
+    module = parse_standalone(wat_to_wasm(wat))
     engine.register_module_blocks(module)
     pcs = [block.head_pc for block in module.blocks]
     assert len(pcs) == 3
@@ -637,9 +637,7 @@ def test_idle_01_jit_batch_compilation_on_idle():
 def test_idle_02_logging_flush_on_idle():
     """TEST-LOG-06: System's scheduler idle hook flushes every deferred log in order."""
     sink = PrintkBuffer()
-    system = System(
-        printk_sink=sink, log_dictionary=LogDictionary(entries=((1, "event payload=%d"),))
-    )
+    system = System.with_printk_sink(sink, LogDictionary(entries=((1, "event payload=%d"),)))
     try:
         assert system.logger.log_event(LogLevel.INFO, 1, 42) == LogResult.SUCCESS
         assert system.logger.log_event(LogLevel.INFO, 1, 99) == LogResult.SUCCESS
@@ -657,9 +655,7 @@ def test_idle_02_logging_flush_on_idle():
 def test_tier_01_interpreter_to_jit_cooperative_flow():
     """Real native/JIT guest execution cooperates with COOS and flushes logs on idle."""
     sink = PrintkBuffer()
-    system = System(
-        printk_sink=sink, log_dictionary=LogDictionary(entries=((0x10, "wasm iteration=%d"),))
-    )
+    system = System.with_printk_sink(sink, LogDictionary(entries=((0x10, "wasm iteration=%d"),)))
     system.runtime_engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
         card_shift=2,
@@ -667,7 +663,7 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
         min_trace_bytes=1,
         candidate_threshold=0,
     )
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm("""(module
       (import "test" "observe" (func $observe (param i32)))
       (func (export "count") (param $limit i32) (result i32) (local $index i32)
@@ -685,7 +681,7 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
 
     interpreter = make_native_interpreter(
         module,
-        host_functions=StaticVector.of((report,)),
+        host_functions=StaticVector.of((report,), capacity=1),
         bump_allocator=system.runtime_engine.bump_allocator,
         yield_threshold=2,
     )
@@ -833,12 +829,12 @@ def test_guest_wasi_01_interpreter_fd_write():
 """
 
     wasm_bytes = wat_to_wasm(wat)
-    mod = parse(wasm_bytes)
+    mod = parse_standalone(wasm_bytes)
     sysv = System()
     try:
         from tier3_platform.drivers.hal.dummy import DummyDriver
 
-        ctx = WasiHostContext(sysv)
+        ctx = WasiHostContext.create_default(sysv)
         sysv.start_hal_driver(
             DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
         ).unwrap()
@@ -873,10 +869,10 @@ def test_guest_wasi_02_interpreter_clock_and_random():
     )
 """
     wasm_bytes = wat_to_wasm(wat)
-    mod = parse(wasm_bytes)
-    sysv = System(drivers=create_reference_platform_drivers())
+    mod = parse_standalone(wasm_bytes)
+    sysv = System.with_drivers(create_reference_platform_drivers())
     try:
-        ctx = WasiHostContext(sysv)
+        ctx = WasiHostContext.create_default(sysv)
         host_funcs = ctx.build_interpreter_host_functions(mod)
         mod.init_memory_data(ctx.guest_memory, ())
         interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)
@@ -902,10 +898,10 @@ def test_guest_wasi_03_interpreter_proc_exit():
     )
 """
     wasm_bytes = wat_to_wasm(wat)
-    mod = parse(wasm_bytes)
+    mod = parse_standalone(wasm_bytes)
     sysv = System()
     try:
-        ctx = WasiHostContext(sysv)
+        ctx = WasiHostContext.create_default(sysv)
         host_funcs = ctx.build_interpreter_host_functions(mod)
         mod.init_memory_data(ctx.guest_memory, ())
         interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)
@@ -1074,7 +1070,7 @@ def test_linear_memory_copy_uses_cpu_memmove(source: int, destination: int, coun
     """TEST-VSOC-60/61: 大小・重複・同一・ゼロ長のlinear copyでDMAを呼ばない。"""
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm("""(module (memory 1)
       (func (export "copy") (param i32 i32 i32)
         local.get 0 local.get 1 local.get 2 memory.copy))""")

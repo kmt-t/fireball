@@ -251,7 +251,7 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
     from tier2_runtime.abi import native_abi
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
-    from tier2_runtime.wasm.reader import parse
+    from tier2_runtime.wasm.reader import parse_standalone
 
     class NativeJitTrace(ctypes.Structure):
         _fields_ = (
@@ -336,7 +336,7 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         def idle_hook(self, budget=4):
             return 0
 
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm("""(module
       (func (export "count") (param i32) (result i32)
         (loop $again
@@ -345,9 +345,9 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     )
     plugin = DelegatingPlugin()
     engine = RuntimeEngine(
+        bump_allocator=module.allocator,
         jit_runtime=plugin,
         collect_runtime_stats=collect_stats,
-        bump_allocator=module.allocator,
     )
     interpreter = NativeInterpreter(
         module,

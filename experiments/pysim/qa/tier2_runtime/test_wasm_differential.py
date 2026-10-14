@@ -24,7 +24,7 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 from qa.shared.helpers import make_interpreter as Interpreter
 from qa.shared.helpers import wat_to_wasm
 from tier2_runtime.interpreter.interpreter import TrapCode
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 
 
 def _run_differential(
@@ -56,7 +56,7 @@ def _run_differential(
         assert wt_trap_code is not None, "reference engine raised an unclassified trap"
 
     # 2. Execute with pysim Interpreter
-    pysim_mod = parse(wasm_bytes)
+    pysim_mod = parse_standalone(wasm_bytes)
     pysim_interp = Interpreter(pysim_mod)
     func_idx = pysim_mod.export_func_index(func_name)
 

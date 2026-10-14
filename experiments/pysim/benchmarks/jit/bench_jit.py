@@ -41,7 +41,7 @@ from tier2_runtime.interpreter.interpreter import (
 )
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.module import I32, LocalLayout
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
 
 
@@ -103,13 +103,13 @@ class JITCompilerBenchmark:
 
         # 3.4 Execution Throughput: Heavy Computation (100,000 Loop Iterations)
         loop_wasm = self._create_heavy_loop_binary()
-        module = parse(memoryview(loop_wasm))
+        module = parse_standalone(memoryview(loop_wasm))
         fn_idx = module.export_func_index("heavy_loop")
         LOOP_COUNT = 100_000
 
         # Keep the Python handler loop as the reference baseline and select the
         # C++ interpreter explicitly for the native comparison.
-        python_interpreter = Interpreter(module, InterpreterBindings.empty())
+        python_interpreter = Interpreter.with_module_allocator(module, InterpreterBindings.empty())
         python_warmup = self._run_python_interpreter(python_interpreter, fn_idx, 1_000)
         assert python_warmup[0] == 499_500
 
@@ -120,7 +120,7 @@ class JITCompilerBenchmark:
         native_results: list[int] = []
         jit_results: list[int] = []
         for _ in range(3):
-            interp_python = Interpreter(module, InterpreterBindings.empty())
+            interp_python = Interpreter.with_module_allocator(module, InterpreterBindings.empty())
             t0 = time.perf_counter()
             res_python = self._run_python_interpreter(interp_python, fn_idx, LOOP_COUNT)
             t1 = time.perf_counter()
@@ -129,14 +129,16 @@ class JITCompilerBenchmark:
 
             # Measure the Clang-built C++ threaded interpreter extension as a
             # separate baseline from the Python handlers above.
-            interp_native = NativeInterpreter(module, InterpreterBindings.empty())
+            interp_native = NativeInterpreter.with_module_allocator(
+                module, InterpreterBindings.empty()
+            )
             t0 = time.perf_counter()
             res_native = interp_native.call(fn_idx, [LOOP_COUNT]).unwrap()
             t1 = time.perf_counter()
             native_times_ms.append((t1 - t0) * 1000)
             native_results.append(int(res_native[0]))
 
-            runtime_engine = RuntimeEngine(bump_allocator=module.allocator)
+            runtime_engine = RuntimeEngine.with_allocator(module.require_allocator())
             runtime_engine.register_module_blocks(module)
             plugin = JITRuntimeManager(region_provider=reserve_native_region)
             interp_jit = NativeInterpreter(
@@ -163,7 +165,7 @@ class JITCompilerBenchmark:
         assert python_results[0] == native_results[0] == jit_results[0] == 704_982_704
         # JIT managers stamp runtime-specific cache references into block
         # metadata. Keep the post-measurement diagnostic in its own Module.
-        diagnostic_module = parse(memoryview(loop_wasm))
+        diagnostic_module = parse_standalone(memoryview(loop_wasm))
         diagnostic_function_index = diagnostic_module.export_func_index("heavy_loop")
         diagnostic_engine = RuntimeStatsEngine(
             bump_allocator=diagnostic_module.allocator,

@@ -209,7 +209,7 @@ def test_wit_14_core_wasm_import_names_select_the_matching_host_port() -> None:
     host = RecordingHostCalls(result=17)
     sysv.host_calls = host
     try:
-        resolver = WasiHostContext(sysv)
+        resolver = WasiHostContext.create_default(sysv)
         for name, args in (
             ("fireball_call", (10, 1, 2, 3, 4, 5, 6)),
             ("virq_register", (7, 8)),
@@ -260,10 +260,10 @@ def test_wit_generated_static_guest_raw_four_imports(compiled_raw_guest: Path, r
     from qa.shared.helpers import make_native_interpreter
     from scheduler import TaskState
     from system import System
-    from tier2_runtime.wasm.reader import parse
+    from tier2_runtime.wasm.reader import parse_standalone
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
-    module = parse(compiled_raw_guest.read_bytes())
+    module = parse_standalone(compiled_raw_guest.read_bytes())
     observed_imports: dict[str, int] = {}
     for index in range(len(module.imports)):
         assert module.import_module_name(index) == "fireball"
@@ -284,7 +284,7 @@ def test_wit_generated_static_guest_raw_four_imports(compiled_raw_guest: Path, r
     recorder = RecordingHostCalls(result)
     system.host_calls = recorder
     try:
-        host = WasiHostContext(system)
+        host = WasiHostContext.create_default(system)
         interpreter = make_native_interpreter(
             module,
             memory=host.guest_memory,

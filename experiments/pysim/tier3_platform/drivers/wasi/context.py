@@ -228,13 +228,17 @@ class Wasi03pEngine:
             )
             status, response = yield from self.sysv.ipc.send(channel, msg)
             assert status == IPCStatus.COMPLETED and response is not None
-            result_lo = response.get(ARG_RESULT_LO, 0)
-            result_hi = response.get(ARG_RESULT_HI, 0)
-            assert result_lo is not None and result_hi is not None
+            value = 0
+            if response.response_code == 0:
+                result_lo = response.get(ARG_RESULT_LO)
+                result_hi = response.get(ARG_RESULT_HI)
+                assert result_lo is not None, "successful HAL response is missing ARG_RESULT_LO"
+                assert result_hi is not None, "successful HAL response is missing ARG_RESULT_HI"
+                value = result_lo | (result_hi << 32)
             responses.append(
                 HalCommandResponse(
                     response_code=response.response_code,
-                    value=result_lo | (result_hi << 32),
+                    value=value,
                 )
             )
 
@@ -308,14 +312,14 @@ class WasiHostContext:
     def __init__(
         self,
         sysv: WasiRuntimeHost,
-        guest_memory: bytearray | None = None,
-        uvwasi: WasiPreview1Backend | None = None,
+        guest_memory: bytearray,
+        uvwasi: WasiPreview1Backend,
     ):
         self.sysv = sysv
-        self.guest_memory = guest_memory if guest_memory is not None else bytearray(64 * 1024)
+        self.guest_memory = guest_memory
         self.sysv.bind_runtime(self.guest_memory)
         self.core03p = Wasi03pEngine(sysv)
-        self.uvwasi = uvwasi if uvwasi is not None else sysv.wasi_backend
+        self.uvwasi = uvwasi
         self.sysv.attach_wasi_context(self)
         self._keepalive_trampolines: StaticVector[WasiHostFunction] = StaticVector(
             capacity=FB_CONF_MAX_IMPORTS
@@ -368,6 +372,16 @@ class WasiHostContext:
             values,
             radix_shift=radix_shift,
         )
+
+    @classmethod
+    def create_default(cls, sysv: WasiRuntimeHost) -> WasiHostContext:
+        """Create the standard 64 KiB Preview 1 context for a runtime host."""
+        return cls(sysv, bytearray(64 * 1024), sysv.wasi_backend)
+
+    @classmethod
+    def with_guest_memory(cls, sysv: WasiRuntimeHost, guest_memory: bytearray) -> WasiHostContext:
+        """Create a context using explicit guest memory and the host backend."""
+        return cls(sysv, guest_memory, sysv.wasi_backend)
 
     # --------------------------------------------------------------------------
     # WASI 0.3p URI Resolver Entry Point

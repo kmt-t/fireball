@@ -36,7 +36,10 @@ from tier2_runtime.abi.integer_types import (
     instruction_width_t,
     type_index_t,
 )
-from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
+from tier2_runtime.wasm.leb128 import (
+    decode_signed_full,
+    decode_unsigned_full,
+)
 from tier2_runtime.wasm.module import (
     ControlBlockMetadata,
     InterpreterAnnotationPool,
@@ -290,18 +293,18 @@ def opcode_has_attribute(opcode: int, attribute: OpcodeAttribute) -> bool:
 def _decode_fc_instruction(code: memoryview, offset: int) -> tuple[int, int]:
     """Decode and validate one supported 0xFC subopcode and its immediates."""
 
-    subopcode, next_offset = decode_unsigned(code, offset)
+    subopcode, next_offset = decode_unsigned_full(code, offset)
     if FC_I32_TRUNC_SAT_F32_S <= subopcode <= FC_I64_TRUNC_SAT_F64_U:
         return subopcode, next_offset
     if subopcode == FC_MEMORY_COPY:
-        destination_memory, next_offset = decode_unsigned(code, next_offset)
-        source_memory, next_offset = decode_unsigned(code, next_offset)
+        destination_memory, next_offset = decode_unsigned_full(code, next_offset)
+        source_memory, next_offset = decode_unsigned_full(code, next_offset)
         require_wasm(
             destination_memory == 0 and source_memory == 0, "only memory index zero is supported"
         )
         return subopcode, next_offset
     if subopcode == FC_MEMORY_FILL:
-        memory_index, next_offset = decode_unsigned(code, next_offset)
+        memory_index, next_offset = decode_unsigned_full(code, next_offset)
         require_wasm(memory_index == 0, "only memory index zero is supported")
         return subopcode, next_offset
     reject_wasm(f"ERR_WASM_UNSUPPORTED_FEATURE: 0xFC subopcode {subopcode} is not supported")
@@ -648,7 +651,7 @@ def build_control_map(
             open_stack[depth] = _OpenBlock(opcode, start, off, None, result_arity, entry)
             depth += 1
         elif opcode == BR or opcode == BR_IF:
-            branch_depth, off = decode_unsigned(code, off)
+            branch_depth, off = decode_unsigned_full(code, off)
             if branch_depth < depth:
                 opener = open_stack[depth - branch_depth - 1]
                 assert opener is not None
@@ -658,9 +661,9 @@ def build_control_map(
             if not branch_opener_entries.push_back((start, (target_start,))):
                 assert False, "branch count exceeds code capacity"
         elif _LEB_UNSIGNED_OPERAND.at(opcode):
-            _, off = decode_unsigned(code, off)
+            _, off = decode_unsigned_full(code, off)
         elif opcode == I32_CONST or opcode == I64_CONST:
-            _, off = decode_signed(code, off, bits=64 if opcode == I64_CONST else 32)
+            _, off = decode_signed_full(code, off, bits=64 if opcode == I64_CONST else 32)
         elif opcode == F32_CONST:
             require_wasm(off + 4 <= n, "truncated f32.const immediate")
             off += 4
@@ -668,19 +671,19 @@ def build_control_map(
             require_wasm(off + 8 <= n, "truncated f64.const immediate")
             off += 8
         elif _MEMARG_OPCODES.at(opcode):
-            _, off = decode_unsigned(code, off)
-            _, off = decode_unsigned(code, off)
+            _, off = decode_unsigned_full(code, off)
+            _, off = decode_unsigned_full(code, off)
         elif _MEMORY_INDEX_OPCODES.at(opcode):
             off += 1  # reserved
         elif opcode == BR_TABLE:
-            n_labels, off = decode_unsigned(code, off)
+            n_labels, off = decode_unsigned_full(code, off)
             require_wasm(
                 n_labels <= 0xFFFF,
                 "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds u16",
             )
             targets: StaticVector[int] = StaticVector(capacity=n_labels + 1)
             for _ in range(n_labels + 1):
-                branch_depth, off = decode_unsigned(code, off)
+                branch_depth, off = decode_unsigned_full(code, off)
                 if branch_depth < depth:
                     opener = open_stack[depth - branch_depth - 1]
                     assert opener is not None
@@ -692,8 +695,8 @@ def build_control_map(
             if not branch_opener_entries.push_back((start, freeze_sequence(targets))):
                 assert False, "branch count exceeds code capacity"
         elif opcode == CALL_INDIRECT:
-            _, off = decode_unsigned(code, off)
-            _, off = decode_unsigned(code, off)
+            _, off = decode_unsigned_full(code, off)
+            _, off = decode_unsigned_full(code, off)
         elif opcode == ELSE:
             opener = open_stack[depth - 1]
             assert opener is not None and opener.opcode == IF, "ELSE without matching IF"
@@ -790,9 +793,9 @@ def iter_scan_instrs(code: memoryview, start: int = 0) -> Iterator[Instr]:
         elif _BLOCK_OPENERS.at(opcode):
             _, off = _decode_blocktype(code, off)
         elif _LEB_UNSIGNED_OPERAND.at(opcode):
-            operand, off = decode_unsigned(code, off)
+            operand, off = decode_unsigned_full(code, off)
         elif opcode == I32_CONST or opcode == I64_CONST:
-            _, off = decode_signed(
+            _, off = decode_signed_full(
                 code, off, bits=64 if opcode == I64_CONST else 32
             )  # value unused by block-boundary scanning
         elif opcode == F32_CONST:
@@ -800,27 +803,27 @@ def iter_scan_instrs(code: memoryview, start: int = 0) -> Iterator[Instr]:
         elif opcode == F64_CONST:
             off += 8
         elif _MEMARG_OPCODES.at(opcode):
-            _, off = decode_unsigned(code, off)  # align, unused
-            _, off = decode_unsigned(code, off)  # mem_offset, unused
+            _, off = decode_unsigned_full(code, off)  # align, unused
+            _, off = decode_unsigned_full(code, off)  # mem_offset, unused
         elif _MEMORY_INDEX_OPCODES.at(opcode):
             require_wasm(off < n, "truncated memory index")
             reserved = code[off]
             off += 1
             require_wasm(reserved == 0, "only memory index 0 is supported")
         elif opcode == BR_TABLE:
-            n_labels, off = decode_unsigned(code, off)
+            n_labels, off = decode_unsigned_full(code, off)
             require_wasm(
                 n_labels <= 0xFFFF,
                 "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds u16",
             )
             for _ in range(n_labels):
-                _, off = decode_unsigned(
+                _, off = decode_unsigned_full(
                     code, off
                 )  # label, unused (see wasm_opcodes.BR_TABLE handling)
-            operand, off = decode_unsigned(code, off)  # default label
+            operand, off = decode_unsigned_full(code, off)  # default label
         elif opcode == CALL_INDIRECT:
-            operand, off = decode_unsigned(code, off)  # typeidx
-            _, off = decode_unsigned(code, off)  # tableidx (0x00 in the MVP encoding), unused
+            operand, off = decode_unsigned_full(code, off)  # typeidx
+            _, off = decode_unsigned_full(code, off)  # tableidx (0x00 in the MVP encoding), unused
         elif _NO_OPERAND.at(opcode):
             pass
         else:
@@ -875,7 +878,7 @@ def _count_interpreter_annotation_pool_bytes(code: memoryview) -> int:
         elif opcode == BR_IF:
             annotation_bytes += 4  # target block, stack base, and result width
         elif opcode == BR_TABLE:
-            label_count, _ = decode_unsigned(code, instruction.offset + 1)
+            label_count, _ = decode_unsigned_full(code, instruction.offset + 1)
             require_wasm(
                 label_count <= 0xFFFF,
                 "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds u16",
@@ -996,7 +999,7 @@ def build_interpreter_annotation_pool(
                     instruction_width_t(instruction.end_offset - instruction.offset)
                 )
             if opcode == LOCAL_GET or opcode == LOCAL_SET or opcode == LOCAL_TEE:
-                local_index, _ = decode_unsigned(block_code, cursor)
+                local_index, _ = decode_unsigned_full(block_code, cursor)
                 assert local_index < len(local_layout)
                 frame_offset: frame_word_offset_t = local_layout.offset(local_index)
                 local_width = local_layout.size_words(local_index)
@@ -1014,7 +1017,7 @@ def build_interpreter_annotation_pool(
                 assert width == 1 or width == 2
                 annotations.append_byte(width)
             elif opcode == GLOBAL_GET or opcode == GLOBAL_SET:
-                raw_global_index, _ = decode_unsigned(block_code, cursor)
+                raw_global_index, _ = decode_unsigned_full(block_code, cursor)
                 global_index = global_index_t(raw_global_index)
                 require_wasm(
                     global_index <= 0xFFFF,
@@ -1022,17 +1025,17 @@ def build_interpreter_annotation_pool(
                 )
                 append_u16(global_index)
             elif opcode == I32_CONST:
-                value, _ = decode_signed(block_code, cursor, bits=32)
+                value, _ = decode_signed_full(block_code, cursor, bits=32)
                 append_u32(value & 0xFFFF_FFFF)
             elif opcode == I64_CONST:
-                value, _ = decode_signed(block_code, cursor, bits=64)
+                value, _ = decode_signed_full(block_code, cursor, bits=64)
                 append_wide(value)
             elif _MEMARG_OPCODES.at(opcode):
-                _alignment, next_cursor = decode_unsigned(block_code, cursor)
-                offset, _ = decode_unsigned(block_code, next_cursor)
+                _alignment, next_cursor = decode_unsigned_full(block_code, cursor)
+                offset, _ = decode_unsigned_full(block_code, next_cursor)
                 append_u32(offset)
             elif opcode == BR_TABLE:
-                label_count, next_cursor = decode_unsigned(block_code, cursor)
+                label_count, next_cursor = decode_unsigned_full(block_code, cursor)
                 require_wasm(
                     label_count <= 0xFFFF,
                     "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds u16",
@@ -1040,16 +1043,16 @@ def build_interpreter_annotation_pool(
                 append_u16(label_count)
                 cursor = next_cursor
             elif opcode == CALL_INDIRECT:
-                raw_type_index, next_cursor = decode_unsigned(block_code, cursor)
+                raw_type_index, next_cursor = decode_unsigned_full(block_code, cursor)
                 type_index = type_index_t(raw_type_index)
                 require_wasm(
                     type_index <= 0xFFFF,
                     "ERR_WASM_UNSUPPORTED_FEATURE: type index exceeds u16",
                 )
                 append_u16(type_index)
-                _table_index, _ = decode_unsigned(block_code, next_cursor)
+                _table_index, _ = decode_unsigned_full(block_code, next_cursor)
             elif opcode == CALL:
-                raw_function_index, _ = decode_unsigned(block_code, cursor)
+                raw_function_index, _ = decode_unsigned_full(block_code, cursor)
                 function_index = function_index_t(raw_function_index)
                 require_wasm(
                     function_index <= 0xFFFF,
@@ -1057,14 +1060,14 @@ def build_interpreter_annotation_pool(
                 )
                 append_u16(function_index)
             elif opcode == FC_PREFIX:
-                subopcode, cursor = decode_unsigned(block_code, cursor)
+                subopcode, cursor = decode_unsigned_full(block_code, cursor)
                 assert subopcode <= 0xFF
                 annotations.append_byte(subopcode)
                 if subopcode == FC_MEMORY_COPY:
-                    _destination_memory, cursor = decode_unsigned(block_code, cursor)
-                    _source_memory, _ = decode_unsigned(block_code, cursor)
+                    _destination_memory, cursor = decode_unsigned_full(block_code, cursor)
+                    _source_memory, _ = decode_unsigned_full(block_code, cursor)
                 elif subopcode == FC_MEMORY_FILL:
-                    _memory_index, _ = decode_unsigned(block_code, cursor)
+                    _memory_index, _ = decode_unsigned_full(block_code, cursor)
             if opcode == BLOCK or opcode == LOOP:
                 append_u16(block_index_for_offset(start + instruction.end_offset))
             elif opcode == IF:
@@ -1090,9 +1093,11 @@ def build_interpreter_annotation_pool(
             elif opcode == BR_IF:
                 append_branch_target(function_offset, 0)
             elif opcode == BR_TABLE:
-                label_count, target_cursor = decode_unsigned(block_code, instruction.offset + 1)
+                label_count, target_cursor = decode_unsigned_full(
+                    block_code, instruction.offset + 1
+                )
                 for target_number in range(label_count + 1):
-                    _, target_cursor = decode_unsigned(block_code, target_cursor)
+                    _, target_cursor = decode_unsigned_full(block_code, target_cursor)
                     append_branch_target(function_offset, target_number)
             elif opcode == CALL or opcode == CALL_INDIRECT:
                 append_u16(block_index_for_offset(start + instruction.end_offset))
@@ -1133,10 +1138,10 @@ def iter_block_ops(
         if opcode == FC_PREFIX:
             arg, off = _decode_fc_instruction(code, off)
         elif _LEB_UNSIGNED_OPERAND.at(opcode):
-            operand, off = decode_unsigned(code, off)
+            operand, off = decode_unsigned_full(code, off)
             arg: WasmOperand = operand
         elif opcode == I32_CONST or opcode == I64_CONST:
-            arg, off = decode_signed(code, off, bits=64 if opcode == I64_CONST else 32)
+            arg, off = decode_signed_full(code, off, bits=64 if opcode == I64_CONST else 32)
         elif opcode == F32_CONST:
             assert off + 4 <= end
             arg = int.from_bytes(code[off : off + 4], "little")
@@ -1146,8 +1151,8 @@ def iter_block_ops(
             arg = int.from_bytes(code[off : off + 8], "little")
             off += 8
         elif _MEMARG_OPCODES.at(opcode):
-            _align, off = decode_unsigned(code, off)
-            mem_offset, off = decode_unsigned(code, off)
+            _align, off = decode_unsigned_full(code, off)
+            mem_offset, off = decode_unsigned_full(code, off)
             arg = mem_offset
         elif _MEMORY_INDEX_OPCODES.at(opcode):
             reserved = code[off]

@@ -25,7 +25,7 @@ from tier2_runtime.interpreter.interpreter import (
     InterpreterBindings,
     NativeInterpreter,
 )
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.wasi.context import WasiHostContext
 
 SCENARIO4_WAT = """
@@ -90,22 +90,22 @@ SCENARIO4_WAT = """
 def test_scenario_hybrid_jit():
     print("[*] Running Scenario 4: Hybrid JIT Compilation & Differential Check...")
     wasm_bytes = bytes(wasmtime.wat2wasm(SCENARIO4_WAT))
-    module = parse(wasm_bytes)
+    module = parse_standalone(wasm_bytes)
     fn_idx = module.export_func_index("count_primes")
     LIMIT = 1000  # Primes below 1000 is known to be exactly 168
     # 1. Tier 2 Reference Execution
     sysv_t2 = System()
-    wasi_t2 = WasiHostContext(sysv_t2)
+    wasi_t2 = WasiHostContext.create_default(sysv_t2)
     funcs_t2 = wasi_t2.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_t2.guest_memory, ())
-    interp_t2 = Interpreter(
+    interp_t2 = Interpreter.with_module_allocator(
         module, InterpreterBindings.with_memory_and_functions(wasi_t2.guest_memory, funcs_t2)
     )
     res_t2 = interp_t2.call(fn_idx, [LIMIT]).unwrap()
     assert res_t2 == [168], f"Tier 2 prime count mismatch: expected 168, got {res_t2}"
     # 2. Tier 3 Hybrid Execution with Card Marking and idle_hook JIT
     sysv_t3 = System()
-    wasi_t3 = WasiHostContext(sysv_t3)
+    wasi_t3 = WasiHostContext.create_default(sysv_t3)
     funcs_t3 = wasi_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_t3.guest_memory, ())
     trace_compiler = TraceCompiler()
@@ -115,7 +115,7 @@ def test_scenario_hybrid_jit():
         ),
     )
     runtime_engine.register_module_blocks(module)
-    interp_t3 = NativeInterpreter(
+    interp_t3 = NativeInterpreter.with_module_allocator(
         module, InterpreterBindings.with_memory_and_functions(wasi_t3.guest_memory, funcs_t3)
     )
     res_t3 = runtime_engine.call(interp_t3, fn_idx, [LIMIT]).unwrap()

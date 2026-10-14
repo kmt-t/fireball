@@ -183,8 +183,8 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
         5. WASM guest invokes standard WASI Preview 1 host calls (fd_write) and fireball_call IPC.
     """
     print("\n== wasmjit: Tiered Tracing JIT & Interpreter Hybrid Execution ==")
-    mod = parse(memoryview(FACTORIAL_WASM))
     allocator = BumpAllocator()
+    mod = parse(memoryview(FACTORIAL_WASM), allocator)
 
     def reserve_region(size: int, alignment: int) -> memoryview:
         assert alignment == mmap.PAGESIZE
@@ -192,7 +192,7 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
         return memoryview(mmap.mmap(-1, size))
 
     plugin = JITRuntimeManager(reserve_region)
-    engine = RuntimeEngine(bump_allocator=allocator)
+    engine = RuntimeEngine.with_allocator(allocator)
     engine.register_module_blocks(mod)
     interp = NativeInterpreter(
         mod,
@@ -211,11 +211,9 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
 
 def main() -> None:
     printk_sink = PrintkBuffer()
-    sysv = System(
-        printk_sink=printk_sink,
-        log_dictionary=LogDictionary(
-            entries=((0x01, "task booted (free=%d bytes, retries=%d, x=%d, y=%d)"),)
-        ),
+    sysv = System.with_printk_sink(
+        printk_sink,
+        LogDictionary(entries=((0x01, "task booted (free=%d bytes, retries=%d, x=%d, y=%d)"),)),
     )
     sched = sysv.scheduler
     sched.set_idle_hook(

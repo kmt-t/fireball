@@ -43,7 +43,7 @@ from tier2_runtime.interpreter.interpreter import (
     InterpreterBindings,
     NativeInterpreter,
 )
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 
@@ -403,7 +403,7 @@ def run_aobench():
         print(f"    -> Loaded pre-compiled binary ({len(wasm_bytes)} bytes)")
     # 2. Parse using Fireball's pure Python parser
     print("\n[*] Step 2: Parsing binary with Fireball wasm_reader...")
-    module = parse(wasm_bytes)
+    module = parse_standalone(wasm_bytes)
     print(f"    -> Parsed Module: {len(module.functions)} functions, {len(module.exports)} exports")
     # 3. Setup System & WASI Context
     from _bootstrap import reserve_native_region
@@ -415,7 +415,7 @@ def run_aobench():
     sysv.start_hal_driver(
         DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
     ).unwrap()
-    wasi_ctx = WasiHostContext(sysv)
+    wasi_ctx = WasiHostContext.create_default(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
     # 4. Tier 3: Pure Threaded CPS Interpreter Execution
@@ -423,7 +423,7 @@ def run_aobench():
         f"\n[*] Step 3: Executing on Tier 3 Threaded CPS Interpreter "
         f"(backend=native-cpp-cps, {WIDTH}x{HEIGHT}, {AO_SAMPLES} samples/hit)..."
     )
-    interp_t2 = NativeInterpreter(
+    interp_t2 = NativeInterpreter.with_module_allocator(
         module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
     )
     main_func_idx = module.export_func_index("main")
@@ -447,7 +447,7 @@ def run_aobench():
     sysv_t3.start_hal_driver(
         DummyDriver(sysv_t3.pool, transport=sysv_t3.transport), FB_URI_HAL_STDOUT
     ).unwrap()
-    wasi_ctx_t3 = WasiHostContext(sysv_t3)
+    wasi_ctx_t3 = WasiHostContext.create_default(sysv_t3)
     host_funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx_t3.guest_memory, ())
     runtime_engine = RuntimeEngine()
@@ -512,15 +512,15 @@ if __name__ == "__main__":
     if wasmtime is not None:
         print("[*] Running Float32 Ambient Occlusion Benchmark...")
         wasm_float_bytes = wasmtime.wat2wasm(GENUINE_AO_FLOAT_WAT)
-        module_float = parse(wasm_float_bytes)
+        module_float = parse_standalone(wasm_float_bytes)
         sysv_float = System()
         sysv_float.start_hal_driver(
             DummyDriver(sysv_float.pool, transport=sysv_float.transport), FB_URI_HAL_STDOUT
         ).unwrap()
-        wasi_ctx_float = WasiHostContext(sysv_float)
+        wasi_ctx_float = WasiHostContext.create_default(sysv_float)
         host_funcs_float = wasi_ctx_float.build_interpreter_host_functions(module_float)
         module_float.init_memory_data(wasi_ctx_float.guest_memory, ())
-        interp_float = Interpreter(
+        interp_float = Interpreter.with_module_allocator(
             module_float,
             InterpreterBindings.with_memory_and_functions(
                 wasi_ctx_float.guest_memory, host_funcs_float

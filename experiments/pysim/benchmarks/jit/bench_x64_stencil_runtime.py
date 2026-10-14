@@ -71,9 +71,9 @@ def run_worker(compiler_library: Path, iterations: int, warmup_calls: int) -> No
     from qa.shared.x64_jit import TraceCompiler
     from system_containers import StaticVector
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
-    from tier2_runtime.wasm.reader import parse
+    from tier2_runtime.wasm.reader import parse_standalone
 
-    module = parse(memoryview(wat_to_wasm(LOOP_WAT)))
+    module = parse_standalone(memoryview(wat_to_wasm(LOOP_WAT)))
     function_index = module.export_func_index("sum")
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),

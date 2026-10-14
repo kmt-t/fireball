@@ -29,17 +29,22 @@ class GDBServer:
     def __init__(
         self,
         dbg: DebuggerManager,
-        host: str = "127.0.0.1",
-        port: int = 0,
-        transport: DebuggerSink | None = None,
+        transport: DebuggerSink,
     ):
         self.dbg = dbg
         self.rsp = GDBRspProtocol(dbg)
-        self.transport = transport if transport is not None else SocketDebuggerSink(host, port)
+        self.transport = transport
         self._client_sock: DebuggerConnection | None = None
         self._thread: threading.Thread | None = None
         self._running = False
         self.actual_port: int = 0
+
+    @classmethod
+    def with_socket_transport(
+        cls, dbg: DebuggerManager, host: str = "127.0.0.1", port: int = 0
+    ) -> GDBServer:
+        """Create a server using the standard host TCP socket transport."""
+        return cls(dbg, SocketDebuggerSink(host, port))
 
     def bind_socket(self) -> int:
         """Binds the injected debugger transport and returns its endpoint ID."""

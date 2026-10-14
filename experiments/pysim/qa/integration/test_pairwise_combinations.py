@@ -25,7 +25,7 @@ from system_containers import ReadOnlyFlatMapView, StaticVector
 from tier2_runtime.hal.dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET, WasiIpcCmd
 from tier2_runtime.runtime.engine import RuntimeDriveMode
 from tier2_runtime.wasm.module import Module
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.debugger.debugger import DebuggerManager, GDBRspProtocol
@@ -85,7 +85,7 @@ PAIRWISE_FACTORS = _load_factor_levels()
 
 
 def _assert_debugger_jit_composition_rejected() -> None:
-    module = parse(bytes(wasmtime.wat2wasm("(module (func))")))
+    module = parse_standalone(bytes(wasmtime.wat2wasm("(module (func))")))
     plugin = JITRuntimeManager(jit_compiler=TraceCompiler())
     try:
         interpreter = make_native_interpreter(module)
@@ -192,7 +192,7 @@ def _prepare_cache(
 @pytest.mark.parametrize("dbg_mode", ("inspect", "active"))
 def test_debugger_registers_breakpoint_and_resume(dbg_mode: str) -> None:
     """静的デバッグ構成の停止・再開を、組合せワークロードから独立して確認する。"""
-    module = parse(
+    module = parse_standalone(
         bytes(
             wasmtime.wat2wasm(
                 "(module (func (param i32) (result i32) local.get 0 i32.const 1 i32.add))"
@@ -236,7 +236,7 @@ def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> str:
 def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStack) -> str:
     engine_mode, cache_mode, mem_width, storage_mode, host_mode, sched_mode, _ = case_tuple
     backend = UvwasiReferenceContext()
-    sysv = System(drivers=create_reference_platform_drivers(backend))
+    sysv = System.with_drivers(create_reference_platform_drivers(backend))
     resources.callback(sysv.shutdown)
     memory = bytearray(b"\xa5" * (2 * 65536))
     wasi = WasiHostContext(sysv, guest_memory=memory, uvwasi=backend)
@@ -311,7 +311,9 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
         host_responses.append(result)
         return result
 
-    module = parse(bytes(wasmtime.wat2wasm(_case_wat(storage_mode, mem_width, host_mode))))
+    module = parse_standalone(
+        bytes(wasmtime.wat2wasm(_case_wat(storage_mode, mem_width, host_mode)))
+    )
     host_functions = StaticVector.of((host_call,) if host_mode != "none" else (), capacity=1)
     drive_mode = RuntimeDriveMode.SYNCHRONOUS if sched_mode == "noint" else RuntimeDriveMode.COOS
     if engine_mode == "interp":

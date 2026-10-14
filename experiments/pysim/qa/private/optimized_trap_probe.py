@@ -6,7 +6,7 @@ import json
 import sys
 
 from qa.shared.helpers import make_interpreter, make_native_interpreter, wat_to_wasm
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 
 
 def main() -> None:
@@ -35,7 +35,7 @@ def main() -> None:
     outcomes = []
     for name, wat in cases:
         for constructor in (make_interpreter, make_native_interpreter):
-            module = parse(wat_to_wasm(wat))
+            module = parse_standalone(wat_to_wasm(wat))
             memory = bytearray(65536)
             interpreter = constructor(module, memory=memory)
             result = interpreter.call(module.export_func_index("main"), ())

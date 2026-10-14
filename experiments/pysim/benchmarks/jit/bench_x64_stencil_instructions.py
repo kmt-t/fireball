@@ -261,7 +261,7 @@ def run_measurement(
     from system_containers import StaticVector
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
     from tier2_runtime.wasm.module import LocalLayout, WasmOperand
-    from tier2_runtime.wasm.reader import parse
+    from tier2_runtime.wasm.reader import parse_standalone
 
     class RuntimeCompilerOnly(TraceCompiler):
         __slots__ = ()
@@ -285,7 +285,7 @@ def run_measurement(
         f"local.get 8 local.get 9 {operation})"
         for operation in operations
     )
-    module = parse(wat_to_wasm(f"(module {functions})"))
+    module = parse_standalone(wat_to_wasm(f"(module {functions})"))
     engine = make_runtime_engine(
         jit_compiler=RuntimeCompilerOnly(),
         min_trace_bytes=1,

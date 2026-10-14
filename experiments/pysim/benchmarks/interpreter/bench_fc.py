@@ -42,7 +42,7 @@ from tier2_runtime.interpreter.interpreter import (
 from tier2_runtime.syscall.hostcall import VdmaTransfer
 from tier2_runtime.vmmio.controller import FC_DYNAMIC, FC_PASSTHROUGH, FC_SHM
 from tier2_runtime.wasm.module import Memory, Module
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 
 PAGE_SIZE = 65_536
 WARMUP_ITERATIONS = 64
@@ -314,7 +314,7 @@ def _benchmark_module() -> Module:
         + _section(5, memory_payload)
         + _section(10, code_payload)
     )
-    module = parse(memoryview(binary))
+    module = parse_standalone(memoryview(binary))
     assert len(module.functions) == len(function_types)
     assert module.memory is not None and module.memory.min_pages == 1
     return module
@@ -549,8 +549,14 @@ def _verify_conversion_semantics(module: Module) -> int:
     memory = bytearray(PAGE_SIZE)
     verified = 0
     for subopcode, value, expected in cases:
-        native = NativeInterpreter(module, _bindings(memory)).call(subopcode, (value,)).unwrap()
-        reference = _call_python(Interpreter(module, _bindings(memory)), subopcode, (value,))
+        native = (
+            NativeInterpreter.with_module_allocator(module, _bindings(memory))
+            .call(subopcode, (value,))
+            .unwrap()
+        )
+        reference = _call_python(
+            Interpreter.with_module_allocator(module, _bindings(memory)), subopcode, (value,)
+        )
         assert len(native) == 1 and len(reference) == 1
         assert native[0] == reference[0] == expected, (subopcode, value, native, reference)
         verified += 1
@@ -563,9 +569,9 @@ def _verify_linear_memory_semantics(module: Module) -> int:
         memory = bytearray(PAGE_SIZE)
         memory[:64] = bytes(range(64))
         interpreter = (
-            NativeInterpreter(module, _bindings(memory))
+            NativeInterpreter.with_module_allocator(module, _bindings(memory))
             if native
-            else Interpreter(module, _bindings(memory))
+            else Interpreter.with_module_allocator(module, _bindings(memory))
         )
         original = bytes(memory)
         _invoke(interpreter, 16, (8, 4, 32), native)

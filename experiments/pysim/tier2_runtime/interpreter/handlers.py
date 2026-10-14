@@ -21,7 +21,10 @@ from tier2_runtime.vmmio.controller import (
     VmmioAddress,
     VmmioStatus,
 )
-from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
+from tier2_runtime.wasm.leb128 import (
+    decode_signed_full,
+    decode_unsigned_full,
+)
 from tier2_runtime.wasm.module import F64, I64
 from tier2_runtime.wasm.opcodes import (
     BLOCK,
@@ -337,7 +340,7 @@ def _h_br(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _Ha
 def _h_br_if(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
     instruction_ip = int(ip[0])
-    _, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
+    _, next_ip = decode_unsigned_full(frame.code, instruction_ip + 1)
     cond = frame.values.pop_back()
     if cond == 0:
         ctx.ip = next_ip
@@ -429,7 +432,7 @@ def _h_select(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) ->
 def _h_local_get(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
     instruction_ip = int(ip[0])
-    idx, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
+    idx, next_ip = decode_unsigned_full(frame.code, instruction_ip + 1)
     raw_slot, raw_width = frame.locals.raw_span(idx)
     pushed = frame.values.push_raw_from(
         frame.context.local_stack,
@@ -444,7 +447,7 @@ def _h_local_get(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack)
 def _h_local_set(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
     instruction_ip = int(ip[0])
-    idx, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
+    idx, next_ip = decode_unsigned_full(frame.code, instruction_ip + 1)
     raw_slot, raw_width = frame.locals.raw_span(idx)
     frame.values.pop_raw_to(
         frame.context.local_stack,
@@ -458,7 +461,7 @@ def _h_local_set(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack)
 def _h_local_tee(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
     instruction_ip = int(ip[0])
-    idx, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
+    idx, next_ip = decode_unsigned_full(frame.code, instruction_ip + 1)
     raw_slot, raw_width = frame.locals.raw_span(idx)
     frame.values.copy_raw_to(
         frame.context.local_stack,
@@ -472,7 +475,7 @@ def _h_local_tee(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack)
 def _h_i32_const(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
     instruction_ip = int(ip[0])
-    val, next_ip = decode_signed(frame.code, instruction_ip + 1, bits=32)
+    val, next_ip = decode_signed_full(frame.code, instruction_ip + 1, bits=32)
     frame.values.push_back(_to_i32(val))
     ctx.ip = next_ip
     return None
@@ -482,7 +485,7 @@ def _h_global_get(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
     frame = ctx.call_frame_stack[-1]
     instruction_ip = int(ip[0])
     env = frame.env
-    idx, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
+    idx, next_ip = decode_unsigned_full(frame.code, instruction_ip + 1)
     value = env.globals[idx]
     value_type = env.module.globals[idx].vtype
     if value_type == I64 or value_type == F64:
@@ -501,7 +504,7 @@ def _h_global_set(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack
     frame = ctx.call_frame_stack[-1]
     instruction_ip = int(ip[0])
     env = frame.env
-    idx, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
+    idx, next_ip = decode_unsigned_full(frame.code, instruction_ip + 1)
     value_type = env.module.globals[idx].vtype
     if value_type == I64 or value_type == F64:
         high = frame.values.pop_back() & I32_MASK
@@ -1315,7 +1318,7 @@ def _h_f64_store(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack)
 def _h_i64_const(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack) -> _HandlerResult:
     frame = ctx.call_frame_stack[-1]
     instruction_ip = int(ip[0])
-    val, next_ip = decode_signed(frame.code, instruction_ip + 1, bits=64)
+    val, next_ip = decode_signed_full(frame.code, instruction_ip + 1, bits=64)
     pushed = frame.values.push_i64(_to_i64(val))
     assert pushed
     ctx.ip = next_ip
@@ -1666,7 +1669,7 @@ def _h_fc_prefix(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack)
     frame = ctx.call_frame_stack[-1]
     instruction_ip = int(ip[0])
     env = frame.env
-    subopcode, next_ip = decode_unsigned(frame.code, instruction_ip + 1)
+    subopcode, next_ip = decode_unsigned_full(frame.code, instruction_ip + 1)
 
     if FC_I32_TRUNC_SAT_F32_S <= subopcode <= FC_I32_TRUNC_SAT_F64_U:
         source_is_f32 = subopcode == 0 or subopcode == 1
@@ -1692,8 +1695,8 @@ def _h_fc_prefix(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack)
         return Trap(TrapCode.MEMORY_SECTION_MISSING)
 
     if subopcode == FC_MEMORY_COPY:
-        destination_memory, next_ip = decode_unsigned(frame.code, next_ip)
-        source_memory, next_ip = decode_unsigned(frame.code, next_ip)
+        destination_memory, next_ip = decode_unsigned_full(frame.code, next_ip)
+        source_memory, next_ip = decode_unsigned_full(frame.code, next_ip)
         assert destination_memory == 0 and source_memory == 0
         stack_size = len(frame.values)
         assert stack_size >= 3, "memory.copy requires three i32 operands"
@@ -1741,7 +1744,7 @@ def _h_fc_prefix(ctx: ExecutionContext, ip: UInt32Pointer, sp: NativeValueStack)
         return None
 
     assert subopcode == FC_MEMORY_FILL
-    memory_index, next_ip = decode_unsigned(frame.code, next_ip)
+    memory_index, next_ip = decode_unsigned_full(frame.code, next_ip)
     assert memory_index == 0
     stack_size = len(frame.values)
     assert stack_size >= 3, "memory.fill requires three i32 operands"

@@ -23,7 +23,7 @@ import tier2_runtime.wasm.opcodes as op
 from ipc_router import FB_URI_HAL_STDOUT
 from system import System
 from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterBindings
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 
@@ -216,15 +216,15 @@ def test_scenario_wasi_syscall():
     else:
         wasm_bytes = _create_scenario2_binary()
 
-    module = parse(wasm_bytes)
+    module = parse_standalone(wasm_bytes)
     sysv = System()
-    wasi_ctx = WasiHostContext(sysv)
+    wasi_ctx = WasiHostContext.create_default(sysv)
     sysv.start_hal_driver(
         DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
     ).unwrap()
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
-    interp = Interpreter(
+    interp = Interpreter.with_module_allocator(
         module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
     )
     # 1. Execute scatter-gather fd_write

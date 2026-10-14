@@ -1,0 +1,196 @@
+{
+  "_measurement_context": {
+    "concurrent_project_tests_or_builds": false,
+    "cpu2_idle_percent_observed": [
+      95.48,
+      96.98,
+      93.53,
+      95.02,
+      95.96
+    ],
+    "cpu_affinity": 2,
+    "cpu_pinned": true,
+    "host_architecture": "x86_64",
+    "host_cpu": "AMD Ryzen 5 5500GT with Radeon Graphics",
+    "host_load_average_observed": {
+      "before_wamr": [
+        0.8,
+        0.59,
+        0.45
+      ],
+      "initial": [
+        0.83,
+        0.45,
+        0.33
+      ]
+    },
+    "host_only_no_arm_compliance_claim": true,
+    "measurement_date_local": "2026-10-14",
+    "outputs_written_after_measurements": true,
+    "request": "REQ-019",
+    "result_convention": "headline min/max are the range of the three process medians; all-sample min/max are retained separately",
+    "source_head": "8875be18f53ab460b55c8acb600d859afb8a7d47",
+    "source_worktree_clean_at_measurement_start": true,
+    "source_worktree_modified_during_measurements": false,
+    "timing_runs": "3 independent processes per condition; 1 untimed warmup and 7 timed samples in each process"
+  },
+  "diagnostic_build": {
+    "build": "QA-only interpreter/JIT diagnostics, release NDEBUG; excluded from timing",
+    "interpreter_command": "bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --qa --release",
+    "interpreter_library_sha256": "ea7ac326f12be4d15d2552ace15b655102f1f963afe6879a7b36ec387ee76270",
+    "jit_command": "bash experiments/pysim/native/tier3_plugins/jit/build_native.sh --qa --release",
+    "jit_library_sha256": "c0405b8480764f9a5af9d1855597a483880c88eace1781f7f498a5bfef93b810"
+  },
+  "method": "Each case was run in three fresh pinned processes with the QA-only RuntimeStatsEngine counters. One full call warmed hotspot detection, idle_hook(32) serviced compilation, then counters were reset before the measured guest call. No diagnostic run was timed.",
+  "note": "The queue can auto-compile when full during the warmup boundary; therefore idle_hook may return zero after traces are already resident. Resident trace PCs and subsequent trace execution counters prove compilation and use.",
+  "results": {
+    "10000": {
+      "direct": {
+        "counter_definitions": {
+          "dispatcher_trace_transitions": "RuntimeStatsEngine.stat_native_dispatch_trace_transitions; dispatcher-to-trace transitions.",
+          "interpreter_steps": "RuntimeStatsEngine.stat_interp_steps; interpreted basic-block dispatch count, not WASM opcode count.",
+          "jit_invocations": "RuntimeStatsEngine.stat_jit_invocations; native trace-body executions.",
+          "reentries_per_leaf_call": "dispatcher_trace_transitions divided by n calls from bench_direct/bench_indirect to leaf.",
+          "trace_exits_per_leaf_call": "trace_exits_to_interp divided by n calls from bench_direct/bench_indirect to leaf; this is a scheduler-boundary measure, not all internal trace exit edges.",
+          "trace_exits_to_interp": "RuntimeStatsEngine.stat_trace_exits_to_interp; scheduler boundaries returned to the interpreter."
+        },
+        "counters": {
+          "compiled_trace_pcs": [
+            3,
+            56
+          ],
+          "dispatcher_trace_transitions": 19845,
+          "interpreter_steps": 20004,
+          "jit_invocations": 20001,
+          "reentries_per_leaf_call": 1.9845,
+          "resident_trace_count_after_warmup": 2,
+          "trace_exits_per_leaf_call": 0.0157,
+          "trace_exits_to_interp": 157
+        },
+        "expected_sum": 50005000,
+        "three_fresh_runs_identical": true,
+        "trackable_blocks": [
+          3,
+          17,
+          24,
+          56,
+          92,
+          94,
+          101,
+          110
+        ]
+      },
+      "indirect": {
+        "counter_definitions": {
+          "dispatcher_trace_transitions": "RuntimeStatsEngine.stat_native_dispatch_trace_transitions; dispatcher-to-trace transitions.",
+          "interpreter_steps": "RuntimeStatsEngine.stat_interp_steps; interpreted basic-block dispatch count, not WASM opcode count.",
+          "jit_invocations": "RuntimeStatsEngine.stat_jit_invocations; native trace-body executions.",
+          "reentries_per_leaf_call": "dispatcher_trace_transitions divided by n calls from bench_direct/bench_indirect to leaf.",
+          "trace_exits_per_leaf_call": "trace_exits_to_interp divided by n calls from bench_direct/bench_indirect to leaf; this is a scheduler-boundary measure, not all internal trace exit edges.",
+          "trace_exits_to_interp": "RuntimeStatsEngine.stat_trace_exits_to_interp; scheduler boundaries returned to the interpreter."
+        },
+        "counters": {
+          "compiled_trace_pcs": [
+            3,
+            101,
+            94
+          ],
+          "dispatcher_trace_transitions": 29845,
+          "interpreter_steps": 10004,
+          "jit_invocations": 30001,
+          "reentries_per_leaf_call": 2.9845,
+          "resident_trace_count_after_warmup": 3,
+          "trace_exits_per_leaf_call": 0.0157,
+          "trace_exits_to_interp": 157
+        },
+        "expected_sum": 50005000,
+        "three_fresh_runs_identical": true,
+        "trackable_blocks": [
+          3,
+          17,
+          24,
+          56,
+          63,
+          69,
+          92,
+          94,
+          101
+        ]
+      }
+    },
+    "3000": {
+      "direct": {
+        "counter_definitions": {
+          "dispatcher_trace_transitions": "RuntimeStatsEngine.stat_native_dispatch_trace_transitions; dispatcher-to-trace transitions.",
+          "interpreter_steps": "RuntimeStatsEngine.stat_interp_steps; interpreted basic-block dispatch count, not WASM opcode count.",
+          "jit_invocations": "RuntimeStatsEngine.stat_jit_invocations; native trace-body executions.",
+          "reentries_per_leaf_call": "dispatcher_trace_transitions divided by n calls from bench_direct/bench_indirect to leaf.",
+          "trace_exits_per_leaf_call": "trace_exits_to_interp divided by n calls from bench_direct/bench_indirect to leaf; this is a scheduler-boundary measure, not all internal trace exit edges.",
+          "trace_exits_to_interp": "RuntimeStatsEngine.stat_trace_exits_to_interp; scheduler boundaries returned to the interpreter."
+        },
+        "counters": {
+          "compiled_trace_pcs": [
+            3,
+            56
+          ],
+          "dispatcher_trace_transitions": 5955,
+          "interpreter_steps": 6004,
+          "jit_invocations": 6001,
+          "reentries_per_leaf_call": 1.985,
+          "resident_trace_count_after_warmup": 2,
+          "trace_exits_per_leaf_call": 0.015666666666666666,
+          "trace_exits_to_interp": 47
+        },
+        "expected_sum": 4501500,
+        "three_fresh_runs_identical": true,
+        "trackable_blocks": [
+          3,
+          17,
+          24,
+          56,
+          92,
+          94,
+          101,
+          110
+        ]
+      },
+      "indirect": {
+        "counter_definitions": {
+          "dispatcher_trace_transitions": "RuntimeStatsEngine.stat_native_dispatch_trace_transitions; dispatcher-to-trace transitions.",
+          "interpreter_steps": "RuntimeStatsEngine.stat_interp_steps; interpreted basic-block dispatch count, not WASM opcode count.",
+          "jit_invocations": "RuntimeStatsEngine.stat_jit_invocations; native trace-body executions.",
+          "reentries_per_leaf_call": "dispatcher_trace_transitions divided by n calls from bench_direct/bench_indirect to leaf.",
+          "trace_exits_per_leaf_call": "trace_exits_to_interp divided by n calls from bench_direct/bench_indirect to leaf; this is a scheduler-boundary measure, not all internal trace exit edges.",
+          "trace_exits_to_interp": "RuntimeStatsEngine.stat_trace_exits_to_interp; scheduler boundaries returned to the interpreter."
+        },
+        "counters": {
+          "compiled_trace_pcs": [
+            3,
+            101,
+            94
+          ],
+          "dispatcher_trace_transitions": 8955,
+          "interpreter_steps": 3004,
+          "jit_invocations": 9001,
+          "reentries_per_leaf_call": 2.985,
+          "resident_trace_count_after_warmup": 3,
+          "trace_exits_per_leaf_call": 0.015666666666666666,
+          "trace_exits_to_interp": 47
+        },
+        "expected_sum": 4501500,
+        "three_fresh_runs_identical": true,
+        "trackable_blocks": [
+          3,
+          17,
+          24,
+          56,
+          63,
+          69,
+          92,
+          94,
+          101
+        ]
+      }
+    }
+  }
+}

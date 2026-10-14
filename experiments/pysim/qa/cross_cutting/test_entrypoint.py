@@ -137,6 +137,12 @@ def test_optimized_qa_setup_preserves_real_fixture_state(optimization: int) -> N
         "outcome": [1, 6, 1, 0],
         "top": 7,
         "registers": [[10, 20, 30], 1, 999],
+        "jit_cache": {
+            "card_count": 64,
+            "inserted": [True, True],
+            "cycle_links": [0x200, 0x100],
+            "cycle_body_counts": [2, 2],
+        },
     }
 
 

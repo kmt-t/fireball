@@ -66,7 +66,8 @@ class _CodeRegionLayout:
             else None
         )
         size = ctypes.c_uint64()
-        assert native_abi.REGION_SIZE(lengths, bases, len(lengths), ctypes.byref(size)) == 1
+        result = native_abi.REGION_SIZE(lengths, bases, len(lengths), ctypes.byref(size))
+        assert result == 1
         self.byte_length = size.value
 
     def card_index(self, pc: int, card_shift: int) -> int:
@@ -624,14 +625,12 @@ class JitRuntimeBoundary:
         )
         if allocator is not None:
             self.bind_allocator(allocator)
-        assert (
-            native_abi.RUNTIME_BIND_BLOCKS(
-                self._native.pointer,
-                self._fixture_blocks,
-                0,
-            )
-            == 1
+        bind_result = native_abi.RUNTIME_BIND_BLOCKS(
+            self._native.pointer,
+            self._fixture_blocks,
+            0,
         )
+        assert bind_result == 1
 
     @classmethod
     def borrow(
@@ -716,14 +715,12 @@ class JitRuntimeBoundary:
                 empty_view,
                 0,
             )
-        assert (
-            native_abi.RUNTIME_BIND_BLOCKS(
-                self._native.pointer,
-                self._fixture_blocks,
-                len(sorted_traces),
-            )
-            == 1
+        bind_result = native_abi.RUNTIME_BIND_BLOCKS(
+            self._native.pointer,
+            self._fixture_blocks,
+            len(sorted_traces),
         )
+        assert bind_result == 1
 
     def _reference(self, token: int, pc: int) -> JITTrace | None:
         if token == 0:

@@ -161,24 +161,28 @@ class JITCompilerBenchmark:
         assert native_results[0] == native_results[1] == native_results[2]
         assert jit_results[0] == jit_results[1] == jit_results[2]
         assert python_results[0] == native_results[0] == jit_results[0] == 704_982_704
+        # JIT managers stamp runtime-specific cache references into block
+        # metadata. Keep the post-measurement diagnostic in its own Module.
+        diagnostic_module = parse(memoryview(loop_wasm))
+        diagnostic_function_index = diagnostic_module.export_func_index("heavy_loop")
         diagnostic_engine = RuntimeStatsEngine(
-            bump_allocator=module.allocator,
+            bump_allocator=diagnostic_module.allocator,
             jit_runtime=JITRuntimeManager(
                 region_provider=reserve_native_region,
             ),
             collect_runtime_stats=True,
         )
-        diagnostic_engine.register_module_blocks(module)
+        diagnostic_engine.register_module_blocks(diagnostic_module)
         diagnostic_interpreter = NativeInterpreter(
-            module,
+            diagnostic_module,
             InterpreterBindings.empty(),
             bump_allocator=diagnostic_engine.bump_allocator,
         )
-        diagnostic_engine.call(diagnostic_interpreter, fn_idx, [100]).unwrap()
+        diagnostic_engine.call(diagnostic_interpreter, diagnostic_function_index, [100]).unwrap()
         diagnostic_engine.idle_hook(budget=10)
         diagnostic_engine.reset_stats()
         diagnostic_result = diagnostic_engine.call(
-            diagnostic_interpreter, fn_idx, [LOOP_COUNT]
+            diagnostic_interpreter, diagnostic_function_index, [LOOP_COUNT]
         ).unwrap()
         assert int(diagnostic_result[0]) == jit_results[0]
         assert diagnostic_engine.stat_jit_invocations > 0, (

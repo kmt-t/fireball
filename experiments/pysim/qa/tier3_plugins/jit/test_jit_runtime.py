@@ -535,6 +535,34 @@ def test_jitr_oldest_keeps_existing_chain_and_rejects_new_links():
     assert cache.find_trace(t3.head_pc) is t3 and t3.header.chain_target_addr == 0
 
 
+def test_jitr_cyclic_chain_body_count_is_finite_and_retirement_unlinks_both_edges():
+    """A two-trace cycle has a finite bound and loses both links on bank retirement."""
+    cache = JitRuntimeBoundary(bank_capacity=512)
+    first = JITTrace(head_pc=0x100, size_bytes=64, next_pc=0x200)
+    second = JITTrace(head_pc=0x200, size_bytes=64, next_pc=0x100)
+
+    inserted_first = cache.insert(first)
+    assert inserted_first
+    assert first.chain_next is None
+    inserted_second = cache.insert(second)
+    assert inserted_second
+
+    assert first.chain_next == second.head_pc
+    assert second.chain_next == first.head_pc
+    assert first.header._native.chain_body_count == 2
+    assert second.header._native.chain_body_count == 2
+    assert first.header._native.chain_words == 1
+    assert second.header._native.chain_words == 1
+
+    for _ in range(3):
+        cache.rotate()
+
+    assert first.chain_next is None
+    assert second.chain_next is None
+    assert first.header.chain_target_addr == 0
+    assert second.header.chain_target_addr == 0
+
+
 def test_jitr_native_trace_lookup_uses_resident_snapshot():
     """
     Normal dispatch searches only resident traces in C++, without a Python
@@ -1090,7 +1118,7 @@ def test_jitr_br_if_loop_exit_jit_result_correct():
 
 
 def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
-    """TEST-JITR-63: C++ runs LOOP handlers until the taken-backedge threshold."""
+    """TEST-JITR-63: JIT backedges chain until the shared yield threshold."""
     wat = """
     (module
       (func (export "sum") (param i32) (result i32)
@@ -1125,19 +1153,34 @@ def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
     assert trace.chain_next is None
     assert_result_15 = engine.jit_runtime.cache.insert(trace)
     assert assert_result_15
+    assert trace.chain_next == loop_block.head_pc
+    assert trace.header._native.chain_body_count == 1
     interpreter = Interpreter(module, yield_threshold=2)
     call_state = interpreter.start(function_index, [5])
     first_boundary = engine.run(interpreter, call_state)
     assert first_boundary.yield_requested
     assert first_boundary.call_state.current_pc() == loop_block.head_pc
     assert engine.stat_native_control_handlers >= 2
-    assert engine.stat_jit_invocations >= 2
+    assert engine.stat_jit_invocations == 1
     assert engine.stat_native_dispatch_trace_transitions > 0
     assert first_boundary.call_state._frame is not None
     assert first_boundary.call_state._frame.context.loop_jump_count == 0
 
     results = engine.complete_call(interpreter, first_boundary.call_state).unwrap()
     assert list(results) == [15]
+
+    from qa.private.jit_native_abi import RUNTIME_PRINT
+    from tier2_runtime.observability.logger import LogDictionary
+    from tier3_platform.drivers.printk import PrintkBuffer, PrintkSink
+
+    manager = engine.jit_runtime
+    assert manager is not None and manager._native.pointer is not None
+    capture = PrintkBuffer()
+    sink = PrintkSink(capture, LogDictionary().decode_record)
+    printed = RUNTIME_PRINT(manager._native.pointer, ctypes.byref(sink._raw_writer))
+    assert printed == 1
+    lines = capture.drain_output().decode().splitlines()
+    assert "jit.chain_runtime_unclassified=0" in lines
 
 
 def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
@@ -1504,8 +1547,8 @@ def test_jitr_local_pair_ngrams_use_x64_memory_operand_stencils():
         assert fused_stencil in native_body, f"{name}: {native_blob.hex()}"
 
 
-def test_jitr_cross_frame_loop_branch_skips_special_link_but_keeps_trace_body():
-    """A legal branch across a nested frame uses the C++ handler, not the common helper."""
+def test_jitr_cross_frame_loop_branch_chains_and_preserves_state():
+    """TEST-JITR-67: a cross-frame loop branch uses the common chain dispatcher."""
     module = parse(
         wat_to_wasm(
             """(module
@@ -1534,11 +1577,17 @@ def test_jitr_cross_frame_loop_branch_skips_special_link_but_keeps_trace_body():
     target_block = engine.get_block(branch_block.loops_to)
     assert target_block is not None
     assert target_block.frame_depth < branch_block.frame_depth
+    target_trace = compile_runtime_block(engine.jit_runtime, target_block)
+    assert target_trace is not None
+    inserted_target = engine.jit_runtime.cache.insert(target_trace)
+    assert inserted_target
     trace = compile_runtime_block(engine.jit_runtime, branch_block)
     assert trace is not None
     assert trace.next_pc is None
     assert_result_18 = engine.jit_runtime.cache.insert(trace)
     assert assert_result_18
+    assert trace.chain_next == target_block.head_pc
+    assert trace.header._native.frame_depth > target_trace.header._native.frame_depth
 
     result = engine.call(Interpreter(module), function_index, [3]).unwrap()
 
@@ -3219,7 +3268,7 @@ def test_jitr_62_chain_links_stay_valid_across_lookup_and_rotation():
 @pytest.mark.parametrize("collect_stats", [False, True])
 @pytest.mark.parametrize("collect_hotspots", [False, True])
 def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, collect_hotspots):
-    """TEST-JITR-76: body counts survive dispatch rebuilds and execute in Oldest."""
+    """TEST-JITR-76: distinct chain bodies count once per dispatch, including in Oldest."""
     module = parse(
         wat_to_wasm("""(module
       (func (export "sum") (param i32) (result i32) (local i32)
@@ -3250,7 +3299,7 @@ def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, 
     interpreter = Interpreter(module)
     function = module.export_func_index("sum")
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [5]) == [15]
-    assert trace.exec_count == 5
+    assert trace.exec_count == 1
     manager.cache.rotate()
     manager.cache.rotate()
     address = trace.raw_addr
@@ -3258,7 +3307,7 @@ def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, 
     assert manager.lookup(trace.head_pc) is trace
     assert trace.raw_addr == address
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [2]) == [3]
-    assert trace.exec_count == 7
+    assert trace.exec_count == 2
     assert manager.cache.find_trace(trace.head_pc) is trace
     assert trace.raw_addr == address
     assert manager.native_dispatch_state() is not snapshot
@@ -3270,16 +3319,16 @@ def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, 
     manager.reset_stats()
     assert trace.exec_count == 0
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [3]) == [6]
-    assert trace.exec_count == 3
+    assert trace.exec_count == 1
     manager.flush_all()
-    assert [count for pc, count in retired if pc == trace.head_pc] == [3]
+    assert [count for pc, count in retired if pc == trace.head_pc] == [1]
     replacement = compile_runtime_block(manager, block)
     assert replacement is not None
     assert_result_26 = manager.cache.insert(replacement)
     assert assert_result_26
-    assert replacement.exec_count == 3
+    assert replacement.exec_count == 1
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [2]) == [3]
-    assert replacement.exec_count == trace.exec_count == 5
+    assert replacement.exec_count == trace.exec_count == 2
 
 
 @pytest.mark.parametrize("collect_stats", [False, True])

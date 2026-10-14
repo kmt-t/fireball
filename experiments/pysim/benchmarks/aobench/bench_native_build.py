@@ -54,13 +54,18 @@ def _file_hash(path: Path) -> str:
 
 
 def measure(
-    engine: str, width: int, warmup: int, repeats: int, yield_threshold: int = 4096
+    engine: str,
+    width: int,
+    warmup: int,
+    repeats: int,
+    yield_threshold: int = 4096,
+    height_override: int | None = None,
 ) -> NativeBuildMeasurement:
     """Time guest execution after loading and warming the selected native path."""
     assert engine == "interpreter" or engine == "jit"
     assert width > 0 and warmup > 0 and repeats > 0
     assert 1 <= yield_threshold <= 0xFFFF_FFFF
-    height = width * 9 // 16
+    height = width * 9 // 16 if height_override is None else height_override
     assert height > 0
     wasm_path = Path(__file__).with_name("aobench.wasm")
     module = parse(memoryview(wasm_path.read_bytes()))
@@ -135,9 +140,17 @@ if __name__ == "__main__":
     parser.add_argument("--warmup", type=int, default=3)
     parser.add_argument("--repeats", type=int, default=7)
     parser.add_argument("--yield-threshold", type=int, default=4096)
+    parser.add_argument("--height", type=int)
     args = parser.parse_args()
     print(
         json.dumps(
-            measure(args.engine, args.width, args.warmup, args.repeats, args.yield_threshold)
+            measure(
+                args.engine,
+                args.width,
+                args.warmup,
+                args.repeats,
+                args.yield_threshold,
+                args.height,
+            )
         )
     )

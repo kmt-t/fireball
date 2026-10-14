@@ -125,6 +125,7 @@
 | formal | [jit_cache_model.py](docs/components/tier3_plugins/formal/jit_cache_model.py) |
 | formal | [jit_hotspot_model.py](docs/components/tier3_plugins/formal/jit_hotspot_model.py) |
 | formal | [jit_trace_execution_model.py](docs/components/tier3_plugins/formal/jit_trace_execution_model.py) |
+| formal | [jit_loop_chain_model.py](docs/components/tier3_plugins/formal/jit_loop_chain_model.py) |
 | formal | [interrupt_boundary_model.py](docs/components/tier3_platform/formal/interrupt_boundary_model.py) |
 | test spec | [os_coos_test_spec.md](docs/qa/tier1_core/os_coos_test_spec.md) |
 | test spec | [os_scheduler_test_spec.md](docs/qa/tier1_core/os_scheduler_test_spec.md) |

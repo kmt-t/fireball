@@ -404,6 +404,10 @@ RUNTIME_RESET_COUNTS = _NATIVE_LIBRARY.fb_jit_runtime_reset_counts
 RUNTIME_RESET_COUNTS.argtypes = (ctypes.c_void_p,)
 RUNTIME_RESET_COUNTS.restype = None
 
+RUNTIME_RESET_CHAIN_MEASUREMENTS = _NATIVE_LIBRARY.fb_jit_runtime_reset_chain_measurements
+RUNTIME_RESET_CHAIN_MEASUREMENTS.argtypes = (ctypes.c_void_p,)
+RUNTIME_RESET_CHAIN_MEASUREMENTS.restype = None
+
 RUNTIME_YIELD = _NATIVE_LIBRARY.fb_jit_runtime_yield
 RUNTIME_YIELD.argtypes = (ctypes.c_void_p,)
 RUNTIME_YIELD.restype = ctypes.c_int

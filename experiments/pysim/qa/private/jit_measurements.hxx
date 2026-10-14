@@ -9,6 +9,7 @@
 #include <limits>
 
 #include "../../native/tier1_core/printk/printk.hxx"
+#include "../../native/tier3_plugins/jit/jit_chain_diagnostics.hxx"
 #include "../../native/tier3_plugins/jit/jit_types.hxx"
 
 namespace fireball {
@@ -33,6 +34,17 @@ struct jit_measurements {
   std::uint64_t history_dropped = 0;
   std::uint64_t trackable_generation = 0;
   bool history_approximate = false;
+  std::array<std::uint64_t, static_cast<std::size_t>(jit_chain_reason::count)>
+      chain_construction_reasons{};
+  std::array<std::uint64_t, static_cast<std::size_t>(jit_chain_reason::count)>
+      chain_runtime_reasons{};
+  std::uint64_t chain_construction_attempts = 0;
+  std::uint64_t chain_runtime_transitions = 0;
+  std::uint64_t chain_runtime_unclassified = 0;
+  std::uint64_t chain_runtime_unobserved_trace_exits = 0;
+  block_index_t pending_runtime_source_block = std::numeric_limits<block_index_t>::max();
+  jit_stack_words_t pending_runtime_result_words = 0;
+  frame_depth_t pending_runtime_frame_depth = 0;
 
   static const jit_wasm_block *fixture_block(const profile_type &profile, std::uint32_t pc) {
     if (profile.block_count == 0) {
@@ -58,7 +70,60 @@ struct jit_measurements {
            printk_u64(writer, "jit.execution_count", execution_count) &&
            printk_u64(writer, "jit.history_overwritten", history_overwritten) &&
            printk_u64(writer, "jit.last_overwritten", last_overwritten) &&
-           printk_u64(writer, "jit.trackable_generation", trackable_generation);
+           printk_u64(writer, "jit.trackable_generation", trackable_generation) &&
+           write_chain_measurements(writer);
+  }
+
+  bool write_chain_measurements(const printk_writer &writer) const {
+    if (!printk_u64(writer, "jit.chain_construction_attempts", chain_construction_attempts) ||
+        !printk_u64(writer, "jit.chain_runtime_transitions", chain_runtime_transitions) ||
+        !printk_u64(writer, "jit.chain_runtime_unclassified", chain_runtime_unclassified) ||
+        !printk_u64(writer, "jit.chain_runtime_unobserved_trace_exits",
+                    chain_runtime_unobserved_trace_exits)) {
+      return false;
+    }
+    for (std::size_t i = 0; i < jit_chain_reason_names.size(); ++i) {
+      const auto write_reason = [&writer, &i](const char *prefix, std::uint64_t value) {
+        std::array<char, 64> label{};
+        std::size_t offset = 0;
+        while (prefix[offset] != '\0') {
+          assert(offset + 1 < label.size());
+          label[offset] = prefix[offset];
+          ++offset;
+        }
+        for (const auto character : jit_chain_reason_names[i]) {
+          assert(offset + 1 < label.size());
+          label[offset] = character;
+          ++offset;
+        }
+        label[offset] = '\0';
+        return printk_u64(writer, label.data(), value);
+      };
+      if (!write_reason("jit.chain_construction.", chain_construction_reasons[i]) ||
+          !write_reason("jit.chain_runtime.", chain_runtime_reasons[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void record_chain_construction(jit_chain_reason reason) {
+    assert(reason < jit_chain_reason::count);
+    ++chain_construction_attempts;
+    ++chain_construction_reasons[static_cast<std::size_t>(reason)];
+  }
+  void record_chain_runtime(jit_chain_reason reason) {
+    assert(reason < jit_chain_reason::count);
+    ++chain_runtime_reasons[static_cast<std::size_t>(reason)];
+  }
+  void reset_chain_runtime() {
+    chain_runtime_reasons.fill(0);
+    chain_runtime_transitions = 0;
+    chain_runtime_unclassified = 0;
+    chain_runtime_unobserved_trace_exits = 0;
+    pending_runtime_source_block = std::numeric_limits<block_index_t>::max();
+    pending_runtime_result_words = 0;
+    pending_runtime_frame_depth = 0;
   }
 
   struct compile_scope {

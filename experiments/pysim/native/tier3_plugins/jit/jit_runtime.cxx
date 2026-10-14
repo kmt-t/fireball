@@ -106,6 +106,20 @@ jit_runtime<Measurement>::make_compiler_block_view(block_index_t index,
 }
 
 template <jit_measurement_policy Measurement>
+const jit_wasm_block *jit_runtime<Measurement>::diagnostic_block_view(block_index_t index,
+                                                                      jit_wasm_block &output) const
+  requires(!std::is_void_v<Measurement>)
+{
+  if (module_view != nullptr) {
+    return make_compiler_block_view(index, output);
+  }
+  if (index >= hotspots.configuration.block_count || hotspots.configuration.blocks == nullptr) {
+    return nullptr;
+  }
+  return hotspots.configuration.blocks + index;
+}
+
+template <jit_measurement_policy Measurement>
 const jit_wasm_block *
 jit_runtime<Measurement>::block_metadata_for_trace(const jit_trace_header &trace,
                                                    jit_wasm_block &output) const {
@@ -237,12 +251,16 @@ int jit_runtime<Measurement>::compile_one_candidate(block_index_t block_index, w
        reference != jit_cache_state::no_reference;
        reference = cache.inbound_chain_next[reference]) {
     const auto source = cache_entry_at_reference(reference);
-    if (bank_of_reference(reference) != cache.oldest_bank_id &&
-        source.head_pc != compiled.head_pc && trace_successor_pc(source) == compiled.head_pc &&
-        (trace_successor_block_index(source) == jit_invalid_block_index ||
-         trace_successor_block_index(source) == trace_header(compiled)->block_index) &&
-        can_chain_to(source, compiled)) {
-      set_chain_target(source, &compiled);
+    if (trace_successor_pc(source) == compiled.head_pc) {
+      if constexpr (!std::is_void_v<Measurement>) {
+        record_chain_construction(source);
+      }
+      if (bank_of_reference(reference) != cache.oldest_bank_id &&
+          (trace_successor_block_index(source) == jit_invalid_block_index ||
+           trace_successor_block_index(source) == trace_header(compiled)->block_index) &&
+          can_chain_to(source, compiled)) {
+        set_chain_target(source, &compiled);
+      }
     }
   }
   mark_trace_card_compiled(compiled.head_pc);
@@ -519,14 +537,32 @@ template <jit_measurement_policy Measurement>
 wasm_pc_t jit_runtime<Measurement>::trace_successor_pc(jit_cache_entry value) const {
   jit_wasm_block storage{};
   const auto *metadata = block_metadata_for_trace(*trace_header(value), storage);
-  return metadata == nullptr ? jit_invalid_pc : metadata->next_pc;
+  if (metadata == nullptr) {
+    return jit_invalid_pc;
+  }
+  const auto terminator = metadata->offset + metadata->byte_span;
+  if (metadata->code.data != nullptr && terminator < metadata->code.bytes &&
+      metadata->code.data[terminator] == 0x0D && metadata->loops_to != jit_invalid_pc &&
+      metadata->loops_to <= metadata->head_pc) {
+    return metadata->loops_to;
+  }
+  return metadata->next_pc;
 }
 
 template <jit_measurement_policy Measurement>
 block_index_t jit_runtime<Measurement>::trace_successor_block_index(jit_cache_entry value) const {
   jit_wasm_block storage{};
   const auto *metadata = block_metadata_for_trace(*trace_header(value), storage);
-  return metadata == nullptr ? jit_invalid_block_index : metadata->next_block_index;
+  if (metadata == nullptr) {
+    return jit_invalid_block_index;
+  }
+  const auto terminator = metadata->offset + metadata->byte_span;
+  if (metadata->code.data != nullptr && terminator < metadata->code.bytes &&
+      metadata->code.data[terminator] == 0x0D && metadata->loops_to != jit_invalid_pc &&
+      metadata->loops_to <= metadata->head_pc) {
+    return metadata->loops_to_block_index;
+  }
+  return metadata->next_block_index;
 }
 
 template <jit_measurement_policy Measurement>
@@ -536,13 +572,57 @@ wasm_pc_t jit_runtime<Measurement>::trace_loop_target_pc(jit_cache_entry value) 
   return metadata == nullptr ? jit_invalid_pc : metadata->loops_to;
 }
 
+static bool chain_terminator_is_unsupported(const jit_wasm_block &source) {
+  if (source.code.data == nullptr) {
+    return false;
+  }
+  const auto terminator = source.offset + source.byte_span;
+  if (terminator >= source.code.bytes) {
+    return false;
+  }
+  switch (source.code.data[terminator]) {
+  case 0x02: // block
+  case 0x03: // loop
+  case 0x04: // if
+  case 0x05: // else
+  case 0x0B: // end
+  case 0x0E: // br_table
+  case 0x0F: // return
+    return true;
+  default:
+    return false;
+  }
+}
+
+[[maybe_unused]] static jit_chain_reason
+chain_source_rejection_reason(const jit_trace_header &header, const jit_wasm_block &source) {
+  const auto terminator = source.offset + source.byte_span;
+  const bool conditional_backedge = source.code.data != nullptr && terminator < source.code.bytes &&
+                                    source.code.data[terminator] == 0x0D &&
+                                    source.loops_to != jit_invalid_pc &&
+                                    source.loops_to <= source.head_pc;
+  const auto successor = conditional_backedge ? source.loops_to : source.next_pc;
+  if (successor == source.head_pc) {
+    return jit_chain_reason::self_loop;
+  }
+  if (successor < source.head_pc) {
+    return jit_chain_reason::backedge;
+  }
+  if (source.loops_to != jit_invalid_pc) {
+    return jit_chain_reason::loop_target;
+  }
+  if (header.result_words != 0) {
+    return jit_chain_reason::result_words;
+  }
+  return chain_terminator_is_unsupported(source) ? jit_chain_reason::unsupported_control_flow
+                                                 : jit_chain_reason::linked;
+}
+
 template <jit_measurement_policy Measurement>
 bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
   const auto successor = trace_successor_pc(value);
   const auto successor_index = trace_successor_block_index(value);
-  if (successor == jit_invalid_pc || successor_index == jit_invalid_block_index ||
-      successor <= value.head_pc || trace_loop_target_pc(value) != jit_invalid_pc ||
-      trace_header(value)->result_words != 0) {
+  if (successor == jit_invalid_pc || successor_index == jit_invalid_block_index) {
     return false;
   }
   if (module_view != nullptr) {
@@ -555,25 +635,29 @@ bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
   if constexpr (!std::is_void_v<Measurement>) {
     if (source->code.data == nullptr) {
       // QA metadata-only fixtures can establish same-depth forward chaining.
-      return true;
+      return trace_header(value)->result_words == 0;
     }
   }
   assert(source->code.data != nullptr);
   const auto terminator = source->offset + source->byte_span;
   if (terminator >= source->code.bytes) {
-    return true;
+    return trace_header(value)->result_words == 0;
   }
-  switch (source->code.data[terminator]) {
+  const auto opcode = source->code.data[terminator];
+  if (trace_header(value)->result_words != 0 && opcode != 0x0C && opcode != 0x0D) {
+    return false;
+  }
+  switch (opcode) {
   case 0x02: // block
   case 0x03: // loop
   case 0x04: // if
   case 0x05: // else
   case 0x0B: // end
-  case 0x0D: // br_if
   case 0x0E: // br_table
   case 0x0F: // return
     return false;
   case 0x0C: // Static forward BR has a loader-resolved trace successor.
+  case 0x0D: // The runtime API resolves the taken or fallthrough edge.
     return true;
   default:
     return true;
@@ -605,7 +689,139 @@ bool jit_runtime<Measurement>::can_chain_to(jit_cache_entry value, jit_cache_ent
   }
   assert(source->code.data != nullptr);
   const auto terminator = source->offset + source->byte_span;
-  return terminator < source->code.bytes && source->code.data[terminator] == 0x0C;
+  return terminator < source->code.bytes &&
+         (source->code.data[terminator] == 0x0C || source->code.data[terminator] == 0x0D);
+}
+
+template <jit_measurement_policy Measurement>
+void jit_runtime<Measurement>::record_runtime_trace_exit(block_index_t source_block_index,
+                                                         jit_stack_words_t result_words,
+                                                         frame_depth_t frame_depth)
+  requires(!std::is_void_v<Measurement>)
+{
+  auto &measurements = this->measurements;
+  if (measurements.pending_runtime_source_block != jit_invalid_block_index) {
+    ++measurements.chain_runtime_unobserved_trace_exits;
+  }
+  measurements.pending_runtime_source_block = jit_invalid_block_index;
+  measurements.pending_runtime_result_words = 0;
+  measurements.pending_runtime_frame_depth = 0;
+  jit_wasm_block source_storage{};
+  const auto *source = diagnostic_block_view(source_block_index, source_storage);
+  if (source == nullptr) {
+    ++measurements.chain_runtime_unobserved_trace_exits;
+    return;
+  }
+  if (source->next_pc == jit_invalid_pc && source->loops_to == jit_invalid_pc) {
+    return;
+  }
+  measurements.pending_runtime_source_block = source_block_index;
+  measurements.pending_runtime_result_words = result_words;
+  measurements.pending_runtime_frame_depth = frame_depth;
+}
+
+template <jit_measurement_policy Measurement>
+void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_block_index,
+                                                         wasm_pc_t target_pc)
+  requires(!std::is_void_v<Measurement>)
+{
+  auto &measurements = this->measurements;
+  const auto source_block_index = measurements.pending_runtime_source_block;
+  if (source_block_index == jit_invalid_block_index) {
+    return;
+  }
+  measurements.pending_runtime_source_block = jit_invalid_block_index;
+  ++measurements.chain_runtime_transitions;
+  jit_wasm_block source_storage{};
+  jit_wasm_block target_storage{};
+  const auto *source = diagnostic_block_view(source_block_index, source_storage);
+  const auto *target_block = diagnostic_block_view(target_block_index, target_storage);
+  if (source == nullptr || target_block == nullptr || target_pc == jit_invalid_pc ||
+      target_block->head_pc != target_pc) {
+    ++measurements.chain_runtime_unclassified;
+    return;
+  }
+  jit_chain_reason reason = jit_chain_reason::count;
+  if (target_pc == source->head_pc) {
+    reason = jit_chain_reason::self_loop;
+  } else if (target_pc < source->head_pc) {
+    reason = jit_chain_reason::backedge;
+  } else if (source->loops_to != jit_invalid_pc && target_pc == source->loops_to) {
+    reason = jit_chain_reason::loop_target;
+  } else if (measurements.pending_runtime_result_words != 0) {
+    reason = jit_chain_reason::result_words;
+  } else if (chain_terminator_is_unsupported(*source) ||
+             (target_pc != source->next_pc && target_pc != source->loops_to)) {
+    reason = jit_chain_reason::unsupported_control_flow;
+  } else {
+    const auto expected_index =
+        target_pc == source->loops_to ? source->loops_to_block_index : source->next_block_index;
+    const auto target = find_cached_trace_by_pc(target_pc);
+    if (expected_index != target_block_index ||
+        (target.trace_entry != nullptr &&
+         trace_header(*target.trace_entry)->block_index != target_block_index)) {
+      reason = jit_chain_reason::successor_block_index_mismatch;
+    } else if (target.trace_entry == nullptr) {
+      reason = jit_chain_reason::successor_not_resident;
+    } else if (measurements.pending_runtime_frame_depth !=
+               trace_header(*target.trace_entry)->frame_depth) {
+      const auto terminator = source->offset + source->byte_span;
+      const bool static_branch =
+          terminator < source->code.bytes && source->code.data[terminator] == 0x0C;
+      reason = static_branch ? jit_chain_reason::unsupported_control_flow
+                             : jit_chain_reason::frame_depth_mismatch;
+    } else if (target.bank_id == cache.oldest_bank_id) {
+      reason = jit_chain_reason::oldest_bank;
+    } else {
+      reason = jit_chain_reason::linked;
+    }
+  }
+
+  if (reason == jit_chain_reason::count) {
+    ++measurements.chain_runtime_unclassified;
+    return;
+  }
+  measurements.record_chain_runtime(reason);
+  measurements.pending_runtime_result_words = 0;
+  measurements.pending_runtime_frame_depth = 0;
+}
+
+template <jit_measurement_policy Measurement>
+void jit_runtime<Measurement>::record_chain_construction(jit_cache_entry source)
+  requires(!std::is_void_v<Measurement>)
+{
+  const auto successor_pc = trace_successor_pc(source);
+  const auto successor_index = trace_successor_block_index(source);
+  if (successor_pc == jit_invalid_pc || successor_index == jit_invalid_block_index) {
+    return;
+  }
+
+  const auto *header = trace_header(source);
+  jit_wasm_block source_storage{};
+  const auto *source_block = block_metadata_for_trace(*header, source_storage);
+  assert(source_block != nullptr);
+  auto reason = chain_source_rejection_reason(*header, *source_block);
+  if (reason == jit_chain_reason::linked) {
+    const auto target = find_cached_trace_by_pc(successor_pc);
+    if (target.trace_entry == nullptr) {
+      reason = jit_chain_reason::successor_not_resident;
+    } else if (trace_header(*target.trace_entry)->block_index != successor_index) {
+      reason = jit_chain_reason::successor_block_index_mismatch;
+    } else if (!can_chain_to(source, *target.trace_entry)) {
+      const auto terminator = source_block->offset + source_block->byte_span;
+      const bool static_branch = terminator < source_block->code.bytes &&
+                                 source_block->code.data != nullptr &&
+                                 source_block->code.data[terminator] == 0x0C;
+      reason =
+          !static_branch && header->frame_depth != trace_header(*target.trace_entry)->frame_depth
+              ? jit_chain_reason::frame_depth_mismatch
+              : jit_chain_reason::unsupported_control_flow;
+    } else if (target.bank_id == cache.oldest_bank_id &&
+               header->chain_target_address != trace_entry_address(*target.trace_entry)) {
+      reason = jit_chain_reason::oldest_bank;
+    }
+  }
+  measurements.record_chain_construction(reason);
 }
 
 template <jit_measurement_policy Measurement>
@@ -641,16 +857,22 @@ void jit_runtime<Measurement>::set_chain_target(jit_cache_entry source,
 
 template <jit_measurement_policy Measurement>
 void jit_runtime<Measurement>::link_resident_successor(jit_cache_entry source) {
+  const auto source_can_chain = can_chain_from(source);
+  const auto successor_pc = trace_successor_pc(source);
+  const auto successor_index = trace_successor_block_index(source);
   const auto target =
-      can_chain_from(source)
-          ? lookup_cached_trace(trace_successor_block_index(source), trace_successor_pc(source))
-          : jit_trace_location{};
+      source_can_chain ? lookup_cached_trace(successor_index, successor_pc) : jit_trace_location{};
+  const auto target_can_chain =
+      target.trace_entry != nullptr && can_chain_to(source, *target.trace_entry);
+  if constexpr (!std::is_void_v<Measurement>) {
+    record_chain_construction(source);
+  }
   if (target.trace_entry != nullptr) {
-    if (target.bank_id != cache.oldest_bank_id && can_chain_to(source, *target.trace_entry)) {
+    if (target.bank_id != cache.oldest_bank_id && target_can_chain) {
       set_chain_target(source, target.trace_entry);
       return;
     }
-    if (target.bank_id == cache.oldest_bank_id && can_chain_to(source, *target.trace_entry) &&
+    if (target.bank_id == cache.oldest_bank_id && target_can_chain &&
         trace_header(source)->chain_target_address == trace_entry_address(*target.trace_entry)) {
       return;
     }
@@ -862,9 +1084,13 @@ bool jit_runtime<Measurement>::insert_trace_fixture(const std::uint8_t *blob, st
        reference != jit_cache_state::no_reference;
        reference = cache.inbound_chain_next[reference]) {
     const auto source = cache_entry_at_reference(reference);
-    if (bank_of_reference(reference) != cache.oldest_bank_id && source.head_pc != value.head_pc &&
-        trace_successor_pc(source) == value.head_pc && can_chain_to(source, value)) {
-      set_chain_target(source, &value);
+    if (trace_successor_pc(source) == value.head_pc) {
+      if constexpr (!std::is_void_v<Measurement>) {
+        record_chain_construction(source);
+      }
+      if (bank_of_reference(reference) != cache.oldest_bank_id && can_chain_to(source, value)) {
+        set_chain_target(source, &value);
+      }
     }
   }
   mark_trace_card_compiled(pc);
@@ -915,22 +1141,61 @@ void jit_runtime<Measurement>::refresh_chain_requirements() {
   if (began) {
     fb_jit_memory_begin(&cache.code_memory);
   }
-  // A chain only points to a higher PC, so its successor is ready first.
-  for (std::uint32_t i = cache.pc_index_count; i != 0; --i) {
-    auto *chain_header = trace_header(cache_entry_at_reference(cache.pc_index[i - 1]));
-    const auto *next = chain_target_header(*chain_header);
-    if (next == nullptr) {
-      chain_header->chain_body_count = 1;
-      chain_header->chain_words = chain_header->stack_words;
-      continue;
+  const auto successor = [this](const jit_trace_header *header) {
+    return header == nullptr ? nullptr : chain_target_header(*header);
+  };
+  for (std::uint32_t i = 0; i < cache.pc_index_count; ++i) {
+    auto *root = trace_header(cache_entry_at_reference(cache.pc_index[i]));
+    const auto *slow = root;
+    const auto *fast = root;
+    bool cycle_found = false;
+    for (std::uint32_t step = 0; step < jit_cache_total_entry_capacity; ++step) {
+      slow = successor(slow);
+      fast = successor(successor(fast));
+      if (slow == nullptr || fast == nullptr) {
+        break;
+      }
+      if (slow == fast) {
+        cycle_found = true;
+        break;
+      }
     }
-    assert(next->head_pc > chain_header->head_pc);
-    assert(next->frame_depth <= chain_header->frame_depth);
-    assert(next->chain_body_count < jit_cache_total_entry_capacity);
-    chain_header->chain_body_count = static_cast<std::uint8_t>(next->chain_body_count + 1);
-    chain_header->chain_words = next->chain_words > chain_header->stack_words
-                                    ? next->chain_words
-                                    : chain_header->stack_words;
+
+    std::uint32_t body_count = 0;
+    if (!cycle_found) {
+      for (const auto *current = root; current != nullptr; current = successor(current)) {
+        assert(body_count < jit_cache_total_entry_capacity);
+        ++body_count;
+      }
+    } else {
+      const auto *cycle_start = root;
+      const auto *meeting = slow;
+      std::uint32_t prefix_count = 0;
+      while (cycle_start != meeting) {
+        assert(prefix_count < jit_cache_total_entry_capacity);
+        cycle_start = successor(cycle_start);
+        meeting = successor(meeting);
+        ++prefix_count;
+      }
+      std::uint32_t cycle_count = 1;
+      for (const auto *current = successor(cycle_start); current != cycle_start;
+           current = successor(current)) {
+        assert(cycle_count < jit_cache_total_entry_capacity);
+        ++cycle_count;
+      }
+      body_count = prefix_count + cycle_count;
+    }
+    assert(body_count != 0 && body_count <= jit_cache_total_entry_capacity);
+
+    std::uint32_t chain_words = 0;
+    const auto *current = root;
+    for (std::uint32_t body = 0; body < body_count; ++body) {
+      assert(current != nullptr);
+      chain_words = std::max(chain_words, static_cast<std::uint32_t>(current->stack_words));
+      current = successor(current);
+    }
+    root->chain_body_count = static_cast<jit_body_count_t>(body_count);
+    root->chain_words = static_cast<jit_stack_words_t>(chain_words);
   }
   if (began) {
     fb_jit_memory_commit(&cache.code_memory);
@@ -1249,6 +1514,9 @@ int jit_provider_adapter<Measurement>::lookup_runtime_trace(std::uintptr_t owner
                                                             fb_native_jit_trace *output) {
   assert(owner != 0 && output != nullptr);
   auto &runtime = *reinterpret_cast<runtime_type *>(owner);
+  if constexpr (!std::is_void_v<Measurement>) {
+    runtime.record_runtime_transition(block_index, pc);
+  }
   assert(runtime.hotspots.card_states != nullptr && runtime.hotspots.card_shift < 32);
   [[maybe_unused]] const auto card = pc >> runtime.hotspots.card_shift;
   assert(card < runtime.hotspots.card_count);
@@ -1280,6 +1548,9 @@ int jit_provider_adapter<Measurement>::observe_runtime_block(std::uintptr_t owne
                                                              wasm_pc_t pc) {
   assert(owner != 0);
   auto &runtime = *reinterpret_cast<runtime_type *>(owner);
+  if constexpr (!std::is_void_v<Measurement>) {
+    runtime.record_runtime_transition(block_index, pc);
+  }
   if (runtime.hotspots.configuration.enabled == 0 || !runtime.is_profiled_pc(pc)) {
     return 0;
   }

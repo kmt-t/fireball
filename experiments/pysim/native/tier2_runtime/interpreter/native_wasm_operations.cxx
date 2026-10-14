@@ -525,7 +525,7 @@ bool should_stop_after_control(const execution_context &current) {
 }
 
 bool record_loop_backedge(execution_context &current, code_ip_t source_ip, code_ip_t target_ip) {
-  if (target_ip >= source_ip) {
+  if (target_ip > source_ip) {
     return false;
   }
   if (current.loop_jump_count < UINT32_MAX) {

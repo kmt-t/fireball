@@ -8,6 +8,7 @@
 
 #include "../../../tier2_runtime/abi/interpreter_abi.hxx"
 #include "common_code_abi.hxx"
+#include "jit_chain_diagnostics.hxx"
 #include "jit_internal.hxx"
 #include "jit_runtime_abi.hxx"
 #include "profiling.hxx"
@@ -127,8 +128,10 @@ template <jit_measurement_policy Measurement> struct jit_runtime final {
   jit_runtime(const jit_runtime &) = delete;
   jit_runtime &operator=(const jit_runtime &) = delete;
   ~jit_runtime();
-  const jit_wasm_block *make_compiler_block_view(block_index_t index,
-                                                 jit_wasm_block &output) const;
+  const jit_wasm_block *make_compiler_block_view(block_index_t index, jit_wasm_block &output) const;
+  /** @brief QA計測用に製品または参照ランタイムのブロック情報を参照する。 */
+  const jit_wasm_block *diagnostic_block_view(block_index_t index, jit_wasm_block &output) const
+    requires(!std::is_void_v<Measurement>);
   const jit_wasm_block *block_metadata_for_trace(const jit_trace_header &trace,
                                                  jit_wasm_block &output) const;
   /** @brief 候補マスクで指定PCが履歴記録対象かを調べる。 */
@@ -192,6 +195,16 @@ public:
   bool can_chain_from(jit_cache_entry value) const;
   /** @brief 後続PCとフレーム境界が連結可能かを判定する。 */
   bool can_chain_to(jit_cache_entry value, jit_cache_entry target) const;
+  /** @brief QA計測で実行済みトレース終端を保留する。 */
+  void record_runtime_trace_exit(block_index_t source_block_index, jit_stack_words_t result_words,
+                                 frame_depth_t frame_depth)
+    requires(!std::is_void_v<Measurement>);
+  /** @brief QA計測で実際に解釈器へ戻った後続辺を分類する。 */
+  void record_runtime_transition(block_index_t target_block_index, wasm_pc_t target_pc)
+    requires(!std::is_void_v<Measurement>);
+  /** @brief QA計測で常駐先へのチェイン構築判定を記録する。 */
+  void record_chain_construction(jit_cache_entry source)
+    requires(!std::is_void_v<Measurement>);
   /** @brief 既存の連結先を参照する。未連結ならnullptrを返す。 */
   const jit_trace_header *chain_target_header(const jit_trace_header &source) const;
   /** @brief 連結先が変わる場合だけコードヘッダを書き換える。 */
@@ -259,8 +272,7 @@ template <jit_measurement_policy Measurement> struct jit_provider_adapter {
   static int lookup_runtime_trace(std::uintptr_t owner, block_index_t block_index, wasm_pc_t pc,
                                   fb_native_jit_trace *output);
   /** @brief 対象ブロックの実行履歴を記録する。 */
-  static int observe_runtime_block(std::uintptr_t owner, block_index_t block_index,
-                                   wasm_pc_t pc);
+  static int observe_runtime_block(std::uintptr_t owner, block_index_t block_index, wasm_pc_t pc);
   /** @brief Interpreterの終了状態をJITの境界処理へ変換する。 */
   static int finish_runtime_boundary(std::uintptr_t owner, std::uint32_t status,
                                      std::uint32_t budget);

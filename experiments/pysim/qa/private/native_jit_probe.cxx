@@ -14,6 +14,53 @@ using configured_jit_provider_adapter = jit_provider_adapter<jit_measurements>;
 using provider_adapter = fireball::configured_jit_provider_adapter;
 
 using qa_jit_runtime = provider_adapter::runtime_type;
+static bool qa_runtime_observe([[maybe_unused]] const fb_native_dispatch_call *input,
+                               [[maybe_unused]] std::uint32_t pc) {
+  return false;
+}
+
+static void qa_runtime_trace_executed(const fb_native_dispatch_call *input,
+                                     std::uintptr_t trace_cookie) {
+  if (input == nullptr || input->context == nullptr || input->jit_provider == nullptr ||
+      input->jit_provider->owner == 0 || trace_cookie == 0) {
+    return;
+  }
+  auto &runtime = *reinterpret_cast<qa_jit_runtime *>(input->jit_provider->owner);
+  const auto *context = static_cast<const fireball_execution_context_native *>(input->context);
+  auto *header = reinterpret_cast<const fireball::jit_trace_header *>(trace_cookie);
+  for (std::uint32_t visited = 0;
+       header != nullptr &&
+       visited < fireball::jit_cache_bank_count * fireball::jit_cache_bank_entry_capacity;
+       ++visited) {
+    if (header->const_rel_offset <= header->blob_bytes) {
+      const auto *rel = reinterpret_cast<const std::uint8_t *>(header) + header->const_rel_offset;
+      if (context->rel == rel) {
+        const auto *exit = reinterpret_cast<const fb_native_jit_trace_exit *>(context->rel);
+        runtime.record_runtime_trace_exit(header->block_index, exit->result_words,
+                                          header->frame_depth);
+        return;
+      }
+    }
+    header = runtime.chain_target_header(*header);
+  }
+  ++runtime.measurements.chain_runtime_unobserved_trace_exits;
+}
+
+extern "C" FB_PYSIM_ABI_EXPORT int
+fb_qa_runtime_dispatch(int (*dispatch)(const fb_native_dispatch_extension_call *,
+                                       fb_native_result *),
+                       const fb_native_dispatch_call *input, fb_native_result *result) {
+  if (dispatch == nullptr || input == nullptr || result == nullptr ||
+      input->jit_provider == nullptr || input->jit_provider->owner == 0) {
+    return 0;
+  }
+  const fb_native_execution_extension extension{input->jit_provider->owner,
+                                                 qa_runtime_observe,
+                                                 qa_runtime_trace_executed};
+  const fb_native_dispatch_extension_call extension_call{*input, &extension};
+  return dispatch(&extension_call, result);
+}
+
 extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_flush(qa_jit_runtime *runtime) {
   return provider_adapter::fb_jit_runtime_flush(runtime);
 }
@@ -457,6 +504,11 @@ fb_qa_runtime_provider(qa_jit_runtime *runtime) {
 
 extern "C" FB_PYSIM_ABI_EXPORT void fb_jit_runtime_reset_counts(qa_jit_runtime *runtime) {
   runtime->measurements.reset_trace_counts(*runtime);
+}
+
+extern "C" FB_PYSIM_ABI_EXPORT void
+fb_jit_runtime_reset_chain_measurements(qa_jit_runtime *runtime) {
+  runtime->measurements.reset_chain_runtime();
 }
 
 extern "C" FB_PYSIM_ABI_EXPORT int

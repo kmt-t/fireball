@@ -256,3 +256,20 @@ def make_qa_jit_dispatch_entry(manager: _NativeSnapshotProvider, collect_stats: 
         return int(status)
 
     return callback_type(invoke)
+
+
+def make_qa_runtime_dispatch_entry(collect_stats: bool) -> CFuncPtr:
+    """Wrap the real runtime JIT provider with QA-only trace-exit callbacks."""
+    from qa.private.interpreter_native_abi import select_native_jit_dispatch_entry
+    from qa.private.jit_native_abi import _NATIVE_LIBRARY
+
+    dispatch = select_native_jit_dispatch_entry(collect_stats)
+    qa_dispatch = _NATIVE_LIBRARY.fb_qa_runtime_dispatch
+    qa_dispatch.argtypes = (ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+    qa_dispatch.restype = ctypes.c_int
+    callback_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+
+    def invoke(call: int, result: int) -> int:
+        return int(qa_dispatch(ctypes.cast(dispatch, ctypes.c_void_p), call, result))
+
+    return callback_type(invoke)

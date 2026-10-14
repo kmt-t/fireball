@@ -7,7 +7,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {ROMParsing} {META_AccessDictionary} {META_BumpAllocator} {META_BinarySearch} -->
-WASM ローダは、ROM 上の WASM32 バイナリを解析し、実行環境向けの索引構造（ModuleView）を生成する。ROM 上のデータを直接参照し、RAM への全展開を避けてメモリ消費を抑える。固定長メタデータは内部レジストリ（`decoded_entity_registry`）に格納する。Element / Data の個別初期化定義は配列化しない。セクション位置から callback で逐次処理する。
+WASM ローダは、ROM 上の WASM32 バイナリを解析し、実行環境向けの索引構造（ModuleView）を生成する。ROM 上のデータを直接参照し、RAM への全展開を避けてメモリ消費を抑える。Element / Data の個別初期化定義は配列化しない。セクション位置から callback で逐次処理する。
 
 **WASM ファイル内のバイト位置（データオフセット）をキーとする検索**には、`RadixBinaryTreeView`（`fireball::radix_binary_tree_view`）を用いる。粗粒度インデックスは $O(1)$ である。絞り込んだ範囲を $O(\log n)$ で二分探索する。全体の確定時間は $O(\log N)$ である。
 
@@ -34,7 +34,6 @@ ROM 上の索引構築（ModuleView）も担当する。
 - **`ModuleView`**: ROM上のバイナリをゼロコピーで参照するための不変インデックス構造体。
 - **`BinaryStream`**: ROMデータをバイト境界・LEB128ガード付きで読み進めるストリームリーダ。
 - **`code_section_payload_file_offset`**: `ModuleView` が保持するCode section payloadの先頭ファイル位置（section IDとpayload lengthの後）。命令のファイル位置からこの値を引いた差分をCode section相対PCとする。
-- **`decoded_entity_registry`**: 各エンティティの種類・ファイル内開始位置・長さ・参照に必要な最小メタ情報だけを保持する固定長レジストリ。関数コード、名前文字列、データ本体は所有せず、WASM原本上の範囲を参照する。
 - **`entity_offset_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
 - **`import_storage` / `export_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
 - **`module.blocks`と`block_storage`**: `module.blocks`はコード順の全BasicBlock metadataを保持する。Python参照実装の`block_storage`と`Module.get_block()`はPython側からのPC検索に使う。Native ModuleExecutionViewにはPC→block検索行とradix表を転送しない。Native dispatchは現在のblock indexとLoader注釈の次block indexで遷移し、indexを使う境界でPC一致をassertする。`run_step`境界停止のPC比較とJITのPC cache keyは維持する。JIT trace境界metadataはblock indexとPCを保持する。
@@ -51,7 +50,6 @@ flowchart TD
     subgraph WasmLoader_Component
         Loader[WasmLoader]
         Registry[module_registry]
-        EntityReg[decoded_entity_registry]
         RadixTree[RadixBinaryTreeView Offset Index]
         SymbolTree[RadixBinaryTreeView Hash Symbol Index]
     end
@@ -63,8 +61,6 @@ flowchart TD
 
     Loader -- holds reference --> Alloc
     Loader -- manages --> Registry
-    Loader -- manages --> EntityReg
-    EntityReg -- indexed by --> RadixTree
     Registry -- holds --> View[module_view]
     View -- indexed by --> SymbolTree
     View -- refers to --> ROM
@@ -149,7 +145,7 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
   **設計理由と不変条件**: WASM バイナリで検証エラーが発生する場合がある。例はセクション長の不整合、未定義型参照、リソース上限超過である。途中確保した領域が残ると、静的バンプアロケータのメモリを枯渇させる。すべての失敗時にアロケータを開始前の位置へ戻す。不正バイナリによるメモリリークと断片化を防ぐ。 {GOTCHA-LOAD-02} <!-- definition: {GOTCHA-LOAD-02} -->
 - **module_view 構築 & デコード値レジストリ登録 (Zero-Copy & Radix-Indexed)**:
     - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
-    - 各セクション、関数コードブロック、グローバル変数等について、内容を展開しない最小ディスクリプタを `decoded_entity_registry` に登録する。
+    - 各セクション、関数コードブロック、グローバル変数等について、内容を展開しない最小ディスクリプタを登録する。
     - 各エントリの開始ファイルオフセット `file_offset` をキーに、基数2進探索木ビュー（`fireball::radix_binary_tree_view`）を構築する。粗い Radix Table で探索区間を特定する。絞り込んだ区間を有界二分探索する。これにより、$O(1) + O(\log n)$ で任意のバイト位置からデコード済みエンティティを逆引きできる。対象は関数メタデータ、セクション、データ定義である。
     - エクスポートおよびインポートエントリをパースし、シンボル名の 32-bit ハッシュ値（FNV-1a）を算出。名前文字列をROM上の文字列ビューとしてRAMコピーゼロで保持し、ハッシュ値をキーとした `export_storage` / `import_storage`（`fireball::radix_binary_tree_view`を借用）を構築する。概念コードは、この比較意味論をデコード済み文字列値で再現する。
 - **Element/Data初期化の2段階ストリーム処理**:

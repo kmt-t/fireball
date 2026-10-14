@@ -768,6 +768,8 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
   // Control Runtime APIs consume the loader's static edge for this block.
   frame.boundary_next_pc = trace_exit->next_pc;
   frame.boundary_loops_to = trace_exit->loops_to;
+  const auto *previous_rel = context.rel;
+  context.rel = trace.rel;
   const auto completed = reinterpret_cast<fireball_native_jit_trace_entry>(trace.entry_address)(
       &context, context.code + context.ip, context.stack_pointer, trace.rel);
   if constexpr (WithExtension) {
@@ -775,6 +777,7 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
   }
   if (!completed) {
     assert(context.trap_code != 0 || cps_exit_pending(context));
+    context.rel = previous_rel;
     if (cps_exit_pending(context) && cps_exit_kind(context) == kRuntimeApiBoundary) {
       if (context.ip == trace_exit->body_end_ip) {
         context.rel =

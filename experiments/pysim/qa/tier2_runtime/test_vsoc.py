@@ -766,7 +766,7 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     results = engine.call(make_native_interpreter(mod, yield_threshold=3), 0, [5]).unwrap()
     assert results[0] == 120
     assert engine.stat_interp_steps >= 3
-    assert engine.stat_jit_invocations >= 2
+    assert engine.stat_jit_invocations == 1
     assert engine.jit_runtime.bitmap.get_state(loop_pc) == CardState.COMPILED
     assert engine.jit_runtime.cache.find_trace(loop_pc) is not None
 

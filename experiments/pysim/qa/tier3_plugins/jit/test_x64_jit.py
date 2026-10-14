@@ -366,9 +366,9 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
     loop_pc = next(block.head_pc for block in instruction_blocks(mod) if block.loops_to is not None)
     results = engine.call(Interpreter(mod, yield_threshold=3), 0, [5]).unwrap()
     assert results[0] == 15
-    # The C++ dispatcher repeats the JIT body and invokes its C++ branch handler
+    # One JIT invocation repeats its body and calls the C++ branch handler
     # before returning at the count-based yield boundary.
-    assert engine.stat_jit_invocations > 1
+    assert engine.stat_jit_invocations == 1
     assert engine.stat_native_control_handlers > 0
     assert engine.stat_interp_steps >= 3
     assert engine.jit_runtime.cache.find_trace(loop_pc) is not None

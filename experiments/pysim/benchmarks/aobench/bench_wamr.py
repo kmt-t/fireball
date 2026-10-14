@@ -89,10 +89,16 @@ def _bind(library_path: Path) -> ctypes.CDLL:
     return library
 
 
-def measure(library_path: Path, width: int, warmup: int, repeats: int) -> WamrMeasurement:
+def measure(
+    library_path: Path,
+    width: int,
+    warmup: int,
+    repeats: int,
+    height_override: int | None = None,
+) -> WamrMeasurement:
     """Exclude init/load/instantiate and output verification from guest call timing."""
     assert width > 0 and warmup > 0 and repeats > 0
-    height = width * 9 // 16
+    height = width * 9 // 16 if height_override is None else height_override
     assert height > 0
     wasm_path = Path(__file__).with_name("aobench.wasm")
     wasm = wasm_path.read_bytes()
@@ -161,7 +167,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--library", type=Path, required=True)
     parser.add_argument("--width", type=int, default=64)
+    parser.add_argument("--height", type=int)
     parser.add_argument("--warmup", type=int, default=3)
     parser.add_argument("--repeats", type=int, default=7)
     args = parser.parse_args()
-    print(json.dumps(measure(args.library, args.width, args.warmup, args.repeats)))
+    print(json.dumps(measure(args.library, args.width, args.warmup, args.repeats, args.height)))

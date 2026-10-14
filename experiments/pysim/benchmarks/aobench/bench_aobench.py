@@ -131,23 +131,26 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
         debug=debug,
         collect_runtime_stats=True,
     )
-    diagnostic_engine.register_module_blocks(module)
+    # JIT cache references belong to one manager and are stored in block metadata.
+    diagnostic_module = parse(memoryview(wasm_bytes))
+    diagnostic_main_fn = diagnostic_module.export_func_index("main")
+    diagnostic_engine.register_module_blocks(diagnostic_module)
     sysv_diagnostic = System()
     wasi_diagnostic = WasiHostContext(sysv_diagnostic)
     sysv_diagnostic.start_hal_driver(
         DummyDriver(sysv_diagnostic.pool, transport=sysv_diagnostic.transport),
         FB_URI_HAL_STDOUT,
     ).unwrap()
-    funcs_diagnostic = wasi_diagnostic.build_interpreter_host_functions(module)
-    module.init_memory_data(wasi_diagnostic.guest_memory, ())
+    funcs_diagnostic = wasi_diagnostic.build_interpreter_host_functions(diagnostic_module)
+    diagnostic_module.init_memory_data(wasi_diagnostic.guest_memory, ())
     interp_diagnostic = NativeInterpreter(
-        module,
+        diagnostic_module,
         InterpreterBindings.with_memory_and_functions(
             wasi_diagnostic.guest_memory, funcs_diagnostic
         ),
         bump_allocator=diagnostic_engine.bump_allocator,
     )
-    diagnostic_engine.call(interp_diagnostic, main_fn, [WIDTH, HEIGHT]).unwrap()
+    diagnostic_engine.call(interp_diagnostic, diagnostic_main_fn, [WIDTH, HEIGHT]).unwrap()
     diagnostic_output = sysv_diagnostic.transport.drain_output().decode("utf-8", errors="replace")
     assert diagnostic_output == render_output_t3
     assert diagnostic_engine.stat_jit_invocations > 0

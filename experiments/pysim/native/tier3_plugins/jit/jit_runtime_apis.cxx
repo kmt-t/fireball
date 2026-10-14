@@ -1,6 +1,7 @@
 /** @file @brief JIT専用Runtime APIへのABI変換とopcode対応表を実装する。 */
 #include "jit_runtime_apis.hxx"
 #include "../../tier2_runtime/interpreter/native_wasm_operations.hxx"
+#include "jit_types.hxx"
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -83,6 +84,51 @@ inline bool jit_runtime_api_annotated(execution_context *context, std::uint32_t 
   return completed;
 }
 
+template <auto RuntimeApi>
+inline bool jit_runtime_api_branch(execution_context *context, std::uint32_t *&sp,
+                                   std::uint32_t *&local_base,
+                                   const std::uint8_t *annotation_offset_record) {
+  assert(annotation_offset_record != nullptr);
+  auto &frame = active_frame(*context);
+  assert(frame.function_view != nullptr);
+  const auto &function = *frame.function_view;
+  const auto annotation_offset = load_jit_value<annotation_offset_t>(annotation_offset_record);
+  assert(annotation_offset <= function.interpreter_annotation_byte_count);
+  assert(function.interpreter_annotation_pool != nullptr ||
+         function.interpreter_annotation_byte_count == 0);
+  const auto *annotation = function.interpreter_annotation_pool == nullptr
+                               ? nullptr
+                               : function.interpreter_annotation_pool + annotation_offset;
+  const std::uint8_t *instruction_ip = context->code + context->ip;
+  auto *cursor = annotation;
+  const auto completed = RuntimeApi(context, instruction_ip, sp, local_base, cursor);
+  if (completed || !cps_exit_pending(*context) || cps_exit_kind(*context) != kBlockBoundary ||
+      context->rel == nullptr || context->current_block_index == kInvalidBlockIndex ||
+      context->ip >= context->code_size ||
+      context->loop_jump_count >= context->loop_jump_threshold) {
+    return completed;
+  }
+
+  std::int32_t header_offset = 0;
+  std::memcpy(&header_offset, context->rel, sizeof(header_offset));
+  auto *source_header = reinterpret_cast<jit_trace_header *>(
+      const_cast<std::uint8_t *>(context->rel + header_offset));
+  if (source_header->chain_target_address == 0) {
+    return false;
+  }
+  auto *target_header = reinterpret_cast<jit_trace_header *>(source_header->chain_target_address -
+                                                             sizeof(jit_trace_header));
+  const auto target_pc = function.code_pc_offset + context->ip;
+  if (target_header->block_index != context->current_block_index ||
+      target_header->head_pc != target_pc) {
+    return false;
+  }
+
+  context->ip = instruction_offset(*context, instruction_ip);
+  clear_cps_exit(*context);
+  return true;
+}
+
 template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
 inline bool jit_runtime_memory_load(execution_context *context, std::uint32_t *&sp,
                                     std::uint32_t *&local_base, const std::uint8_t *rel) {
@@ -153,8 +199,8 @@ constexpr auto make_opcode_jit_runtime_api_table() {
   apis[0x04] = &jit_runtime_api_annotated<&runtime_if>;
   apis[0x05] = &jit_runtime_api_annotated<&runtime_else>;
   apis[0x0B] = &jit_runtime_api_annotated<&runtime_end>;
-  apis[0x0C] = &jit_runtime_api_annotated<&runtime_br>;
-  apis[0x0D] = &jit_runtime_api_annotated<&runtime_br_if>;
+  apis[0x0C] = &jit_runtime_api_branch<&runtime_br>;
+  apis[0x0D] = &jit_runtime_api_branch<&runtime_br_if>;
   apis[0x0E] = &jit_runtime_api_annotated<&runtime_br_table>;
   apis[0x0F] = &jit_runtime_api_passthrough<&runtime_return>;
   apis[0x10] = &jit_runtime_api_annotated<&runtime_call<false>>;

@@ -205,22 +205,38 @@ def main() -> None:
             trace_exits = measured_stats.stat_trace_exits_to_interp
             assert jit_invocations > 0
 
+        plugin.close()
+        # A JIT manager stores cache references in the Module's block metadata.
+        # Parse a distinct fixture for the diagnostic manager below.
+        diagnostic_module = parse(memoryview(JITCompilerBenchmark._create_heavy_loop_binary()))
+        diagnostic_function_index = diagnostic_module.export_func_index("heavy_loop")
         diagnostic = RuntimeStatsEngine(
             jit_runtime=JITRuntimeManager(reserve_native_region),
             collect_runtime_stats=True,
-            bump_allocator=runtime_engine.bump_allocator,
+            bump_allocator=diagnostic_module.allocator,
         )
-        diagnostic.register_module_blocks(module)
+        diagnostic.register_module_blocks(diagnostic_module)
         diagnostic_interpreter = NativeInterpreter(
-            module, InterpreterBindings.empty(), bump_allocator=diagnostic.bump_allocator
+            diagnostic_module,
+            InterpreterBindings.empty(),
+            bump_allocator=diagnostic.bump_allocator,
         )
         assert (
-            int(diagnostic.call(diagnostic_interpreter, function_index, [100]).unwrap()[0]) == 4_950
+            int(
+                diagnostic.call(diagnostic_interpreter, diagnostic_function_index, [100]).unwrap()[
+                    0
+                ]
+            )
+            == 4_950
         )
         diagnostic.idle_hook(budget=10)
         diagnostic.reset_stats()
         assert (
-            int(diagnostic.call(diagnostic_interpreter, function_index, arguments).unwrap()[0])
+            int(
+                diagnostic.call(
+                    diagnostic_interpreter, diagnostic_function_index, arguments
+                ).unwrap()[0]
+            )
             == expected_result
         )
         assert diagnostic.stat_jit_invocations > 0

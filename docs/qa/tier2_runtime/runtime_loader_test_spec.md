@@ -60,7 +60,6 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-LOAD-40 | デコード済みエンティティのファイル位置登録 | WASMバイナリパース完了 | `decoded_entity_registry` の内容を確認 | 各セクション、関数コード、グローバル、データセグメントが開始・終了ファイルオフセットとともに登録されている | `decoded_entity_registry` |
 | TEST-LOAD-41 | RadixBinaryTreeView によるファイルオフセット検索 | デコード済みモジュール | `lookup_by_file_offset(offset)` を実行 | 基数表による $O(1)$ の区間絞り込みと有界二分探索 $O(\log n)$ により、指定オフセットを包含するデコード済みエンティティが正確に返却される | 「ファイル位置逆引き」, `lookup-by-file-offset` |
 | TEST-LOAD-42 | 関数バイトコード位置からの関数アクセサ逆引き | 関数コード内オフセット | `lookup_by_file_offset(code_offset)` | 該当する `FunctionAccessor`（関数インデックス・シグネチャ）が即座に特定・返却される | - |
 | TEST-LOAD-43 | データセグメント・グローバル位置の特定 | データセグメント内オフセット | `lookup_by_file_offset(data_offset)` | 該当するデータ定義またはグローバルエントリが正確に返却される | - |
@@ -120,7 +119,7 @@ PysimのPythonコードは参照ランタイムであり、現行のWASMパー�
 - 物理ROM配置・`std::span<const uint8_t>`のメモリレイアウト詳細。
 - [`loader_verification_model.py`](docs/components/tier2_runtime/formal/loader_verification_model.py)によるV1〜V6の形式検証そのもの。
 
-- TEST-LOAD-40、43のDataセグメント位置登録・逆引きは、本pysimスイートでは未検証である。関数とグローバルの逆引き成功をDataの証拠にしない。
+- TEST-LOAD-43のDataセグメント位置登録・逆引きは、本pysimスイートでは未検証である。関数とグローバルの逆引き成功をDataの証拠にしない。
 - TEST-LOAD-45の多数インポート、TEST-LOAD-46の未登録名が既存名と衝突する条件は、本pysimスイートでは未検証である。
 - TEST-LOAD-49〜50のJIT候補判定と非候補touch/履歴バイパスは、本Pysimスイートでは検証しない。
 - 名前・ファイル位置検索の計算量、物理ROMのコピー回数、全WASM命令の完全検証は、上記の局所機能検査では証明しない。

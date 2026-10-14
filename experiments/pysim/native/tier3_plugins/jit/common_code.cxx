@@ -123,6 +123,27 @@ int fireball::patch_trace_chain(fireball::executable_memory *memory, code_offset
   return 1;
 }
 
+int fireball::patch_trace_alternate_chain(fireball::executable_memory *memory, code_offset_t offset,
+                                          std::uint64_t target) {
+  using namespace fireball;
+  assert(fb_jit_memory_valid_protection(memory) && memory->bytes == region_bytes);
+  auto *region = reinterpret_cast<std::uint8_t *>(memory->base);
+  assert(offset >= common_bytes && offset <= memory->bytes - header_bytes);
+  auto *header = reinterpret_cast<jit_trace_header *>(region + offset);
+  assert(header->const_rel_offset >= header_bytes && header->blob_bytes >= sizeof(target) &&
+         header->blob_bytes <= memory->bytes - offset);
+  const auto slot_offset = header->blob_bytes - sizeof(target);
+  const auto began = !memory->patching;
+  if (began) {
+    fb_jit_memory_begin(memory);
+  }
+  little_endian(region + offset + slot_offset, target);
+  if (began) {
+    fb_jit_memory_commit(memory);
+  }
+  return 1;
+}
+
 int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
                           const fireball::jit_compile_result *r, wasm_pc_t head_pc,
                           frame_depth_t frame_depth, block_index_t block_index,
@@ -201,9 +222,8 @@ extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block *block, std::
       block->code.data, block->code.bytes, block->offset, block->byte_span, next != UINT32_MAX,
       static_cast<std::uint32_t>(next), 0, 0, block->interpreter_annotations.data,
       block->interpreter_annotations.bytes, block->interpreter_annotation_byte_offset,
-      reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data),
-      block->locals.types.data, block->locals.count, block->locals.total_words, body_scratch,
-      kMaxBodyBytes, &result);
+      reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data), block->locals.types.data,
+      block->locals.count, block->locals.total_words, body_scratch, kMaxBodyBytes, &result);
   if (status != 1) {
     return status;
   }
@@ -233,9 +253,8 @@ extern "C" int fb_jit_compile_instructions(const fireball::jit_instruction_block
   const auto status = compile_instruction_body(
       block->instructions, block->instruction_count, block->next_pc != UINT32_MAX, block->next_pc,
       block->loops_to != UINT32_MAX, block->loops_to, block->byte_span,
-      reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data),
-      block->locals.types.data, block->locals.count, block->locals.total_words, body_scratch,
-      kMaxBodyBytes, &result);
+      reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data), block->locals.types.data,
+      block->locals.count, block->locals.total_words, body_scratch, kMaxBodyBytes, &result);
   if (status != 1) {
     return status;
   }

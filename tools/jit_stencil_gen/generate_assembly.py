@@ -221,9 +221,9 @@ def compile_abi_probe(
         "production C++ ABI extraction",
     )
     raw = section_path.read_bytes()
-    if len(raw) != 11 * 4:
-        raise GenerationError(f"production ABI section has {len(raw)} bytes; expected 44")
-    return struct.unpack("<11I", raw)
+    if len(raw) != 13 * 4:
+        raise GenerationError(f"production ABI section has {len(raw)} bytes; expected 52")
+    return struct.unpack("<13I", raw)
 
 
 def parse_symbols(nm: str, object_path: Path) -> dict[str, Symbol]:
@@ -557,6 +557,8 @@ def role_definitions(role: str, abi: tuple[int, ...], config_path: Path) -> dict
         context_flags,
         boundary_metadata_bytes,
         context_rel,
+        context_current_block_index,
+        trace_block_index,
     ) = abi
     config = runpy.run_path(str(config_path))
     api_table_pointer_offset = (
@@ -578,6 +580,9 @@ def role_definitions(role: str, abi: tuple[int, ...], config_path: Path) -> dict
         return {
             "FB_CONTEXT_TRAP_CODE_OFFSET": trap_code,
             "FB_TRACE_COMMON_RELATIVE_OFFSET": common_relative,
+            "FB_TRACE_CONST_REL_OFFSET": const_rel,
+            "FB_TRACE_HEADER_BYTES": header,
+            "FB_TRACE_CHAIN_ENTRY_OFFSET": config["JIT_X64_TRACE_CHAIN_ENTRY_OFFSET"],
             "FB_CONTEXT_REL_OFFSET": context_rel,
         }
     if role == "common":
@@ -589,6 +594,8 @@ def role_definitions(role: str, abi: tuple[int, ...], config_path: Path) -> dict
             "FB_TRACE_BOUNDARY_METADATA_BYTES": boundary_metadata_bytes,
             "FB_CONTEXT_IP_OFFSET": context_ip,
             "FB_CONTEXT_REL_OFFSET": context_rel,
+            "FB_CONTEXT_CURRENT_BLOCK_INDEX_OFFSET": context_current_block_index,
+            "FB_TRACE_BLOCK_INDEX_OFFSET": trace_block_index,
         }
     raise GenerationError(f"unsupported assembly role {role!r}")
 

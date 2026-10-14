@@ -2286,6 +2286,150 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
         assert not manager.has_pending_compilation()
 
 
+def test_jit_structural_delimiters_are_loader_metadata_and_emit_no_operations():
+    wat = """
+    (module
+      (func (export "delimiters") (param i32)
+        (block $outer
+          (loop $inner
+            (if (local.get 0)
+              (then (nop))
+              (else (nop))
+            )
+            (br 1)
+          )
+        )
+      )
+    )
+    """
+    module = parse_standalone(wat_to_wasm(wat))
+    function_index = module.export_func_index("delimiters")
+    function = module.functions[function_index - len(module.imports)]
+    code = module.code_for(function_index)
+    delimiter_opcodes = {0x02, 0x03, 0x05, 0x0B}
+    from tier2_runtime.interpreter.control_flow import iter_scan_instrs
+
+    instructions = tuple(iter_scan_instrs(code))
+    delimiter_pcs = {
+        function.code_pc_offset + instruction.offset
+        for instruction in instructions
+        if instruction.opcode in delimiter_opcodes
+    }
+    assert delimiter_opcodes.issubset({instruction.opcode for instruction in instructions})
+    function_blocks = [block for block in module.blocks if block.func_index == function_index]
+    assert function_blocks
+    for delimiter_pc in delimiter_pcs:
+        assert all(
+            not block.head_pc <= delimiter_pc < block.head_pc + block.byte_span
+            for block in function_blocks
+        )
+        block_at_delimiter = module.get_block(delimiter_pc)
+        assert block_at_delimiter is None or block_at_delimiter.byte_span == 0
+
+    empty_view = native_abi.NativeByteView(0, 0)
+    empty_locals = native_abi.NativeLocalLayout(empty_view, empty_view, 0, 0)
+
+    def compile_raw(code_bytes: bytes, byte_length: int, annotations: bytes = b"") -> JITTrace:
+        code_storage = ctypes.create_string_buffer(code_bytes)
+        annotation_storage = ctypes.create_string_buffer(annotations) if annotations else None
+        annotation_view = (
+            empty_view
+            if annotation_storage is None
+            else native_abi.NativeByteView(ctypes.addressof(annotation_storage), len(annotations))
+        )
+        block = native_abi.WasmBlock(
+            head_pc=0x200,
+            code=native_abi.NativeByteView(ctypes.addressof(code_storage), len(code_bytes)),
+            offset=0,
+            byte_length=byte_length,
+            next_pc=0x208,
+            loops_to=None,
+            locals=empty_locals,
+            interpreter_annotations=annotation_view,
+        )
+        trace = TraceCompiler.compile_wasm(block)
+        assert trace is not None
+        return trace
+
+    annotation_bytes = b"\x00" * (2 * len(delimiter_opcodes))
+    plain = compile_raw(b"\x41\x07\x02\x40", 2)
+    with_delimiters = compile_raw(b"\x41\x07\x02\x40\x03\x40\x05\x0b", 8, annotation_bytes)
+    assert plain.code_blob is not None and with_delimiters.code_blob is not None
+    plain_header = native_abi.NativeTraceHeader.from_buffer_copy(
+        plain.code_blob[:JIT_TRACE_HEADER_BYTES]
+    )
+    delimiter_header = native_abi.NativeTraceHeader.from_buffer_copy(
+        with_delimiters.code_blob[:JIT_TRACE_HEADER_BYTES]
+    )
+    metadata_bytes = ctypes.sizeof(native_abi.NativeTraceExit)
+    plain_body_end = plain_header.const_rel_offset - metadata_bytes
+    delimiter_body_end = delimiter_header.const_rel_offset - metadata_bytes
+    assert (
+        plain.code_blob[JIT_TRACE_HEADER_BYTES:plain_body_end]
+        == with_delimiters.code_blob[JIT_TRACE_HEADER_BYTES:delimiter_body_end]
+    )
+    delimiter_exit = native_abi.NativeTraceExit.from_buffer_copy(
+        with_delimiters.code_blob[delimiter_body_end : delimiter_body_end + metadata_bytes]
+    )
+    assert delimiter_exit.interpreter_rel_bytes == 5 + len(annotation_bytes)
+    assert plain.next_pc == 0x208
+    assert with_delimiters.next_pc == 0x208
+
+    instruction_compiler = TraceCompiler()
+    plain_ir = instruction_compiler.compile_instructions(
+        head_pc=0x200,
+        instructions=((I32_CONST, 7),),
+        next_pc=0x208,
+        loops_to=None,
+        byte_length=2,
+        local_layout=LocalLayout(()),
+    )
+    delimiter_ir = instruction_compiler.compile_instructions(
+        head_pc=0x200,
+        instructions=(
+            (I32_CONST, 7),
+            (0x02, 0),
+            (0x03, 0),
+            (0x05, 0),
+            (0x0B, 0),
+        ),
+        next_pc=0x208,
+        loops_to=None,
+        byte_length=8,
+        local_layout=LocalLayout(()),
+    )
+    assert plain_ir is not None and delimiter_ir is not None
+    assert plain_ir.code_blob is not None and delimiter_ir.code_blob is not None
+    plain_ir_header = native_abi.NativeTraceHeader.from_buffer_copy(
+        plain_ir.code_blob[:JIT_TRACE_HEADER_BYTES]
+    )
+    delimiter_ir_header = native_abi.NativeTraceHeader.from_buffer_copy(
+        delimiter_ir.code_blob[:JIT_TRACE_HEADER_BYTES]
+    )
+    plain_ir_body_end = plain_ir_header.const_rel_offset - metadata_bytes
+    delimiter_ir_body_end = delimiter_ir_header.const_rel_offset - metadata_bytes
+    assert (
+        plain_ir.code_blob[JIT_TRACE_HEADER_BYTES:plain_ir_body_end]
+        == delimiter_ir.code_blob[JIT_TRACE_HEADER_BYTES:delimiter_ir_body_end]
+    )
+
+
+def test_jit_compile_skips_blocks_with_calls_until_req031():
+    empty_view = native_abi.NativeByteView(0, 0)
+    code_storage = ctypes.create_string_buffer(b"\x41\x07\x10\x00")
+    block = native_abi.WasmBlock(
+        head_pc=0x200,
+        code=native_abi.NativeByteView(ctypes.addressof(code_storage), 4),
+        offset=0,
+        byte_length=4,
+        next_pc=0x208,
+        loops_to=None,
+        locals=native_abi.NativeLocalLayout(empty_view, empty_view, 0, 0),
+    )
+
+    assert TraceCompiler.compile_wasm(block) is None
+
+
 @pytest.mark.parametrize("collect_stats", (False, True))
 @pytest.mark.parametrize(
     "body",
@@ -3334,9 +3478,8 @@ def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, 
     assert replacement.exec_count == trace.exec_count == 2
 
 
-@pytest.mark.parametrize("collect_stats", [False, True])
-def test_jitr_trace_execution_counts_follow_branch_through_runtime_api(collect_stats):
-    """TEST-JITR-73: branch successors run after the terminal Runtime API."""
+def test_jitr_trace_execution_counts_follow_branch_through_runtime_api():
+    """TEST-JITR-73: a resident taken branch runs its successor in the native chain."""
     module = parse_standalone(
         wat_to_wasm("""(module
       (func (export "f") (param i32) (result i32)
@@ -3346,7 +3489,7 @@ def test_jitr_trace_execution_counts_follow_branch_through_runtime_api(collect_s
     )
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        collect_runtime_stats=collect_stats,
+        collect_runtime_stats=True,
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
@@ -3360,9 +3503,11 @@ def test_jitr_trace_execution_counts_follow_branch_through_runtime_api(collect_s
     assert assert_result_28
     assert source.chain_next is None
     assert _qa_trace_counted_call(engine, manager, Interpreter(module), 0, [10]) == [30]
-    assert source.exec_count == target.exec_count == 1
-    if collect_stats:
-        assert engine.stat_jit_invocations == 2
+    assert source.exec_count == 1
+    assert target.exec_count == 0
+    assert engine.stat_jit_invocations == 2
+    assert engine.stat_native_control_handlers == 2
+    assert engine.stat_native_dispatch_trace_transitions == 1
 
 
 def test_jitr_trace_execution_retirement_records_zero_and_used_traces():

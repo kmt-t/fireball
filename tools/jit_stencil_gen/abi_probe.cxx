@@ -46,4 +46,8 @@ extern "C" __attribute__((used, section(".fb_abi"))) const std::uint32_t
             sizeof(fireball::jit_trace_boundary_metadata)),
         static_cast<std::uint32_t>(
             offsetof(fireball_execution_context_native, rel)),
+        static_cast<std::uint32_t>(offsetof(
+            fireball_execution_context_native, current_block_index)),
+        static_cast<std::uint32_t>(
+            offsetof(fireball::jit_trace_header, block_index)),
 };

@@ -19,6 +19,31 @@ using namespace fireball::wasm_runtime;
 using jit_runtime_api_pointer = bool (*)(execution_context *, std::uint32_t *&, std::uint32_t *&,
                                          const std::uint8_t *);
 
+inline constexpr std::array<std::uint8_t, 9> control_opcode_values{0x02, 0x03, 0x04, 0x05, 0x0B,
+                                                                   0x0C, 0x0D, 0x0E, 0x0F};
+#if FB_CONF_JIT_BLOCK_COUNTERS
+std::array<std::uint64_t, control_opcode_values.size()> control_opcode_runtime_api_counts{};
+
+inline void record_control_opcode_runtime_api(std::uint8_t opcode) {
+  for (std::size_t index = 0; index < control_opcode_values.size(); ++index) {
+    if (control_opcode_values[index] == opcode) {
+      ++control_opcode_runtime_api_counts[index];
+      return;
+    }
+  }
+}
+
+template <std::uint8_t Opcode, jit_runtime_api_pointer RuntimeApi>
+inline bool jit_runtime_api_counted(execution_context *context, std::uint32_t *&sp,
+                                    std::uint32_t *&local_base, const std::uint8_t *rel) {
+  record_control_opcode_runtime_api(Opcode);
+  return RuntimeApi(context, sp, local_base, rel);
+}
+#define FB_JIT_CONTROL_API(opcode, api) &jit_runtime_api_counted<opcode, api>
+#else
+#define FB_JIT_CONTROL_API(opcode, api) api
+#endif
+
 inline bool jit_runtime_unreachable(execution_context *context, [[maybe_unused]] std::uint32_t *&sp,
                                     [[maybe_unused]] std::uint32_t *&local_base,
                                     [[maybe_unused]] const std::uint8_t *rel) {
@@ -84,7 +109,7 @@ inline bool jit_runtime_api_annotated(execution_context *context, std::uint32_t 
   return completed;
 }
 
-template <auto RuntimeApi>
+template <auto RuntimeApi, bool HasAlternateTarget = false>
 inline bool jit_runtime_api_branch(execution_context *context, std::uint32_t *&sp,
                                    std::uint32_t *&local_base,
                                    const std::uint8_t *annotation_offset_record) {
@@ -102,10 +127,7 @@ inline bool jit_runtime_api_branch(execution_context *context, std::uint32_t *&s
   const std::uint8_t *instruction_ip = context->code + context->ip;
   auto *cursor = annotation;
   const auto completed = RuntimeApi(context, instruction_ip, sp, local_base, cursor);
-  if (completed || !cps_exit_pending(*context) || cps_exit_kind(*context) != kBlockBoundary ||
-      context->rel == nullptr || context->current_block_index == kInvalidBlockIndex ||
-      context->ip >= context->code_size ||
-      context->loop_jump_count >= context->loop_jump_threshold) {
+  if (completed || !cps_exit_pending(*context) || context->rel == nullptr) {
     return completed;
   }
 
@@ -113,21 +135,55 @@ inline bool jit_runtime_api_branch(execution_context *context, std::uint32_t *&s
   std::memcpy(&header_offset, context->rel, sizeof(header_offset));
   auto *source_header = reinterpret_cast<jit_trace_header *>(
       const_cast<std::uint8_t *>(context->rel + header_offset));
-  if (source_header->chain_target_address == 0) {
+  const auto force_interpreter_resume = [context, source_header] {
+    context->rel = reinterpret_cast<const std::uint8_t *>(
+        reinterpret_cast<std::uintptr_t>(source_header) | std::uintptr_t{2});
+  };
+  if (cps_exit_kind(*context) != kBlockBoundary ||
+      context->current_block_index == kInvalidBlockIndex || context->ip >= context->code_size ||
+      context->loop_jump_count >= context->loop_jump_threshold) {
+    force_interpreter_resume();
     return false;
   }
-  auto *target_header = reinterpret_cast<jit_trace_header *>(source_header->chain_target_address -
-                                                             sizeof(jit_trace_header));
   const auto target_pc = function.code_pc_offset + context->ip;
-  if (target_header->block_index != context->current_block_index ||
-      target_header->head_pc != target_pc) {
-    return false;
+  const auto matches_target = [context, target_pc](std::uintptr_t target_address) {
+    if (target_address == 0) {
+      return false;
+    }
+    const auto *target_header =
+        reinterpret_cast<const jit_trace_header *>(target_address - sizeof(jit_trace_header));
+    return target_header->block_index == context->current_block_index &&
+           target_header->head_pc == target_pc;
+  };
+  if (matches_target(source_header->chain_target_address)) {
+    context->ip = instruction_offset(*context, instruction_ip);
+    clear_cps_exit(*context);
+    return true;
   }
 
-  context->ip = instruction_offset(*context, instruction_ip);
-  clear_cps_exit(*context);
-  return true;
+  if constexpr (HasAlternateTarget) {
+    std::uintptr_t alternate_target = 0;
+    const auto alternate_slot_offset = source_header->blob_bytes - sizeof(alternate_target);
+    std::memcpy(&alternate_target,
+                reinterpret_cast<const std::uint8_t *>(source_header) + alternate_slot_offset,
+                sizeof(alternate_target));
+    if (matches_target(alternate_target)) {
+      // fb_trace_exit recognizes this one-shot marker and enters the selected
+      // resident trace without consulting the source's primary link slot.
+      context->rel = reinterpret_cast<const std::uint8_t *>(alternate_target | 1u);
+      context->ip = instruction_offset(*context, instruction_ip);
+      clear_cps_exit(*context);
+      return true;
+    }
+  }
+  // The primary link may point at the other conditional edge. Force the
+  // native dispatcher to resume at the state already selected by the API.
+  force_interpreter_resume();
+  return false;
 }
+
+inline constexpr auto jit_runtime_if_branch = &jit_runtime_api_branch<&runtime_if, true>;
+inline constexpr auto jit_runtime_br_if_branch = &jit_runtime_api_branch<&runtime_br_if, true>;
 
 template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
 inline bool jit_runtime_memory_load(execution_context *context, std::uint32_t *&sp,
@@ -194,15 +250,15 @@ constexpr auto make_opcode_jit_runtime_api_table() {
   std::array<jit_runtime_api_pointer, 256> apis{};
   apis[0x00] = &jit_runtime_unreachable;
   apis[0x01] = &jit_runtime_api_passthrough<&runtime_nop>;
-  apis[0x02] = &jit_runtime_api_annotated<&runtime_block>;
-  apis[0x03] = &jit_runtime_api_annotated<&runtime_block>;
-  apis[0x04] = &jit_runtime_api_annotated<&runtime_if>;
-  apis[0x05] = &jit_runtime_api_annotated<&runtime_else>;
-  apis[0x0B] = &jit_runtime_api_annotated<&runtime_end>;
-  apis[0x0C] = &jit_runtime_api_branch<&runtime_br>;
-  apis[0x0D] = &jit_runtime_api_branch<&runtime_br_if>;
-  apis[0x0E] = &jit_runtime_api_annotated<&runtime_br_table>;
-  apis[0x0F] = &jit_runtime_api_passthrough<&runtime_return>;
+  apis[0x02] = FB_JIT_CONTROL_API(0x02, &jit_runtime_api_annotated<&runtime_block>);
+  apis[0x03] = FB_JIT_CONTROL_API(0x03, &jit_runtime_api_annotated<&runtime_block>);
+  apis[0x04] = FB_JIT_CONTROL_API(0x04, jit_runtime_if_branch);
+  apis[0x05] = FB_JIT_CONTROL_API(0x05, &jit_runtime_api_annotated<&runtime_else>);
+  apis[0x0B] = FB_JIT_CONTROL_API(0x0B, &jit_runtime_api_annotated<&runtime_end>);
+  apis[0x0C] = FB_JIT_CONTROL_API(0x0C, &jit_runtime_api_branch<&runtime_br>);
+  apis[0x0D] = FB_JIT_CONTROL_API(0x0D, jit_runtime_br_if_branch);
+  apis[0x0E] = FB_JIT_CONTROL_API(0x0E, &jit_runtime_api_annotated<&runtime_br_table>);
+  apis[0x0F] = FB_JIT_CONTROL_API(0x0F, &jit_runtime_api_passthrough<&runtime_return>);
   apis[0x10] = &jit_runtime_api_annotated<&runtime_call<false>>;
   apis[0x11] = &jit_runtime_api_annotated<&runtime_call<true>>;
   apis[0x1A] = &jit_runtime_api_passthrough<&runtime_drop>;
@@ -477,6 +533,7 @@ constexpr auto make_jit_runtime_api_function_table() {
 
 inline constexpr auto kJitRuntimeApiFunctionTable = make_jit_runtime_api_function_table();
 static_assert(kJitRuntimeApiCount == kJitRuntimeApiFunctionTable.size());
+#undef FB_JIT_CONTROL_API
 
 /** @brief プラグインの保存領域にある読み取り専用API表の先頭を借用する。 */
 const jit_runtime_api_pointer *runtime_api_table_data() {
@@ -508,4 +565,20 @@ extern "C" int fb_jit_runtime_api_slot(std::uint32_t opcode, std::uint32_t fc_pr
   }
   *slot = value;
   return 1;
+}
+
+extern "C" void fb_jit_control_opcode_counts_reset() {
+#if FB_CONF_JIT_BLOCK_COUNTERS
+  fireball::jit_api::control_opcode_runtime_api_counts.fill(0);
+#endif
+}
+
+extern "C" void fb_jit_control_opcode_counts_read(std::uint64_t *counts) {
+  assert(counts != nullptr);
+#if FB_CONF_JIT_BLOCK_COUNTERS
+  std::copy(fireball::jit_api::control_opcode_runtime_api_counts.begin(),
+            fireball::jit_api::control_opcode_runtime_api_counts.end(), counts);
+#else
+  std::fill_n(counts, fireball::jit_api::control_opcode_values.size(), 0);
+#endif
 }

@@ -95,13 +95,24 @@ flowchart TD
 <!-- traceability: {JIT_RuntimeAPI} {LowLatencyJIT} {PositionIndependentCode} {SimpleJITArchitecture} {JIT_BackedgeYield} -->
 - **関数/モジュール一括コンパイルの禁止**: 関数全体やモジュール全体の事前一括コンパイルは行わない。
  - **ベーシックブロック/トレース単位コンパイル**: カードマーキング表で HOT（`10`）に達した直線命令列（基本ブロック / トレース）のみを対象とする。スケジューラのidle時等にC++ trace builderがbuild済みstencilを組み立てる。
-- **制御フロー境界**: `br`、`br_if`、`br_table`、`block`、`loop`、`if`、`else`、`end`、`call`、`call_indirect`、`return`をJITで処理できる。条件値の評価、静的branch metadataに基づくstack復元、遷移先決定はWASM意味論に従う。実行時制御フレームは保持しない。後方分岐もchain対象にできる。JIT経路は取得済みLOOP後方辺を共通`loop_jump_count`へ一度だけ加算し、`FB_CONF_INTERPRETER_YIELD_THRESHOLD`未満でchainを続ける。到達時はchainを止め、yield statusをC++ dispatcherへ返す。
+- **制御フロー境界**: `block`、`loop`、`else`、`end`はLoaderが静的制御フローmetadataとして解決する構文デリミタであり、trace本体に機械語操作を生成しない。`if`、`br`、`br_if`はWASM意味論に従って条件値、stack復元、遷移先を確定し、互換な遷移先traceが常駐していればchainする。実行時制御フレームは保持しない。後方分岐もchain対象にできる。JIT経路は取得済みLOOP後方辺を共通`loop_jump_count`へ一度だけ加算し、`FB_CONF_INTERPRETER_YIELD_THRESHOLD`未満でchainを続ける。到達時はchainを止め、yield statusをC++ dispatcherへ返す。`br_table`、`return`、`call`、`call_indirect`は各々の命令契約に従う。
 - **実行ABI**: Interpreter handlerは`ctx`, `ip*`, `sp*`, `rel*`の4引数で`void`を返す。JIT trace entryも同じ4引数で`bool`を返す。正常完了時は未接続chain targetに到達した終端dispatcherだけがmetadata pointerを一時的に`ctx.rel`へ渡し、`body_end_ip`を`ctx.ip`へ設定する。先頭3引数は実行状態、`rel`は定数領域を指す`const uint8_t*`である。JITは`ctx.rel`にpool anchorを保持し、`rel` cursorは先頭header参照の4 byte後からRuntime API recordを順次読む。各trace入口およびchain先でanchorとcursorを初期化する。ローカル基点は`ctx.local_base`から取得する。Interpreter dispatcherは`true`後にmetadataからstackとInterpreter `rel`を確定し、未実行の終端命令を処理して次のBasicBlockを解決する。`false`はtrapまたはyieldを含むCPS exitを示す。
 
 ##### 3.3.1 制御命令処理とchain dispatcher
 <!-- traceability: {JIT_AssemblyStencilCodegen} {JIT_LazyChaining} {PositionIndependentCode} -->
 
 JITの制御命令処理は、Interpreter単独実行と同じ条件値、結果値、遷移先を確定する。直接生成コードまたはJIT Runtime APIで命令意味論を処理できる。Interpreterへ処理を渡す場合は、共有状態を同期し、未実行の命令位置から再開する。実行済みの制御命令を再度handlerへ渡さない。
+
+Loaderは構造化制御フローを静的metadataへ解決する。trace compilerは構文デリミタを操作列から読み飛ばし、これらのopcodeに機械語を割り当てない。
+
+| 構文デリミタ | WASM opcode | Loader metadata | trace本体 |
+| :--- | :--- | :--- | :--- |
+| `block` | `0x02` | block typeと分岐先を静的に記録する | 操作なし（0 byte） |
+| `loop` | `0x03` | loop typeと後方分岐先を静的に記録する | 操作なし（0 byte） |
+| `else` | `0x05` | `if`のelse側の継続先を静的に記録する | 操作なし（0 byte） |
+| `end` | `0x0B` | 制御構造の終了と継続先を静的に記録する | 操作なし（0 byte） |
+
+`if`、`br`、`br_if`は構文デリミタではない。Runtime APIが条件と分岐結果を確定した後、互換する常駐traceへchainする。条件不成立ならtrace内のfall-throughを続ける。遷移先が常駐しない場合、型または深さが一致しない場合、あるいはyield境界に達した場合は、確定済みのstack、PC、block indexを保ったままC++ dispatcherへ戻る。
 
 trace chainは、命令意味論で確定した遷移先の常駐traceへ、共通コード領域のchain dispatcherからtail-jumpする経路である。遷移先への接続前に、必要な条件評価とスタック・フレーム更新を完了する。JITは取得済みLOOP後方辺を共通`loop_jump_count`へ一度だけ加算する。`FB_CONF_INTERPRETER_YIELD_THRESHOLD`未満ではchainを続ける。しきい値到達時はtrace chainを停止し、yield statusをC++ dispatcherへ返す。カウンタとしきい値の契約は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)に従う。
 
@@ -381,7 +392,7 @@ ARMv8-Mのコンパイラと実機検証はTBDである。
 
 ### 7.4 既知の制限・未検証範囲
 
-現行x64参照実装は、直線後続、互換な静的`br`、後方・自己`br`/`br_if`の常駐targetを直接chainできる。分岐Runtime APIはWASM意味処理でstack、PC、block indexを確定してからtargetを照合する。取得済みLOOP後方辺数が `FB_CONF_INTERPRETER_YIELD_THRESHOLD` 未満の場合だけchainを続ける。しきい値到達時はchainを止めてyield statusをC++ dispatcherへ返す。条件不成立または未接続・不一致targetではC++ dispatcherへ戻る。`br_table`、`block`、`loop`、`if`、`else`、`end`、関数境界のその他経路はInterpreter復帰契約に従う。chain更新時のbody数とstack要件は、最大72件の常駐trace内で循環を検出し、相異なるtraceを一度ずつ集計する。
+現行x64参照実装は、直線後続、互換な静的`br`、後方・自己`br`/`br_if`の常駐targetを直接chainできる。分岐Runtime APIはWASM意味処理でstack、PC、block indexを確定してからtargetを照合する。取得済みLOOP後方辺数が `FB_CONF_INTERPRETER_YIELD_THRESHOLD` 未満の場合だけchainを続ける。しきい値到達時はchainを止めてyield statusをC++ dispatcherへ返す。条件不成立または未接続・不一致targetではC++ dispatcherへ戻る。`br_table`、`block`、`loop`、`else`、`end`、関数境界のその他経路はInterpreter復帰契約に従う。chain更新時のbody数とstack要件は、最大72件の常駐trace内で循環を検出し、相異なるtraceを一度ずつ集計する。
 
 後方・自己chainの循環集計、後方辺しきい値でのC++復帰、退役時の相互リンク解除はTEST-JITR-63、67および循環chain試験で検証する。既存の形式モデルはキャッシュ寿命とyield到達時の復帰を抽象検証する。条件評価、スタック巻き戻し、関数呼出しの生成コードまでは検証しない。
 

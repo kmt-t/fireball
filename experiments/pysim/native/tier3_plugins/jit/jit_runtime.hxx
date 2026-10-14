@@ -189,12 +189,17 @@ public:
   /** @brief Loaderが解決した後続PCを返す。 */
   wasm_pc_t trace_successor_pc(jit_cache_entry value) const;
   block_index_t trace_successor_block_index(jit_cache_entry value) const;
+  /** @brief 条件分岐の主辺以外のLoader解決済みPCを返す。 */
+  wasm_pc_t trace_alternate_successor_pc(jit_cache_entry value) const;
+  block_index_t trace_alternate_successor_block_index(jit_cache_entry value) const;
   /** @brief Loaderが解決したループ先PCを返す。 */
   wasm_pc_t trace_loop_target_pc(jit_cache_entry value) const;
   /** @brief 静的な前方チェイニングが可能なソースかを判定する。 */
   bool can_chain_from(jit_cache_entry value) const;
   /** @brief 後続PCとフレーム境界が連結可能かを判定する。 */
   bool can_chain_to(jit_cache_entry value, jit_cache_entry target) const;
+  bool can_chain_to_edge(jit_cache_entry value, jit_cache_entry target, wasm_pc_t target_pc,
+                         block_index_t target_block_index) const;
   /** @brief QA計測で実行済みトレース終端を保留する。 */
   void record_runtime_trace_exit(block_index_t source_block_index, jit_stack_words_t result_words,
                                  frame_depth_t frame_depth)
@@ -207,8 +212,11 @@ public:
     requires(!std::is_void_v<Measurement>);
   /** @brief 既存の連結先を参照する。未連結ならnullptrを返す。 */
   const jit_trace_header *chain_target_header(const jit_trace_header &source) const;
+  const jit_trace_header *alternate_chain_target_header(const jit_trace_header &source) const;
   /** @brief 連結先が変わる場合だけコードヘッダを書き換える。 */
   void set_chain_target(jit_cache_entry source, const jit_cache_entry *target);
+  /** @brief 条件分岐の代替辺をtrace pool内の固定slotへ設定する。 */
+  void set_alternate_chain_target(jit_cache_entry source, const jit_cache_entry *target);
   /** @brief Active/Warmの後続へ連結する。Oldestへは既存の連結だけを維持する。 */
   void link_resident_successor(jit_cache_entry source);
   /** @brief カードの2ビット状態を読み出す。 */

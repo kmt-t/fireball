@@ -408,6 +408,14 @@ RUNTIME_RESET_CHAIN_MEASUREMENTS = _NATIVE_LIBRARY.fb_jit_runtime_reset_chain_me
 RUNTIME_RESET_CHAIN_MEASUREMENTS.argtypes = (ctypes.c_void_p,)
 RUNTIME_RESET_CHAIN_MEASUREMENTS.restype = None
 
+CONTROL_OPCODE_COUNTS_RESET = _NATIVE_LIBRARY.fb_jit_control_opcode_counts_reset
+CONTROL_OPCODE_COUNTS_RESET.argtypes = ()
+CONTROL_OPCODE_COUNTS_RESET.restype = None
+
+CONTROL_OPCODE_COUNTS_READ = _NATIVE_LIBRARY.fb_jit_control_opcode_counts_read
+CONTROL_OPCODE_COUNTS_READ.argtypes = (ctypes.POINTER(ctypes.c_uint64),)
+CONTROL_OPCODE_COUNTS_READ.restype = None
+
 RUNTIME_YIELD = _NATIVE_LIBRARY.fb_jit_runtime_yield
 RUNTIME_YIELD.argtypes = (ctypes.c_void_p,)
 RUNTIME_YIELD.restype = ctypes.c_int
@@ -850,7 +858,7 @@ def compile_wasm(block: WasmBlock, trace: TraceQaState) -> bytes | None:
         if boundary < block.code.byte_length
         else -1
     )
-    control_boundary = boundary_opcode in (0x02, 0x03, 0x04, 0x05, 0x0B, 0x0D, 0x0E, 0x0F)
+    control_boundary = boundary_opcode in (0x04, 0x0D, 0x0E, 0x0F)
     trace.next_pc = None if block.loops_to is not None or control_boundary else block.next_pc
     trace.loops_to = 0xFFFF_FFFF if block.loops_to is None else block.loops_to
     trace.result_words = header.result_words

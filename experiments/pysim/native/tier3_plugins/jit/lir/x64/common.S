@@ -28,6 +28,12 @@
 #ifndef FB_CONTEXT_REL_OFFSET
 #error "FB_CONTEXT_REL_OFFSET must come from the production C++ ABI probe"
 #endif
+#ifndef FB_CONTEXT_CURRENT_BLOCK_INDEX_OFFSET
+#error "FB_CONTEXT_CURRENT_BLOCK_INDEX_OFFSET must come from the production C++ ABI probe"
+#endif
+#ifndef FB_TRACE_BLOCK_INDEX_OFFSET
+#error "FB_TRACE_BLOCK_INDEX_OFFSET must come from the production C++ ABI probe"
+#endif
 
 .intel_syntax noprefix
 .text
@@ -37,9 +43,19 @@
 .type fb_common_chain_dispatcher,@function
 #endif
 fb_common_chain_dispatcher:
+  test FB_REL_REG, 2
+  jnz .Lchain_abort_return
   mov rax, qword ptr [FB_REL_REG + FB_TRACE_CHAIN_TARGET_OFFSET]
   test rax, rax
   jz .Lchain_return
+
+  /* A direct edge enters a different loader block without an Interpreter
+   * boundary, so publish its static block index before the tail jump. */
+  movzx r10d, word ptr [rax - (FB_TRACE_HEADER_BYTES - FB_TRACE_BLOCK_INDEX_OFFSET)]
+  cmp r10w, -1
+  je .Lchain_keep_block_index
+  mov word ptr [FB_CTX_REG + FB_CONTEXT_CURRENT_BLOCK_INDEX_OFFSET], r10w
+.Lchain_keep_block_index:
 
   /* chain_target_address is the target body address. Recover its header,
    * resolve the header-relative constant-pool offset, then enter the body. */
@@ -61,6 +77,13 @@ fb_common_chain_dispatcher:
   add rsp, 8
   pop r12
   mov eax, 1
+  ret
+.Lchain_abort_return:
+  /* A control Runtime API already committed its condition, stack, PC and block
+   * index. Preserve that state and report the pending CPS exit to C++. */
+  add rsp, 8
+  pop r12
+  xor eax, eax
   ret
 #if !defined(_WIN32)
 .size fb_common_chain_dispatcher,.-fb_common_chain_dispatcher

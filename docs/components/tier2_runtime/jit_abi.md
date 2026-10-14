@@ -50,6 +50,8 @@
 
 実行状態、コードビュー、Runtimeへ制御を返すときのスタック位置、CallStackビュー、値スタックとローカル値領域それぞれの基点・現在位置・上限、LOOP後方分岐カウンタ、借用中のリニアメモリビュー、現在のローカルフレーム基点、Interpreter注釈プールカーソル、現在のBasicBlock indexを `execution_context` に置く。実行時制御フレーム配列と書き込み専用stack checkpointは持たない。x86-64のコンテキストは144バイトである。CallStackの現在サイズはCallStack自身から取得する。フィールド順と物理offsetは[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)の`{ExecutionContext_Layout}`を正本とし、ここでは重複定義しない。
 
+`loop_jump_count`は、実際に取得したLOOP後方辺を一度だけ数える。条件不成立の`br_if`は数えない。しきい値の正本はInterpreter設定の`FB_CONF_INTERPRETER_YIELD_THRESHOLD`である。JIT traceは取得済み後方辺数がしきい値未満の間だけchainを続ける。しきい値に達した境界ではchainを止め、yield statusを保持してC++ dispatcherへ戻る。RuntimeはそのstatusをCOOSへ渡す。
+
 値スタックとローカル値領域は、それぞれ基点・現在位置・上限をポインタで保持する。関数呼出しの状態保存には`CallFrame.operand_stack_base`と実行コンテキストの現在位置を使い、重複checkpointを持たない。リニアメモリのホスト基点とサイズは`+0x60`と`+0x68`にある。この2フィールドはゲストアドレスの`mem_base`と32bitの`mem_size`から区別する。ホスト基点は非所有の借用値である。実行呼出し中は参照先の寿命を保証し、メモリ再配置後は基点とサイズを更新する。
 
 共通chain dispatcherへの相対値はtrace headerの`common_code_relative`に保持する。共通chain dispatcherは`lir/x64/common.S`から生成し、traceごとに複製しない。共通コード領域にはchain dispatcherに続けてRuntime API function pointer tableを配置する。JIT operationがRuntime APIを必要とする場合は、opcodeに対応するtable entryを呼び出す。trace終端から任意関数へ直接tail-callする契約は設けない。 `{PositionIndependentCode}`

@@ -1,0 +1,455 @@
+{
+  "request": "REQ-020 G-3 remeasurement",
+  "measurement": {
+    "unit": "milliseconds",
+    "sample_statistic": "maximum observed elapsed time of a yield-requesting RuntimeStatsEngine scheduler-boundary call per process",
+    "trials_per_revision_and_workload": 3,
+    "cpu_affinity": [
+      3
+    ],
+    "runtime_threshold_source": "FB_CONF_INTERPRETER_YIELD_THRESHOLD",
+    "before_revision": "37253e695d62bd9d4d9c6ab54eb31f81defe1ec8",
+    "after_revision": "cab51f58e00c3203b1edb9e1eeae511087146072 plus REQ-032 working-tree QA fix",
+    "interpretation": "Observed maxima are host measurements, not real-time upper bounds."
+  },
+  "workloads": {
+    "arithmetic-100k": {
+      "before": {
+        "max_yield_return_ms": {
+          "median": 0.084227,
+          "min": 0.071303,
+          "max": 1.532373,
+          "samples": [
+            0.084227,
+            0.071303,
+            1.532373
+          ]
+        },
+        "yield_count_per_process": 1562,
+        "boundary_calls_per_process": 1564,
+        "frames_per_process": 1,
+        "samples": [
+          {
+            "workload": "arithmetic-100k",
+            "threshold": 64,
+            "boundary_calls": 1564,
+            "yield_count": 1562,
+            "max_yield_return_ms": 0.084227,
+            "median_yield_return_ms": 0.014803,
+            "max_boundary_ms": 0.084227,
+            "source_revision": "37253e695d62bd9d4d9c6ab54eb31f81defe1ec8",
+            "python": "3.13.15",
+            "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+            "cpu_affinity": [
+              3
+            ],
+            "build": "Clang C++23 -O3 -flto=thin --qa, assertions enabled",
+            "runner_sha256": "3b69cc1035922405f2d3a38bf016f136e7a059b5e369cbeec9b584b596efc52e",
+            "binary_sha256": {
+              "qa/private/libinterpreter_probe.so": "110aee714b390085d6a97b6c7418b099e39b3161b848e188a3630ed2da33be50",
+              "qa/private/libjit_probe.so": "d245897f5aa5eef1a83a40055d8c306ab7935fd88b0fc7b00c538394d61adefd"
+            },
+            "source_sha256": {
+              "experiments/pysim/qa/shared/jit_cache.py": "79375498bbd70a26a7f7ea9f4eb98199b626642baf654253d5c9ec68ed5cb24a",
+              "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx": "000e30080076084ee375493c99155f6d61af950f7e67bd6bf8dee6436b207c1e",
+              "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "d38cb3b2652055d11f5165b0527eb9c7613f4f86f6116f87a513fe287054ef67",
+              "experiments/pysim/benchmarks/jit/bench_jit.py": "36c047d250b22e43e96a45a928c14ed00f16f86ee23a99797a13cec664ab1238",
+              "experiments/pysim/benchmarks/aobench/bench_native_build.py": "6c54f04b78969693b99ccfa1c5938fab233ad46fa0b3fddd636a66f44b3cb792"
+            }
+          },
+          {
+            "workload": "arithmetic-100k",
+            "threshold": 64,
+            "boundary_calls": 1564,
+            "yield_count": 1562,
+            "max_yield_return_ms": 0.071303,
+            "median_yield_return_ms": 0.015078,
+            "max_boundary_ms": 0.071303,
+            "source_revision": "37253e695d62bd9d4d9c6ab54eb31f81defe1ec8",
+            "python": "3.13.15",
+            "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+            "cpu_affinity": [
+              3
+            ],
+            "build": "Clang C++23 -O3 -flto=thin --qa, assertions enabled",
+            "runner_sha256": "3b69cc1035922405f2d3a38bf016f136e7a059b5e369cbeec9b584b596efc52e",
+            "binary_sha256": {
+              "qa/private/libinterpreter_probe.so": "110aee714b390085d6a97b6c7418b099e39b3161b848e188a3630ed2da33be50",
+              "qa/private/libjit_probe.so": "d245897f5aa5eef1a83a40055d8c306ab7935fd88b0fc7b00c538394d61adefd"
+            },
+            "source_sha256": {
+              "experiments/pysim/qa/shared/jit_cache.py": "79375498bbd70a26a7f7ea9f4eb98199b626642baf654253d5c9ec68ed5cb24a",
+              "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx": "000e30080076084ee375493c99155f6d61af950f7e67bd6bf8dee6436b207c1e",
+              "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "d38cb3b2652055d11f5165b0527eb9c7613f4f86f6116f87a513fe287054ef67",
+              "experiments/pysim/benchmarks/jit/bench_jit.py": "36c047d250b22e43e96a45a928c14ed00f16f86ee23a99797a13cec664ab1238",
+              "experiments/pysim/benchmarks/aobench/bench_native_build.py": "6c54f04b78969693b99ccfa1c5938fab233ad46fa0b3fddd636a66f44b3cb792"
+            }
+          },
+          {
+            "workload": "arithmetic-100k",
+            "threshold": 64,
+            "boundary_calls": 1564,
+            "yield_count": 1562,
+            "max_yield_return_ms": 1.532373,
+            "median_yield_return_ms": 0.014578,
+            "max_boundary_ms": 1.532373,
+            "source_revision": "37253e695d62bd9d4d9c6ab54eb31f81defe1ec8",
+            "python": "3.13.15",
+            "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+            "cpu_affinity": [
+              3
+            ],
+            "build": "Clang C++23 -O3 -flto=thin --qa, assertions enabled",
+            "runner_sha256": "3b69cc1035922405f2d3a38bf016f136e7a059b5e369cbeec9b584b596efc52e",
+            "binary_sha256": {
+              "qa/private/libinterpreter_probe.so": "110aee714b390085d6a97b6c7418b099e39b3161b848e188a3630ed2da33be50",
+              "qa/private/libjit_probe.so": "d245897f5aa5eef1a83a40055d8c306ab7935fd88b0fc7b00c538394d61adefd"
+            },
+            "source_sha256": {
+              "experiments/pysim/qa/shared/jit_cache.py": "79375498bbd70a26a7f7ea9f4eb98199b626642baf654253d5c9ec68ed5cb24a",
+              "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx": "000e30080076084ee375493c99155f6d61af950f7e67bd6bf8dee6436b207c1e",
+              "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "d38cb3b2652055d11f5165b0527eb9c7613f4f86f6116f87a513fe287054ef67",
+              "experiments/pysim/benchmarks/jit/bench_jit.py": "36c047d250b22e43e96a45a928c14ed00f16f86ee23a99797a13cec664ab1238",
+              "experiments/pysim/benchmarks/aobench/bench_native_build.py": "6c54f04b78969693b99ccfa1c5938fab233ad46fa0b3fddd636a66f44b3cb792"
+            }
+          }
+        ]
+      },
+      "after": {
+        "max_yield_return_ms": {
+          "median": 0.199874,
+          "min": 0.029265,
+          "max": 2.568109,
+          "samples": [
+            2.568109,
+            0.029265,
+            0.199874
+          ]
+        },
+        "yield_count_per_process": 1562,
+        "boundary_calls_per_process": 1564,
+        "frames_per_process": 1,
+        "samples": [
+          {
+            "workload": "arithmetic-100k",
+            "threshold": 64,
+            "boundary_calls": 1564,
+            "yield_count": 1562,
+            "max_yield_return_ms": 2.568109,
+            "median_yield_return_ms": 0.013325,
+            "max_boundary_ms": 2.568109,
+            "source_revision": "cab51f58-plus-REQ032",
+            "python": "3.13.15",
+            "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+            "cpu_affinity": [
+              3
+            ],
+            "build": "Clang C++23 -O3 -flto=thin --qa, assertions enabled",
+            "runner_sha256": "3b69cc1035922405f2d3a38bf016f136e7a059b5e369cbeec9b584b596efc52e",
+            "binary_sha256": {
+              "qa/private/libinterpreter_probe.so": "b95293c8c861b70ee4e7313d219a1093d58215f9bbdca9cf9b0de0d75d6fdf6b",
+              "qa/private/libjit_probe.so": "99db8a2288c9244884d32f64120db5eae349a172a36f8f23fcf5e2795e520980"
+            },
+            "source_sha256": {
+              "experiments/pysim/qa/shared/jit_cache.py": "6c017aa7e3b4be259b600e7a8fe8f48f635c855cbbe3b8568206e0255b1316b3",
+              "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx": "f0a28ac5204da43b98b8cd7c6191118aef2283416e2a129a961cc68cb487d0dc",
+              "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "b60610946f243a5a1dfe80be885ccd959775c126c70d8acdeec439804ba6458d",
+              "experiments/pysim/benchmarks/jit/bench_jit.py": "9daea2209a1d6dc2f209d181f7287bdf9cab57a5d782acf20b1006820af08185",
+              "experiments/pysim/benchmarks/aobench/bench_native_build.py": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218"
+            }
+          },
+          {
+            "workload": "arithmetic-100k",
+            "threshold": 64,
+            "boundary_calls": 1564,
+            "yield_count": 1562,
+            "max_yield_return_ms": 0.029265,
+            "median_yield_return_ms": 0.013445,
+            "max_boundary_ms": 0.044173,
+            "source_revision": "cab51f58-plus-REQ032",
+            "python": "3.13.15",
+            "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+            "cpu_affinity": [
+              3
+            ],
+            "build": "Clang C++23 -O3 -flto=thin --qa, assertions enabled",
+            "runner_sha256": "3b69cc1035922405f2d3a38bf016f136e7a059b5e369cbeec9b584b596efc52e",
+            "binary_sha256": {
+              "qa/private/libinterpreter_probe.so": "b95293c8c861b70ee4e7313d219a1093d58215f9bbdca9cf9b0de0d75d6fdf6b",
+              "qa/private/libjit_probe.so": "99db8a2288c9244884d32f64120db5eae349a172a36f8f23fcf5e2795e520980"
+            },
+            "source_sha256": {
+              "experiments/pysim/qa/shared/jit_cache.py": "6c017aa7e3b4be259b600e7a8fe8f48f635c855cbbe3b8568206e0255b1316b3",
+              "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx": "f0a28ac5204da43b98b8cd7c6191118aef2283416e2a129a961cc68cb487d0dc",
+              "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "b60610946f243a5a1dfe80be885ccd959775c126c70d8acdeec439804ba6458d",
+              "experiments/pysim/benchmarks/jit/bench_jit.py": "9daea2209a1d6dc2f209d181f7287bdf9cab57a5d782acf20b1006820af08185",
+              "experiments/pysim/benchmarks/aobench/bench_native_build.py": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218"
+            }
+          },
+          {
+            "workload": "arithmetic-100k",
+            "threshold": 64,
+            "boundary_calls": 1564,
+            "yield_count": 1562,
+            "max_yield_return_ms": 0.199874,
+            "median_yield_return_ms": 0.0135605,
+            "max_boundary_ms": 0.199874,
+            "source_revision": "cab51f58-plus-REQ032",
+            "python": "3.13.15",
+            "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+            "cpu_affinity": [
+              3
+            ],
+            "build": "Clang C++23 -O3 -flto=thin --qa, assertions enabled",
+            "runner_sha256": "3b69cc1035922405f2d3a38bf016f136e7a059b5e369cbeec9b584b596efc52e",
+            "binary_sha256": {
+              "qa/private/libinterpreter_probe.so": "b95293c8c861b70ee4e7313d219a1093d58215f9bbdca9cf9b0de0d75d6fdf6b",
+              "qa/private/libjit_probe.so": "99db8a2288c9244884d32f64120db5eae349a172a36f8f23fcf5e2795e520980"
+            },
+            "source_sha256": {
+              "experiments/pysim/qa/shared/jit_cache.py": "6c017aa7e3b4be259b600e7a8fe8f48f635c855cbbe3b8568206e0255b1316b3",
+              "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx": "f0a28ac5204da43b98b8cd7c6191118aef2283416e2a129a961cc68cb487d0dc",
+              "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "b60610946f243a5a1dfe80be885ccd959775c126c70d8acdeec439804ba6458d",
+              "experiments/pysim/benchmarks/jit/bench_jit.py": "9daea2209a1d6dc2f209d181f7287bdf9cab57a5d782acf20b1006820af08185",
+              "experiments/pysim/benchmarks/aobench/bench_native_build.py": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218"
+            }
+          }
+        ]
+      }
+    },
+    "aobench-32x16": {
+      "before": {
+        "max_yield_return_ms": {
+          "median": 1.859005,
+          "min": 0.146183,
+          "max": 2.054389,
+          "samples": [
+            2.054389,
+            1.859005,
+            0.146183
+          ]
+        },
+        "yield_count_per_process": 1638,
+        "boundary_calls_per_process": 1659,
+        "frames_per_process": 7,
+        "samples": [
+          {
+            "workload": "aobench-32x16",
+            "threshold": 64,
+            "warmup_frames": 3,
+            "measured_frames": 7,
+            "boundary_calls": 1659,
+            "yield_count": 1638,
+            "max_yield_return_ms": 2.054389,
+            "median_yield_return_ms": 0.0456355,
+            "max_boundary_ms": 2.054389,
+            "frame_bytes": 528,
+            "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+            "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+            "source_revision": "37253e695d62bd9d4d9c6ab54eb31f81defe1ec8",
+            "python": "3.13.15",
+            "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+            "cpu_affinity": [
+              3
+            ],
+            "build": "Clang C++23 -O3 -flto=thin --qa, assertions enabled",
+            "runner_sha256": "3b69cc1035922405f2d3a38bf016f136e7a059b5e369cbeec9b584b596efc52e",
+            "binary_sha256": {
+              "qa/private/libinterpreter_probe.so": "110aee714b390085d6a97b6c7418b099e39b3161b848e188a3630ed2da33be50",
+              "qa/private/libjit_probe.so": "d245897f5aa5eef1a83a40055d8c306ab7935fd88b0fc7b00c538394d61adefd"
+            },
+            "source_sha256": {
+              "experiments/pysim/qa/shared/jit_cache.py": "79375498bbd70a26a7f7ea9f4eb98199b626642baf654253d5c9ec68ed5cb24a",
+              "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx": "000e30080076084ee375493c99155f6d61af950f7e67bd6bf8dee6436b207c1e",
+              "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "d38cb3b2652055d11f5165b0527eb9c7613f4f86f6116f87a513fe287054ef67",
+              "experiments/pysim/benchmarks/jit/bench_jit.py": "36c047d250b22e43e96a45a928c14ed00f16f86ee23a99797a13cec664ab1238",
+              "experiments/pysim/benchmarks/aobench/bench_native_build.py": "6c54f04b78969693b99ccfa1c5938fab233ad46fa0b3fddd636a66f44b3cb792"
+            }
+          },
+          {
+            "workload": "aobench-32x16",
+            "threshold": 64,
+            "warmup_frames": 3,
+            "measured_frames": 7,
+            "boundary_calls": 1659,
+            "yield_count": 1638,
+            "max_yield_return_ms": 1.859005,
+            "median_yield_return_ms": 0.045585,
+            "max_boundary_ms": 1.859005,
+            "frame_bytes": 528,
+            "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+            "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+            "source_revision": "37253e695d62bd9d4d9c6ab54eb31f81defe1ec8",
+            "python": "3.13.15",
+            "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+            "cpu_affinity": [
+              3
+            ],
+            "build": "Clang C++23 -O3 -flto=thin --qa, assertions enabled",
+            "runner_sha256": "3b69cc1035922405f2d3a38bf016f136e7a059b5e369cbeec9b584b596efc52e",
+            "binary_sha256": {
+              "qa/private/libinterpreter_probe.so": "110aee714b390085d6a97b6c7418b099e39b3161b848e188a3630ed2da33be50",
+              "qa/private/libjit_probe.so": "d245897f5aa5eef1a83a40055d8c306ab7935fd88b0fc7b00c538394d61adefd"
+            },
+            "source_sha256": {
+              "experiments/pysim/qa/shared/jit_cache.py": "79375498bbd70a26a7f7ea9f4eb98199b626642baf654253d5c9ec68ed5cb24a",
+              "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx": "000e30080076084ee375493c99155f6d61af950f7e67bd6bf8dee6436b207c1e",
+              "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "d38cb3b2652055d11f5165b0527eb9c7613f4f86f6116f87a513fe287054ef67",
+              "experiments/pysim/benchmarks/jit/bench_jit.py": "36c047d250b22e43e96a45a928c14ed00f16f86ee23a99797a13cec664ab1238",
+              "experiments/pysim/benchmarks/aobench/bench_native_build.py": "6c54f04b78969693b99ccfa1c5938fab233ad46fa0b3fddd636a66f44b3cb792"
+            }
+          },
+          {
+            "workload": "aobench-32x16",
+            "threshold": 64,
+            "warmup_frames": 3,
+            "measured_frames": 7,
+            "boundary_calls": 1659,
+            "yield_count": 1638,
+            "max_yield_return_ms": 0.146183,
+            "median_yield_return_ms": 0.045971,
+            "max_boundary_ms": 1.143367,
+            "frame_bytes": 528,
+            "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+            "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+            "source_revision": "37253e695d62bd9d4d9c6ab54eb31f81defe1ec8",
+            "python": "3.13.15",
+            "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+            "cpu_affinity": [
+              3
+            ],
+            "build": "Clang C++23 -O3 -flto=thin --qa, assertions enabled",
+            "runner_sha256": "3b69cc1035922405f2d3a38bf016f136e7a059b5e369cbeec9b584b596efc52e",
+            "binary_sha256": {
+              "qa/private/libinterpreter_probe.so": "110aee714b390085d6a97b6c7418b099e39b3161b848e188a3630ed2da33be50",
+              "qa/private/libjit_probe.so": "d245897f5aa5eef1a83a40055d8c306ab7935fd88b0fc7b00c538394d61adefd"
+            },
+            "source_sha256": {
+              "experiments/pysim/qa/shared/jit_cache.py": "79375498bbd70a26a7f7ea9f4eb98199b626642baf654253d5c9ec68ed5cb24a",
+              "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx": "000e30080076084ee375493c99155f6d61af950f7e67bd6bf8dee6436b207c1e",
+              "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "d38cb3b2652055d11f5165b0527eb9c7613f4f86f6116f87a513fe287054ef67",
+              "experiments/pysim/benchmarks/jit/bench_jit.py": "36c047d250b22e43e96a45a928c14ed00f16f86ee23a99797a13cec664ab1238",
+              "experiments/pysim/benchmarks/aobench/bench_native_build.py": "6c54f04b78969693b99ccfa1c5938fab233ad46fa0b3fddd636a66f44b3cb792"
+            }
+          }
+        ]
+      },
+      "after": {
+        "max_yield_return_ms": {
+          "median": 2.474915,
+          "min": 2.11897,
+          "max": 3.280281,
+          "samples": [
+            3.280281,
+            2.11897,
+            2.474915
+          ]
+        },
+        "yield_count_per_process": 1638,
+        "boundary_calls_per_process": 1659,
+        "frames_per_process": 7,
+        "samples": [
+          {
+            "workload": "aobench-32x16",
+            "threshold": 64,
+            "warmup_frames": 3,
+            "measured_frames": 7,
+            "boundary_calls": 1659,
+            "yield_count": 1638,
+            "max_yield_return_ms": 3.280281,
+            "median_yield_return_ms": 0.046137,
+            "max_boundary_ms": 3.280281,
+            "frame_bytes": 528,
+            "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+            "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+            "source_revision": "cab51f58-plus-REQ032",
+            "python": "3.13.15",
+            "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+            "cpu_affinity": [
+              3
+            ],
+            "build": "Clang C++23 -O3 -flto=thin --qa, assertions enabled",
+            "runner_sha256": "3b69cc1035922405f2d3a38bf016f136e7a059b5e369cbeec9b584b596efc52e",
+            "binary_sha256": {
+              "qa/private/libinterpreter_probe.so": "b95293c8c861b70ee4e7313d219a1093d58215f9bbdca9cf9b0de0d75d6fdf6b",
+              "qa/private/libjit_probe.so": "99db8a2288c9244884d32f64120db5eae349a172a36f8f23fcf5e2795e520980"
+            },
+            "source_sha256": {
+              "experiments/pysim/qa/shared/jit_cache.py": "6c017aa7e3b4be259b600e7a8fe8f48f635c855cbbe3b8568206e0255b1316b3",
+              "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx": "f0a28ac5204da43b98b8cd7c6191118aef2283416e2a129a961cc68cb487d0dc",
+              "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "b60610946f243a5a1dfe80be885ccd959775c126c70d8acdeec439804ba6458d",
+              "experiments/pysim/benchmarks/jit/bench_jit.py": "9daea2209a1d6dc2f209d181f7287bdf9cab57a5d782acf20b1006820af08185",
+              "experiments/pysim/benchmarks/aobench/bench_native_build.py": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218"
+            }
+          },
+          {
+            "workload": "aobench-32x16",
+            "threshold": 64,
+            "warmup_frames": 3,
+            "measured_frames": 7,
+            "boundary_calls": 1659,
+            "yield_count": 1638,
+            "max_yield_return_ms": 2.11897,
+            "median_yield_return_ms": 0.0463415,
+            "max_boundary_ms": 3.614995,
+            "frame_bytes": 528,
+            "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+            "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+            "source_revision": "cab51f58-plus-REQ032",
+            "python": "3.13.15",
+            "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+            "cpu_affinity": [
+              3
+            ],
+            "build": "Clang C++23 -O3 -flto=thin --qa, assertions enabled",
+            "runner_sha256": "3b69cc1035922405f2d3a38bf016f136e7a059b5e369cbeec9b584b596efc52e",
+            "binary_sha256": {
+              "qa/private/libinterpreter_probe.so": "b95293c8c861b70ee4e7313d219a1093d58215f9bbdca9cf9b0de0d75d6fdf6b",
+              "qa/private/libjit_probe.so": "99db8a2288c9244884d32f64120db5eae349a172a36f8f23fcf5e2795e520980"
+            },
+            "source_sha256": {
+              "experiments/pysim/qa/shared/jit_cache.py": "6c017aa7e3b4be259b600e7a8fe8f48f635c855cbbe3b8568206e0255b1316b3",
+              "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx": "f0a28ac5204da43b98b8cd7c6191118aef2283416e2a129a961cc68cb487d0dc",
+              "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "b60610946f243a5a1dfe80be885ccd959775c126c70d8acdeec439804ba6458d",
+              "experiments/pysim/benchmarks/jit/bench_jit.py": "9daea2209a1d6dc2f209d181f7287bdf9cab57a5d782acf20b1006820af08185",
+              "experiments/pysim/benchmarks/aobench/bench_native_build.py": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218"
+            }
+          },
+          {
+            "workload": "aobench-32x16",
+            "threshold": 64,
+            "warmup_frames": 3,
+            "measured_frames": 7,
+            "boundary_calls": 1659,
+            "yield_count": 1638,
+            "max_yield_return_ms": 2.474915,
+            "median_yield_return_ms": 0.046422,
+            "max_boundary_ms": 2.474915,
+            "frame_bytes": 528,
+            "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+            "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+            "source_revision": "cab51f58-plus-REQ032",
+            "python": "3.13.15",
+            "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+            "cpu_affinity": [
+              3
+            ],
+            "build": "Clang C++23 -O3 -flto=thin --qa, assertions enabled",
+            "runner_sha256": "3b69cc1035922405f2d3a38bf016f136e7a059b5e369cbeec9b584b596efc52e",
+            "binary_sha256": {
+              "qa/private/libinterpreter_probe.so": "b95293c8c861b70ee4e7313d219a1093d58215f9bbdca9cf9b0de0d75d6fdf6b",
+              "qa/private/libjit_probe.so": "99db8a2288c9244884d32f64120db5eae349a172a36f8f23fcf5e2795e520980"
+            },
+            "source_sha256": {
+              "experiments/pysim/qa/shared/jit_cache.py": "6c017aa7e3b4be259b600e7a8fe8f48f635c855cbbe3b8568206e0255b1316b3",
+              "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx": "f0a28ac5204da43b98b8cd7c6191118aef2283416e2a129a961cc68cb487d0dc",
+              "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx": "b60610946f243a5a1dfe80be885ccd959775c126c70d8acdeec439804ba6458d",
+              "experiments/pysim/benchmarks/jit/bench_jit.py": "9daea2209a1d6dc2f209d181f7287bdf9cab57a5d782acf20b1006820af08185",
+              "experiments/pysim/benchmarks/aobench/bench_native_build.py": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

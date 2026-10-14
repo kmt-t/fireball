@@ -85,6 +85,13 @@ Loaderの参照layoutとhost-native ABIによるarena計測では、3回呼出�
 | AO-Bench 320×180 | 6,000,649 → 5,256,290（−12.4%） | backedge 1,062,587 → 686,397 | linked 6,951、unclassified 0、unobserved 0 |
 | kernel suite | 456,501 → 203,012（−55.5%） | backedge 70,249 → 43,082; self-loop 188,539 → 2,939 | unclassified 0、unobserved 0 |
 
-別プロセス3回のHybrid JIT算術ループ中央値は21.819 msから20.373 ms（−6.6%）に下がった。AO-BenchのJIT時間は32×16で7.137 msから7.221 ms（+1.2%）、320×180で748.413 msから748.476 ms（ほぼ横ばい）だった。yield return時間の最大観測値は変更前0.039 ms、変更後0.068 msだった。この最大観測値は実時間上限ではない。
+Yield応答は、yield statusを返したRuntime境界呼出しの経過時間を3独立processで測った。各processで観測した最大値の中央値とmin/maxを示す。算術ループは100,000回の1呼出しで1,562境界、AO-Bench 32×16は7計測frameで合計1,638境界を記録した。
+
+| Workload | 変更前の最大観測時間 | 変更後の最大観測時間 |
+| :--- | ---: | ---: |
+| 算術ループ 100k | 0.084 ms（0.071–1.532） | 0.200 ms（0.029–2.568） |
+| AO-Bench 32×16 | 1.859 ms（0.146–2.054） | 2.475 ms（2.119–3.280） |
+
+括弧内はprocessごとの最大観測時間のmin/maxである。OSの実行待ちによる外れ値が含まれるため、実時間上限を示さない。全試行、yield件数、buildとsourceのhashは[yield応答JSON](results/20261014/req020_phase4/full/yield_response.json)に記録した。算術ループの3 process中央値は21.819 msから20.373 ms（−6.6%）に下がった。AO-BenchのJIT時間は32×16で7.137 msから7.221 ms（+1.2%）、320×180で748.413 msから748.476 ms（ほぼ横ばい）だった。
 
 変更前後の各sampleは[比較JSON（before）](results/20261014/req020_phase4/comparison_before.json)と[comparison_after.json](results/20261014/req020_phase4/comparison_after.json)、transition counterは[変更前](results/20261014/req020_phase0/measurements.json)と[変更後](results/20261014/req020_phase4/chain_reasons_after.json)に保存した。変更後のcounter測定runnerは[`measure_chain_reasons.py`](results/20261014/req020_phase4/measure_chain_reasons.py)である。

@@ -77,6 +77,39 @@ UV_CACHE_DIR=/tmp/uv-cache taskset -c 3 .venv/bin/python \
   --output experiments/pysim/benchmarks/results/20261014/req020_phase4/chain_reasons_after.json
 ```
 
+## Yield応答の変更前後測定
+
+変更前はベースcommit `37253e695d62bd9d4d9c6ab54eb31f81defe1ec8`を一時treeへ展開し、QA用native libraryを同じClang `-O3 -flto=thin` 条件でビルドした。変更後は本作業treeのQA用libraryを使用した。各条件でCPU 3に固定して3独立processを実行した。
+
+```bash
+mkdir -p /tmp/req032-baseline
+git archive 37253e695d62bd9d4d9c6ab54eb31f81defe1ec8 | tar -x -C /tmp/req032-baseline
+ln -s "$PWD/.venv" /tmp/req032-baseline/.venv
+mkdir -p /tmp/req032-baseline/buildtmp
+cd /tmp/req032-baseline
+UV_CACHE_DIR=/tmp/uv-cache TMPDIR=/tmp/req032-baseline/buildtmp bash experiments/pysim/native/tier1_core/printk/build_native.sh
+UV_CACHE_DIR=/tmp/uv-cache TMPDIR=/tmp/req032-baseline/buildtmp bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --qa
+UV_CACHE_DIR=/tmp/uv-cache TMPDIR=/tmp/req032-baseline/buildtmp bash experiments/pysim/native/tier3_plugins/jit/build_native.sh --qa
+```
+
+変更前の各workloadは次の2コマンドをそれぞれ3回実行した。変更後も`FIREBALL_ROOT`を指定せず、revision表示を更新して同じ2 workloadを3回ずつ実行した。
+
+```bash
+FIREBALL_ROOT=/tmp/req032-baseline FIREBALL_REVISION=37253e695d62bd9d4d9c6ab54eb31f81defe1ec8 \
+  UV_CACHE_DIR=/tmp/uv-cache taskset -c 3 \
+  /home/t-matsu/workspace/mysrc/fireball/.venv/bin/python \
+  /home/t-matsu/workspace/mysrc/fireball/experiments/pysim/benchmarks/results/20261014/req020_phase4/measure_yield_response.py arithmetic
+FIREBALL_ROOT=/tmp/req032-baseline FIREBALL_REVISION=37253e695d62bd9d4d9c6ab54eb31f81defe1ec8 \
+  UV_CACHE_DIR=/tmp/uv-cache taskset -c 3 \
+  /home/t-matsu/workspace/mysrc/fireball/.venv/bin/python \
+  /home/t-matsu/workspace/mysrc/fireball/experiments/pysim/benchmarks/results/20261014/req020_phase4/measure_yield_response.py aobench
+
+FIREBALL_REVISION=cab51f58-plus-REQ032 UV_CACHE_DIR=/tmp/uv-cache taskset -c 3 \
+  .venv/bin/python experiments/pysim/benchmarks/results/20261014/req020_phase4/measure_yield_response.py arithmetic
+FIREBALL_REVISION=cab51f58-plus-REQ032 UV_CACHE_DIR=/tmp/uv-cache taskset -c 3 \
+  .venv/bin/python experiments/pysim/benchmarks/results/20261014/req020_phase4/measure_yield_response.py aobench
+```
+
 ## LLM audit
 
 ```bash

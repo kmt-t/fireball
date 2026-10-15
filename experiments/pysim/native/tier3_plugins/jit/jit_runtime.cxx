@@ -547,30 +547,36 @@ block_index_t jit_runtime<Measurement>::trace_successor_block_index(jit_cache_en
   return metadata == nullptr ? jit_invalid_block_index : metadata->next_block_index;
 }
 
-static bool chain_terminator_is_unsupported(const jit_wasm_block &source) {
+static bool chain_terminator_is_unsupported(const jit_trace_header *header,
+                                            const jit_wasm_block &source) {
+  if (header != nullptr && header->exit_kind == jit_trace_exit_kind::call_cps) {
+    return true;
+  }
   if (source.code.data == nullptr) {
     return false;
   }
   const auto terminator = source.offset + source.byte_span;
-  if (terminator >= source.code.bytes) {
-    return false;
+  if (terminator < source.code.bytes) {
+    switch (source.code.data[terminator]) {
+    case 0x04: // if remains an Interpreter CPS boundary.
+    case 0x0C: // br remains an Interpreter CPS boundary.
+    case 0x0D: // br_if remains an Interpreter CPS boundary.
+    case 0x0E: // br_table
+    case 0x0F: // return
+    case 0x10: // call
+    case 0x11: // call_indirect remains an Interpreter CPS boundary.
+      return true;
+    default:
+      break;
+    }
   }
-  switch (source.code.data[terminator]) {
-  case 0x04: // if remains an Interpreter CPS boundary.
-  case 0x0C: // br remains an Interpreter CPS boundary.
-  case 0x0D: // br_if remains an Interpreter CPS boundary.
-  case 0x0E: // br_table
-  case 0x0F: // return
-    return true;
-  default:
-    return false;
-  }
+  return false;
 }
 
 [[maybe_unused]] static jit_chain_reason
 chain_source_rejection_reason(const jit_trace_header &header, const jit_wasm_block &source) {
   const auto terminator = source.offset + source.byte_span;
-  if (chain_terminator_is_unsupported(source)) {
+  if (chain_terminator_is_unsupported(&header, source)) {
     return jit_chain_reason::unsupported_control_flow;
   }
   const auto successor = source.next_pc;
@@ -591,12 +597,17 @@ chain_source_rejection_reason(const jit_trace_header &header, const jit_wasm_blo
   if (header.result_words != 0 && !syntax_delimiter) {
     return jit_chain_reason::result_words;
   }
-  return chain_terminator_is_unsupported(source) ? jit_chain_reason::unsupported_control_flow
-                                                 : jit_chain_reason::linked;
+  return chain_terminator_is_unsupported(&header, source)
+             ? jit_chain_reason::unsupported_control_flow
+             : jit_chain_reason::linked;
 }
 
 template <jit_measurement_policy Measurement>
 bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
+  const auto *header = trace_header(value);
+  if (header->exit_kind == jit_trace_exit_kind::call_cps) {
+    return false;
+  }
   const auto successor = trace_successor_pc(value);
   const auto successor_index = trace_successor_block_index(value);
   if (successor == jit_invalid_pc || successor_index == jit_invalid_block_index) {
@@ -607,23 +618,23 @@ bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
     assert(module_view->blocks[successor_index].head_pc == successor);
   }
   jit_wasm_block source_storage{};
-  const auto *source = block_metadata_for_trace(*trace_header(value), source_storage);
+  const auto *source = block_metadata_for_trace(*header, source_storage);
   assert(source != nullptr);
   if constexpr (!std::is_void_v<Measurement>) {
     if (source->code.data == nullptr) {
       // QA metadata-only fixtures can establish same-depth forward chaining.
-      return trace_header(value)->result_words == 0;
+      return header->result_words == 0;
     }
   }
   assert(source->code.data != nullptr);
   const auto terminator = source->offset + source->byte_span;
   if (terminator >= source->code.bytes) {
-    return trace_header(value)->result_words == 0;
+    return header->result_words == 0;
   }
   const auto opcode = source->code.data[terminator];
   const bool syntax_delimiter =
       opcode == 0x02 || opcode == 0x03 || opcode == 0x05 || opcode == 0x0B;
-  if (trace_header(value)->result_words != 0 && !syntax_delimiter) {
+  if (header->result_words != 0 && !syntax_delimiter) {
     return false;
   }
   switch (opcode) {
@@ -634,6 +645,8 @@ bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
     return true;
   case 0x0E: // br_table
   case 0x0F: // return
+  case 0x10: // call is executed by Interpreter CPS.
+  case 0x11: // call_indirect is executed by Interpreter CPS.
     return false;
   case 0x04: // if returns through Interpreter CPS.
   case 0x0C: // br returns through Interpreter CPS.
@@ -731,6 +744,10 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
     ++measurements.chain_runtime_unclassified;
     return;
   }
+  const auto source_trace = lookup_cached_trace(source_block_index, source->head_pc);
+  const auto *source_header = source_trace.trace_entry == nullptr
+                                  ? nullptr
+                                  : trace_header(*source_trace.trace_entry);
   jit_chain_reason reason = jit_chain_reason::count;
   if (target_pc == source->head_pc) {
     reason = jit_chain_reason::self_loop;
@@ -740,7 +757,7 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
     reason = jit_chain_reason::loop_target;
   } else if (measurements.pending_runtime_result_words != 0) {
     reason = jit_chain_reason::result_words;
-  } else if (chain_terminator_is_unsupported(*source) ||
+  } else if (chain_terminator_is_unsupported(source_header, *source) ||
              (target_pc != source->next_pc && target_pc != source->loops_to)) {
     reason = jit_chain_reason::unsupported_control_flow;
   } else {

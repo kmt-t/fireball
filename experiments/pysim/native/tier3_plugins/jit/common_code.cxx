@@ -159,6 +159,7 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
              static_cast<std::uint8_t>(words),
              1,
              frame_depth,
+             r->exit_kind,
              block_index,
              pool_offset};
   std::memmove(output + header_bytes, body, bytes);
@@ -171,7 +172,12 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
   if (metadata_offset > header_bytes + bytes) {
     std::memset(output + header_bytes + bytes, 0, metadata_offset - header_bytes - bytes);
   }
-  const jit_trace_boundary_metadata boundary_metadata{body_end_ip,
+  const auto trace_body_end_ip =
+      r->body_end_ip == kNoTraceExitIp ? body_end_ip : r->body_end_ip;
+  if (trace_body_end_ip > body_end_ip) {
+    return 0;
+  }
+  const jit_trace_boundary_metadata boundary_metadata{trace_body_end_ip,
                                                       next_pc,
                                                       loops_to,
                                                       r->interpreter_rel_bytes,

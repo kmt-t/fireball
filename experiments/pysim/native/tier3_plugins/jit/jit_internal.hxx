@@ -11,6 +11,7 @@ inline constexpr std::uint32_t kMaxStackDepth = FIREBALL_NATIVE_VALUE_STACK_CAPA
 inline constexpr std::uint32_t kMaxRelocationConstants = 8 * kMaxTraceInstructions + 1;
 inline constexpr std::uint32_t kMaxBodyBytes = 1536;
 inline constexpr std::uint32_t kTraceBoundaryMetadataBytes = sizeof(jit_trace_boundary_metadata);
+inline constexpr code_ip_t kNoTraceExitIp = UINT32_MAX;
 
 struct jit_compile_result {
   code_offset_t body_bytes;
@@ -18,6 +19,8 @@ struct jit_compile_result {
   jit_stack_words_t result_words;
   code_offset_t relocation_bytes;
   annotation_offset_t interpreter_rel_bytes;
+  code_ip_t body_end_ip = kNoTraceExitIp;
+  jit_trace_exit_kind exit_kind = jit_trace_exit_kind::normal;
 };
 
 // Returns 1 for a compiled trace, 0 when the trace is unsupported, and a

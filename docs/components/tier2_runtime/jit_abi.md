@@ -54,7 +54,7 @@
 
 値スタックとローカル値領域は、それぞれ基点・現在位置・上限をポインタで保持する。関数呼出しの状態保存には`CallFrame.operand_stack_base`と実行コンテキストの現在位置を使い、重複checkpointを持たない。リニアメモリのホスト基点とサイズは`+0x60`と`+0x68`にある。この2フィールドはゲストアドレスの`mem_base`と32bitの`mem_size`から区別する。ホスト基点は非所有の借用値である。実行呼出し中は参照先の寿命を保証し、メモリ再配置後は基点とサイズを更新する。
 
-共通chain dispatcherへの相対値はtrace headerの`common_code_relative`に保持する。共通chain dispatcherは`lir/x64/common.S`から生成し、traceごとに複製しない。共通コード領域にはchain dispatcherに続けてRuntime API function pointer tableを配置する。JIT operationがRuntime APIを必要とする場合は、opcodeに対応するtable entryを呼び出す。trace終端から任意関数へ直接tail-callする契約は設けない。 `{PositionIndependentCode}`
+共通chain dispatcherへの相対値はtrace headerの`common_code_relative`に保持する。共通chain dispatcherは`lir/x64/common.S`から生成し、traceごとに複製しない。共通コード領域にはchain dispatcherに続けて、Tier 3 JITが読み取り専用領域に所有するRuntime API function pointer tableへの8バイト借用ポインタを配置する。表本体は共通コード領域やJIT cacheへ複製しない。JIT operationがRuntime APIを必要とする場合は、opcodeに対応するtable entryを呼び出す。trace終端から任意関数へ直接tail-callする契約は設けない。 `{PositionIndependentCode}`
 
 `execution_context` は144バイトである。CallStack深さ、命令位置、値スタック位置、trap状態を戻り値構造体へ複製しない。オペランドスタックをWASM値の格納先とする。標準レイアウトを維持する。
 

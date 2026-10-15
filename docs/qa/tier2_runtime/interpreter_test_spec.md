@@ -32,11 +32,11 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-10 | オペランド領域オーバーフロートラップ | `stack_capacity`を超えるpush | 再帰呼び出し等でオペランド領域を溢れさせる。nativeの4型constを空き0/1/2 word境界で実行する | 概念実装は`WASMTrap("STACK_OVERFLOW")`相当、pysim/nativeは`OPERAND_STACK_CAPACITY`を返す。関数入口の拒否時は本体を実行せず、stackサイズと既存wordを保持する。十分な容量のconstは宣言されたword幅だけを書き込み、隣接wordを保持する | interpreter_concept.py `ExecutionContext.push`、[`test_cps_interpreter.py`](experiments/pysim/qa/tier2_runtime/interpreter/test_cps_interpreter.py) |
+| TEST-INTP-10 | オペランド領域オーバーフロートラップ | `stack_capacity`を超えるpush | 再帰呼び出し等でオペランド領域を溢れさせる。nativeの4型constを空き0/1/2 word境界で実行する | 概念実装は`WASMTrap("STACK_OVERFLOW")`相当、pysim/nativeは`OPERAND_STACK_CAPACITY`を返す。関数入口の拒否時は本体を実行せず、stackサイズと既存wordを保持する。十分な容量のconstは宣言されたword幅だけを書き込み、隣接wordを保持する | interpreter_concept.py `ExecutionContext.push`|
 | TEST-INTP-11 | オペランド領域アンダーフロートラップ | 空のオペランド領域でpop | pop操作 | `WASMTrap("STACK_UNDERFLOW")`相当 | interpreter_concept.py `ExecutionContext.pop` |
-| TEST-INTP-12 | 再帰呼び出し（call）とローカル値領域 | `fact(n)`のような再帰関数 | `execute_function`で呼び出す | 各呼び出しごとに新しいローカル値領域の区画が割り当てられ、ローカル変数が互いに独立する | interpreter_concept.py `test_full_wasm_recursive_factorial` |
+| TEST-INTP-12 | 再帰呼び出し（call）とローカル値領域 | `fact(n)`のような再帰関数 | `execute_function`で呼び出す | 各呼び出しごとに新しいローカル値領域の区画が割り当てられ、ローカル変数が互いに独立する | interpreter_concept.py `` |
 | TEST-INTP-13 | 戻り値の受け渡し | 関数が1個の結果を返す | `return`実行後の呼び出し元スタック | 呼び出し元のスタックに正しく結果が積まれる | interpreter_concept.py `execute_function` |
-| TEST-INTP-14 | オペランド領域とローカル値領域の容量独立性 | オペランド領域の残容量が1、ローカル値領域に空きがある | 既存のオペランド値を保持したまま引数付き関数を呼び出す | ローカル値領域へ引数を積め、関数結果と呼び出し元オペランド領域の値が正しく保持される | interpreter_concept.py `test_independent_operand_and_local_stacks`, [`interpreter_stack_model.py`](docs/components/tier2_runtime/formal/interpreter_stack_model.py) |
+| TEST-INTP-14 | オペランド領域とローカル値領域の容量独立性 | オペランド領域の残容量が1、ローカル値領域に空きがある | 既存のオペランド値を保持したまま引数付き関数を呼び出す | ローカル値領域へ引数を積め、関数結果と呼び出し元オペランド領域の値が正しく保持される | interpreter_concept.py ``, [`interpreter_stack_model.py`](docs/components/tier2_runtime/formal/interpreter_stack_model.py) |
 | TEST-INTP-15 | 3本の値領域・関数呼出し記述子分離・関数復帰結果の形式検証 | 通常モデルと`guards=False`統合変異モデル | [`interpreter_stack_model.py`](docs/components/tier2_runtime/formal/interpreter_stack_model.py)を実行 | 通常モデルでは値領域独立性、関数呼出し記述子とローカル値の分離、関数結果保持の3性質が成立し、統合変異モデルでは各違反遷移によって3性質すべてが反証される | [`interpreter_stack_model.py`](docs/components/tier2_runtime/formal/interpreter_stack_model.py) |
 | TEST-INTP-19 | 分岐時制御frame復元の形式検証 | 通常モデルと`guards=False`変異モデル | [`interpreter_control_flow_model.py`](docs/components/tier2_runtime/formal/interpreter_control_flow_model.py)を実行 | loop対象frameの維持、block対象frameの除去、オペランド高さ・分岐結果の保持、elseなし偽`if`のframe不在が成立し、各変異モデルで反証される | [`interpreter_control_flow_model.py`](docs/components/tier2_runtime/formal/interpreter_control_flow_model.py) |
 | TEST-INTP-16 | ネストしたcalleeの戻り値と関数呼出し記述子の復帰 | callerがcalleeを呼び、calleeがi32/i64/f32/f64を返す | calleeの`return`処理を実行 | 戻り値は共有オペランド領域へ残り、calleeの関数呼出し記述子が取り除かれ、call helperが復帰sentinelを消費してcallerへ戻る。ホストABIの戻り値規約とWASM共有領域の戻り値規約を混同しない。x64の物理ABIは定義済み、ARMv8-MはTBD | `interpreter.md` 関数復帰の番兵 |
@@ -44,17 +44,17 @@
 | TEST-INTP-18 | 関数呼出し記述子とローカル値領域の分離 | callerが引数付きcalleeを呼び出す | call helperでcalleeの実行区画を開始し、calleeから復帰する | 記述子は独立した領域に置かれ、`local_base`はローカル値領域内のフレーム先頭を指す。ローカル値領域にはローカル値だけが入り、復帰時に記述子を取り除いて`local_stack_pointer`を保存位置へ戻す | `interpreter.md` 関数呼び出し境界、`interpreter_concept.py` |
 | TEST-INTP-82 | 静的分岐edgeによるstack復元 | 入れ子の`block`/`loop`と条件分岐を含むWASM | 複数の`end`を越える静的後続PCへ分岐する | Loaderが記録したtarget block index、stack base、結果word数から分岐先とstackを直接復元し、実行時制御フレームを使わない | `interpreter.md` 分岐処理 |
 | TEST-INTP-78 | 間接呼出しの選択先型と副作用 | 型の混在、重複型定義、未初期化、範囲外を含む不変テーブル | Python参照とNativeで間接呼出しを実行する。引数・結果の型、個数、ワード幅を変える | 適合する選択先だけを呼び、未選択の別型は許可する。不一致はtrapコード8となり、本体のglobal更新とhost callbackを実行しない | `interpreter.md` 関数呼出し境界、`indirect_call_concept.py`、`interpreter_indirect_call_model.py` |
-| TEST-INTP-79 | 左から右の評価順 | 固定revisionの公式`left-to-right.wast` | 全95アサーションをPython参照とNativeで実行する | メモリに残る副作用と結果値が全ケースで期待値と一致し、skipは0件となる | `Wasm32Only`、`test_wasm_core_spec.py` |
-| TEST-INTP-80 | 関数入口のオペランド容量検査 | 混在幅の最大高、callerの生存値、callee引数、先行trapとglobal更新を持つ関数 | Python参照とNativeで十分な容量と不足する容量を実行する | i64/f64を2語として数える。引数を除いた入口SPで一度検査する。不足時は本体の副作用と先行WASM trapより容量trapを優先する。十分な容量ではWASM trapコードと後続副作用の不在を維持する | `interpreter_stack_model.py`、`test_function_entry_capacity_precedes_traps_and_side_effects`、`test_callee_capacity_uses_entry_sp_after_arguments` |
-| TEST-INTP-81 | 意味別整数型とBasicBlock index ABI | x64 Interpreter ABIと16bit BasicBlock indexを持つロード済みmodule | ctypes構造体のサイズ・offsetを検査し、Pythonの`Module.get_block()`とNativeの注釈済みindex遷移を確認する | `wasm_pc_t`と`code_ip_t`はu32、block/local indexはu16、8bit word/depth/widthは上限内である。Pythonのblock lookupとNativeの実行状態は同じBasicBlock番号・PCを示す。Native ModuleExecutionViewにPC検索配列を持たない | `integer_types.hxx`, `integer_types.py`, `interpreter_abi.hxx`, `test_interpreter_abi.py`, `test_load_48_module_builds_basic_block_index` |
+| TEST-INTP-79 | 左から右の評価順 | 固定revisionの公式`left-to-right.wast` | 全95アサーションをPython参照とNativeで実行する | メモリに残る副作用と結果値が全ケースで期待値と一致し、skipは0件となる | `Wasm32Only`、`.py` |
+| TEST-INTP-80 | 関数入口のオペランド容量検査 | 混在幅の最大高、callerの生存値、callee引数、先行trapとglobal更新を持つ関数 | Python参照とNativeで十分な容量と不足する容量を実行する | i64/f64を2語として数える。引数を除いた入口SPで一度検査する。不足時は本体の副作用と先行WASM trapより容量trapを優先する。十分な容量ではWASM trapコードと後続副作用の不在を維持する | `interpreter_stack_model.py`、``、`` |
+| TEST-INTP-81 | 意味別整数型とBasicBlock index ABI | x64 Interpreter ABIと16bit BasicBlock indexを持つロード済みmodule | ctypes構造体のサイズ・offsetを検査し、Pythonの`Module.get_block()`とNativeの注釈済みindex遷移を確認する | `wasm_pc_t`と`code_ip_t`はu32、block/local indexはu16、8bit word/depth/widthは上限内である。Pythonのblock lookupとNativeの実行状態は同じBasicBlock番号・PCを示す。Native ModuleExecutionViewにPC検索配列を持たない | `integer_types.hxx`, `integer_types.py`, `interpreter_abi.hxx`, `.py`, `` |
 
 ### ラベルアリティ・スタックプルーニング (`prune_stack`)
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-20 | `block (result i32)`から`br`で抜ける際のスタックプルーニング | `block`内で複数値をpushしてから`br 0` | ブロック終端まで実行 | ブロック開始時の高さまでロールバックしつつ、ブロックの宣言アリティ分（末尾のN個）の値だけが保持される | interpreter_concept.py `test_block_loop_and_stack_pruning`（`i32.const 10; i32.const 42; br 0`→結果42のみ残る） |
+| TEST-INTP-20 | `block (result i32)`から`br`で抜ける際のスタックプルーニング | `block`内で複数値をpushしてから`br 0` | ブロック終端まで実行 | ブロック開始時の高さまでロールバックしつつ、ブロックの宣言アリティ分（末尾のN個）の値だけが保持される | interpreter_concept.py ``（`i32.const 10; i32.const 42; br 0`→結果42のみ残る） |
 | TEST-INTP-21 | void結果のブロックからの脱出 | `block`の結果型が空 | `br`で脱出 | ブロック開始時の高さまで完全にロールバックされる（保持する値なし） | wasm_instruction_set.md br のスタック遷移 `[] -> []` |
-| TEST-INTP-22 | br_tableでの多重ネストとプルーニング | 3階層以上ネストしたblock+br_table | 各indexで実行 | 深さに応じた正しいプルーニング＋分岐先ジャンプが行われる | interpreter_concept.py `test_br_table_and_parametric` |
+| TEST-INTP-22 | br_tableでの多重ネストとプルーニング | 3階層以上ネストしたblock+br_table | 各indexで実行 | 深さに応じた正しいプルーニング＋分岐先ジャンプが行われる | interpreter_concept.py `` |
 | TEST-INTP-23 | ループ背進辺でのプルーニング挙動 | `loop`から`br 0`（継続） | 実行 | ループ本体の先頭へ戻り、ループ自身のアリティに応じたプルーニングが行われる | interpreter_concept.py `br`の`is_loop`分岐 |
 | TEST-INTP-24 | `if`条件偽（elseなし）でのフレームリーク防止 | `if (cond=0)` で else 節なし | `if` 命令実行 | `match_offset + 1` へジャンプする際、`_Frame("if")` がスタックに残らずフレームスタックの深さが不変に保たれる | `interpreter.md` |
 | TEST-INTP-25 | `if-else` 条件偽での静的else target遷移 | `if (cond=0)` でelse節あり | `if` 命令を実行する | Loaderが記録したelse targetへ移り、実行時制御フレームを生成せずEND後へ継続する | `interpreter.md` |
@@ -64,7 +64,7 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-INTP-30 | `i64.const`/`i64.add`/`i64.sub`/`i64.mul` | - | 64bit範囲の値で演算 | 64bitでラップアラウンドする（32bitではない） | interpreter_concept.py `test_64bit_integer_arithmetic` |
+| TEST-INTP-30 | `i64.const`/`i64.add`/`i64.sub`/`i64.mul` | - | 64bit範囲の値で演算 | 64bitでラップアラウンドする（32bitではない） | interpreter_concept.py `` |
 | TEST-INTP-31 | `i64.div_s`/`div_u`/`rem_s`/`rem_u`のゼロ除算 | 除数0 | 演算実行 | `WASMTrap("INTEGER_DIVIDE_BY_ZERO")` | interpreter_concept.py i64.div系 |
 | TEST-INTP-32 | `i64.clz`/`ctz`/`popcnt` | 既知のビットパターン | 演算実行 | 64bit幅で正しいビットカウントを返す | interpreter_concept.py |
 | TEST-INTP-33 | `i64.shl`/`shr_s`/`shr_u`/`rotl`/`rotr`のシフト量マスク | シフト量>63 | 演算実行 | シフト量が`& 63`でマスクされる（32ではない） | interpreter_concept.py |
@@ -103,7 +103,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INTP-70 | 命令オブジェクト非生成とopcode直接フェッチ | WASM関数実行 | 実行ループのopcodeフェッチを確認 | 関数内カーソルからコードを直接読み出し、中間`Instr`オブジェクトやopcode逆引き表を使わない。Runtime・Debuggerへ渡すPCは関数開始PCと`ctx.ip`から得る | `interpreter.md` `DirectBytecodeExecution` |
 | TEST-INTP-71 | BasicBlock単位の導出値注釈プール走査と`rel`初期化 | 複数ブロックにLEB128即値と固定幅float定数を持ち、呼出し後に即値命令を実行する関数 | Loader生成後のブロック別開始byte offsetと注釈bytesを確認し、NativeInterpreterで命令と呼出し復帰を実行する | LEB128の復号値を保持せず、実行用の導出値を格納する。可変長即値を持つ命令だけu8幅recordを使い、固定幅命令はopcodeから進む。branchはu16 block index、`br_table`はu16 label countに続き各ラベルのu8制御深さとu16 block indexを使う。固定幅float payloadは元コードから読む。ブロック入口で`rel`を初期化し、命令ごとのPC/注釈offset表を持たない | `interpreter.md`「Interpreter注釈プール」、TEST-LOAD-58 |
-| TEST-INTP-78 | br_table注釈件数と容量計算の一致 | label countが0、1、255、256のbr_tableと、255ラベルを選択する実行可能な関数 | 各入力をロードし、計算容量と書込byte数を照合する。NativeInterpreterでdefault、1ラベル、255ラベルの分岐先を実行する | 格納形式はu16 label countとdefaultを含む`label_count + 1`個の3-byte記録（u8制御深さ、u16 block index）である。計算容量は`2 + 3 × (label_count + 1)` byteで実書込量と一致し、分岐結果とtrapは既存意味論を保つ | `interpreter.md`「Interpreter注釈プール」、`test_br_table_annotation_capacity_matches_depth_and_target_records`, `test_native_br_table_with_255_labels_preserves_branch_result` |
+| TEST-INTP-78 | br_table注釈件数と容量計算の一致 | label countが0、1、255、256のbr_tableと、255ラベルを選択する実行可能な関数 | 各入力をロードし、計算容量と書込byte数を照合する。NativeInterpreterでdefault、1ラベル、255ラベルの分岐先を実行する | 格納形式はu16 label countとdefaultを含む`label_count + 1`個の3-byte記録（u8制御深さ、u16 block index）である。計算容量は`2 + 3 × (label_count + 1)` byteで実書込量と一致し、分岐結果とtrapは既存意味論を保つ | `interpreter.md`「Interpreter注釈プール」、``, `` |
 | TEST-INTP-72 | 静的制御表によるブロック境界解決 | `block/loop/if` 構文の実行 | 分岐および終了時の遷移を確認 | モジュールロード時に事前計算された疎なdelimiterとbranch edge metadataを参照し、実行時制御フレームを持たず、全命令再デコードを行わない | `interpreter.md` |
 | TEST-INTP-73 | ローカルoffsetと型からの幅導出 | i32/f32/i64/f64が混在する関数とローカルなしの関数 | ロード後の各ローカルoffset、保持WASM型、`local_slot_count_cache`を確認し、読み書きする | 幅1または2 wordを保持済みWASM型から導出する。offsetが先行ローカルの型幅の合計に一致し、個別のsize表なしで値と隣接境界を保持する | GOTCHA-INTP-22 |
 | TEST-INTP-74 | wide localを含む再帰関数のローカル領域境界 | 16個のi32値を持つ関数と、さらにf64を1個持つ関数 | 8フレーム分の再帰を実行する | i32のみの版は128ワードに収まり成功する。f64を含む版は1フレームあたり18ワードとなり、8フレームで128ワードを超えて容量超過で停止する | GOTCHA-INTP-22 |
@@ -111,7 +111,7 @@
 | TEST-INTP-76 | LOOP辺のBasicBlock index継続とyield | 同じloop headへ繰り返し戻るWASM関数 | Native Interpreterで実行し、yield前後のPC、loop count、結果とBasicBlock indexの再開契約を確認する | backedge注釈のblock indexがLoaderのloop head metadataを指し、PCとの一致を検証して再開する。Python側境界停止はPC比較を保つ。block PC検索cacheは使わず、しきい値到達時にyieldし、再開後に実行を完了する | `interpreter.md`「BasicBlock注釈開始位置」、`runtime_loader.md` `block_storage` |
 | TEST-INTP-77 | LOOP後方分岐しきい値と再開 | LOOP後方辺を持つWASM関数がある | しきい値の2倍を超える後方分岐を実行し、yield後に再開する | しきい値到達ごとにyield状態を返し、再開時に回数を0へ戻す。最終的に実行が完了する | `{ADR_LoopBackedgeYield}`, `runtime_vsoc.md` |
 
-| TEST-INTP-79 | assert無効化時のcopy/fill継続 | `NDEBUG`でビルドしたNative Interpreterとリニアメモリ | `memory.copy`と`memory.fill`の直後に結果を返す命令を実行する | 注釈カーソル更新がassert無効化でも残る。関数結果42、宛先4byteの更新、コピー元と周辺メモリの保持を確認する | `{WasmFCSubset}`、`test_release_bulk_memory_preserves_annotation_cursor` |
+| TEST-INTP-79 | assert無効化時のcopy/fill継続 | `NDEBUG`でビルドしたNative Interpreterとリニアメモリ | `memory.copy`と`memory.fill`の直後に結果を返す命令を実行する | 注釈カーソル更新がassert無効化でも残る。関数結果42、宛先4byteの更新、コピー元と周辺メモリの保持を確認する | `{WasmFCSubset}`、`` |
 
 ### 実装上の注意点に対応する検証
 <!-- traceability: {InterpreterContextStackless} {JIT_RuntimeAPI} {GOTCHA-INTP-01} {GOTCHA-INTP-02} {GOTCHA-INTP-03} {WasmCodeSectionPC} {GOTCHA-INTP-04} {GOTCHA-INTP-05} {GOTCHA-INTP-06} -->
@@ -133,7 +133,7 @@
 | GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | GOTCHA-INTP-07 | Opcode属性と継続ディスパッチ | 複数処理区分のopcodeがある | 属性表、独立したハンドラ表、対応handlerへの継続を検査する | 属性表は関数ポインタを持たず、ハンドラ表から選んだhandlerへ3つの実行状態引数と、Interpreterでは注釈プール、JIT traceではtrace定数プールを指すカーソル`rel`が末尾継続で渡る | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・テスト済み |
-| GOTCHA-INTP-08 | コンテキスト終了理由の判定とtrap伝播 | 複数の正常命令の後にtrapを起こす命令がある | 正常handlerの連鎖後にtrap命令を実行し、native実行境界の結果を確認する | Interpreter Runtime APIはtrapまたは境界停止を記録して`false`を返す。CPS handlerは`false`時に次のhandlerを呼ばず、実行境界は終了理由と具体的なtrapコードを`ctx`から取得する | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、pysim `test_native_runtime_api_false_stops_before_following_store`。確認状況: 実装済み・テスト済み |
+| GOTCHA-INTP-08 | コンテキスト終了理由の判定とtrap伝播 | 複数の正常命令の後にtrapを起こす命令がある | 正常handlerの連鎖後にtrap命令を実行し、native実行境界の結果を確認する | Interpreter Runtime APIはtrapまたは境界停止を記録して`false`を返す。CPS handlerは`false`時に次のhandlerを呼ばず、実行境界は終了理由と具体的なtrapコードを`ctx`から取得する | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、pysim ``。確認状況: 実装済み・テスト済み |
 | GOTCHA-INTP-09 | 次PCの観測元 | 連続実行、分岐、JIT境界の操作列がある | handler後のctx.ipと次の命令位置を照合する | 次PCがctx.ipと一致し、別の戻り値フィールドから再構築されない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・テスト済み |
 | GOTCHA-INTP-10 | 異なる原因のtrap報告 | vMMIO、call_indirect、整数変換、メモリ境界の異常入力がある | 各入力を実行し、実行境界の結果を確認する | 各原因が同じ結果形式の具体的なTrapとして報告される | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・主要経路テスト済み |
 | GOTCHA-INTP-11 | Interpreter/JIT境界の共有記憶領域 | JITへ移行する関数がある | 境界前後のctx、sp、local_baseと値を確認する | 同一ctxと共有値領域を参照し、JIT専用のlocals/resultコピーが発生しない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)。確認状況: 実装済み・既存JITテストで確認 |
@@ -162,7 +162,6 @@
 
 ### native constの容量境界と原因の識別
 
-[`test_cps_interpreter.py`](experiments/pysim/qa/tier2_runtime/interpreter/test_cps_interpreter.py)の`test_native_const_capacity_traps_without_partial_push`は、4型constと5境界の20組を全数実行する。境界は容量0で空き0、容量1で空き1、容量4で空き0/1/2である。i32/f32は1 word、i64/f64は2 wordを使う。i32/i64の-1とf32/f64の負のゼロについて、成功時の具体raw wordも確認する。
 
 拒否時はnative C ABIのstatusがtrap、原因が`OPERAND_STACK_CAPACITY`、停止PCがconstの位置、stackサイズが操作前と一致することを確認する。物理128 wordを個別sentinelで埋め、全wordを操作前後で比較する。wide constの片側だけの書込みと、利用可能容量の外側への書込みを検出する。
 
@@ -170,28 +169,23 @@ Native低位ABI入口も即値を実行時にデコードしない。即値を�
 
 2026-10-01、Linux x64、Python 3.14.6、Clang 21.1.8で、修正前は容量不足の12組がFAIL、正常・負例など19件がPASSとなった。4 constハンドラのpush失敗を具体容量trapへ分離し、nativeを再ビルドした後、次の局所検証で31件PASS、FAIL 0件、SKIP 0件を確認した。
 
-```bash
-UV_CACHE_DIR=/tmp/fireball-test-design-uv bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
-UV_CACHE_DIR=/tmp/fireball-test-design-uv uv run --offline --no-sync python -m pytest -q experiments/pysim/qa/tier2_runtime/interpreter/test_cps_interpreter.py
-```
 
 同じ20容量境界と10負例をstandalone C ABIの一時ハーネスから実行し、AddressSanitizerとUndefinedBehaviorSanitizerの検出なしを確認した。LeakSanitizerは実行環境のprocess検査制約により動作しないため、この確認では無効にした。
 
 ### Interpreter試験の観測とケース対応
 
-[`test_interpreter.py`](experiments/pysim/qa/tier2_runtime/interpreter/test_interpreter.py)はPython参照実装の試験と、既存native入口の試験を区別する。
 Python参照実装のhandler表を検査した結果は、native dispatcherの方式を検証した結果として扱わない。
 関数名の旧番号が異なる要求を指していた試験は、実際に観測する内容へ名称と対応を修正した。
 
 | 要求・対象 | 実行関数 | 独立した期待値と観測 |
 | :--- | :--- | :--- |
-| TEST-INTP-01の参照handler | `test_intp_01_python_reference_cps_handlers_and_dispatch_table`、`test_intp_01_handler_returns_specific_trap_outcome` | 論理引数の名前と順序を比較し、handler結果と実行境界が具体的な`UNREACHABLE`を報告することを確認する。native dispatcherのTEST-INTP-02の証拠へ読み替えない |
-| TEST-INTP-72の静的制御表 | `test_intp_72_control_map_uses_four_entry_locality_caches` | void、i32、i64のblock終端とアリティ、および疎なPython lookupの固定容量cacheを比較する。Nativeのdense per-byte control mapがないことを確認する。TEST-INTP-04のJIT復帰経路へ紐付けない |
-| TEST-INTP-73の混在幅フレーム | `test_intp_73_wide_frame_uses_compact_per_local_layout` | 混在型のローカルオフセット表とWASM型、引数の生ワード数、フレームのワード数と関数結果42を比較する |
-| ラベルアリティによる広幅結果の保存 | `test_typed_block_results_keep_wide_native_slots` | i64、f32、f64のblockからの分岐結果42、1.5、2.5を比較する。関数呼出し記述子の分離を扱うTEST-INTP-18の証拠へ読み替えない |
-| TEST-INTP-18/75の記述子とlocal領域 | `test_intp_70_to_72_direct_bytecode_execution` | 既存のフレーム構築後に40-byte native記述子のfunction viewとlocal baseを比較する。関数番号は共有function viewから読み、コードとlocal型はfunction viewから参照する。復帰後は記述子とlocal領域の長さが0へ戻ることを確認する |
-| 命令のTrap原因 | `test_wasm_10_to_15_control_flow_and_calls`、`test_wasm_40_to_46_memory_load_store_grow_and_data`、`test_wasm_50_to_56_integer_arithmetic_and_bitwise`、`test_wasm_mvp_packed_memory_and_i64_float_conversions` | 対象呼出しだけの`AssertionError`を捕捉し、外側で`UNREACHABLE`、`MEMORY_OUT_OF_BOUNDS`、`INTEGER_DIVIDE_BY_ZERO`、`INVALID_CONVERSION`を比較する。境界外メモリアクセスでは全メモリの不変も比較する |
-| TEST-INTP-74のlocal容量 | `test_intp_74_wide_local_adds_only_its_own_word_to_the_frame` | i32のみの8フレームは結果7を返し、f64を追加した8フレームは既存native入口から`LOCAL_STACK_CAPACITY`を返す。任意の内部assertを容量Trapの代替にしない |
+| TEST-INTP-01の参照handler | ``、`` | 論理引数の名前と順序を比較し、handler結果と実行境界が具体的な`UNREACHABLE`を報告することを確認する。native dispatcherのTEST-INTP-02の証拠へ読み替えない |
+| TEST-INTP-72の静的制御表 | `` | void、i32、i64のblock終端とアリティ、および疎なPython lookupの固定容量cacheを比較する。Nativeのdense per-byte control mapがないことを確認する。TEST-INTP-04のJIT復帰経路へ紐付けない |
+| TEST-INTP-73の混在幅フレーム | `` | 混在型のローカルオフセット表とWASM型、引数の生ワード数、フレームのワード数と関数結果42を比較する |
+| ラベルアリティによる広幅結果の保存 | `` | i64、f32、f64のblockからの分岐結果42、1.5、2.5を比較する。関数呼出し記述子の分離を扱うTEST-INTP-18の証拠へ読み替えない |
+| TEST-INTP-18/75の記述子とlocal領域 | `` | 既存のフレーム構築後に40-byte native記述子のfunction viewとlocal baseを比較する。関数番号は共有function viewから読み、コードとlocal型はfunction viewから参照する。復帰後は記述子とlocal領域の長さが0へ戻ることを確認する |
+| 命令のTrap原因 | ``、``、``、`` | 対象呼出しだけの`AssertionError`を捕捉し、外側で`UNREACHABLE`、`MEMORY_OUT_OF_BOUNDS`、`INTEGER_DIVIDE_BY_ZERO`、`INVALID_CONVERSION`を比較する。境界外メモリアクセスでは全メモリの不変も比較する |
+| TEST-INTP-74のlocal容量 | `` | i32のみの8フレームは結果7を返し、f64を追加した8フレームは既存native入口から`LOCAL_STACK_CAPACITY`を返す。任意の内部assertを容量Trapの代替にしない |
 
 この対応表は既存の実行入口と試験の観測対象を示す。
 TEST-INTP-03の全handler/JIT戻り型比較や、TEST-INTP-04のJIT復帰は上記の補助試験で代替せず、対応するABI試験とJIT試験の範囲で確認する。

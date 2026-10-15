@@ -155,49 +155,9 @@ Float32経路とQ8.8固定小数点経路を同じ入力で実行する。WASI `
 
 ---
 
-## 4. パフォーマンス & ベンチマーク評価 (Performance & Benchmark Evaluation)
+## 4. パフォーマンスとベンチマーク
 
-`experiments/pysim/benchmarks/` 配下には、リニアメモリアクセス、vMMIO アドレス変換、assembly stencil trace JITコンパイラ、JIT キャッシュ代謝（3面ローテーション）、JIT カードエイジング（キャッシュ圧迫下のコールド関数混入）、および 3D レイトレーシング Ambient Occlusion (AO-Bench) の全 6 系統のベンチマークスイートが用意されています。
-
-最新の実測値と測定条件は次のレポートに記載する。出力一致の検査と資源計測も同じレポートを参照する。
-
-👉 **[PySIM 統合ベンチマーク詳細レポート (`benchmarks/BENCHMARK_REPORT.md`)](benchmarks/BENCHMARK_REPORT.md)**
-
-```bash
-# uvキャッシュを一時領域へ置き、プロジェクトの .python-version / .venv を使う
-export UV_CACHE_DIR=/tmp/fireball-uv-cache
-
-# 依存関係の初回導入または変更時
-uv sync
-export UV_OFFLINE=true
-export UV_NO_SYNC=true
-
-# Linux/WSL: Tier 2 Interpreter と Tier 3 JIT のC++共有ライブラリをビルド
-bash experiments/pysim/native/tier1_core/printk/build_native.sh
-bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
-bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
-
-# 診断ベンチマークとQAは検査専用ライブラリも使う
-bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --qa
-bash experiments/pysim/native/tier3_plugins/jit/build_native.sh --qa --block-counters
-
-# 全ベンチマーク一括実行（wasmtime は JIT カードエイジング測定に使用）
-uv run --offline --no-sync python experiments/pysim/benchmarks/run_all.py
-
-# 3D AO-Bench 単体・ランタイム内部状態ダンプ
-uv run --offline --no-sync python experiments/pysim/benchmarks/aobench/bench_aobench.py --debug
-
-# Intel VTune / AMD uProf Hotspots用に算術ループの1経路だけを反復
-uv run --offline --no-sync python -u experiments/pysim/benchmarks/jit/profile_arithmetic_path.py --path native-interpreter
-```
-
-`uv run`はリポジトリの`.python-version`と`.venv`を使う。`--path` は `python-handler`、`native-interpreter`、`hybrid-jit` から選ぶ。通常の速度比較には `bench_jit.py` の中央値を使い、プロファイラ収集中の実行時間は比較に使わない。Linuxの`perf stat cycles:u`で動的WASM命令あたりのホストサイクル数を測る方法、Intel VTuneとAMD uProfの収集コマンドは[JITベンチマーク仕様書](../../docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)を参照する。
-
-WindowsのVisual Studio developer shellでは`native/tier1_core/printk/build_native.ps1`を先に実行する。続いて `native/tier2_runtime/interpreter/build_native.ps1` と `native/tier3_plugins/jit/build_native.ps1` を実行してから、同じ `uv run` コマンドでベンチマークを実行します。
-
-算術ループはPythonハンドラ、C++インタープリタ、JITの3経路を測定します。JITの速度比はPythonハンドラを基準に算出し、C++インタープリタの結果は別基準として表示します。
-
----
+参照実装のベンチマーク実行手順と計測コマンドは [`benchmarks/README.md`](benchmarks/README.md) に集約する。最新の測定結果は [`benchmarks/BENCHMARK_REPORT.md`](benchmarks/BENCHMARK_REPORT.md) を参照する。
 
 ## 5. 実行方法
 
@@ -232,10 +192,9 @@ uv run --system-certs python tools/guest_bindings/fetch_wasm_core_suite.py
 uv run --offline --no-sync python experiments/pysim/qa/workloads/run_all.py
 ```
 
-### 3D AO-Bench ベンチマークの実行
-```bash
-uv run --offline --no-sync python experiments/pysim/benchmarks/aobench/aobench.py
-```
+### 3D AO-Bench
+
+実行手順は [`benchmarks/README.md`](benchmarks/README.md) に記載する。
 
 ### JIT C++実装とABI
 `native/tier3_plugins/jit/trace_compiler.cxx`はWASM命令をcompile時に復号し、型・offset・融合形に対応するステンシルと定数を一つのtrace blobへ連結する。x64の`operations.S`、`trace.S`、`common.S`は`tools/jit_stencil_gen/generate_assembly.py`でPIC raw binaryにアセンブルし、`.text`を抽出してC++ byte arrayへ変換する。操作間の成功slotは次のステンシルで置き換わるため、通常の命令列はfall-throughし、次opcode fetchやoperation dispatcherを持たない。

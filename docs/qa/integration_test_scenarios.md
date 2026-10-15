@@ -19,12 +19,12 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
   - 各コンポーネントの C++ 実装に対し、ホスト結合ハーネス等を介して本シナリオ群を検証する。
 - **参照実装（Reference Implementation / Python Simulator）**:
   - アーキテクチャの早期妥当性確認、状態遷移の探索、および Gotchas（実装上の勘所・不変条件）の抽出を目的とした Python 製の参照シミュレータ（`experiments/pysim`）。
-  - 各シナリオには参照スクリプト（`experiments/pysim/qa/scenarios/`）がある。スクリプトの成功は、実行したassertの期待結果が成立したことを示す。仕様全体の実証状況は1.3のRTMに記録する。
+  - 各シナリオには参照スクリプト（`scenarios`）がある。スクリプトの成功は、実行したassertの期待結果が成立したことを示す。仕様全体の実証状況は1.3のRTMに記録する。
 
 - **対象 Tier**: Tier 1 Core/Interface、Tier 2 Runtime、Tier 3 Plugins/Platform。各コンポーネントは次節に列挙する。
-- **参照実装テストスイート**: `experiments/pysim/qa/scenarios/`
-- **シナリオランナー**: [`run_all.py`](experiments/pysim/qa/scenarios/run_all.py)
-- **結合テストランナー**: [`run_all.py`](experiments/pysim/qa/integration/run_all.py)
+- **参照実装テストスイート**: `scenarios`
+- **シナリオランナー**: `run_all.py`
+- **結合テストランナー**: `run_all.py`
 
 ### 1.2 コンポーネントと現行シナリオの観測範囲
 
@@ -83,14 +83,14 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 | `SignZeroExtension` | `interpreter.md` | メモリ命令の符号拡張とゼロ拡張 | `TEST-INT-70` | 一部。指定した8/16/32-bit入力の合成結果65757を検査する。各演算の独立結果と全境界値は検査しない |
 | `StaticBranchMetadata` | `interpreter.md` | Loaderが解決した分岐先とstack復元値 | `TEST-INT-20`, `TEST-INT-22` | 再帰呼出しの値とbr_tableの分岐先・結果を検査する。実行時制御フレーム配列は持たない |
 | `RSPMinimalSet` | `debugger.md`, `gdb_rsp_protocol.md` | RSP最小コマンドとsの1命令ステップ | `TEST-INT-60`〜`TEST-INT-64`, `TEST-INT-129` | 実TCPと構成済みnativeフックでs、ブレークポイント、停止状態の読書き、継続と正常終了を検査する。LLDB結合ケースはDWARF関数名からZ0設定と停止まで確認する |
-| `DebuggerInterpreterComposition` | `debugger.md`, `runtime_vsoc.md` | Interpreter + Debugger構成とDebugger + JIT構成の拒否 | `TEST-DBG-13`, `TEST-VSOC-23` | 別スイート。[test_runtime_composer.py](experiments/pysim/qa/tier2_runtime/test_runtime_composer.py)と[test_vsoc.py](experiments/pysim/qa/tier2_runtime/test_vsoc.py)で検査する。結合12シナリオの合格数へ含めない |
+| `DebuggerInterpreterComposition` | `debugger.md`, `runtime_vsoc.md` | Interpreter + Debugger構成とDebugger + JIT構成の拒否 | `TEST-DBG-13`, `TEST-VSOC-23` | 別スイート。`test_runtime_composer.py`と`test_vsoc.py`で検査する。結合12シナリオの合格数へ含めない |
 | `HAL_PeripheralDrivers` | `platform_driver.md` | GPIO、エッジIRQ、I2C、SPI、Timer | `TEST-INT-100`〜`TEST-INT-102` | 未検証。Scenario 11にGPIO/I2C/SPI操作がない。Timerはtick_countと時計の非減少だけを検査する |
 | `WASI_InMemVFS` | `libfireball.md` | ゲスト側WASI互換アダプタによるVFS、乱数、クロック委譲 | `TEST-INT-103`〜`TEST-INT-105`, `TEST-INT-125`〜`TEST-INT-128` | 一部。SDK/libc guestから既存バックエンド境界へ読書き、close、u64時計を委譲し、失敗結果も照合する。実uvwasi、製品ゲストadapter、乱数品質、時計の単調増加は別の検証である |
 | `Assembly_Stencil_Trace_JIT` | `jit_compiler.md` | assembly stencilから生成したtraceの生成と実行 | `TEST-INT-30`, `TEST-INT-40` | 一部。生成トレースの存在と戻り値を検査する。JIT実行回数を直接検査しない |
 | `TraceBoundaryInvariant` | `jit_compiler.md` | 境界のスタック自己完結性、状態同期、フォールバック | `TEST-INT-31`, `TEST-INT-41` | 未検証。戻り値の一致だけでは各境界の状態不変条件を実証できない |
 | `ThreeBankCacheEviction` | `jit_runtime.md` | Active/Warm/Oldest代謝とOldestのその場実行 | `TEST-INT-31`, `TEST-INT-41` | 未検証。バンクの世代交代と退役の状態を検査するassertがない |
 
-`TEST-INT-63`は実TCPのs後にPCとstackを読み、local.getだけが実行されたことを検査する。[test_debugger.py](experiments/pysim/qa/tier3_plugins/debugger/test_debugger.py)の反例も、構成済みnativeフックを通る通常の回帰テストである。
+`TEST-INT-63`は実TCPのs後にPCとstackを読み、local.getだけが実行されたことを検査する。`test_debugger.py`の反例も、構成済みnativeフックを通る通常の回帰テストである。
 
 サービスの受入条件は[system_service.md](docs/components/tier1_interface/system_service.md)のLoaded→Running→Failed→Loadedと障害隔離である。Scenario 2、11、12のI/O成功はload_service、start_guest、自己再起動、retry/restart/panicの結果を検査しない。libfireballのゲスト側WASI adapterは[libfireball.md](docs/components/tier3_platform/libfireball.md)に記載された未実装範囲である。ホスト互換層と参照バックエンドの成功を、その実装実証へ振り替えない。
 
@@ -102,7 +102,7 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 
 ### シナリオ 1: Tier 1 Core + Tier 2 Loader & Linear Memory
 - **対象コンポーネント**: `runtime_loader`, `interpreter`, `system_containers` (RadixBinaryTreeView, FlatMapView)
-- **参照実装スクリプト (Reference Script)**: [`scenario1_loader_and_memory.py`](experiments/pysim/qa/scenarios/scenario1_loader_and_memory.py)
+- **参照実装スクリプト (Reference Script)**: `scenario1_loader_and_memory.py`
 - **WAT シナリオ**:
   - アクティブデータセグメント（Active Data Segments）による ROM 文字列・バイナリ配列の初期配置
   - ゲスト関数からのリニアメモリアクセス（`i32.load` / `i32.store`）
@@ -119,7 +119,7 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 
 ### シナリオ 2: Tier 2 Runtime + System Call & WASI I/O
 - **対象コンポーネント**: `interpreter`, `runtime_syscall`, `hal_dispatch`, `libfireball`
-- **参照実装スクリプト (Reference Script)**: [`scenario2_wasi_syscall_io.py`](experiments/pysim/qa/scenarios/scenario2_wasi_syscall_io.py)
+- **参照実装スクリプト (Reference Script)**: `scenario2_wasi_syscall_io.py`
 - **WAT シナリオ**:
   - WASI 標準 ABI（`wasi_snapshot_preview1`）による `fd_write` および `proc_exit` のインポート解決
   - 複数 iovec 構造体（分散ギャザー I/O: Header + Payload）の stdout フラッシュ
@@ -136,7 +136,7 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 
 ### シナリオ 3: Tier 2 Interpreter + Recursion & Indirect Table Dispatch
 - **対象コンポーネント**: `interpreter`（統合値領域、関数呼出し記述子）
-- **参照実装スクリプト (Reference Script)**: [`scenario3_recursion_and_tables.py`](experiments/pysim/qa/scenarios/scenario3_recursion_and_tables.py)
+- **参照実装スクリプト (Reference Script)**: `scenario3_recursion_and_tables.py`
 - **WAT シナリオ**:
   - 再帰フィボナッチ関数（`fib(12)`）による深いコールスタック構築と巻き戻し
   - WASM テーブル（`table` / `elem`）と `call_indirect` による動的関数ポインタディスパッチ（加算・減算・乗算・XOR）
@@ -153,7 +153,7 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 ### シナリオ 4: Tier 2 Runtime + Tier 3 Plugins Hybrid Compilation
 <!-- traceability: {TraceBoundaryInvariant} -->
 - **対象コンポーネント**: `interpreter`, `runtime_engine` (CardMarking, HistoryRing), `jit_compiler`, `jit_runtime`
-- **参照実装スクリプト (Reference Script)**: [`scenario4_hybrid_jit_loop.py`](experiments/pysim/qa/scenarios/scenario4_hybrid_jit_loop.py)
+- **参照実装スクリプト (Reference Script)**: `scenario4_hybrid_jit_loop.py`
 - **WAT シナリオ**:
   - エラトステネスの篩（素数計算: 1000 未満の素数探索）
   - ホットループ実行時の 2-bit Card Marking による HOT 検出
@@ -172,7 +172,7 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 ### シナリオ 5: Code-section PC & sparse JIT lookup
 <!-- traceability: {WasmCodeSectionPC} -->
 - **対象コンポーネント**: `jit_runtime`, `jit_compiler`, `system_containers` (StaticVector / sorted entry array)
-- **参照実装スクリプト (Reference Script)**: [`scenario5_multimodule_unified_pc.py`](experiments/pysim/qa/scenarios/scenario5_multimodule_unified_pc.py)
+- **参照実装スクリプト (Reference Script)**: `scenario5_multimodule_unified_pc.py`
 - **WAT シナリオ**:
   - 複数関数（3D 内積 `dot3`、マンハッタン距離 `manhattan3`、バッチ処理 `batch_metrics`）の相互呼び出し
   - 関数間のPCはCode section payload内の命令先頭オフセットで区別する。モジュール横断キーは`(module_id, pc)`とする
@@ -189,7 +189,7 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 
 ### シナリオ 6: COOS Cooperative Multitasking & 協調Yield境界
 - **対象コンポーネント**: `os_scheduler`, `os_coos`, `interpreter`
-- **参照実装スクリプト (Reference Script)**: [`scenario6_coos_multitask_yield.py`](experiments/pysim/qa/scenarios/scenario6_coos_multitask_yield.py)
+- **参照実装スクリプト (Reference Script)**: `scenario6_coos_multitask_yield.py`
 - **WAT シナリオ**:
   - プロデューサ・タスク（メモリへ 100 件のデータ書き込み）
   - コンシューマ・タスク（メモリから 100 件のデータを読み込み合計 50,500 を算出）
@@ -211,7 +211,7 @@ InterpreterのLOOP後方分岐しきい値4で、進捗(4,4)から(96,96)まで�
 
 ### シナリオ 7: GDB Remote Serial Protocol (RSP) Socket Debugger
 - **対象コンポーネント**: `debugger`, `runtime_vsoc`, `interpreter`
-- **参照実装スクリプト (Reference Script)**: [`scenario7_gdb_socket_debugger.py`](experiments/pysim/qa/scenarios/scenario7_gdb_socket_debugger.py)
+- **参照実装スクリプト (Reference Script)**: `scenario7_gdb_socket_debugger.py`
 - **通信シナリオ**:
   - GDB サーバー（`GDBServer`）が実 TCP ソケットでリッスン
   - GDB クライアントからの接続、パケット送受信（`?`, `g`, `G`, `m`, `M`, `Z0`, `z0`, `s`, `c`）
@@ -237,7 +237,7 @@ RSPは静的構成のExecutionControlを呼び、nativeフックが命令位置�
 
 ### シナリオ 8: Storage Coverage (Globals / Locals / Memory Full-Width) & GDB Debugger
 - **対象コンポーネント**: `interpreter`, `debugger`, `runtime_loader`
-- **参照実装スクリプト (Reference Script)**: [`scenario8_comprehensive_storage_coverage.py`](experiments/pysim/qa/scenarios/scenario8_comprehensive_storage_coverage.py)
+- **参照実装スクリプト (Reference Script)**: `scenario8_comprehensive_storage_coverage.py`
 - **WAT & デバッグシナリオ**:
   - 全幅メモリアクセス: `i32.store8`/`load8_u`/`load8_s`, `i32.store16`/`load16_u`/`load16_s`, `i32.store`/`load`
   - 可変グローバル変数（`global.get`, `global.set`）と呼び出し間状態永続性
@@ -257,7 +257,7 @@ RSPは静的構成のExecutionControlを呼び、nativeフックが命令位置�
 
 ### シナリオ 9: Tier 1 Interface IPC Router & Structured Logging
 - **対象コンポーネント**: `ipc_router`, `runtime_logging`, `system_containers`, `platform_driver`
-- **参照実装スクリプト (Reference Script)**: [`scenario9_ipc_router_and_logging.py`](experiments/pysim/qa/scenarios/scenario9_ipc_router_and_logging.py)
+- **参照実装スクリプト (Reference Script)**: `scenario9_ipc_router_and_logging.py`
 - **検証シナリオ**:
   - 3段階ルーティングパイプライン: FlatMapView URI 検索、RBAC ロール権限判定、Zero-Copy 所有権移譲
   - キュー溢れ時の Rollback 復元とターゲットフォールト時の Drop Handler リソース回収
@@ -276,7 +276,7 @@ RSPは静的構成のExecutionControlを呼び、nativeフックが命令位置�
 ### シナリオ 10: Tier 2 Runtime vMMIO Virtual Devices & Address Translation
 <!-- traceability: {OwnerMismatchTrap} {UnregisteredPageTrap} -->
 - **対象コンポーネント**: `runtime_vmmio`, `runtime_syscall`, `runtime_memory`, `system_config`
-- **参照実装スクリプト (Reference Script)**: [`scenario10_vmmio_virtual_devices.py`](experiments/pysim/qa/scenarios/scenario10_vmmio_virtual_devices.py)
+- **参照実装スクリプト (Reference Script)**: `scenario10_vmmio_virtual_devices.py`
 - **実行条件**: `wasmtime`を必須依存とする。依存がない場合はimportで失敗し、guest部分を省略した成功判定を返さない。
 - **検証シナリオ**:
   - Bit 31 RAM Bypass フラグ: ゲストリニア RAM（Bit 31 == 0）の $O(1)$ 高速パス
@@ -297,7 +297,7 @@ RSPは静的構成のExecutionControlを呼び、nativeフックが命令位置�
 
 ### シナリオ 11: HAL Peripheral Drivers & WASI Preview 1 Full Dummy Stack
 - **対象コンポーネント**: `platform_driver`, `interface_wit`, `hal_dispatch`, `libfireball`, `runtime_syscall`, `interpreter`
-- **参照実装スクリプト (Reference Script)**: [`scenario11_hal_and_wasi_drivers.py`](experiments/pysim/qa/scenarios/scenario11_hal_and_wasi_drivers.py)
+- **参照実装スクリプト (Reference Script)**: `scenario11_hal_and_wasi_drivers.py`
 - **検証シナリオ**:
   - **HAL 周辺機器ダミードライバ**:
     - GPIO コントローラ（16ピン）: 入出力モード設定、ピン読み出し/書き込み、エッジ割り込み IRQ コールバック
@@ -325,7 +325,7 @@ RSPは静的構成のExecutionControlを呼び、nativeフックが命令位置�
 ### シナリオ 12: WASI 0.3p Hierarchical URI Resolver & IPC Commands
 
 - **対象コンポーネント**: `interface_wit`, `hal_dispatch`, `runtime_syscall`, `libfireball`, `platform_driver`
-- **参照実装スクリプト (Reference Script)**: [`scenario12_wasi03p_uri_resolver.py`](experiments/pysim/qa/scenarios/scenario12_wasi03p_uri_resolver.py)
+- **参照実装スクリプト (Reference Script)**: `scenario12_wasi03p_uri_resolver.py`
 - **検証シナリオ**:
   - 階層型 URI と WASI 0.3p エイリアスの解決。
   - 標準入出力・Timer ドライバの能力照会と未対応コマンドの拒否。
@@ -339,7 +339,7 @@ RSPは静的構成のExecutionControlを呼び、nativeフックが命令位置�
 ### SDKゲストによる層横断試験
 <!-- traceability: {WASI_Implementation} {WASI_ScatteredIO} {WASI_InMemVFS} {IPCRouter} {HAL_Interface} {IPC_ZeroCopy} {MemoryBoundaryCheck} -->
 
-実行入口は[`test_wasi_guest.py`](experiments/pysim/qa/workloads/test_wasi_guest.py)である。
+実行入口は`test_wasi_guest.py`である。
 WASMバイナリワークロードランナーへ登録し、単体・結合テストとは別に集計する。
 WASI-SDKのClang、headers、実wasi-libc archiveでreactor guestをコンパイルする。
 ゲストの`writev`、`read`、`close`、`clock_gettime`はlibcの実装を使う。
@@ -347,7 +347,7 @@ Preview1 importと、既存Fireball syscall ABIを通すリンク用fixtureの2�
 後者のfixtureはQAに置き、製品libfireballのWASI/HAL guest adapterへ数えない。
 実機の確認予定を理由に、このモック試験を省略・延期しない。
 
-```mermaid
+``mermaid
 sequenceDiagram
     autonumber
     participant G as C guest / wasi-libc
@@ -377,7 +377,7 @@ sequenceDiagram
     else Preview1 compatibility
         W-->>G: WASI errno / nwritten
     end
-```
+``
 
 NativeInterpreter、RuntimeEngine、Gateway、WASI変換、IPC、COOS、HALタスク、DummyDriverを実実装で接続する。
 物理ストリーム境界を置換し、実HALタスク上の呼出し、固定スロットの参照、guestの結果更新前の実行を観測する。
@@ -415,9 +415,6 @@ GPIO/I2C/SPIとIRQの製品ドライバはこの試験の対象外であり、�
 
 2026-10-01にLinux x86_64、CPython 3.14.6で次のコマンドを実行した。12ファイルが成功終了し、pytestの集計は12件成功、0件失敗、0件skip、0件xfailである。約11.0秒で完了した。この成功は、RTMに明示した未検証要求の達成を表さない。
 
-```bash
-.venv/bin/python experiments/pysim/qa/scenarios/run_all.py
-```
 
 - **差分検査の実装範囲**: Scenario 4と5が純粋InterpreterとNativeInterpreter + RuntimeEngineの戻り値を比較する。全シナリオの差分実行やメモリ全バイト比較は実装されていない。JITトレースの存在は検査するが、JIT実行到達は独立に検査しない。
 - **HALとWASIの実装範囲**: Scenario 2はホストPreview1互換層経由のWASM出力を検査する。Scenario 11と12はPythonからドライバ、参照バックエンド、ホスト互換層を呼び出す。ゲスト側libfireball adapterを含む完全な経路は未実装である。
@@ -434,10 +431,6 @@ Linux x86_64、CPython 3.14.6、WASI-SDK 27.0、Clang 20.1.8で52件が成功し
 
 #### 結合テストランナーの実行方法
 
-```bash
-# ペアワイズ結合試験と12シナリオを実行
-uv run --system-certs --with wasmtime python experiments/pysim/qa/integration/run_all.py
-```
 
 ### 3.2 本番実装（C++ Hypervisor）への適用方針
 
@@ -458,8 +451,5 @@ uv run --system-certs --with wasmtime python experiments/pysim/qa/integration/ru
 
 正本は [`verification_factor_matrix.md`](docs/qa/verification_factor_matrix.md) とする。実行コマンドを示す。
 
-```bash
-uv run pytest -q experiments/pysim/qa/cross_cutting/test_entrypoint.py
-```
 
 入口の試験は各機能の受入試験を代替しない。

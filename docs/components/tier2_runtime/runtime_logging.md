@@ -150,7 +150,7 @@ Tier 3 Guest Profilerは関数入退出を次の固定辞書IDへ変換する。
 | `0x0501` | PROFILE | `DEBUG` | `PROFILE: enter function=%d call=%d tick=%d` | `function_id`, `call_id`, `tick & 0xFFFF_FFFF` |
 | `0x0502` | PROFILE | `DEBUG` | `PROFILE: exit function=%d call=%d tick=%d` | `function_id`, `call_id`, `tick & 0xFFFF_FFFF` |
 
-各エントリは3引数、16バイトのレコードである。tickは32ビット循環値とし、差分は`(end - start) & 0xFFFF_FFFF`で求める。既定時計の周波数は`runtime_observability.md`の1 GHzで、一周は4.294967296秒である。一周以上の区間を正しく測定できない。デバッグバスは到達を保証せず、ホスト集計結果には欠落区間が含まれる可能性がある。
+各エントリは3引数、16バイトのレコードである。tickは32ビット循環値とし、差分は`(end - start) & 0xFFFF_FFFF`で求める。経過時間へ換算する場合は対象時計の周波数を用い、計測区間をカウンタの一周未満とする。デバッグバスは到達を保証せず、集計結果には欠落区間が含まれる可能性がある。
 
 ### 4.3 COOS Idle Hook 連携 (Flush Protocol)
 <!-- traceability: {GLOBAL_IdleDetection} -->

@@ -39,7 +39,7 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-MEM-26 | `acquire-runtime-arena`は1ランタイム1アリーナを貸与する | 任意のランタイムID | 同一`runtime-id`で2回`acquire-runtime-arena` | 1回目は`runtime-arena`ハンドルを返す。2回目は`OneRuntimeOneGuest`により拒否されるか同一ハンドルを返す（実装は`runtime_loader.md`を正本とする） | , `OneRuntimeOneGuest` |
+| TEST-MEM-26 | `acquire-runtime-arena`は1ランタイム1アリーナを貸与する | 任意のランタイムID | 同一`runtime-id`で2回`acquire-runtime-arena` | 1回目は`runtime-arena`ハンドルを返す。2回目は`OneRuntimeOneGuest`により拒否されるか同一ハンドルを返す（実装は`runtime_loader.md`を正本とする） | `OneRuntimeOneGuest` |
 | TEST-MEM-27 | `bump-alloc`は単調増加・非重複のアドレスを返す | アリーナ取得済み | 複数回`bump-alloc`を発行 | アドレスは単調増加し重複しない。アリーナ枯渇時は`memory-error`（`out-of-memory`）を返す | |
 | TEST-MEM-28 | `reset-runtime-arena`はO(1)でバンプポインタを先頭へ巻き戻す | N個確保済み | `reset-runtime-arena`後に再度`bump-alloc` | リセット後最初の`bump-alloc`はアリーナ基点アドレスを返す | |
 | TEST-MEM-29 | `release-runtime-arena`後は`bump-alloc`が拒否される | アリーナ返却済み | 返却済みアリーナへ`bump-alloc` | `memory-error`（`invalid-owner`）を返す | |
@@ -49,7 +49,6 @@
 
 ### 固定パーティションの返却後再利用
 
-TEST-MEM-01/05は`test_reacquire_released_partition_does_not_overlap_live_task`でも検査する。
 固定2スロット構成をテスト側で選び、先行スロットの返却と再貸与を4回繰り返す。
 他タスクの領域、owner、実体identityおよび全バイトを保存する。
 対象領域はゼロ初期化し、総貸与量を増やさない。
@@ -64,10 +63,9 @@ TEST-MEM-01/05は`test_reacquire_released_partition_does_not_overlap_live_task`�
 
 | テストケースID | 実行可能テスト | 実際に確認する範囲 |
 | :--- | :--- | :--- |
-| TEST-MEM-08 | `test_mem_08_claim_rejection_preserves_live_storage` | 不存在IDとRAII drop済みIDの拒否、全SHMバイト、所有者台帳、ページ世代、総量と有効ブロックの保存、拒否後の正常Grant/Claim |
-| TEST-MEM-10d | `test_mem_10d_owner_notifications_match_each_lifecycle_boundary` | 台帳更新後の旧・新所有者通知と回数、release/grantでmapなし、claim/rollbackで有効所有ビューをmap、内容保存とdrop時のunmap |
+| TEST-MEM-08 | `` | 不存在IDとRAII drop済みIDの拒否、全SHMバイト、所有者台帳、ページ世代、総量と有効ブロックの保存、拒否後の正常Grant/Claim |
+| TEST-MEM-10d | `` | 台帳更新後の旧・新所有者通知と回数、release/grantでmapなし、claim/rollbackで有効所有ビューをmap、内容保存とdrop時のunmap |
 
-両ケースは[`test_memory.py`](experiments/pysim/qa/tier3_platform/test_memory.py)で実行する。
 pysimのTEST-MEM-08は`INVALID_SHM_ID`と`INVALID_OR_DEALLOCATED_SHM_ID`を観測する。
 これは参照実装のエラー表現であり、WITのエラー値そのものは検査しない。
 Tier 2の同名TEST-MEM-10dは古いハンドルの失効を検査する別ケースである。
@@ -75,16 +73,14 @@ Tier 2の同名TEST-MEM-10dは古いハンドルの失効を検査する別ケ�
 
 - 実行日: 2026-10-02。
 - 対象ソース: [`manager.py`](experiments/pysim/tier2_runtime/memory/manager.py)。
-- スイート: [`test_memory.py`](experiments/pysim/qa/tier3_platform/test_memory.py)。
 - 環境: Linux、プロジェクトのuv環境。
 - 結果: 成功16件、失敗0件、skip 0件、xfail 0件。
 
-```bash
-UV_CACHE_DIR=/tmp/fireball-test-refactor-uv uv run --offline --no-sync python -m pytest -q experiments/pysim/qa/tier3_platform/test_memory.py
-```
 
 ## 4. 未検証・スコープ外
 
 - TEST-MEM-05の`invalid-owner`結果は、現行pysimの`release_task_heap`には未実装である。所有者台帳から呼出し元の領域だけを返却し、領域がなければ何もせず`None`を返す。既存試験が確認するのは他タスクのパーティション保全と所有者による返却である。型付き`acquire-slot`/`release-slot`も現行pysimには未実装である。これらは製品機能の未達として追跡し、TEST-MEM-08/10dの成功から達成済みとはしない。
 - 共有メモリのソフトウェア所有権・vMMIO通知（TEST-MEM-14〜16）は [`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) を参照する。ARMv8-Mの物理メモリ保護と実機受け入れ条件はTBDである。
 - vMMIO PTE / TLB の具体的な物理挙動（マッピング登録・アンマップ・再マッピング）は本書のスコープ外であり、`runtime_memory_test_spec.md` を正本とする（本契約はvMMIO等の内部シンボル・アドレス体系を一切参照しないため）。
+
+ソフトウェア所有権とvMMIO通知の`TEST-MEM-14〜16`は、[`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md)の責務とする。

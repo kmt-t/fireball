@@ -55,7 +55,7 @@
 | `./tools/check-src.sh -g concepts` | PASS、13ファイル、警告0件 |
 | `./tools/check-src.sh -g formal` | PASS、21ファイル。形式モデルの `guards=False` 変異検査を含む |
 | `./tools/check-src.sh -g pysim` | PASS、152ファイル、警告0件 |
-| `uv run pytest experiments/pysim/qa` | PASS、358テスト。続くスケジューラ・コンテナ修正後に該当テスト26件を再実行しPASS |
+| PySim QA | PASS、358テスト。続くスケジューラ・コンテナ修正後に該当テスト26件を再実行しPASS |
 | `./tools/format-doc.sh` | PASS、88文書を確認、変更0件 |
 | `./tools/format-src.sh -g concepts` | PASS、13ファイル、変更0件 |
 | `./tools/format-src.sh -g pysim` | PASS、152ファイル、変更0件 |

@@ -264,10 +264,12 @@ def _check_document(repo_root: Path, matrix: dict, inventory: dict[str, list[str
             raise MatrixCheckError(f"matrix document is missing required section: {heading}")
     if "MISSING" in document:
         raise MatrixCheckError("matrix document contains MISSING; intentional N/A must be explicit")
-    for paths in inventory.values():
+    basename_only = {"scenarios", "integration_suites", "workload_suites"}
+    for category, paths in inventory.items():
         for path in paths:
-            if path not in document:
-                raise MatrixCheckError(f"matrix document does not list artifact: {path}")
+            listed = Path(path).name if category in basename_only else path
+            if listed not in document:
+                raise MatrixCheckError(f"matrix document does not list artifact: {listed}")
     for scenario_path in inventory["scenarios"]:
         if Path(scenario_path).name not in document:
             raise MatrixCheckError(f"matrix document does not list scenario: {scenario_path}")

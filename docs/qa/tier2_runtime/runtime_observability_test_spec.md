@@ -21,7 +21,6 @@
 
 ## 3. テスト検証実績と網羅状況
 
-公開call境界は [`test_runtime_composer.py`](experiments/pysim/qa/tier2_runtime/test_runtime_composer.py) から実行する。
 制御した実行器を使い、構成器・Sink・転送ABI・Adapterを通った結果を照合する。
 期待イベントを実行結果から転記しない。
 Sinkの有効・無効で戻り値、trap、yield、ゲスト状態を変えない。
@@ -32,7 +31,6 @@ Sinkの有効・無効で戻り値、trap、yield、ゲスト状態を変えな�
 | guest trap | 両実行方式でエラーを返す。元の結果を保持し、TRAPと中断終了を1回ずつ通知する。終了理由、相関ID、時刻も一致する |
 | host failure | 両実行方式でエラーを返す。元の結果と中断理由が一致し、TRAPを通知しない |
 
-TEST-OBS-03/05は同ファイルの`test_event_sink_retains_latest_events_in_issue_order`で検証する。容量1、2、4に対し、容量を超える回数の入力と再充填を行う。最新イベントの全値と発行順、累積欠落数、容量不足と未対応majorによるexport拒否後の保持を照合する。
 
 ## 4. 未検証・スコープ外
 

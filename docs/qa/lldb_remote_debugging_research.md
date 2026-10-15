@@ -11,10 +11,10 @@
 
 LLDBのブレークポイントログには `Failed to add breakpoint site at 0xffffffffffffffff` が出ていた。`0xffffffffffffffff` はLLDBの無効アドレスである。接続後に次を実行すると、LLDBは `breakpoint set -n add_one` に対して `$Z0,17,0` を自動送信した。Fireballは `OK` を返し、続行後に `add_one` の該当位置で停止した。
 
-```text
+``text
 (lldb) target modules load --file /path/to/module.wasm code 0x0
 (lldb) breakpoint set -n add_one
-```
+``
 
 `code 0x0` は、WASMのコードセクションをFireballのRSP PC空間の先頭へ対応付ける設定である。LLDBの `target modules load` はモジュールのセクションにターゲット上のロードアドレスを割り当てるコマンドであり、ロードアドレスを指定するとアドレス検索はその空間で行われる。[LLDB「Defining Load Addresses for Sections」](https://lldb.llvm.org/use/symbolication.html#defining-load-addresses-for-sections)
 

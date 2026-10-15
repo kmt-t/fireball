@@ -22,7 +22,7 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | TEST-LOAD-04 | V4 セクション順 | 非Customセクションが降順・重複 | 同上 | reject（Customセクション(ID=0)のみ順序制約の例外） | runtime_loader.md (Validation) (V4) |
 | TEST-LOAD-05 | V5 インポート/エクスポート型整合 | 関数宣言のtype_idxがTypeセクション範囲外 | 同上 | reject | runtime_loader.md (Validation) (V5) |
 | TEST-LOAD-06 | V6 メモリセクション境界 | 初期要求メモリサイズが`FB_CONF_GUEST_RAM_SIZE`を超える | 同上 | reject | runtime_loader.md (Validation) (V6) |
-| TEST-LOAD-07 | ロード失敗時の完全ロールバック | V1〜V6の検証失敗またはランタイムアリーナ容量超過 | 失敗前後のアロケータwatermarkを比較 | `bump_allocator.offset`がロード開始前の値に完全復元される | 「トランザクション保護」, loader_concept.py `test_wasm_loader_lifecycle_and_verification` |
+| TEST-LOAD-07 | ロード失敗時の完全ロールバック | V1〜V6の検証失敗またはランタイムアリーナ容量超過 | 失敗前後のアロケータwatermarkを比較 | `bump_allocator.offset`がロード開始前の値に完全復元される | 「トランザクション保護」, loader_concept.py `` |
 
 ### ゼロコピー索引化
 <!-- traceability: {META_BinarySearch} {ZeroCopyIndexing} -->
@@ -74,8 +74,8 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | TEST-LOAD-54 | ROM-backed 名称範囲とハッシュ衝突解決 | 異なる名前 `ufbwjn` / `rsksbm`（同一FNV-1a 32-bit値）を持つエクスポート | `lookup_export(name)` と各エントリのROM範囲を確認 | 名前の実体をエントリへ保存せず、各ハッシュ候補をROM上の完全一致で識別する | `GOTCHA-LOAD-01` |
 | TEST-LOAD-55 | 実行時作成が使うパーサーのWASMページ上限 | 初期メモリが `FB_CONF_MAX_WASM_PAGES + 1` ページ | `wasm_reader.parse(module)` | 設定上限を超える初期メモリを拒否する | `runtime_loader.md` (Resource Constraints) |
 
-| TEST-LOAD-56 | メモリ命令の整列指定上限 | `i32.load`の整列指定がアクセス幅を超える | `parse(module)` | 4バイト指定を許可し、8バイト指定を拒否する | [WebAssembly Core・memarg検証](https://webassembly.github.io/spec/core/valid/instructions.html#valid-memarg)、pysim `test_load_56_rejects_overaligned_memory_access` |
-| TEST-LOAD-57 | Runtime API命令を含むtrace範囲 | `i32.const`の後ろに`i32.popcnt`を置く関数 | パース後に関数先頭PCの`BasicBlock`をRadix検索し、関数コードと範囲を比較する | `byte_span`が`i32.const`と末尾の`i32.popcnt`を含み、終端`end`を含まない。ブロックのInterpreter定数pool開始offsetが設定される | `{Loader_BasicBlockIndex}`、pysim `test_load_57_includes_runtime_api_operations_in_trace_span` |
+| TEST-LOAD-56 | メモリ命令の整列指定上限 | `i32.load`の整列指定がアクセス幅を超える | `parse(module)` | 4バイト指定を許可し、8バイト指定を拒否する | [WebAssembly Core・memarg検証](https://webassembly.github.io/spec/core/valid/instructions.html#valid-memarg)、pysim `` |
+| TEST-LOAD-57 | Runtime API命令を含むtrace範囲 | `i32.const`の後ろに`i32.popcnt`を置く関数 | パース後に関数先頭PCの`BasicBlock`をRadix検索し、関数コードと範囲を比較する | `byte_span`が`i32.const`と末尾の`i32.popcnt`を含み、終端`end`を含まない。ブロックのInterpreter定数pool開始offsetが設定される | `{Loader_BasicBlockIndex}`、pysim `` |
 | TEST-LOAD-58 | BasicBlock単位の導出値注釈プール構築 | 複数ブロックにLEB128即値、`br_table`、固定幅`f32.const`/`f64.const`を含む関数 | Loaderの各ブロック別pool範囲、連結順、BasicBlockの開始byte offsetを検査する | 各BasicBlockのコード範囲を個別にパースし、実行時の導出値だけを8bit-packed関数poolへブロック順に追加する。LEB128復号値は保存しない。localはu16フレーム語offsetとu8幅、indexはu16、定数はi32=u32/i64=u64、メモリ実効offsetはu32とする。可変LEB128命令だけu8幅recordを持ち、固定幅命令はopcodeから長さを求める。`br_table`はu16 label countとu16 target列を格納し、label countのu16超過は`ERR_WASM_UNSUPPORTED_FEATURE`で拒否する。fixed-width float payloadとtable indexはpoolへ入れず、PC/注釈offset表も生成しない | `{Loader_BasicBlockIndex}`, `interpreter.md`「Interpreter注釈プール」 |
 
 ### 実装上の注意点に対応する検証
@@ -87,10 +87,10 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | GOTCHA-LOAD-02 | ロード失敗時のアロケータ完全ロールバック（メモリリーク防止） | 不正なセクションまたはアリーナ容量を超える WASM バイナリ | `prepare_module` を実行 | パースまたは確保失敗時にバンプポインタがロード開始前の位置へ巻き戻される。 | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) |
 | GOTCHA-LOAD-04 | 基本ブロックメタ情報の所有と可変JIT参照の分離 | WASMモジュールをロード済み | 同じPCをRadix検索し、境界・制御情報とJIT参照をキャッシュ変更の前後で比較する | 境界・制御情報・注釈プールoffsetは不変である。`jit_cache_reference`だけはJITキャッシュの挿入・移動・退役で更新または無効化される。索引の再構築や動的確保は発生しない | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md), `Loader_BasicBlockIndex` |
 
-| TEST-LOAD-59 | assert無効時の不正バイナリtrap | 不正ヘッダ、短い整数・float即値、短いmemory index、未対応subopcode、型スタック違反 | Python `-O`の別プロセスから`parse`する | `InvalidWasm`を送出し、`INVALID_WASM_BINARY`を保持する | `{GOTCHA-LOAD-02}`、pysim `test_load_59_invalid_binary_traps_with_assertions_disabled` |
-| TEST-LOAD-60 | 内部契約違反の原因維持 | Loader内部で領域を確保した後に契約assertが失敗する | `parse`の内部手続きから`AssertionError`を送出する | 同じ例外を伝播し、trapへ変換せずwatermarkを復元する | `{GOTCHA-LOAD-02}`、pysim `test_load_60_preserves_internal_assertion_identity` |
-| TEST-LOAD-61 | 型検証表の不変性 | opcode対応表の構築完了 | 対応表の上書きを試み、その後でWASMを解析する | 書き換えを拒否し、解析に使うhandlerを維持する | `{ROMParsing}`、pysim `test_load_61_type_analysis_dispatch_is_immutable` |
-| TEST-LOAD-62 | u16 BasicBlock index上限とNative PC索引の非保持 | 65,536件のBasicBlockを生成するWASM、および複数blockを持つ通常WASM | overflow入力をparseし、通常入力の`Module.get_block()`とNative ModuleExecutionViewのlayoutを確認する | 65,535件を超えるblock数を`ERR_WASM_UNSUPPORTED_FEATURE`で拒否する。Python `block_storage`はPC検索を解決する。Native ModuleExecutionViewはPC index entry・radix表を保持せず、実行中のBasicBlock indexと注釈済み遷移先を使う | `{Loader_BasicBlockIndex}`、pysim `test_loader_rejects_basic_block_count_above_u16_capacity`, `test_load_48_module_builds_basic_block_index`, `test_native_layout_matches_x64_jit_context` |
+| TEST-LOAD-59 | assert無効時の不正バイナリtrap | 不正ヘッダ、短い整数・float即値、短いmemory index、未対応subopcode、型スタック違反 | Python `-O`の別プロセスから`parse`する | `InvalidWasm`を送出し、`INVALID_WASM_BINARY`を保持する | `{GOTCHA-LOAD-02}`、pysim `` |
+| TEST-LOAD-60 | 内部契約違反の原因維持 | Loader内部で領域を確保した後に契約assertが失敗する | `parse`の内部手続きから`AssertionError`を送出する | 同じ例外を伝播し、trapへ変換せずwatermarkを復元する | `{GOTCHA-LOAD-02}`、pysim `` |
+| TEST-LOAD-61 | 型検証表の不変性 | opcode対応表の構築完了 | 対応表の上書きを試み、その後でWASMを解析する | 書き換えを拒否し、解析に使うhandlerを維持する | `{ROMParsing}`、pysim `` |
+| TEST-LOAD-62 | u16 BasicBlock index上限とNative PC索引の非保持 | 65,536件のBasicBlockを生成するWASM、および複数blockを持つ通常WASM | overflow入力をparseし、通常入力の`Module.get_block()`とNative ModuleExecutionViewのlayoutを確認する | 65,535件を超えるblock数を`ERR_WASM_UNSUPPORTED_FEATURE`で拒否する。Python `block_storage`はPC検索を解決する。Native ModuleExecutionViewはPC index entry・radix表を保持せず、実行中のBasicBlock indexと注釈済み遷移先を使う | `{Loader_BasicBlockIndex}`、pysim ``, ``, `` |
 
 ## 3. テスト検証実績と網羅状況
 
@@ -98,21 +98,20 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 
 この文書の前半は、C++ `runtime_loader` の目標テスト契約である。ロード済み`ModuleView`、複数モジュール登録・リンク、ファイル位置のRadix索引は現行Pysim製品コードの機能ではない。バックログ上もC++ローダー実装は未着手である。
 
-PysimのPythonコードは参照ランタイムであり、現行のWASMパース入口は [`test_wasm_reader.py`](experiments/pysim/qa/tier2_runtime/test_wasm_reader.py) から呼ぶ `reader.parse` である。QAはこの経路の境界検証、アロケータの失敗時復元、セグメント初期化、基本ブロック索引を直接確認する。レジストリと関数リンクの契約は [`module_link_harness.py`](experiments/pysim/qa/private/tier2_runtime/module_link_harness.py) がQA内だけでモデル化し、パース済みModuleを使って未解決状態、シグネチャ一致、部分リンク防止、上限を確認する。このハーネスは製品ランタイムのリンク機能やRadix索引の証拠ではない。
 
 | ケースID | 現行Pysim QA | 直接観測する結果 |
 | :--- | :--- | :--- |
-| TEST-LOAD-01〜07 | `test_load_01`〜`test_load_07` | 不正ヘッダ、section境界・順序、型・メモリ上限の拒否とアロケータwatermark復元 |
-| TEST-LOAD-10 | `test_load_10_signature_and_code_accessors_borrow_original_binary` | 型レコードの範囲、引数型・戻り型・関数コードと原本バイナリの同一所有者参照 |
-| TEST-LOAD-16 | `test_load_16_resolves_imported_global_offsets_for_active_segments` | 原本上のData/Elementセクション範囲、インポート済みimmutable globalを使う初期化、メモリとテーブル状態 |
-| TEST-LOAD-20〜24 | `test_load_20`〜`test_load_24` | QA専用ハーネスによる未解決状態、関数リンク、シグネチャ拒否、部分リンク防止、登録上限 |
-| TEST-LOAD-30〜32 | `test_load_30`〜`test_load_32` | 関数上限、64件超のexport保持、u32/u64 LEB128のバイト上限 |
-| TEST-LOAD-46 | `test_load_46_parser_export_lookup_checks_names_when_hashes_collide` | 既知のハッシュ衝突名をパーサのエクスポート検索で区別 |
-| TEST-LOAD-48、57、58 | `test_load_48_module_builds_basic_block_index`、`test_load_57_indexes_interpreter_only_block_heads`、`test_load_58_builds_interpreter_annotation_pool_per_basic_block` | 大規模BasicBlock Radix索引、インタープリタ専用ブロックのrel開始位置、BasicBlock単位のLEB128プール |
-| TEST-LOAD-51〜53、55〜56 | 対応する`test_load_*` | 到達不能時の型検証、Custom名境界、LEB128/件数、メモリページ・整列上限 |
+| TEST-LOAD-01〜07 | ``〜`` | 不正ヘッダ、section境界・順序、型・メモリ上限の拒否とアロケータwatermark復元 |
+| TEST-LOAD-10 | `` | 型レコードの範囲、引数型・戻り型・関数コードと原本バイナリの同一所有者参照 |
+| TEST-LOAD-16 | `` | 原本上のData/Elementセクション範囲、インポート済みimmutable globalを使う初期化、メモリとテーブル状態 |
+| TEST-LOAD-20〜24 | ``〜`` | QA専用ハーネスによる未解決状態、関数リンク、シグネチャ拒否、部分リンク防止、登録上限 |
+| TEST-LOAD-30〜32 | ``〜`` | 関数上限、64件超のexport保持、u32/u64 LEB128のバイト上限 |
+| TEST-LOAD-46 | `` | 既知のハッシュ衝突名をパーサのエクスポート検索で区別 |
+| TEST-LOAD-48、57、58 | ``、``、`` | 大規模BasicBlock Radix索引、インタープリタ専用ブロックのrel開始位置、BasicBlock単位のLEB128プール |
+| TEST-LOAD-51〜53、55〜56 | 対応する`*` | 到達不能時の型検証、Custom名境界、LEB128/件数、メモリページ・整列上限 |
 
-| TEST-LOAD-59〜60 | 対応する`test_load_*` | assert無効時の検証trapと内部assertの原因維持・watermark復元 |
-| TEST-LOAD-61 | `test_load_61_type_analysis_dispatch_is_immutable` | 不変のopcode対応表の上書き拒否と解析結果 |
+| TEST-LOAD-59〜60 | 対応する`*` | assert無効時の検証trapと内部assertの原因維持・watermark復元 |
+| TEST-LOAD-61 | `` | 不変のopcode対応表の上書き拒否と解析結果 |
 
 ## 4. 未検証・スコープ外
 

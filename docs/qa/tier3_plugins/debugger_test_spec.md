@@ -16,11 +16,11 @@ GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-DBG-01 | 停止要因問い合わせ (`?`) | デバッガアタッチ・停止状態 | `?` パケット送信 | 直近の停止理由（`S05` = SIGTRAP）を正しく返す |  `{RSPMinimalSet}` |
+| TEST-DBG-01 | 停止要因問い合わせ (`?`) | デバッガアタッチ・停止状態 | `?` パケット送信 | 直近の停止理由（`S05` = SIGTRAP）を正しく返す | `{RSPMinimalSet}` |
 | TEST-DBG-02 | 仮想レジスタ全読み出し (`g`) | レジスタ値設定済み | `g` パケット送信 | `0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15` の 20 レジスタが 各32-bit値をlittle-endianの4バイト表現（各8文字）にして連結返却する | 「仮想レジスタセット」 `{RSPMinimalSet}` |
 | TEST-DBG-03 | 仮想レジスタ全書き込み (`G`) | 有効な20レジスタ分のhex文字列 | `G <hex>`を送信 | PC、SP、TOS、local0..15が更新され`OK`を返す。スタック容量超過、空スタックの非0 TOS、固定値FPへの非0書込みは`E01`となり状態を変えない | 「仮想レジスタセット」 |
 | TEST-DBG-03b | 個別レジスタと実装能力の応答 | デバッガ停止中 | `p4`、`P4=2a000000`、`qSupported`を送る | little-endianの4バイト値でlocal0を個別読書きでき、`PacketSize=256`だけを広告する | `gdb_rsp_protocol.md` |
-| TEST-DBG-03c | 不正な個別レジスタパケット | 停止中のデバッガ | 不正hex `p` と区切りなし `P` を送る | `E01`を返しPCとレジスタ状態を変更しない | `test_dbg_03c_malformed_register_packets_are_rejected` |
+| TEST-DBG-03c | 不正な個別レジスタパケット | 停止中のデバッガ | 不正hex `p` と区切りなし `P` を送る | `E01`を返しPCとレジスタ状態を変更しない | `` |
 | TEST-DBG-04 | ゲストメモリ読み出し (`m`) | リニアメモリ初期化済み | `m <addr>,<len>` 送信 | 指定範囲のバイト列が hex 文字列として返却される | {RSPMinimalSet} |
 | TEST-DBG-05 | ゲストメモリ読み出し境界外エラー | 範囲外 `addr` 指定 | `m <addr>,<len>` 送信 | `E01` エラーパケットが返却される | `{MemoryBoundaryCheck}` |
 | TEST-DBG-06 | ゲストメモリ書き込み (`M`) | デバッグ構成でインタープリタとデバッガが有効 | `M <addr>,<len>:<hex>` 送信 | 境界内のメモリが上書きされ `OK` が返却される。デバッガはJITキャッシュを操作しない | `{MemoryBoundaryCheck}` |
@@ -31,10 +31,10 @@ GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-DBG-08 | ソフトウェアブレークポイント追加・削除 (`Z0`/`z0`) | デバッガアタッチ状態 | `Z0,0x100,0` / `z0,0x100,0` 送信 | ブレークポイント集合への追加・削除が行われ `OK` が返却される | 「ブレークポイントリスト」 `{RSPMinimalSet}` |
-| TEST-DBG-08b | ブレークポイント固定容量超過 | ブレークポイント表が満杯 | 追加の`Z0`を送る | `E01`を返し、既存項目を維持して新規項目を追加しない | `test_dbg_08b_breakpoint_capacity_returns_protocol_error` |
-| TEST-DBG-08c | PCの32bit幅の超過 | PC=0、7、0xffffffffを登録済み | `Z0,100000000,0`と`z0,100000000,0`を送る | 両方とも`E01`を返し、PCと既存配列を変更しない | `test_dbg_08c_breakpoint_pc_overflow_is_rejected_without_state_change`、`gdb_rsp_protocol.md` |
+| TEST-DBG-08b | ブレークポイント固定容量超過 | ブレークポイント表が満杯 | 追加の`Z0`を送る | `E01`を返し、既存項目を維持して新規項目を追加しない | `` |
+| TEST-DBG-08c | PCの32bit幅の超過 | PC=0、7、0xffffffffを登録済み | `Z0,100000000,0`と`z0,100000000,0`を送る | 両方とも`E01`を返し、PCと既存配列を変更しない | ``、`gdb_rsp_protocol.md` |
 | TEST-DBG-09 | ブレークポイントヒットによる実行停止 | PC=0x100 にブレークポイント設定 | `c`（継続実行）送信 | PC=0x100 到達時に実行が停止し、`S05`（SIGTRAP）が返却される | 状態遷移図 |
-| TEST-DBG-10 | 単一命令ステップ実行 (`s`) | 停止状態 | `s` 送信 | ちょうど 1 命令だけ実行され、PC が進んだ状態で再び `S05` で停止する |  `{RSPMinimalSet}` |
+| TEST-DBG-10 | 単一命令ステップ実行 (`s`) | 停止状態 | `s` 送信 | ちょうど 1 命令だけ実行され、PC が進んだ状態で再び `S05` で停止する | `{RSPMinimalSet}` |
 | TEST-DBG-11 | プログラム正常終了 | 終端命令実行 | `c` 送信 | プログラム終了時に `W00`（正常終了）が返却される | 状態遷移図 |
 
 ### デバッガ協調
@@ -72,7 +72,6 @@ GDB RSP コマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー
 ## 3. テスト検証実績と網羅状況
 <!-- traceability: {GOTCHA-DBG-01} -->
 
-実装テストは [`test_debugger.py`](experiments/pysim/qa/tier3_plugins/debugger/test_debugger.py) と [`test_gdb_remote.py`](experiments/pysim/qa/tier3_plugins/debugger/test_gdb_remote.py) にある。
 パケット解析、仮想レジスタ、メモリの読書き、固定容量ブレークポイント、チェックサム拒否、注入Sink、実TCP接続を検査する。
 TEST-DBG-14〜15は実DebuggerManagerの記録・値照合を検査する。
 
@@ -87,7 +86,6 @@ RSPの`c`はPythonへ命令ごとに復帰しない。
 QAブロックドライバはローダメタデータ取得と既存のブロック試験だけに使用する。
 その独自handlerを、命令停止の証拠へ含めない。
 
-`test_dbg_10_23_one_rsp_step_executes_only_one_wasm_instruction`は、RSPの1命令要求を固定した反例である。
 `20 00 41 0a 6a 0b`と`local0=5`では、旧QA経路は1回の`s`で3命令を進め、関数body内オフセット6、stack=[15]まで進んでいた。
 構成済みフックの経路では`PC(41 0a)=5`、stack=[5]で停止する。
 次の`s`は`PC(6a)=7`、stack=[5,10]で停止する。
@@ -97,21 +95,21 @@ QAブロックドライバはローダメタデータ取得と既存のブロッ
 
 | 要求 | 実行関数 | 独立した期待値と観測 |
 | :--- | :--- | :--- |
-| TEST-DBG-08c | `test_dbg_08c_breakpoint_pc_overflow_is_rejected_without_state_change` | 32bit最大PCを含む固定配列を保存し、幅超過を0へ丸めずE01で拒否する |
-| TEST-DBG-10/23 | `test_dbg_10_23_one_rsp_step_executes_only_one_wasm_instruction` | `PC(41 0a)=5` / `PC(6a)=7`と全stackを照合し、同じ呼出しから結果15へ継続する |
-| TEST-DBG-09/10 | `test_dbg_09_interior_breakpoint_stops_before_side_effect_and_resumes` | ブロック内の停止命令をCode section payload相対PCで指定し、書いたlocal0=7を使用して結果17へ継続する |
-| TEST-DBG-10 | `test_dbg_10_call_and_return_stop_at_selected_function` | call/call_indirectでcallee先頭、endでcaller次命令へ止まり、結果12を得る |
-| TEST-DBG-10 | `test_dbg_10_branch_stop_retains_control_state` | ifの真偽それぞれの固定PC列と全stackを照合する |
-| TEST-DBG-10 | `test_dbg_10_loop_stop_keeps_local_and_operand_history` | 2回のloopのPC・値履歴を照合し、結果0へ継続する。実行時制御フレームは保持しない |
-| TEST-DBG-10 | `test_dbg_10_store_does_not_execute_early_or_damage_other_bytes` | 各停止後の全65536byteを照合し、後続storeの先行実行を検出する |
-| TEST-DBG-10 | `test_dbg_10_immediate_is_one_instruction` | 多byte LEB128とi64/f32/f64の固定PC・全生ワードを照合する |
-| TEST-DBG-10 | `test_dbg_10_host_boundary_does_not_replay_the_import` | host importの引数7を1回だけ記録し、後続命令を先行実行しない |
-| TEST-DBG-10/11 | `test_dbg_10_trap_stops_without_normal_exit_or_later_update` | `PC(unreachable)`でs/cが停止し、global更新とW00を発生させない |
-| TEST-DBG-12 | `test_dbg_12_disabled_composition_has_no_debug_state_or_weave` | 通常native入口は144byteのABI領域を使い、debug hookを有効化せず、構成時weaveを呼ばない |
-| TEST-DBG-12/13 | `test_dbg_12_continue_returns_to_python_only_at_actual_stop` | 2002命令のcが既存native stepの1回で完了する |
-| GOTCHA-DBG-01 | `test_dbg_13_composition_rejects_jit_before_creating_executor` | [`debugger.md`](docs/components/tier3_plugins/debugger.md)、JITとDebuggerの同時構成を生成前に拒否する |
-| TEST-DBG-12/13 | `test_dbg_13_two_compositions_keep_stop_state_and_storage_independent` | 通常構成と2つのデバッグ構成の状態・ブレークポイントを相互に変更しない |
-| TEST-DBG-20〜24 | `test_gdb_remote_socket_session` | 実TCPのsでlocal.getだけを実行し、同じ状態から結果498とW00を得る |
+| TEST-DBG-08c | `` | 32bit最大PCを含む固定配列を保存し、幅超過を0へ丸めずE01で拒否する |
+| TEST-DBG-10/23 | `` | `PC(41 0a)=5` / `PC(6a)=7`と全stackを照合し、同じ呼出しから結果15へ継続する |
+| TEST-DBG-09/10 | `` | ブロック内の停止命令をCode section payload相対PCで指定し、書いたlocal0=7を使用して結果17へ継続する |
+| TEST-DBG-10 | `` | call/call_indirectでcallee先頭、endでcaller次命令へ止まり、結果12を得る |
+| TEST-DBG-10 | `` | ifの真偽それぞれの固定PC列と全stackを照合する |
+| TEST-DBG-10 | `` | 2回のloopのPC・値履歴を照合し、結果0へ継続する。実行時制御フレームは保持しない |
+| TEST-DBG-10 | `` | 各停止後の全65536byteを照合し、後続storeの先行実行を検出する |
+| TEST-DBG-10 | `` | 多byte LEB128とi64/f32/f64の固定PC・全生ワードを照合する |
+| TEST-DBG-10 | `` | host importの引数7を1回だけ記録し、後続命令を先行実行しない |
+| TEST-DBG-10/11 | `` | `PC(unreachable)`でs/cが停止し、global更新とW00を発生させない |
+| TEST-DBG-12 | `` | 通常native入口は144byteのABI領域を使い、debug hookを有効化せず、構成時weaveを呼ばない |
+| TEST-DBG-12/13 | `` | 2002命令のcが既存native stepの1回で完了する |
+| GOTCHA-DBG-01 | `` | [`debugger.md`](docs/components/tier3_plugins/debugger.md)、JITとDebuggerの同時構成を生成前に拒否する |
+| TEST-DBG-12/13 | `` | 通常構成と2つのデバッグ構成の状態・ブレークポイントを相互に変更しない |
+| TEST-DBG-20〜24 | `` | 実TCPのsでlocal.getだけを実行し、同じ状態から結果498とW00を得る |
 
 実TCPの同じ結線はScenario 7と8でも検査する。
 

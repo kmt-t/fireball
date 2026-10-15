@@ -20,7 +20,6 @@
 ## 3. テスト検証実績と網羅状況
 
 C++構成は具象型で固定し、実行中に有効性を判定しない。
-実行入口は [`test_runtime_composer.py`](experiments/pysim/qa/tier2_runtime/test_runtime_composer.py) とする。
 全観測無効2構成と、logger／profilerの単独・同時選択6構成を独立に実行する。
 2回のcallで引数、結果、観測先、イベント列、相関IDを照合し、Debugger構成の排他も確認する。
 失敗時の通知は [`runtime_observability_test_spec.md`](docs/qa/tier2_runtime/runtime_observability_test_spec.md) に従う。

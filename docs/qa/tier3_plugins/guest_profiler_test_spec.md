@@ -23,8 +23,6 @@ Runtimeの関数入退出イベントからプロファイルログへの変換�
 
 ## 3. テストコードと形式検証
 
-単体テストは [`test_guest_profiler.py`](experiments/pysim/qa/tier3_plugins/profiler/test_guest_profiler.py) でTEST-PROF-01〜07を検査する。
-Runtime統合は [`test_guest_profiler_runtime.py`](experiments/pysim/qa/integration/test_guest_profiler_runtime.py) でTEST-PROF-08をInterpreterおよびJIT接続構成で実行する。
 
 形式検証は [`guest_profiler_model.py`](docs/components/tier3_plugins/formal/guest_profiler_model.py) を参照する。辞書ID・引数数・tick符号化と入退出順序をCTLで検査し、`guards=False`で変異を検出する。
 

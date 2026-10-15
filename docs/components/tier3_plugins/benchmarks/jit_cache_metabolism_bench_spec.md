@@ -10,20 +10,10 @@ Fireball の JIT 実行基盤における **3面循環コードキャッシュ�
 
 ## 2. コーナーケース・測定項目一覧
 
-| ベンチマーク ID | コーナーケース / 測定項目 | 前提条件 / 設定 | 計測指標 | 目標性能 / 合格基準 | 紐付け |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **BENCHMARK-METAB-01** | WarmとOldestのその場実行 | 各世代に常駐traceがある | コードアドレス、常駐バイト数、世代の変化 | lookup前後でコードアドレス、常駐バイト数、世代が変わらない | `{JIT_OldestExecuteOnly}` |
-| **BENCHMARK-METAB-02** | 作業集合 (Working Set) 別キャッシュヒット率 | N=8 (局所), N=24 (中規模), N=120 (超過) | キャッシュヒット率 (%) | 局所時 100%, 中規模時 90% 以上, 超過時も安全に循環代謝 | `{JIT_MultiBuffer_Cache}` |
-| **BENCHMARK-METAB-03** | キャッシュスラッシング時の代謝速度 (Metabolism Rate) | 3バンク総容量 (48トレース) を超える 200 トレース連続実行 | ローテーション回数, 代謝速度 (Evictions/sec) | メモリリークや断片化なく一定の代謝速度で循環すること | `jit_cache_model.py` |
-| **BENCHMARK-METAB-04** | 局所アンリンク & ダングリングチェイン解消 | トレース A $\to$ B チェイン中、B の属するバンクが Oldest 満杯でパージ | アンリンク成功率 (100%), ダングリング参照数 (0件) | Oldest パージ時に被チェイン元 A のリンクが安全にスタブへ復帰解除されること | `jit_runtime.md` `GOTCHA-JITR-05` |
-| **BENCHMARK-METAB-05** | 多関数Code-section PCのキャッシュルックアップ | 複数関数・複数モジュールの基本ブロックを混在実行 | 誤ヒット数 (0件), 正しいmodule/PCペアのヒット率 (100%) | モジュール内はCode section payload相対PCで検索し、モジュール間は`(module_id, pc)`で独立解決 | `jit_runtime.md` |
-
-## 3. 測定手順と判定基準
-
-1. **WarmとOldestのその場実行の検証**:
-   - トレースをActiveへ挿入し、`rotate()`でWarmへ移してlookupする。コードアドレスと常駐バイト数が変わらないことを確認する。
-   - 再度`rotate()`でOldestへ移してlookupする。コードアドレス、常駐バイト数、世代が変わらないことを確認する。
-2. **作業集合スケーラビリティ検証**:
-   - 容量内のホットループでは 100% ヒット、容量超過時は FIFO/世代交代により非ヒット（Cold）トレースが自然代謝されることを確認。
-3. **ダングリングチェイン防止検証**:
-   - バンク破棄時に `inbound_sources` の逆引きインデックスを用いてハッシュ衝突を含む候補を照合して退役targetへのリンクを解除し、無効化されたメモリへの参照が一切残らないことを確認。
+| ベンチマーク ID | 測定対象 | 計測単位 | 合格基準 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- |
+| **BENCHMARK-METAB-01** | WarmとOldest世代のトレース参照 | コードアドレス, 常駐バイト数, 世代 | 参照前後でコードアドレス、常駐バイト数、世代が変わらない | {JIT_OldestExecuteOnly} |
+| **BENCHMARK-METAB-02** | 作業集合別のキャッシュヒット率 | cache hit rate (%) | 局所集合で100%、中規模集合で90%以上、容量超過時も安全に世代交代する | {JIT_MultiBuffer_Cache} |
+| **BENCHMARK-METAB-03** | キャッシュ循環時の退役率 | rotation count, evictions/sec | メモリリークや断片化なく循環する | `jit_cache_model.py` |
+| **BENCHMARK-METAB-04** | 局所アンリンクとダングリングチェインの解消 | unlink success rate, dangling reference count | 解除率100%、ダングリング参照0件となる | `jit_runtime.md` GOTCHA-JITR-05 |
+| **BENCHMARK-METAB-05** | 複数関数・モジュールのCode-section PC検索 | incorrect hits, correct module/PC hit rate | 誤ヒット0件、正しいmodule/PCのヒット率100%となる | `jit_runtime.md` |

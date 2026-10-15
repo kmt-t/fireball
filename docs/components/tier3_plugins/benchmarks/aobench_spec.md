@@ -13,22 +13,9 @@
 ## 2. ベンチマーク測定項目一覧
 <!-- traceability: {Wasm32Only} -->
 
-| ベンチマーク ID | 測定項目 | 前提条件 / 設定 | 計測指標 | 目標性能 / 合格基準 | 紐付け |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **BENCHMARK-AO-01** | プライマリレイ・球・平面交差判定 | 32 x 16 グリッド (512レイ) | レイ交差数, ms/frame | 272画素の球交差を正確に検出 | [`bench_aobench.py`](experiments/pysim/benchmarks/aobench/bench_aobench.py) |
-| **BENCHMARK-AO-02** | 半球サンプリング・遮蔽積分 (AO Shading) | 4 サンプル/交差点 (1,088レイ) | 総レイトレース数 (1,600レイ) | 陰影計算の固定小数点誤差蓄積防止 | `Wasm32Only` |
-| **BENCHMARK-AO-03** | レンダリング出力の差分検証 | WASI `fd_write` 出力バッファ | バイト一致 (528 B, 0 NUL) | Tier 2 と Tier 3 の描画結果がバイト完全一致 | `{LowLatencyJIT}` |
-| **BENCHMARK-AO-04** | フレームスループット (Rays / Sec) | 1フレーム描画所要時間 | ms/frame, Rays/sec | インタープリタおよび JIT で安定完走 | `{ThreadedInterpreter}` |
-
-## 3. 測定手順
-
-Hybrid JITの実行時間は通常のプラグインで測定する。キャッシュ内部を操作するQA用マネージャは実行経路に使わない。実行結果は描画出力で照合する。実行カウンタは計時後の診断で取得する。
-
-1. **WASM バイナリ展開**:
-   - `aobench.wasm`（Q8.8 固定小数点数版）を `wasm_reader.parse()` で解析。
-2. **Tier 2 インタープリタ実行**:
-   - `Interpreter.call()` で 32x16 グリッドを描画し、WASI stdout 出力文字列および所要時間を記録。
-3. **Tier 3 Plugins ハイブリッド実行**:
-   - 2-bit カードマーキングによりホットスポットを検知し、`idle_hook` 経由で JIT トレースをコンパイルして実行。
-4. **差分照合**:
-   - 両エンジンの描画結果を完全照合（Exact byte-for-byte match）し、不変性を確認。
+| ベンチマーク ID | 測定対象 | 計測単位 | 合格基準 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- |
+| **BENCHMARK-AO-01** | プライマリレイと球・平面の交差判定 | 交差数, ms/frame | 球との交差を272画素分検出する | [`bench_aobench.py`](experiments/pysim/benchmarks/aobench/bench_aobench.py) |
+| **BENCHMARK-AO-02** | 半球サンプリングと遮蔽積分 | 総レイトレース数 | 固定小数点誤差の蓄積を防ぐ | {Wasm32Only} |
+| **BENCHMARK-AO-03** | レンダリング出力の差分検証 | byte, B | Tier 2とTier 3の出力が528 byteで完全一致し、NULを含まない | {LowLatencyJIT} |
+| **BENCHMARK-AO-04** | フレーム描画スループット | ms/frame, Rays/sec | インタープリタとJITの双方で安定して完了する | {ThreadedInterpreter} |

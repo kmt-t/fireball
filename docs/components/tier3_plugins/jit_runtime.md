@@ -46,13 +46,13 @@ Tier 3 の実装は次の責務に分ける。
 | Tier 3 Native Trace Compiler | Loader所有のWASMコードを直接走査し、1回の呼出しで1 traceを生成 | Loaderの借用WASMコード、Tier 3の共通コード |
 | Tier 2 Runtime / Interpreter | 現在のBasicBlock indexと注釈済み辺の管理、関数入口・復帰indexと`rel`の解決。接続時はTier 3拡張へ実行境界を委譲する | Tier 1、Tier 2 の実行器接続契約 |
 
-Tier 3のC++ `jit_runtime`は候補処理と常駐コード管理を結び付ける。`jit_cache_state`は3バンク、PC索引、chain逆引き、世代の役割と実行可能領域を所有する。`jit_hotspot_state`は借用カード領域、固定履歴リング、候補キューと設定を保持する。provider callbackの入口契約は`jit_provider_adapter`へ置く。QA計測は継承せず、QA構成だけに計測状態を合成する。型と宣言は`jit_runtime.hxx`へ、手続きと明示的インスタンス化は[`jit_runtime.cxx`](experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx)へ置く。固定容量のオブジェクトを上位のRuntime構成が用意した保存領域へ構築する。LoaderのWASMコードと実行メタデータは登録時に借用する。
+Tier 3の`jit_runtime`はコンパイル候補の処理と常駐コード管理を結び付ける。JIT拡張は固定容量のコードキャッシュ、索引、連鎖情報、ホットスポット履歴、および候補キューを所有する。実行領域の供給と権限変更はprovider境界を通す。QA計測は製品構成から分離する。固定容量の状態は上位Runtime構成が用意した保存領域に構築し、LoaderのWASMコードと実行メタデータを登録中に借用する。
 
 命令スコア表、Runtime API slot表と関数表はコンパイル時の不変表とする。関数表は読み取り専用領域に一つだけ保持し、共通コード領域にはその借用アドレスを一つ置く。プラグインの保存領域は、借用するJIT実行状態より長く存続する。固定幅即値の読み出しは`load_jit_immediate<Value, Index>`で値型と位置をコンパイル時に確定する。Loaderが検証済みの命令範囲をスコア評価する内部手続きは、入力破損を候補外の値へ変換せず、契約違反としてassertする。
 
 実行境界ではC++が履歴を分析し、境界と処理予算に応じてコンパイル要求を処理する。待ち列、コンパイラ、キャッシュ配置、再配置、ヘッダpatchは同じC++プラグイン内の呼出しで完了する。履歴と待ち列の内部操作、機械語テンプレート、中間コンパイル結果はプラグイン境界へ公開しない。検証用の観測はQA側で行う。
 
-共通機械語の生成、トレース再配置、物理ヘッダpatchは[`common_code.cxx`](experiments/pysim/native/tier3_plugins/jit/common_code.cxx)に置く。実行可能領域の確保・解放、x64の初期権限設定、パッチ区間と命令キャッシュ同期は[`executable_memory.cxx`](experiments/pysim/native/tier3_plugins/jit/executable_memory.cxx)に置く。他の対象向けのW^X権限切替メソッドも同ファイルに保持する。カード操作と固定容量の履歴・待ち列の内部操作は[`profiling.cxx`](experiments/pysim/native/tier3_plugins/jit/profiling.cxx)に置く。
+共通機械語の生成、トレース再配置、およびヘッダpatchはJIT共通コード経路が担う。実行可能領域の確保・解放、初期権限設定、patch区間と命令キャッシュ同期は実行領域providerが担う。対象ごとのW^X権限切替もprovider境界に置く。カード操作、履歴、および待ち列の更新はホットスポット管理の責務である。
 
 ローテーションはC++内部でカードエイジングを1ステップ実行する。明示的なflushではエイジングを実行しない。エイジング時間、操作回数、常駐状態の診断採取はQA専用の計測型とハーネスが担当する。製品構成に計測状態や取得APIを設けない。
 
@@ -92,7 +92,7 @@ JIT拡張はInterpreterへ接続する選択可能コンポーネントである
 - **chainメタデータ**: `chain_next_pc`は接続先PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpする常駐targetを保持する。直線後続だけを接続し、分岐opcodeからのchain targetは登録しない。循環chainの`chain_body_count`と`chain_words`は、最大72件の常駐traceを有界に巡回し、rootから最初の再訪までのtraceを一度ずつ数えて求める。退役時は被chain逆引き表でリンクを解除する。接続条件は [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) §7.4に示す。
 - **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである。Interpreterが解決した基本ブロックindexと`UnifiedPC`を各8バイトレコードに保持する。Runtimeは単一moduleに束縛されるため、レコードへ`module_id`を複製しない。容量は`JIT_HISTORY_CAPACITY`以下で指定する。待ち列容量は`JIT_COMPILE_QUEUE_CAPACITY`以下で指定する。Interpreter実行区間の終了時だけ履歴順に分析し、JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}`
 
-トレース実行回数と退役記録はQA専用の計測構成で採取する。計測の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は計数状態、時計、計測用の後続走査、退役通知を持たない。PySIMでは`jit_runtime<Measurement>`のテンプレート引数で構成し、製品は`void`、QAは専用の計測型を選ぶ。計測型の実装は[`jit_measurements.hxx`](experiments/pysim/qa/private/jit_measurements.hxx)へ置く。QA用の代替ブロック入力、コンパイラ無効化、自己所有メモリ、および16ビットtrace参照IDの検査もQA型へ限定する。履歴分析はネイティブ実行境界で完了する。
+トレース実行回数と退役記録はQA専用の計測構成で採取する。計測の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は計数状態、時計、計測用の後続走査、および退役通知を持たない。履歴分析はネイティブ実行境界で完了する。
 
 ### 3.2 内部ブロック図
 ```mermaid

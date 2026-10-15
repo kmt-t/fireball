@@ -266,3 +266,57 @@ bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
 ```
 
 実行ホットパスはhandler headerの固定表からの直接tail-callと、runtime headerのdispatch loopを通る`fb_native_run_dispatch`系C ABIである。LEB128はロード時デコーダの責務で実行時境界には入らない。
+
+## 6. 参照実装固有の情報
+
+この節は `experiments/pysim/` の現在のコード構成と測定条件を記録する。ここにあるPython API、内部データ構造、ホスト時計、QA経路は組み込み製品のAPIや資源条件を定義しない。製品の契約は `docs/` の要求仕様とコンポーネント設計書を参照する。
+
+### 6.1 Python/C++参照実装の差分
+
+- GDB RSPの参照実装では`sp`は`len(ctx.stack)`、`fp`は固定値`0`に対応する。
+- `tier2_runtime/abi/integer_types.py` は、同じ基底整数型のPC、関数内IP、コード範囲、ブロック番号、フレーム内word位置を`typing.NewType`で区別する。
+- Schedulerの自動ID割当は`next_id`と固定容量フリーリストを使う。未使用IDの取得と返却済みIDの再利用ではタスク表を検索せず、明示IDは位置索引で予約する。終了済みTCBスロットの探索はタスク表を走査する。QAは生成・終了の反復、待機マスク境界、解放済み共有メモリの移送を直接検査する。
+- Tier 1の`SharedBlock`はCSP送受信時の単一所有権移譲をモデル化する。IPC key/valueのscope/type byteは`ipc_router.py`の`ScopeKind`と`DataType`で作り、`FUNCTIONAL` / `UINT32`は`0x01`となる。
+- Loaderは不正WASMを`InvalidWasm`としてtrapにし、参照実装上のtrap codeに`INVALID_WASM_BINARY`を使う。Python最適化モードでassertが無効になる条件もQAで分けて検査する。
+- Runtime parserは不正WASMをtrapで拒否する。printkのPython decoderは未知IDをassertで検出し、次の境界を推測して復号を続けない。
+- Runtimeログの既定時計は`time.monotonic_ns()`で、参照環境の周波数は1 GHzである。32-bit tickの一周は4.294967296秒となり、差分計測は一周未満の区間を前提とする。
+- ホスト用platform timerも64-bit `time.monotonic_ns()`を使う。物理32-bit timerの折返しをこのホスト経路で検証するものではない。
+- printkのイベントレコード作成とBase64符号化はC++側で行う。Python側には物理Sinkと辞書復号のadapterがある。任意計測構成では同じ同期バイト出力へ`label=value`形式の64-bit値を出力できる。
+- `tier3_platform/libfireball.py` は汎用host-call引数の詰め替えと専用vIRQ/vDMA port転送をモデル化する。C++参照wrapperはraw 4 importを扱い、WASI Preview1変換、URI Resolver、HAL buffer処理は未実装である。
+
+### 6.2 JIT参照実装の内部情報
+
+- `BumpAllocator`は実行用bufferとLoader由来のtyped backing viewを管理する。JIT managerは借用期間中それらを保持し、native compilerへ渡す。
+- x64 compilerは実行コードregion内のtrace出力領域にassembly生成コード、命令エンコード済みlocal access、即値、Runtime API用定数poolを構成する。decode済み命令列、operation symbol列、最大129件の定数record staging、stack modelは固定長配列で保持する。実行可能コード領域とLoader arenaのbufferは別管理する。
+- `jit_runtime<Measurement>`は計測型でQAと製品構成を切り替える。製品側は`void`、QA側は専用計測型を選ぶ。QA用の代替block入力、compiler無効化、自己所有memory、16-bit trace参照IDの検査をQA構成に限定する。
+
+### 6.3 JIT命令プロファイルの根拠
+
+操作対応と融合候補の選定に使う静的データは、`benchmarks/profile/guest/suite.c`をClang 21.1.8の`--target=wasm32 -mcpu=mvp -O2`でWASMへ変換し、`wasm-objdump`の命令列から関数境界をまたがない2〜4命令n-gramと即値を数えたものである。28関数・6,460命令では、`local.get i32.const i32.add`が305回、`i32.const i32.add`が382回、`i32.const i32.mul`が83回、`i32.const i32.and`が60回だった。加算即値`1` / `-1`は97 / 21回、乗算即値`3` / `5`は1 / 3回、AND即値`255` / `65535`は11 / 2回だった。空スタックからの`local.get, local.get, i32.*`融合候補は85件だった。これらはコンパイル済み入力内の静的出現数であり、実行時頻度や生成stencilの機械語命令数ではない。
+
+### 6.4 資源測定の実行方法と記録
+
+ランタイムarena測定と資源一覧は次のentry pointで再取得する。結果はホストABIと指定入力に対する参照値であり、対象MCUのRAM/ROM適合を証明しない。
+
+```bash
+bash experiments/pysim/native/tier1_core/printk/build_native.sh
+bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
+bash experiments/pysim/native/tier3_plugins/jit/build_native.sh
+bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --qa
+uv run python experiments/pysim/benchmarks/memory/bench_runtime_memory.py \
+  --calls 3 --output /tmp/fireball-runtime-memory.json
+uv run python experiments/pysim/benchmarks/memory/bench_resource_inventory.py \
+  --output /tmp/fireball-resource-inventory.json
+```
+
+最新のarena、資源一覧、stencil ROM、および製品C/C++ SLOCのmachine-readable結果は、[`runtime_memory.json`](benchmarks/results/latest/runtime_memory.json)、[`resource_inventory.json`](benchmarks/results/latest/resource_inventory.json)、[`stencil_rom.json`](benchmarks/results/latest/stencil_rom.json)、[`sloc.json`](benchmarks/results/latest/sloc.json)にある。歴史的な差分測定は次のレポートとデータを参照する。
+
+| 対象 | 実行条件と結果 |
+| :--- | :--- |
+| BasicBlock index metadata | [`block_index_dispatch_20261013/REPORT.md`](benchmarks/results/block_index_dispatch_20261013/REPORT.md) |
+| 注釈poolと座標型 | [`annotation_types_20261013/REPORT.md`](benchmarks/results/annotation_types_20261013/REPORT.md) |
+| JIT定数poolと`br_table`注釈 | [`jit_const_pool_20261013/REPORT.md`](benchmarks/results/jit_const_pool_20261013/REPORT.md)、[`br_table_measurement.json`](benchmarks/results/jit_const_pool_20261013/br_table_measurement.json) |
+| Interpreter metadataとframeの削除 | [`storage_cleanup_20261013/REPORT.md`](benchmarks/results/storage_cleanup_20261013/REPORT.md)、[`aobench_after.json`](benchmarks/results/storage_cleanup_20261013/aobench_after.json)、[`storage_after.json`](benchmarks/results/storage_cleanup_20261013/storage_after.json) |
+| 過去の基準計測metadata | [`20261014/pre_req017_latest/metadata.json`](benchmarks/results/20261014/pre_req017_latest/metadata.json) |
+
+入力WASMのROM byte length、ホストELF section、Python管理領域、32-bit参照レイアウトとx86_64 ABIの組合せ、JIT runtime構造体、およびC++ compile stackは各測定結果のscopeに従って扱う。WASM logical linear memoryをMCU物理RAMと同一視しない。Cortex-M33への容量適合を判定するときは、対象ABI、物理配置、同時生存数、linker map、stack、driver領域を含めて別途計上する。

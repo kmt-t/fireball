@@ -14,7 +14,7 @@ WASM ローダは、ROM 上の WASM32 バイナリを解析し、実行環境向
 **インポートテーブルとエクスポートシンボルの検索**では、FNV-1a 32-bit のシンボル名ハッシュをキーに `RadixBinaryTreeView` で候補を絞る。候補ごとに ROM 上の元文字列を照合する。索引探索は $O(1) + O(\log n)$ である。衝突照合を含む最悪計算量は $O(1) + O(\log n) + O(L)$ である。
 本設計の動作モデルと軽量検証スコープ（V1〜V6）は、コンセプトコードで検証されている。対象には、ハッシュと RadixBinaryTreeView によるシンボル・インポート検索が含まれる。ファイル位置の逆引きと、`save` / `restore` によるバンプアロケータのトランザクション保護も含む。検証コードは [`loader_concept.py`](docs/components/tier2_runtime/concepts/loader_concept.py) である。
 
-不正なWASMバイナリの検証失敗は`InvalidWasm`としてtrapを送出する。pysimのtrap codeは`INVALID_WASM_BINARY`とする。Pythonのassertを無効化してもバイナリ検証は実行する。ホストAPI、内部状態、所有領域の契約違反は早期assertで停止する。内部の`AssertionError`を検証trapへ変換しない。どちらの停止理由でも、途中確保したアリーナはロード開始時のwatermarkへ戻す。 <!-- traceability: {GOTCHA-LOAD-02} -->
+不正なWASMバイナリの検証失敗は`InvalidWasm`としてtrapを送出する。バイナリ検証は実行構成にかかわらず行い、ホストAPI、内部状態、所有領域の契約違反を検証trapへ変換しない。どちらの失敗でも、途中確保したアリーナはロード開始時のwatermarkへ戻す。 <!-- traceability: {GOTCHA-LOAD-02} -->
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->

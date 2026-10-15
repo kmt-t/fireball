@@ -215,9 +215,6 @@ JIT共有ライブラリはbuild時に生成したassembly byte arrayとC++ runt
 Clang integrated assemblerはx64操作、trace entry/exit、common dispatcherのraw binary生成にbuild時だけ使う。
 実行時trace compilerはWASMをdecodeしてoperation templateを選び、埋め込みraw binaryの即値slotを埋め、local instructionをエンコードして固定長traceへ組み立てる。
 
-操作対応と融合候補は、ClangでC23のプロファイル用WASMゲスト [`suite.c`](experiments/pysim/benchmarks/profile/guest/suite.c) を `--target=wasm32 -mcpu=mvp -O2` でコンパイルし、`wasm-objdump` が復号した命令列のn-gramから選ぶ。再現用の [`analyze_wasm_ngrams.py`](experiments/pysim/benchmarks/profile/guest/analyze_wasm_ngrams.py) は同じCソースをコンパイルし、関数境界をまたがず2〜4命令のn-gramと即値分布を集計する。Clang 21.1.8で得た28関数・6460命令では、`local.get i32.const i32.add` が305回、`i32.const i32.add` が382回、`i32.const i32.mul` が83回、`i32.const i32.and` が60回現れた。内訳では加算即値`1` / `-1` が97 / 21回、乗算即値`3` / `5` が1 / 3回、AND即値`255` / `65535` が11 / 2回であった。これはコンパイル済みモジュール内の静的出現数であり、実行時頻度ではない。
-
-Clang-WASM n-gramの出現数は、操作LIRと融合規則を選ぶ根拠として使う。
 即値ごとに異なるx64ステンシルvariantは作らない。
 即値は単一ステンシル内のpatch slotへtrace compile時に書き込むため、実行時に`rel`から読まない。
 operation間に接続用jump/callは置かない。成功link slotを次のstencil bytesで置き換え、連続配置した本体へfall-throughする。
@@ -235,13 +232,13 @@ i64/f64は2 word幅として処理する。
 `local.get, local.get, i32.*`融合は2つのlocal offsetをそれぞれ命令エンコーダで焼き込む。
 C++ local get/set/tee Runtime API経路は設けない。
 
- 命令列を短くする融合候補として空スタックからの`local.get, local.get, i32.*`を実装する。第1localを共有スタックへロードし、第2localを融合アセンブリstencilのmemory operandにする。C23プロファイルguestからClang 21.1.8で生成したWASMには、対応する二項演算のn-gramが静的に85件含まれた。この数は融合候補を選ぶ根拠であり、build時に出力する個々のstencilの機械語命令数を示さない。機械語サイズや命令数は生成stencilごとに測定する。
+命令列を短くする融合候補として空スタックからの`local.get, local.get, i32.*`を実装する。第1localを共有スタックへロードし、第2localを融合アセンブリstencilのmemory operandにする。機械語サイズや命令数は生成stencilごとに測定する。
 
 `i32.const, local.set`融合（{GOTCHA-JITC-08}）は即値を命令へ埋め込み、localへ書く。融合で定数pushを除去するため、この操作は`sp`も`rel`も変更しない。`i32.const, local.tee`融合は同じ即値をlocalと共有スタックへ書く。 <!-- definition: {GOTCHA-JITC-08} -->
 
 1トレースは最大64 WASM命令、bodyとtrace末尾定数領域を合わせた出力領域1,536バイト、共有stack深さ128 wordを上限とする。WASM数値即値とlocal offsetはtrace codeに直接埋め込む。定数領域は先頭のheader相対参照4 byte、Runtime API argument record、終端recordのInterpreter annotation offsetを保持する。各recordのslot、immediate count、immediate byte spanはそれぞれu8であり、API最大3 immediateのpayloadは値の型幅で格納する。64命令と最大129件のrecord stagingで必要となる領域は出力領域内に収まる。ヘッダは定数領域の先頭offsetだけを保持し、slot数fieldを持たない。C++フロントエンドは復号済み命令列、operation symbol列、Runtime API用定数recordを固定長配列に一時保持する。最大blobはheader 32バイトとbody/pool領域1,536バイトの合計1,568バイトである。定数record stagingは最大129件である。
 
-PySIMの `BumpAllocator` は実行用bufferとLoader由来のtyped backing viewを管理し、JIT managerが借用期間中それらを保持してネイティブ側へ渡す。x64 compilerは実行コードregion内のtrace出力領域へassembly生成コード、命令エンコード済みlocal access、即値、Runtime API用定数poolを構成する。decode済み命令列、operation symbol列、最大129件の定数record staging、stack modelは固定長配列で保持する。実行可能コード領域とアリーナ上のbufferは別管理とする。
+トレースのコンパイルでは、生成コード、ローカルアクセス命令、即値、およびRuntime API用定数を有界な一時領域へ構成する。WASM入力と実行メタデータの借用期間を守り、実行コード領域とロード用領域を別々に計上する。
 
 trace単位コード生成はx64実装に限って定義する。ARMv8-M向けLIR、ABI、trace配置、relocation形式はTBDである。
 

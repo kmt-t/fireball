@@ -59,6 +59,10 @@ struct jit_common_layout {
   code_offset_t chain_dispatcher_offset, chain_dispatcher_size;
   code_offset_t header_bytes;
 };
+enum class jit_trace_exit_kind : std::uint8_t {
+  normal = 0,
+  call_cps = 1,
+};
 // The only per-trace runtime data lives beside its code. Runtime indexes keep
 // a PC and a region-relative code offset; they never own a second descriptor.
 struct jit_trace_header {
@@ -71,6 +75,7 @@ struct jit_trace_header {
   jit_stack_words_t chain_words;
   jit_body_count_t chain_body_count;
   frame_depth_t frame_depth;
+  jit_trace_exit_kind exit_kind;
   block_index_t block_index;
   code_offset_t const_rel_offset;
 };
@@ -82,6 +87,7 @@ static_assert(offsetof(jit_trace_header, result_words) == 21);
 static_assert(offsetof(jit_trace_header, chain_words) == 22);
 static_assert(offsetof(jit_trace_header, chain_body_count) == 23);
 static_assert(offsetof(jit_trace_header, frame_depth) == 24);
+static_assert(offsetof(jit_trace_header, exit_kind) == 25);
 static_assert(offsetof(jit_trace_header, block_index) == 26);
 static_assert(offsetof(jit_trace_header, const_rel_offset) == 28);
 static_assert(sizeof(jit_trace_header) == 32);

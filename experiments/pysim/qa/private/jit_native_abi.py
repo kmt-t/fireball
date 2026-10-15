@@ -100,6 +100,7 @@ class NativeTraceHeader(ctypes.Structure):
         ("chain_words", ctypes.c_uint8),
         ("chain_body_count", ctypes.c_uint8),
         ("frame_depth", ctypes.c_uint8),
+        ("exit_kind", ctypes.c_uint8),
         ("block_index", ctypes.c_uint16),
         ("const_rel_offset", ctypes.c_uint32),
     )
@@ -148,6 +149,7 @@ assert NativeTraceHeader.result_words.offset == 21
 assert NativeTraceHeader.chain_words.offset == 22
 assert NativeTraceHeader.chain_body_count.offset == 23
 assert NativeTraceHeader.frame_depth.offset == 24
+assert NativeTraceHeader.exit_kind.offset == 25
 assert NativeTraceHeader.frame_depth.size == 1
 assert NativeTraceHeader.block_index.offset == 26
 assert NativeTraceHeader.const_rel_offset.offset == 28

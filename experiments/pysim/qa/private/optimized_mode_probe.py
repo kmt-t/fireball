@@ -34,7 +34,16 @@ def main() -> None:
 
     module = parse_standalone(
         wasmtime.wat2wasm("""(module
+      (type $unary (func (param i32) (result i32)))
+      (table 1 funcref)
+      (elem (i32.const 0) $increment)
+      (func $increment (param $value i32) (result i32)
+        local.get $value i32.const 1 i32.add)
       (func (export "id") (param i32) (result i32) local.get 0)
+      (func (export "direct") (param $value i32) (result i32)
+        local.get $value call $increment)
+      (func (export "indirect") (param $value i32) (param $index i32) (result i32)
+        local.get $value local.get $index call_indirect (type $unary))
       (func (export "sum") (param $n i32) (result i64)
         (local $i i32) (local $s i64)
         (block $exit (loop $again
@@ -77,6 +86,8 @@ def main() -> None:
     native_results = []
     for name, arguments in (
         ("id", (37,)),
+        ("direct", (37,)),
+        ("indirect", (37, 0)),
         ("sum", (2000,)),
         ("sum32", (2000,)),
         ("f32", ()),
@@ -109,6 +120,7 @@ def main() -> None:
                 "local_types": tuple(module.local_types(0)),
                 "reference_results": reference_results,
                 "native_results": native_results,
+                "call_results": native_results[1:3],
                 "jit_used": engine.stat_jit_invocations > 0,
                 "pte_registered": vmmio.ptes.view().find(0xC0000) is not None,
                 "pc_frequency": debugger.pc_sample_counts.find(17),

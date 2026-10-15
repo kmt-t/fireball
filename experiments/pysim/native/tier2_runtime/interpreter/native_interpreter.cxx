@@ -777,8 +777,12 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
   }
   if (!completed) {
     assert(context.trap_code != 0 || cps_exit_pending(context));
-    context.rel = previous_rel;
-    if (cps_exit_pending(context) && cps_exit_kind(context) == kRuntimeApiBoundary) {
+    const auto runtime_api_boundary = cps_exit_pending(context) &&
+                                      cps_exit_kind(context) == kRuntimeApiBoundary;
+    if (!runtime_api_boundary) {
+      context.rel = previous_rel;
+    }
+    if (runtime_api_boundary) {
       if (context.ip == trace_exit->body_end_ip) {
         context.rel =
             interpreter_rel_after_jit_trace(frame, block_index, trace_exit->interpreter_rel_bytes);
@@ -795,7 +799,7 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
   assert(context.ip == completed_trace_exit->body_end_ip);
   const auto completed_block_index = context.current_block_index;
   assert(completed_block_index < module->block_count);
-  const auto &completed_block = module->blocks[completed_block_index];
+  [[maybe_unused]] const auto &completed_block = module->blocks[completed_block_index];
   assert(completed_block.function_index == frame.function_view->function_index);
   assert(completed_trace_exit->next_pc == completed_block.next_pc);
   assert(completed_trace_exit->block_index == completed_block.next_block_index);
@@ -804,13 +808,14 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
   assert(completed_trace_exit->result_words <=
          static_cast<std::uint32_t>(context.stack_limit - context.stack_pointer));
   context.stack_pointer += completed_trace_exit->result_words;
-  const auto branch_terminator_pending =
+  const auto interpreter_terminator_pending =
       context.ip < context.code_size &&
       (context.code[context.ip] == 0x04 || context.code[context.ip] == 0x0C ||
-       context.code[context.ip] == 0x0D);
+       context.code[context.ip] == 0x0D || context.code[context.ip] == 0x10 ||
+       context.code[context.ip] == 0x11);
   // The Interpreter CPS handler still needs the source block for an unexecuted
-  // branch terminator after the trace has returned.
-  if (!branch_terminator_pending) {
+  // control or call terminator after the trace has returned.
+  if (!interpreter_terminator_pending) {
     context.current_block_index = completed_trace_exit->block_index;
   }
   dispatch_rel = interpreter_rel_after_jit_trace(frame, completed_block_index,

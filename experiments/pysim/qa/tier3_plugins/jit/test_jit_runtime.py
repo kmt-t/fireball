@@ -73,12 +73,13 @@ from qa.shared.runtime_support import (
     resident_module_traces,
 )
 from qa.shared.x64_jit import TraceCompiler
+from scheduler import Scheduler
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
 from tier2_runtime.abi.interpreter_abi import (
     EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD,
 )
 from tier2_runtime.interpreter.control_flow import OpcodeAttribute, opcode_has_attribute
-from tier2_runtime.interpreter.errors import NATIVE_DISPATCH_RUNTIME_API_BOUNDARY
+from tier2_runtime.interpreter.errors import NATIVE_DISPATCH_RUNTIME_API_BOUNDARY, TrapCode
 from tier2_runtime.interpreter.interpreter import (
     RETURN_SENTINEL_IP,
     RETURN_SENTINEL_PC,
@@ -87,6 +88,7 @@ from tier2_runtime.interpreter.interpreter import (
     NativeInterpreter,
 )
 from tier2_runtime.runtime.engine import RuntimeEngine as ProductRuntimeEngine
+from tier2_runtime.vmmio.controller import VMMIOController
 from tier2_runtime.wasm.module import I32, LocalLayout, Module, WasmOperand
 from tier2_runtime.wasm.opcodes import (
     BR_IF,
@@ -2305,7 +2307,7 @@ def test_jit_structural_delimiters_are_loader_metadata_and_emit_no_operations():
     module = parse_standalone(wat_to_wasm(wat))
     function_index = module.export_func_index("delimiters")
     function = module.functions[function_index - len(module.imports)]
-    code = module.code_for(function_index)
+    code = bytes(module.code_for(function_index))
     delimiter_opcodes = {0x02, 0x03, 0x05, 0x0B}
     from tier2_runtime.interpreter.control_flow import iter_scan_instrs
 
@@ -2414,20 +2416,41 @@ def test_jit_structural_delimiters_are_loader_metadata_and_emit_no_operations():
     )
 
 
-def test_jit_compile_skips_blocks_with_calls_until_req031():
+@pytest.mark.parametrize(
+    ("code_bytes", "call_ip", "call_opcode"),
+    (
+        (b"\x41\x07\x10\x00", 2, 0x10),
+        (b"\x41\x00\x11\x00\x00", 2, 0x11),
+    ),
+)
+def test_jit_compile_call_blocks_and_exit_before_call(code_bytes, call_ip, call_opcode):
+    """Call-ending traces keep the prefix and hand the opcode to Interpreter CPS."""
     empty_view = native_abi.NativeByteView(0, 0)
-    code_storage = ctypes.create_string_buffer(b"\x41\x07\x10\x00")
+    code_storage = ctypes.create_string_buffer(code_bytes)
     block = native_abi.WasmBlock(
         head_pc=0x200,
-        code=native_abi.NativeByteView(ctypes.addressof(code_storage), 4),
+        code=native_abi.NativeByteView(ctypes.addressof(code_storage), len(code_bytes)),
         offset=0,
-        byte_length=4,
+        byte_length=len(code_bytes),
         next_pc=0x208,
         loops_to=None,
         locals=native_abi.NativeLocalLayout(empty_view, empty_view, 0, 0),
     )
 
-    assert TraceCompiler.compile_wasm(block) is None
+    native_abi.CONST_POOL_DIAGNOSTICS_RESET()
+    trace = TraceCompiler.compile_wasm(block)
+    assert trace is not None and trace.code_blob is not None
+    header = native_abi.NativeTraceHeader.from_buffer_copy(trace.code_blob)
+    exit_offset = header.const_rel_offset - ctypes.sizeof(native_abi.NativeTraceExit)
+    trace_exit = native_abi.NativeTraceExit.from_buffer_copy(trace.code_blob, exit_offset)
+    assert trace_exit.body_end_ip == call_ip
+    assert trace_exit.interpreter_rel_bytes == 5
+    assert trace.result_words == 1
+
+    if native_abi.BLOCK_COUNTERS_ENABLED():
+        diagnostics = native_abi.NativeConstPoolDiagnostics()
+        native_abi.CONST_POOL_DIAGNOSTICS_READ(ctypes.byref(diagnostics))
+        assert diagnostics.runtime_api_opcodes[call_opcode] == 0
 
 
 @pytest.mark.parametrize("collect_stats", (False, True))
@@ -2849,29 +2872,358 @@ def test_jitr_runtime_engine_preserves_typed_top_level_results():
     assert engine.stat_jit_invocations > 0
 
 
-def test_jitr_host_import_stays_on_interpreter_runtime_boundary():
-    """TEST-JITR-47: host imports are interpreted boundaries with shared results."""
+def _find_call_exit_block(module: Module, function_index: int, opcode: int, encoding: bytes):
+    """Find the one fixture block whose call opcode is in-span or at its boundary."""
+    code = bytes(module.code_for(function_index))
+    function_pc = module.function_pc_offset(function_index)
+    matches = []
+    for block in module.blocks:
+        if block.func_index != function_index:
+            continue
+        start = block.head_pc - function_pc
+        end = start + block.byte_span
+        call_ip = code.find(encoding, start, end)
+        if call_ip >= 0 and code[call_ip] == opcode:
+            matches.append((block, call_ip))
+        elif code[end : end + len(encoding)] == encoding:
+            matches.append((block, end))
+    assert len(matches) == 1, f"fixture must identify one call block, got {len(matches)}"
+    return matches[0]
+
+
+def _install_call_exit_traces(engine: RuntimeEngine, module: Module, call_block):
+    """Install a call trace and successor so accidental native chaining is observable."""
+    manager = engine.jit_runtime
+    assert manager is not None
+    source_trace = compile_runtime_block(manager, call_block)
+    assert source_trace is not None and source_trace.code_blob is not None
+    header = native_abi.NativeTraceHeader.from_buffer_copy(source_trace.code_blob)
+    assert header.exit_kind == 1
+    exit_offset = header.const_rel_offset - ctypes.sizeof(native_abi.NativeTraceExit)
+    trace_exit = native_abi.NativeTraceExit.from_buffer_copy(source_trace.code_blob, exit_offset)
+    source_trace_inserted = manager.cache.insert(source_trace)
+    assert source_trace_inserted
+    successor = next(
+        (block for block in module.blocks if block.head_pc == call_block.next_pc), None
+    )
+    if successor is not None:
+        successor_trace = compile_runtime_block(manager, successor)
+        if successor_trace is not None:
+            successor_trace_inserted = manager.cache.insert(successor_trace)
+            assert successor_trace_inserted
+    assert source_trace.chain_next is None
+    return source_trace, trace_exit
+
+
+def _run_with_runtime_engine(
+    engine: RuntimeEngine, interpreter: NativeInterpreter, function_index: int, args=()
+):
+    engine._activate_interpreter(interpreter)
+    call_state = interpreter.start(function_index, args)
+    while not call_state.finished:
+        boundary = engine.run(interpreter, call_state, idle_budget=0)
+        assert not boundary.yield_requested
+        call_state = boundary.call_state
+    return call_state
+
+
+def _assert_completed_call_state_matches(reference, actual) -> None:
+    """Compare observable stack and instruction state after both calls return."""
+    assert actual._ip == reference._ip
+    assert actual.context.ip == reference.context.ip
+    assert len(actual.context.call_frame_stack) == len(reference.context.call_frame_stack) == 0
+    assert len(actual.context.local_stack) == len(reference.context.local_stack) == 0
+    assert actual.context.stack_pointer - actual.context.stack_base == (
+        reference.context.stack_pointer - reference.context.stack_base
+    )
+
+
+def test_jitr_host_import_call_trace_exits_before_cps_and_resumes_once():
+    """TEST-JITR-47: a direct-call trace exits before CPS and preserves caller state."""
     module = parse_standalone(
         wat_to_wasm(
             """(module
               (import "env" "increment" (func $increment (param i32) (result i32)))
-              (func (result i32) i32.const 41 call $increment i32.const 1 i32.add))"""
+              (memory 1)
+              (func (result i32) (local $value i32)
+                i32.const 41 call $increment
+                local.set $value
+                i32.const 0 local.get $value i32.store
+                local.get $value
+                i32.const 1 i32.add))"""
         )
     )
+    host_functions = StaticVector.of((lambda value: int(value) + 1,), capacity=1)
+    reference_memory = bytearray(65536)
+    reference = Interpreter(module, memory=reference_memory, host_functions=host_functions)
+    reference_state = reference.start(1, [])
+    while not reference_state.finished:
+        reference_state = reference.step_native(reference_state)
+
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
         card_shift=0,
         min_trace_bytes=1,
         candidate_threshold=0,
+        hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
-    call_block = engine.get_block(module.function_pc_offset(1))
-    assert call_block is not None
-    assert compile_runtime_block(engine.jit_runtime, call_block) is None
+    call_block, call_ip = _find_call_exit_block(module, 1, 0x10, b"\x10\x00")
+    source_trace, trace_exit = _install_call_exit_traces(engine, module, call_block)
+    assert trace_exit.body_end_ip == call_ip
+    assert source_trace.result_words == 1
 
-    host_functions = StaticVector.of((lambda value: int(value) + 1,), capacity=1)
-    interp = Interpreter(module, host_functions=host_functions)
-    assert engine.call(interp, 1, []).unwrap() == [43]
+    jit_memory = bytearray(65536)
+    interpreter = Interpreter(module, memory=jit_memory, host_functions=host_functions)
+    actual_state = _run_with_runtime_engine(engine, interpreter, 1)
+    assert actual_state.results == reference_state.results == [43]
+    assert jit_memory == reference_memory
+    assert int.from_bytes(jit_memory[:4], "little") == 42
+    _assert_completed_call_state_matches(reference_state, actual_state)
+    assert engine.stat_jit_invocations > 0
+
+
+def test_jitr_defined_call_after_import_keeps_call_annotation_and_stack_prefix():
+    """TEST-JITR-92: a native call exit keeps its unified function index and prefix values."""
+    module = parse_standalone(
+        wat_to_wasm(
+            """(module
+              (import "qa" "unused" (func $unused (param i32) (result i32)))
+              (memory 1)
+              (func $increment (param $value i32) (result i32)
+                local.get $value i32.const 1 i32.add)
+              (func (export "run") (result i32)
+                i32.const 0
+                i32.const 0xE0001000 i32.load
+                i32.const 1 i32.add
+                call $increment
+                i32.store
+                i32.const 0 i32.load))"""
+        )
+    )
+    caller = module.export_func_index("run")
+    assert caller == len(module.imports) + 1
+    host_functions = StaticVector.of((lambda value: int(value),), capacity=1)
+    reference_memory = bytearray(65536)
+    reference_physical_memory = bytearray(65536)
+    reference_physical_memory[4096:4100] = (41).to_bytes(4, "little")
+    reference_scheduler = Scheduler()
+    reference_task_id = reference_scheduler.spawn("owner").unwrap()
+    reference_scheduler.current_task = reference_scheduler.get_task(reference_task_id)
+    reference_vmmio = VMMIOController(
+        guest_ram_size=len(reference_memory), scheduler=reference_scheduler
+    )
+    reference_vmmio.map_shm_page(0xE0001, phys_page=1, owner_id=reference_task_id)
+    reference = Interpreter(
+        module,
+        memory=reference_memory,
+        host_functions=host_functions,
+        vmmio=reference_vmmio,
+        phys_mem=reference_physical_memory,
+    )
+    expected = reference.call(caller, []).unwrap()
+
+    engine = make_runtime_engine(
+        jit_compiler=TraceCompiler(),
+        card_shift=0,
+        min_trace_bytes=1,
+        candidate_threshold=0,
+        hotspot_profiling_enabled=False,
+    )
+    engine.register_module_blocks(module)
+    call_block, call_ip = _find_call_exit_block(module, caller, 0x10, b"\x10\x01")
+    source_trace, trace_exit = _install_call_exit_traces(engine, module, call_block)
+    assert trace_exit.body_end_ip == call_ip
+    assert source_trace.chain_next is None
+
+    jit_memory = bytearray(65536)
+    jit_physical_memory = bytearray(65536)
+    jit_physical_memory[4096:4100] = (41).to_bytes(4, "little")
+    jit_scheduler = Scheduler()
+    jit_task_id = jit_scheduler.spawn("owner").unwrap()
+    jit_scheduler.current_task = jit_scheduler.get_task(jit_task_id)
+    jit_vmmio = VMMIOController(guest_ram_size=len(jit_memory), scheduler=jit_scheduler)
+    jit_vmmio.map_shm_page(0xE0001, phys_page=1, owner_id=jit_task_id)
+    interpreter = Interpreter(
+        module,
+        memory=jit_memory,
+        host_functions=host_functions,
+        vmmio=jit_vmmio,
+        phys_mem=jit_physical_memory,
+    )
+    actual = engine.call(interpreter, caller, [], idle_budget=0).unwrap()
+    assert actual == expected == [43]
+    assert jit_memory == reference_memory
+    assert int.from_bytes(jit_memory[:4], "little") == 43
+    assert engine.stat_jit_invocations > 0
+
+
+@pytest.mark.parametrize(
+    ("actual_type", "target_body", "table_index", "expected_result", "expected_trap"),
+    (
+        ("(param i32) (result i32)", "i32.const 42", 0, [43], None),
+        ("(param i64) (result i64)", "i64.const 42", 0, None, TrapCode.INDIRECT_CALL_TYPE_MISMATCH),
+        ("(param i32) (result i32)", "i32.const 42", 1, None, TrapCode.TABLE_INDEX_OUT_OF_BOUNDS),
+    ),
+)
+def test_jitr_call_indirect_trace_uses_interpreter_table_checks(
+    actual_type, target_body, table_index, expected_result, expected_trap
+):
+    """TEST-JITR-74: call_indirect lookup, type checks and traps stay in Interpreter CPS."""
+    module = parse_standalone(
+        wat_to_wasm(
+            f"""(module
+              (type $expected (func (param i32) (result i32)))
+              (type $actual (func {actual_type}))
+              (table 1 funcref)
+              (memory 1)
+              (global $entered (mut i32) (i32.const 0))
+              (func $target (type $actual)
+                (global.set $entered (i32.const 1))
+                    i32.const 0 i32.const 99 i32.store
+                {target_body})
+              (elem (i32.const 0) $target)
+              (func (export "dispatch") (param $index i32) (result i32)
+                i32.const 41 local.get $index
+                call_indirect (type $expected)
+                i32.const 1 i32.add))"""
+        )
+    )
+    caller = module.export_func_index("dispatch")
+    reference_memory = bytearray(65536)
+    reference = Interpreter(module, memory=reference_memory)
+    reference_state = reference.start(caller, [table_index])
+    while not reference_state.finished:
+        reference_state = reference.step_native(reference_state)
+
+    engine = make_runtime_engine(
+        jit_compiler=TraceCompiler(),
+        card_shift=0,
+        min_trace_bytes=1,
+        candidate_threshold=0,
+        hotspot_profiling_enabled=False,
+    )
+    engine.register_module_blocks(module)
+    call_block, call_ip = _find_call_exit_block(module, caller, 0x11, b"\x11\x00\x00")
+    source_trace, trace_exit = _install_call_exit_traces(engine, module, call_block)
+    assert trace_exit.body_end_ip == call_ip
+    assert source_trace.result_words == 2
+
+    jit_memory = bytearray(65536)
+    interpreter = Interpreter(module, memory=jit_memory)
+    actual_state = _run_with_runtime_engine(engine, interpreter, caller, [table_index])
+    if expected_trap is None:
+        assert actual_state.trap is None and reference_state.trap is None
+        assert actual_state.results == reference_state.results == expected_result
+    else:
+        assert actual_state.trap is not None and reference_state.trap is not None
+        assert actual_state.trap.code == reference_state.trap.code == expected_trap
+        assert actual_state.results is None and reference_state.results is None
+    assert jit_memory == reference_memory
+    if expected_trap is None:
+        assert jit_memory[:4] == (99).to_bytes(4, "little")
+    else:
+        assert jit_memory[:4] == b"\x00" * 4
+    assert interpreter.globals[0] == reference.globals[0] == (1 if expected_trap is None else 0)
+    _assert_completed_call_state_matches(reference_state, actual_state)
+    assert engine.stat_jit_invocations > 0
+
+
+def test_jitr_recursive_direct_call_reuses_cps_frames_after_jit_exit():
+    """TEST-JITR-90: recursive calls return each callee frame to the caller continuation."""
+    module = parse_standalone(
+        wat_to_wasm(
+            """(module
+              (func $sumdown (param $n i32) (result i32)
+                local.get $n i32.const 1 i32.le_s
+                if (result i32)
+                  i32.const 1
+                else
+                  local.get $n
+                  local.get $n i32.const 1 i32.sub
+                  call $sumdown
+                  i32.add
+                end)
+              (export "sumdown" (func $sumdown)))"""
+        )
+    )
+    function_index = module.export_func_index("sumdown")
+    reference = Interpreter(module)
+    reference_state = reference.start(function_index, [6])
+    while not reference_state.finished:
+        reference_state = reference.step_native(reference_state)
+
+    engine = make_runtime_engine(
+        jit_compiler=TraceCompiler(),
+        card_shift=0,
+        min_trace_bytes=1,
+        candidate_threshold=0,
+        hotspot_profiling_enabled=False,
+    )
+    engine.register_module_blocks(module)
+    code = bytes(module.code_for(function_index))
+    function_pc = module.function_pc_offset(function_index)
+    call_blocks = []
+    for block in module.blocks:
+        if block.func_index != function_index:
+            continue
+        start = block.head_pc - function_pc
+        end = start + block.byte_span
+        if code.find(b"\x10\x00", start, end) >= 0:
+            call_blocks.append(block)
+    assert len(call_blocks) == 1
+    call_block = call_blocks[0]
+    source_trace, _ = _install_call_exit_traces(engine, module, call_block)
+    interpreter = Interpreter(module)
+    actual_state = _run_with_runtime_engine(engine, interpreter, function_index, [6])
+    assert actual_state.results == reference_state.results == [21]
+    assert source_trace.chain_next is None
+    _assert_completed_call_state_matches(reference_state, actual_state)
+    assert engine.stat_jit_invocations >= 5
+
+
+def test_jitr_direct_call_callee_trap_stops_caller_continuation():
+    """TEST-JITR-91: a callee trap crosses call CPS without running caller suffixes."""
+    module = parse_standalone(
+        wat_to_wasm(
+            """(module
+              (memory 1)
+              (func $fail (param i32) (result i32) unreachable)
+              (func (export "run") (result i32)
+                i32.const 41 call $fail drop
+                i32.const 0 i32.const 99 i32.store
+                i32.const 7))"""
+        )
+    )
+    function_index = module.export_func_index("run")
+    reference_memory = bytearray(65536)
+    reference = Interpreter(module, memory=reference_memory)
+    reference_state = reference.start(function_index, [])
+    while not reference_state.finished:
+        reference_state = reference.step_native(reference_state)
+
+    engine = make_runtime_engine(
+        jit_compiler=TraceCompiler(),
+        card_shift=0,
+        min_trace_bytes=1,
+        candidate_threshold=0,
+        hotspot_profiling_enabled=False,
+    )
+    engine.register_module_blocks(module)
+    call_block, call_ip = _find_call_exit_block(module, function_index, 0x10, b"\x10\x00")
+    source_trace, trace_exit = _install_call_exit_traces(engine, module, call_block)
+    assert trace_exit.body_end_ip == call_ip
+
+    jit_memory = bytearray(65536)
+    interpreter = Interpreter(module, memory=jit_memory)
+    actual_state = _run_with_runtime_engine(engine, interpreter, function_index)
+    assert actual_state.trap is not None and reference_state.trap is not None
+    assert actual_state.trap.code == reference_state.trap.code == TrapCode.UNREACHABLE
+    assert actual_state.results is None and reference_state.results is None
+    assert jit_memory == reference_memory == bytearray(65536)
+    assert source_trace.chain_next is None
+    _assert_completed_call_state_matches(reference_state, actual_state)
+    assert engine.stat_jit_invocations > 0
 
 
 def test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary():
@@ -3606,7 +3958,23 @@ if __name__ == "__main__":
     test_jitr_mixed_typed_stack_uses_runtime_apis_inside_jit_trace()
     test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized()
     test_jitr_runtime_engine_preserves_typed_top_level_results()
-    test_jitr_host_import_stays_on_interpreter_runtime_boundary()
+    test_jitr_host_import_call_trace_exits_before_cps_and_resumes_once()
+    test_jitr_defined_call_after_import_keeps_call_annotation_and_stack_prefix()
+    for code_bytes, call_ip, call_opcode in (
+        (b"\x41\x07\x10\x00", 2, 0x10),
+        (b"\x41\x00\x11\x00\x00", 2, 0x11),
+    ):
+        test_jit_compile_call_blocks_and_exit_before_call(code_bytes, call_ip, call_opcode)
+    for actual_type, target_body, table_index, expected_result, expected_trap in (
+        ("(param i32) (result i32)", "i32.const 42", 0, [43], None),
+        ("(param i64) (result i64)", "i64.const 42", 0, None, TrapCode.INDIRECT_CALL_TYPE_MISMATCH),
+        ("(param i32) (result i32)", "i32.const 42", 1, None, TrapCode.TABLE_INDEX_OUT_OF_BOUNDS),
+    ):
+        test_jitr_call_indirect_trace_uses_interpreter_table_checks(
+            actual_type, target_body, table_index, expected_result, expected_trap
+        )
+    test_jitr_recursive_direct_call_reuses_cps_frames_after_jit_exit()
+    test_jitr_direct_call_callee_trap_stops_caller_continuation()
     test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary()
     test_jitr_aging_decays_only_executed_cards()
     test_jitr_update_bitmap_covers_every_executed_card()

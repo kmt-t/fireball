@@ -1,57 +1,61 @@
-# PySIM ベンチマークレポート（2026-10-14）
+# PySIM ベンチマークレポート（2026-10-15）
 <!-- traceability: {ThreadedInterpreter} {Wasm32Only} {JIT_CardAgingSweep} {JIT_MultiBuffer_Cache} {MemoryBoundaryCheck} {JIT_LazyChaining} {JIT_BackedgeYield} -->
 
-本書は今回の最新測定だけを記録する。結果はx86_64上の参照実装の値であり、ARMv8-Mの速度、物理RAM、ROM適合性を示さない。比較用の変更前値はREQ-020 Phase 4の変更中worktreeで測った。測定元のworktreeは変更中で、固定revisionの結果ではない。
+本書は2026-10-15に実施した最新測定だけを記録する。測定値はx86_64上の参照実装による。ARMv8-Mの速度、物理RAM、ROM適合性を示さない。
 
-ホストはAMD Ryzen 5 5500GT、Linux 7.0.0-38-generic x86_64、Python 3.13.15である。時間測定はCPU 2に固定した。製品native libraryはClang C++23 `-O3 -flto=thin`でビルドした。QA用カウンタはassert有効の別ビルドで測った。
+測定対象の基準HEADは`9d86a4993677c2fcf67d0aa32f789fb087f1af29`、branchは`req-031-call-cps`である。実装作業中のworktreeでrelease native libraryをビルドして測定した。ビルド条件はClang C++23 `-O3 -DNDEBUG -flto=thin -fuse-ld=lld`である。ホストはAMD Ryzen 5 5500GT、Linux 7.0.0-38-generic x86_64、Python 3.13.15である。
 
-全測定のサンプル、実行回数、実行カウンタは[最新REQ-033計測JSON](results/latest/req033_control_flow.json)に記録した。
+全サンプル、プロセスごとの中央値、実行条件、library hash、検証結果は[最新REQ-031計測JSON](results/latest/req031_call_cps.json)に記録した。
 
 ## 統合ベンチマーク
 
-`benchmarks/run_all.py`は6セクションすべてを31.64秒で実行し、PASSした。算術ループの結果はPython、NativeInterpreter、JITで一致した。
+`experiments/pysim/benchmarks/run_all.py`は6セクションを31.79秒で実行し、PASSした。この統合実行はCPU affinityを固定していない。
 
 | セクション | 最新結果 |
 | :--- | :--- |
-| Linear memory | raw bytearray 32-bit read/write 9.39 M ops/s、linear RAM 10.85 MB/s |
-| vMMIO | TLB hit 0.78 M ops/s、miss walk 0.71 M ops/s、hit/walk 1.09x |
-| JITと算術ループ | trace compile 28,885 traces/s。100,000回の算術ループはPython 3,702.51 ms、NativeInterpreter 23.27 ms、JIT 20.77 ms。結果は`704,982,704`で一致 |
-| JIT cache | 小・中working setのhit rate 100.00%、大working set 99.93%。退役済みtraceのchain解除はPASS |
-| Card aging | 条件別実行時間は61、190、188、185、184 ms。cache eviction後も実行を完了 |
-| AO-Bench 32×16 | Python 4,450.45 ms、NativeInterpreter 11.42 ms、Hybrid JIT 15.32 ms。出力一致、dispatcher trace transition 40,589 |
+| Linear memory | raw bytearray 32-bit R/W 9.16 M ops/s、8-bit R/W 27.14 M ops/s、linear RAM 9.33 MB/s |
+| vMMIO | TLB hit 0.85 M ops/s、miss walk 0.78 M ops/s、hit/walk 1.09x |
+| JIT compile | 30,318 traces/s、8,246 ns/WASM opcode |
+| 算術ループ 100,000回 | Python 3,674.65 ms、NativeInterpreter 19.10 ms、JIT 21.97 ms。結果`704,982,704`は一致し、JITはNativeInterpreterより1.15x遅い |
+| JIT cache | 小・中working setのhit rate 100.00%、大working set 99.93%。退役traceのchain解除はPASS |
+| Card aging | hot only 60 ms、agingなし190 ms、U=1/O=4で183 ms、既定U=2/O=8で183 ms、U=8/O=32で186 ms |
+| AO-Bench 32×16（統合runner） | NativeInterpreter 8.97 ms、Hybrid JIT 11.65 ms。出力一致、JITは1.30x遅い |
 
-## REQ-033の時間比較
+## REQ-031 call dispatch と AO-Bench
 
-AO-Benchは各プロセスでwarmupを3回、計時を7回行った。算術ループとcall dispatchは各3プロセスで測った。表の中央値と範囲はプロセスごとの中央値から集計した。
+call dispatchはCPU 2固定、release、条件ごとに独立3プロセス、各プロセスで7回計測した。JIT条件はwarmup後にtraceをコンパイルし、計時前にcompiled状態でもう一度実行した。時間範囲は3プロセスの中央値のmin/maxである。初期化、WASM parse、module登録、JIT compile時間は計時に含めない。
 
-| Workload | 変更前 ms | 最新 ms | 中央値の差 |
-| :--- | ---: | ---: | ---: |
-| AO-Bench 32×16 Hybrid JIT | 7.221458（7.200598–7.268907） | 7.341091（7.335121–7.423155） | +1.66% |
-| AO-Bench 320×180 Hybrid JIT | 748.476370（742.906094–761.214584） | 769.897949（763.078282–770.099376） | +2.86% |
-| 算術ループ 100,000回 Hybrid JIT | 20.373250（19.758500–20.533000） | 20.645462（20.386417–21.650058） | +1.34% |
-| `bench_call_dispatch` baseline Native | 2.365295（2.327073–2.395110） | 2.486244（2.477578–2.513024） | +5.11% |
-| `bench_call_dispatch` direct Native | 2.801709（2.728803–2.809854） | 2.849383（2.848079–2.897783） | +1.70% |
-| `bench_call_dispatch` indirect Native | 2.817208（2.808020–2.857413） | 2.926897（2.897512–2.936425） | +3.89% |
+| workload | iteration | NativeInterpreter ms: 中央値（min–max） | JIT ms: 中央値（min–max） | JITの差 |
+| :--- | ---: | ---: | ---: | ---: |
+| baseline | 3,000 | 0.674600（0.674420–0.697443） | 0.697172（0.694177–0.762845） | +3.35% |
+| baseline | 10,000 | 2.028259（2.019603–2.044770） | 2.181646（2.103008–2.201122） | +7.56% |
+| direct call | 3,000 | 0.755862（0.751624–0.761603） | 0.824811（0.822928–0.846562） | +9.12% |
+| direct call | 10,000 | 2.281432（2.279769–2.330143） | 2.594377（2.547369–2.630925） | +13.72% |
+| indirect call | 3,000 | 0.754610（0.752756–0.776921） | 0.845910（0.830441–0.849628） | +12.10% |
+| indirect call | 10,000 | 2.295128（2.285690–2.384395） | 2.612110（2.575300–2.647035） | +13.81% |
 
-最新の中央値はすべて変更前より遅かった。小さな時間差だけから原因や性能改善を結論づけない。call dispatchのNative測定はNativeInterpreterの計測であり、JIT call tracingの性能ではない。`call`と`call_indirect`を含むblockはREQ-031までJIT候補から外し、Interpreterへ渡す。
+AO-BenchもCPU 2固定、release、解像度とengineごとに独立3プロセス、各プロセスで3 warmupと7回の計時を行った。時間範囲はプロセスごとの中央値のmin/maxである。
 
-## 制御命令とtrace遷移
+| 解像度 | NativeInterpreter ms: 中央値（min–max） | JIT ms: 中央値（min–max） | JITの差 | 出力SHA-256 |
+| :--- | ---: | ---: | ---: | :--- |
+| 32×16 | 4.010151（4.005713–4.055366） | 4.902248（4.676546–4.976868） | +22.25% | `5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e` |
+| 320×180 | 397.234553（393.383138–533.062534） | 482.873295（481.140848–695.754028） | +21.56% | `6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699` |
 
-動的命令数はQA Runtime APIの実呼出し数である。`block`、`loop`、`else`、`end`は構文metadataになり、最新のRuntime API実行数には含まれない。
+全call dispatch条件とAO-Bench条件でJITはNativeInterpreterより遅かった。この結果から性能改善を主張しない。特に320×180ではプロセス間の時間幅が大きいため、中央値だけで差の原因を説明しない。
 
-| Workload | 変更前の動的制御API数 | 最新の動的制御API数 | JIT bodies 変更前 → 最新 |
-| :--- | :--- | :--- | :--- |
-| 算術ループ 100k | `br` 100,000、`br_if` 100,001 | `br` 100,000、`br_if` 100,001 | 3,128 → 3,126 |
-| AO-Bench 32×16 | `block` 519、`br` 9,728、`br_if` 5,522、`else` 2,462、`end` 27,954、`if` 7,564 | `br` 10,125、`br_if` 5,803、`if` 7,948 | 50,065 → 54,647 |
-| AO-Bench 320×180 | 変更前のopcode別内訳なし | `br` 1,114,861、`br_if` 616,302、`if` 891,123 | 5,327,605 → 6,013,345 |
-| call dispatch baseline | `br` 10,000、`br_if` 10,001 | `br` 10,000、`br_if` 10,001 | 最新314 bodies |
-| call dispatch direct | `br_if` 10,001、`end` 10,000 | `br_if` 10,001 | 最新20,001 bodies |
-| call dispatch indirect | `br_if` 10,001、`end` 10,000 | `br_if` 10,001 | 最新30,002 bodies |
+## 検証
 
-変更前後のJIT body数は同じRuntimeStatsEngine計数である。AO-Benchではbody数が32×16で9.15%、320×180で12.87%増えた。最新のdispatcher trace transition数は算術ループ1、AO-Bench 32×16で41,818、320×180で4,585,506である。これは変更前のchain runtime transition数1,563、47,001、5,256,290とは異なる境界を数えるため、直接の差分として扱わない。
+| 検証 | 結果 |
+| :--- | :--- |
+| PySIM単体テスト | 30/30グループPASS |
+| JIT runtime test | 130/130 PASS |
+| 結合テスト | 12/12シナリオ、5/5グループPASS |
+| WASM workload | 3/3 suite PASS。Core Spec 37/37ファイル、15,230 assertions、skip 0 |
+| 最適化モード比較 | 16/16 PASS。通常、`-O`、`-OO`を比較 |
+| call出口の変異negative control | body endをブロック末尾へずらす変異で、両call形式の出口位置テストが失敗することを確認 |
+| 変更ファイルのsource gate | PASS、warning 0 |
+| document gate | PASS、error 0、warning 44 |
 
-変更後の旧出口理由カウンタは直接native chainの出口を特定できず、unobservedを記録した。値は算術ループ1,563、AO-Bench 32×16で41,889、320×180で4,593,746だった。この理由別カウンタから制御命令ごとの出口数は算出していない。代わりにJIT body数、dispatcher transition数、interpreter exit数を別々に記録した。
+全PySIM対象の`check-src -g pysim --optimized`では、変更対象外の[`scheduler.py`](../../tier1_core/scheduler.py:1168)にある既存`PY-FORBIDDEN-NONE-DEFAULT-FILL`違反が1件報告された。変更したファイルに絞ったsource gateはPASSした。GDB/TCPテストはsandbox内ではsocket作成を拒否されたが、権限付きの全体再実行ではPASSした。
 
-## 検証範囲
-
-フルQAは30/30グループがPASSした。通常sandboxではlocalhost socketを使うGDBの2試験だけが拒否され、権限付き再実行で2件ともPASSした。統合シナリオは12/12、WASM workload suiteは3/3、最適化モード比較は12件PASSした。
+LLM監査は依頼どおり実施していない。document gateの44 warningには保存済みLLM判定の陳腐化・対象漏れが含まれるが、エラーは0件である。

@@ -441,7 +441,9 @@ struct trace_builder {
   bool append_runtime_api(std::uint8_t slot, code_ip_t source_ip,
                           const std::uint64_t *immediates = nullptr,
                           const std::uint8_t *immediate_widths = nullptr,
-                          std::uint8_t immediate_count = 0, std::uint32_t wasm_opcode = 0) {
+                          std::uint8_t immediate_count = 0, std::uint32_t wasm_opcode = 0,
+                          annotation_offset_t interpreter_rel_after =
+                              std::numeric_limits<annotation_offset_t>::max()) {
 #if !defined(FB_CONF_JIT_BLOCK_COUNTERS) || !FB_CONF_JIT_BLOCK_COUNTERS
     static_cast<void>(wasm_opcode);
 #endif
@@ -459,6 +461,10 @@ struct trace_builder {
       }
       immediate_bytes = static_cast<std::uint8_t>(immediate_bytes + width);
     }
+    if (immediate_bytes > UINT8_MAX - sizeof(annotation_offset_t)) {
+      return false;
+    }
+    immediate_bytes = static_cast<std::uint8_t>(immediate_bytes + sizeof(annotation_offset_t));
     if (!append_node(stencil) || !add_value(slot, 1) || !add_value(immediate_count, 1) ||
         !add_value(immediate_bytes, 1) || !add_value(source_ip, sizeof(code_ip_t))) {
       return false;
@@ -478,17 +484,25 @@ struct trace_builder {
       const_pool_diagnostics.item_bytes[3] += immediate_widths[index];
 #endif
     }
+    if (!add_value(interpreter_rel_after, sizeof(interpreter_rel_after))) {
+      return false;
+    }
+#if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
+    const_pool_diagnostics.item_bytes[6] += sizeof(interpreter_rel_after);
+#endif
     return true;
   }
 
   bool append_terminal_runtime_api(std::uint8_t slot, code_ip_t source_ip,
                                    annotation_offset_t annotation_offset, bool has_annotation,
-                                   std::uint32_t wasm_opcode) {
+                                   std::uint32_t wasm_opcode,
+                                   annotation_offset_t interpreter_rel_after) {
     const std::uint8_t count = has_annotation ? 1 : 0;
     const std::uint8_t payload_bytes = has_annotation ? sizeof(annotation_offset_t) : 0;
     const std::uint64_t annotation_value = annotation_offset;
     if (!append_runtime_api(slot, source_ip, has_annotation ? &annotation_value : nullptr,
-                            has_annotation ? &payload_bytes : nullptr, count, wasm_opcode)) {
+                            has_annotation ? &payload_bytes : nullptr, count, wasm_opcode,
+                            interpreter_rel_after)) {
       return false;
     }
 #if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
@@ -1279,13 +1293,15 @@ bool emit_constant(trace_builder &builder, stack_model &stack, int op, std::uint
 
 bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_ip_t source_ip,
                       const std::uint64_t *immediates, const std::uint8_t *immediate_widths,
-                      std::uint8_t immediate_count);
+                      std::uint8_t immediate_count,
+                      annotation_offset_t interpreter_rel_after);
 bool compile_instructions(trace_builder &builder, const fireball::jit_instruction *instructions,
                           std::uint32_t instruction_count, const frame_word_offset_t *local_offsets,
                           const std::uint8_t *local_types, local_count_t local_count,
                           local_count_t local_slot_count, stack_model &stack,
                           const code_ip_t *source_offsets = nullptr,
-                          const code_ip_t *source_end_offsets = nullptr) {
+                          const code_ip_t *source_end_offsets = nullptr,
+                          const annotation_offset_t *interpreter_rel_after_offsets = nullptr) {
   if (local_count > kMaxLogicalLocals || local_slot_count > 2 * local_count ||
       (local_count != 0 && (local_offsets == nullptr || local_types == nullptr))) {
     return false;
@@ -1514,7 +1530,11 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
     }
     if (op == 0x00) {
       const auto source_ip = source_offsets != nullptr ? source_offsets[index] : 0u;
-      if (!emit_runtime_api(builder, stack, op, source_ip, nullptr, nullptr, 0)) {
+      const auto interpreter_rel_after = interpreter_rel_after_offsets == nullptr
+                                             ? std::numeric_limits<annotation_offset_t>::max()
+                                             : interpreter_rel_after_offsets[index];
+      if (!emit_runtime_api(builder, stack, op, source_ip, nullptr, nullptr, 0,
+                            interpreter_rel_after)) {
         return false;
       }
       return true;
@@ -1542,10 +1562,13 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
                                                : static_cast<std::uint32_t>(packed_memory_indices)};
       const std::uint8_t immediate_widths[2] = {1, 4};
       const auto immediate_count = wasm_memory_operation ? 2u : (subopcode >= 0x0A ? 1u : 0u);
+      const auto interpreter_rel_after = interpreter_rel_after_offsets == nullptr
+                                             ? std::numeric_limits<annotation_offset_t>::max()
+                                             : interpreter_rel_after_offsets[index];
       if (!emit_runtime_api(builder, stack, op, source_offsets[index],
                             immediate_count == 0 ? nullptr : immediates,
                             immediate_count == 0 ? nullptr : immediate_widths,
-                            static_cast<std::uint8_t>(immediate_count))) {
+                            static_cast<std::uint8_t>(immediate_count), interpreter_rel_after)) {
         return false;
       }
       ++index;
@@ -1567,10 +1590,13 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       runtime_rel[runtime_rel_count] = instruction_width;
       runtime_rel_widths[runtime_rel_count++] = 1;
     }
+    const auto interpreter_rel_after = interpreter_rel_after_offsets == nullptr
+                                           ? std::numeric_limits<annotation_offset_t>::max()
+                                           : interpreter_rel_after_offsets[index];
     if (!emit_runtime_api(builder, stack, op, source_offsets[index],
                           runtime_rel_count == 0 ? nullptr : runtime_rel.data(),
                           runtime_rel_count == 0 ? nullptr : runtime_rel_widths.data(),
-                          static_cast<std::uint8_t>(runtime_rel_count))) {
+                          static_cast<std::uint8_t>(runtime_rel_count), interpreter_rel_after)) {
       return false;
     }
     ++index;
@@ -1731,7 +1757,8 @@ bool apply_runtime_api_stack_effect(int op, stack_model &stack) {
 
 bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_ip_t source_ip,
                       const std::uint64_t *immediates, const std::uint8_t *immediate_widths,
-                      std::uint8_t immediate_count) {
+                      std::uint8_t immediate_count,
+                      annotation_offset_t interpreter_rel_after) {
   std::uint8_t slot = 0;
   if ((immediate_count != 0 && (immediates == nullptr || immediate_widths == nullptr)) ||
       !runtime_api_slot(op, slot)) {
@@ -1741,7 +1768,7 @@ bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_i
     return false;
   }
   return builder.append_runtime_api(slot, source_ip, immediates, immediate_widths, immediate_count,
-                                    static_cast<std::uint32_t>(op));
+                                    static_cast<std::uint32_t>(op), interpreter_rel_after);
 }
 
 bool is_trace_terminator_opcode(std::uint8_t opcode) {
@@ -1752,8 +1779,8 @@ bool is_trace_terminator_opcode(std::uint8_t opcode) {
   case 0x0D: // br_if
   case 0x0E: // br_table
   case 0x0F: // return
-  case 0x10: // call
-  case 0x11: // call_indirect
+  case 0x10: // call exits to Interpreter CPS before execution
+  case 0x11: // call_indirect exits to Interpreter CPS before execution
     return true;
   default:
     return false;
@@ -1779,6 +1806,10 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
     // Branch instructions remain unexecuted trace exits handled by Interpreter CPS.
     return 1;
   }
+  if (opcode == 0x10 || opcode == 0x11) {
+    // Calls remain unexecuted trace exits handled by Interpreter CPS.
+    return 1;
+  }
 
   std::uint8_t slot = 0;
   if (!runtime_api_slot(opcode, slot)) {
@@ -1802,24 +1833,6 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
       return -1;
     }
     annotation_bytes = opcode == 0x0D ? 3u : 2u;
-    break;
-  }
-  case 0x10: {
-    std::uint32_t decoded_function_index = 0;
-    if (!read_unsigned_leb(code, cursor, code_bytes, decoded_function_index)) {
-      return -1;
-    }
-    annotation_bytes = 5;
-    break;
-  }
-  case 0x11: {
-    std::uint32_t decoded_type_index = 0;
-    std::uint32_t table_index = 0;
-    if (!read_unsigned_leb(code, cursor, code_bytes, decoded_type_index) ||
-        !read_unsigned_leb(code, cursor, code_bytes, table_index)) {
-      return -1;
-    }
-    annotation_bytes = 5;
     break;
   }
   case 0x0E: {
@@ -1849,6 +1862,10 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
     return -1;
   }
   const auto annotation_offset = static_cast<annotation_offset_t>(annotation_offset_64);
+  const auto interpreter_rel_after_64 = annotation_offset_64 + annotation_bytes;
+  if (interpreter_rel_after_64 > std::numeric_limits<annotation_offset_t>::max()) {
+    return -1;
+  }
   if (annotation_bytes != 0 &&
       !(interpreter_annotations == nullptr && interpreter_annotation_byte_count == 0) &&
       (interpreter_annotations == nullptr ||
@@ -1858,7 +1875,9 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
   }
 
   return builder.append_terminal_runtime_api(slot, source_ip, annotation_offset,
-                                             annotation_bytes != 0, opcode)
+                                             annotation_bytes != 0, opcode,
+                                             static_cast<annotation_offset_t>(
+                                                 interpreter_rel_after_64))
              ? 1
              : 0;
 }
@@ -1880,6 +1899,7 @@ int fireball::compile_instruction_body(
     return -1;
   }
   *result = {};
+  result->body_end_ip = kNoTraceExitIp;
   if (instruction_count == 0 || instruction_count > kMaxTraceInstructions ||
       output_capacity > kMaxBodyBytes) {
     return 0;
@@ -1916,6 +1936,7 @@ int fireball::compile_wasm_trace(
     return -1;
   }
   *result = {};
+  result->body_end_ip = kNoTraceExitIp;
   if (output_capacity > kMaxBodyBytes) {
     return -1;
   }
@@ -1923,14 +1944,23 @@ int fireball::compile_wasm_trace(
   std::array<fireball::jit_instruction, kMaxTraceInstructions> instructions{};
   std::array<code_ip_t, kMaxTraceInstructions> source_offsets{};
   std::array<code_ip_t, kMaxTraceInstructions> source_end_offsets{};
+  std::array<annotation_offset_t, kMaxTraceInstructions> interpreter_rel_after_offsets{};
   jit_body_count_t instruction_count = 0;
   annotation_offset_t interpreter_rel_bytes = 0;
   code_ip_t cursor = code_offset;
   const code_ip_t end = code_offset + byte_span;
+  auto trace_end = end;
+  auto call_exit = false;
 
   while (cursor < end) {
     const auto instruction_ip = cursor;
     const auto opcode = code[cursor++];
+    if (opcode == 0x10 || opcode == 0x11) {
+      // Keep the call itself and the remainder of this block for Interpreter CPS.
+      trace_end = instruction_ip;
+      call_exit = true;
+      break;
+    }
     if (opcode == 0x02 || opcode == 0x03) {
       [[maybe_unused]] std::uint64_t block_type = 0;
       if (!read_signed_leb(code, cursor, end, block_type, 33u)) {
@@ -1942,10 +1972,6 @@ int fireball::compile_wasm_trace(
     if (opcode == 0x05 || opcode == 0x0B) {
       interpreter_rel_bytes += sizeof(std::uint16_t);
       continue;
-    }
-    if (opcode == 0x10 || opcode == 0x11) {
-      // Call tracing belongs to REQ-031; keep these blocks Interpreter-owned for now.
-      return 0;
     }
     if (instruction_count == instructions.size()) {
       return 0;
@@ -1999,6 +2025,13 @@ int fireball::compile_wasm_trace(
           --immediate_count;
         }
       }
+      const auto annotation_offset_64 =
+          static_cast<std::uint64_t>(interpreter_annotation_byte_offset) + interpreter_rel_bytes;
+      if (annotation_offset_64 > std::numeric_limits<annotation_offset_t>::max()) {
+        return -1;
+      }
+      interpreter_rel_after_offsets[instruction_index] =
+          static_cast<annotation_offset_t>(annotation_offset_64);
       source_end_offsets[instruction_index] = cursor;
       continue;
     }
@@ -2051,12 +2084,19 @@ int fireball::compile_wasm_trace(
       instruction.has_operand = 1;
       instruction.operand = operand;
     }
+    const auto annotation_offset_64 =
+        static_cast<std::uint64_t>(interpreter_annotation_byte_offset) + interpreter_rel_bytes;
+    if (annotation_offset_64 > std::numeric_limits<annotation_offset_t>::max()) {
+      return -1;
+    }
+    interpreter_rel_after_offsets[instruction_index] =
+        static_cast<annotation_offset_t>(annotation_offset_64);
     source_end_offsets[instruction_index] = cursor;
   }
-  if (cursor != end) {
+  if (cursor != end && !call_exit) {
     return -1;
   }
-  if (instruction_count == 0) {
+  if (instruction_count == 0 && !call_exit) {
     return 0;
   }
 
@@ -2065,20 +2105,29 @@ int fireball::compile_wasm_trace(
   if (!builder.begin_trace() ||
       !compile_instructions(builder, instructions.data(), instruction_count, local_offsets,
                             local_types, local_count, local_slot_count, stack,
-                            source_offsets.data(), source_end_offsets.data())) {
+                            source_offsets.data(), source_end_offsets.data(),
+                            interpreter_rel_after_offsets.data())) {
     return 0;
   }
   const auto terminator_status = append_trace_terminator_runtime_api(
-      builder, code, code_bytes, end, interpreter_annotations, interpreter_annotation_byte_count,
-      interpreter_annotation_byte_offset, interpreter_rel_bytes);
+      builder, code, code_bytes, trace_end, interpreter_annotations,
+      interpreter_annotation_byte_count, interpreter_annotation_byte_offset,
+      interpreter_rel_bytes);
   if (terminator_status != 1) {
     return terminator_status;
   }
   const auto status = finish_trace(builder, stack, result);
   if (status == 1) {
     result->interpreter_rel_bytes = interpreter_rel_bytes;
+    if (call_exit) {
+      result->body_end_ip = trace_end;
+    }
+    if (call_exit ||
+        (trace_end < code_bytes && (code[trace_end] == 0x10 || code[trace_end] == 0x11))) {
+      result->exit_kind = jit_trace_exit_kind::call_cps;
+    }
 #if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
-    const auto has_terminator = end < code_bytes && is_trace_terminator_opcode(code[end]);
+    const auto has_terminator = trace_end < code_bytes && is_trace_terminator_opcode(code[trace_end]);
     ++const_pool_diagnostics.trace_count;
     const_pool_diagnostics.instruction_count += instruction_count + (has_terminator ? 1u : 0u);
     diagnostic_scope.committed = true;

@@ -72,6 +72,31 @@ inline Value load_jit_value(const std::uint8_t *bytes) {
   return value;
 }
 
+inline void publish_interpreter_rel_after_runtime_boundary(execution_context *context,
+                                                           const std::uint8_t *rel) {
+  if (!cps_exit_pending(*context) || cps_exit_kind(*context) != kRuntimeApiBoundary) {
+    return;
+  }
+  assert(rel != nullptr);
+  const auto immediate_bytes = rel[-5];
+  assert(immediate_bytes >= sizeof(annotation_offset_t));
+  const auto annotation_record = rel + immediate_bytes - sizeof(annotation_offset_t);
+  const auto annotation_offset = load_jit_value<annotation_offset_t>(annotation_record);
+  if (annotation_offset == std::numeric_limits<annotation_offset_t>::max()) {
+    return;
+  }
+  const auto &function = *active_frame(*context).function_view;
+  assert(annotation_offset <= function.interpreter_annotation_byte_count);
+  assert(function.interpreter_annotation_pool != nullptr ||
+         function.interpreter_annotation_byte_count == 0);
+  if (function.interpreter_annotation_pool == nullptr) {
+    assert(annotation_offset == 0);
+    context->rel = nullptr;
+  } else {
+    context->rel = function.interpreter_annotation_pool + annotation_offset;
+  }
+}
+
 template <auto RuntimeApi>
 inline bool jit_runtime_api_passthrough(execution_context *context, std::uint32_t *&sp,
                                         std::uint32_t *&local_base, const std::uint8_t *rel) {
@@ -82,6 +107,7 @@ inline bool jit_runtime_api_passthrough(execution_context *context, std::uint32_
   if (!cps_exit_pending(*context)) {
     context->ip = instruction_offset(*context, instruction_ip);
   }
+  publish_interpreter_rel_after_runtime_boundary(context, rel);
   return completed;
 }
 
@@ -106,6 +132,7 @@ inline bool jit_runtime_api_annotated(execution_context *context, std::uint32_t 
   if (!cps_exit_pending(*context)) {
     context->ip = instruction_offset(*context, instruction_ip);
   }
+  publish_interpreter_rel_after_runtime_boundary(context, annotation_offset_record);
   return completed;
 }
 
@@ -122,6 +149,7 @@ inline bool jit_runtime_memory_load(execution_context *context, std::uint32_t *&
   if (!cps_exit_pending(*context)) {
     context->ip = instruction_offset(*context, instruction_ip);
   }
+  publish_interpreter_rel_after_runtime_boundary(context, rel);
   return completed;
 }
 
@@ -138,6 +166,7 @@ inline bool jit_runtime_memory_store(execution_context *context, std::uint32_t *
   if (!cps_exit_pending(*context)) {
     context->ip = instruction_offset(*context, instruction_ip);
   }
+  publish_interpreter_rel_after_runtime_boundary(context, rel);
   return completed;
 }
 
@@ -155,8 +184,10 @@ inline bool jit_runtime_fc_memory_copy(execution_context *context, std::uint32_t
   const auto source_ip = context->ip;
   const auto *instruction_ip = context->code + source_ip;
   const auto instruction_width = load_jit_value<std::uint8_t>(rel);
-  return runtime_fc_memory_copy_decoded(context, sp, instruction_ip, source_ip,
-                                        source_ip + instruction_width);
+  const auto completed = runtime_fc_memory_copy_decoded(context, sp, instruction_ip, source_ip,
+                                                        source_ip + instruction_width);
+  publish_interpreter_rel_after_runtime_boundary(context, rel);
+  return completed;
 }
 
 inline bool jit_runtime_fc_memory_fill(execution_context *context, std::uint32_t *&sp,
@@ -166,8 +197,10 @@ inline bool jit_runtime_fc_memory_fill(execution_context *context, std::uint32_t
   const auto source_ip = context->ip;
   const auto *instruction_ip = context->code + source_ip;
   const auto instruction_width = load_jit_value<std::uint8_t>(rel);
-  return runtime_fc_memory_fill_decoded(context, sp, instruction_ip, source_ip,
-                                        source_ip + instruction_width);
+  const auto completed = runtime_fc_memory_fill_decoded(context, sp, instruction_ip, source_ip,
+                                                        source_ip + instruction_width);
+  publish_interpreter_rel_after_runtime_boundary(context, rel);
+  return completed;
 }
 
 constexpr auto make_opcode_jit_runtime_api_table() {
@@ -180,8 +213,6 @@ constexpr auto make_opcode_jit_runtime_api_table() {
   apis[0x0B] = FB_JIT_CONTROL_API(0x0B, &jit_runtime_api_annotated<&runtime_end>);
   apis[0x0E] = FB_JIT_CONTROL_API(0x0E, &jit_runtime_api_annotated<&runtime_br_table>);
   apis[0x0F] = FB_JIT_CONTROL_API(0x0F, &jit_runtime_api_passthrough<&runtime_return>);
-  apis[0x10] = &jit_runtime_api_annotated<&runtime_call<false>>;
-  apis[0x11] = &jit_runtime_api_annotated<&runtime_call<true>>;
   apis[0x1A] = &jit_runtime_api_passthrough<&runtime_drop>;
   apis[0x1B] = &jit_runtime_api_passthrough<&runtime_select>;
   apis[0x23] = &jit_runtime_api_passthrough<&runtime_global_get>;

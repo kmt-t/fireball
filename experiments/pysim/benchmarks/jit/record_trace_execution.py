@@ -19,6 +19,7 @@ from bench_jit_aging import build_workload_wat
 from bump_allocator import BumpAllocator
 from qa.shared.jit_manager import JITRuntimeManager
 from qa.shared.x64_jit import TraceCompiler
+from runtime_driver import run_runtime_call
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.wasm.reader import parse
@@ -61,16 +62,18 @@ def record_usage(output: Path, hot_functions: int, cold_functions: int, iteratio
     for cold_index in range(cold_functions):
         for hot_index in range(hot_functions):
             expected = sum((k * (3 + hot_index)) ^ 7 for k in range(iterations))
-            result = interpreter.call(
-                module.export_func_index(f"h{hot_index}"), [iterations]
+            result = run_runtime_call(
+                engine, interpreter, module.export_func_index(f"h{hot_index}"), [iterations]
             ).unwrap()
             assert result == [expected]
         cold = module.export_func_index(f"c{cold_index}")
         expected_cold = cold_index * (5 + cold_index) + cold_index
         # Qualify a cold trace with two visits, then never call the function again.
         for _ in range(2):
-            assert interpreter.call(cold, [cold_index], idle_budget=0).unwrap() == [expected_cold]
-        interpreter.idle_hook()
+            assert run_runtime_call(engine, interpreter, cold, [cold_index]).unwrap() == [
+                expected_cold
+            ]
+        engine.idle_hook()
     for block in module.blocks:
         trace = manager.cache.find_trace(block.head_pc)
         if trace is not None:

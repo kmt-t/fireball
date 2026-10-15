@@ -647,11 +647,12 @@ def test_sys_gotcha_01_undefined_syscall_returns_enosys():
     assert res == int(WasiErrno.NOSYS), f"Expected NOSYS (52), got {res}"
 
 
-def test_dbg_gotcha_01_debugger_and_native_execution_plugin_are_rejected_by_interpreter():
-    """GOTCHA-DBG-01: Interpreter owns the debugger/JIT compatibility boundary."""
-    from qa.shared.helpers import expect_assertion, make_native_interpreter, wat_to_wasm
+def test_dbg_gotcha_01_debugger_bypasses_native_execution_plugin():
+    """GOTCHA-DBG-01: debugger attachment selects interpreter-only execution."""
+    from qa.shared.helpers import make_native_interpreter, wat_to_wasm
     from qa.shared.jit_manager import JITRuntimeManager
     from qa.shared.x64_jit import TraceCompiler
+    from tier2_runtime.abi import native_abi
     from tier2_runtime.wasm.reader import parse_standalone
     from tier3_plugins.debugger.debugger import DebuggerManager
 
@@ -660,8 +661,14 @@ def test_dbg_gotcha_01_debugger_and_native_execution_plugin_are_rejected_by_inte
     plugin = JITRuntimeManager(jit_compiler=TraceCompiler())
     try:
         interpreter.attach_execution_plugin(plugin)
-        with expect_assertion("native execution plugins cannot be combined with debugger"):
-            interpreter.attach_debugger(DebuggerManager())
+        debugger = DebuggerManager()
+        interpreter.attach_debugger(debugger)
+        assert interpreter.debugger is debugger
+        assert interpreter._native_dispatcher is native_abi.RUN_DISPATCH
+        assert interpreter.idle_hook() == 0
+        assert interpreter.call(0, []).unwrap() == []
+        interpreter.detach_debugger()
+        assert interpreter._native_dispatcher is plugin.native_entry
     finally:
         plugin.close()
 

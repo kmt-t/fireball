@@ -1,35 +1,4 @@
-"""
-experiments/pysim/tier2_runtime/interpreter/interpreter.py
-A minimal reference interpreter for the wasm_opcodes subset, used as the
-correctness oracle the JIT's output is checked against -- mirroring the
-real project's own "interpreter + JIT, cross-checked" architecture
-(docs/components/tier2_runtime/interpreter.md /
-docs/components/tier3_plugins/jit_compiler.md), just without the ARM/Copy-and-
-Patch specifics.
-Execution model: `docs/specs/wasm_instruction_set.md` §1 mandates a real
-**threaded interpreter** (`{ThreadedInterpreter}`). Opcode handlers in
-`handlers.py` receive the same `(ctx, ip*, sp*)` state and return an optional
-trap. A return handler publishes the named `RETURN_SENTINEL_IP`.
-`_HANDLERS` stores those functions directly; there is no CPS adapter or
-central switch/if-elif loop around them. Numeric/immediate helpers and trap
-definitions live in `utilities.py` and `errors.py`. The interpreter uses the
-existing `tier2_runtime.runtime.python_api` contract for runtime operations.
-The one adaptation from the literal ARM/native design: native code tail-
-calls the next handler directly (or dispatches via a jump table with no
-return address at all), which Python cannot do without unbounded
-recursion depth for long-running loops. So the continuation
-is *returned* rather than tail-called, and a small trampoline in `_step`
-re-dispatches it -- indirect threading instead of direct threading, same
-handler-per-opcode shape, no stack growth per WASM instruction.
-`ExecutionContext` owns fixed-capacity operand, local, and call-frame storage
-shared by interpreter, JIT, and debugger execution. Control delimiters,
-branch targets, and operand restoration points are resolved at load time;
-opcode execution does not create or search a runtime control-frame stack. A
-`CallFrame` is an activation descriptor and a window into the shared storage;
-it does not own a per-function stack. The descriptor also carries decoded
-instruction metadata needed to resume at `ip`, without adding a fifth handler
-argument.
-"""
+"""Native interpreter dispatch and shared ABI state used by the JIT/debugger."""
 
 from __future__ import annotations
 
@@ -979,7 +948,7 @@ class NativeInterpreterBoundary:
     yield_requested: bool = False
 
 
-class Interpreter:
+class _NativeInterpreterBase:
     __slots__ = (
         "_env",
         "_native_dispatcher",
@@ -1179,7 +1148,7 @@ class Interpreter:
 
     def run_iter(self, func_index: int, args: Sequence[WasmNumber]) -> Iterator[InterpreterCall]:
         """
-        Drives a call basic-block by basic-block, yielding the (possibly still-unfinished)
+        Drives a call through resumable points, yielding the (possibly still-unfinished)
         `call_state` after every `step()` and once more after it finishes.
         """
         call_state = self.start(func_index, args)
@@ -1276,10 +1245,10 @@ class Interpreter:
 
     def step(self, call_state: InterpreterCall) -> InterpreterCall:
         """
-        Executes one basic block (up to the next boundary instruction) and returns
-        `call_state`, mutated in place: still `finished == False` with a resumable
-        scalar continuation fields, or `finished == True` with `.results` set once the outermost call
-        actually returns.
+        Advances to a resumable execution point and returns the mutated call state.
+
+        The amount of WASM work performed by one step is unspecified; callers
+        must not assume that a step corresponds to one basic block.
         """
         return self._step(call_state, stop_at_boundary=True)
 
@@ -1293,11 +1262,8 @@ class Interpreter:
     def step_native_boundary(
         self,
         call_state: InterpreterCall,
-        *,
-        idle_budget: int = 0,
     ) -> NativeInterpreterBoundary:
         """Advance the Interpreter-owned native dispatcher to one scheduler boundary."""
-        assert self.debugger is None, "native stepping does not support Python debugger hooks"
         if call_state.finished:
             return NativeInterpreterBoundary(call_state)
         if call_state._ip == RETURN_SENTINEL_IP:
@@ -1310,10 +1276,7 @@ class Interpreter:
             return NativeInterpreterBoundary(self._finish_native_frame(call_state))
 
         while True:
-            native_status = self.run_native_dispatch(
-                call_state,
-                idle_budget=idle_budget,
-            )
+            native_status = self.run_native_dispatch(call_state)
             if native_status == NATIVE_DISPATCH_RUNTIME_API_BOUNDARY:
                 host_call = self.resolve_native_api_boundary(call_state)
                 if host_call or call_state.finished or call_state._ip == RETURN_SENTINEL_IP:
@@ -1562,7 +1525,6 @@ class Interpreter:
     def run_native_dispatch(
         self,
         call_state: InterpreterCall,
-        idle_budget: int = 0,
     ) -> int:
         """Run native traces and C++ handlers over Python-owned ctypes buffers."""
         frame = call_state._frame
@@ -1596,8 +1558,7 @@ class Interpreter:
                 locals_arr._storage.address,
                 call=context._native_dispatch_call,
                 result=context._native_result,
-                jit_provider=execution.jit_provider,
-                idle_budget=idle_budget,
+                jit_provider=0 if self.debugger is not None else execution.jit_provider,
             )
         frame.values.set_size(native_size)
         context.ip = native_ip
@@ -1869,7 +1830,7 @@ class Interpreter:
         return None
 
 
-class NativeInterpreter(Interpreter):
+class NativeInterpreter(_NativeInterpreterBase):
     """Strict C++ interpreter; defined guest calls remain in native dispatch."""
 
     __slots__ = (
@@ -1954,26 +1915,26 @@ class NativeInterpreter(Interpreter):
     def step_native_boundary(
         self,
         call_state: InterpreterCall,
-        *,
-        idle_budget: int = 0,
     ) -> NativeInterpreterBoundary:
         """Record that native dispatch has started before advancing its boundary."""
         self._native_dispatch_started = True
-        return super().step_native_boundary(
-            call_state,
-            idle_budget=idle_budget,
-        )
+        return super().step_native_boundary(call_state)
 
     def attach_debugger(self, debugger: DebuggerAttachment) -> None:
-        """Attach debugger execution control when no native execution plugin is active."""
-        assert self._execution_plugin is None, (
-            "native execution plugins cannot be combined with debugger"
-        )
+        """Attach debugger control and use the native interpreter without JIT traces."""
+        if self._execution_plugin is not None:
+            self._native_dispatcher = _native_abi.RUN_DISPATCH
         super().attach_debugger(debugger)
+
+    def detach_debugger(self) -> None:
+        """Restore the optional JIT dispatcher after debugger control is detached."""
+        super().detach_debugger()
+        if self._execution_plugin is not None:
+            self._native_dispatcher = self._execution_plugin.native_entry
 
     def idle_hook(self, budget: int = 4) -> int:
         """Give the attached JIT cache a bounded compile slice."""
-        if self._execution_plugin is None:
+        if self._execution_plugin is None or self.debugger is not None:
             return 0
         return self._execution_plugin.idle_hook(budget)
 
@@ -1981,10 +1942,9 @@ class NativeInterpreter(Interpreter):
         self,
         func_index: int,
         args: Sequence[WasmNumber],
-        idle_budget: int = 4,
     ) -> Result[StaticVector[WasmNumber], Trap]:
-        """Run native dispatch to completion and service JIT compilation once."""
-        return self._complete_call(self.start(func_index, args), idle_budget)
+        """Run native dispatch to completion; runtime callers service plugin work."""
+        return self._complete_call(self.start(func_index, args))
 
     def _prepare_native_execution(self, context: ExecutionContext) -> None:
         if self._module_execution is None:
@@ -2002,19 +1962,41 @@ class NativeInterpreter(Interpreter):
                 )
         context.attach_module_execution(self._module_execution)
 
-    def _complete_call(
-        self, call_state: InterpreterCall, idle_budget: int = 4
-    ) -> Result[StaticVector[WasmNumber], Trap]:
+    def _complete_call(self, call_state: InterpreterCall) -> Result[StaticVector[WasmNumber], Trap]:
         while not call_state.finished:
-            call_state = self.step_native_boundary(
-                call_state,
-                idle_budget=idle_budget,
-            ).call_state
+            call_state = self.step_native_boundary(call_state).call_state
         if call_state.trap is not None:
             return Result.err(call_state.trap)
         assert call_state.results is not None
-        self.idle_hook(idle_budget)
         return Result.ok(call_state.results)
 
     def step(self, call_state: InterpreterCall) -> InterpreterCall:
         return self.step_native(call_state)
+
+
+# The public reference interpreter is deliberately independent from the native
+# dispatcher implementation above. It uses Python arrays for activation state
+# and a simple decode/execute loop.
+from tier2_runtime.interpreter.reference_interpreter import (
+    ReferenceCallState,
+)
+from tier2_runtime.interpreter.reference_interpreter import (
+    ReferenceInterpreter as Interpreter,
+)
+
+__all__ = (
+    "CallFrame",
+    "DebuggerAttachment",
+    "ExecEnv",
+    "ExecutionContext",
+    "Interpreter",
+    "InterpreterBindings",
+    "InterpreterCall",
+    "NativeInterpreter",
+    "NativeInterpreterBoundary",
+    "ReferenceCallState",
+    "Trap",
+    "TrapCode",
+    "WasmHostFunction",
+    "WasmNumber",
+)

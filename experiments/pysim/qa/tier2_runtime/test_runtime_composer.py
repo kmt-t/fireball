@@ -237,6 +237,69 @@ def test_runtime_composer_has_no_jit_execution_factory() -> None:
     assert "jit" not in RuntimeFactories.__dataclass_fields__
 
 
+def test_runtime_engine_run_services_native_yields() -> None:
+    """The runtime services the plugin's idle hook at each native yield boundary."""
+    from qa.shared.helpers import wat_to_wasm
+    from tier2_runtime.abi import native_abi
+    from tier2_runtime.interpreter.interpreter import (
+        InterpreterBindings,
+        NativeInterpreter,
+        NativeModuleExecution,
+    )
+    from tier2_runtime.runtime.engine import RuntimeEngine as ProductRuntimeEngine
+    from tier2_runtime.wasm.module import Module
+    from tier2_runtime.wasm.reader import parse_standalone
+
+    class HookProbePlugin:
+        def __init__(self) -> None:
+            self.hook_calls = 0
+            self.module: Module | None = None
+
+        @property
+        def native_entry(self) -> native_abi.NativeDispatchEntryPoint:
+            return native_abi.RUN_DISPATCH
+
+        def register_module(self, module: Module) -> None:
+            self.module = module
+
+        def bind_execution(self, execution: NativeModuleExecution) -> int:
+            assert execution.module is self.module
+            return 0
+
+        def idle_hook(self, budget: int = 4) -> int:
+            assert budget >= 0
+            self.hook_calls += 1
+            return 0
+
+    module = parse_standalone(
+        wat_to_wasm(
+            """(module
+              (func (export "sum") (param i32) (result i32) (local i32)
+                (loop $again
+                  local.get 1 local.get 0 i32.add local.set 1
+                  local.get 0 i32.const 1 i32.sub local.tee 0 br_if $again)
+                local.get 1))"""
+        )
+    )
+    runtime = ProductRuntimeEngine.with_allocator(module.require_allocator())
+    runtime.register_module_blocks(module)
+    plugin = HookProbePlugin()
+    interpreter = NativeInterpreter(
+        module,
+        InterpreterBindings.empty(),
+        bump_allocator=runtime.bump_allocator,
+        execution_plugin=plugin,
+        yield_threshold=1,
+    )
+
+    call_state = interpreter.start(module.export_func_index("sum"), [8])
+    while not call_state.finished:
+        call_state = runtime.run(interpreter, call_state).call_state
+    runtime.idle_hook()
+    assert call_state.trap is None and call_state.results == [36]
+    assert plugin.hook_calls > 1
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
 
@@ -356,7 +419,7 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         yield_threshold=2,
     )
     for _ in range(2):
-        assert engine.call(interpreter, 0, [9], idle_budget=3).unwrap() == [0]
+        assert engine.call(interpreter, 0, [9]).unwrap() == [0]
     assert len(plugin.bindings) == 1
     assert (callbacks[0] >= 8) == (card_state == 3)
     assert callbacks[1] >= 8

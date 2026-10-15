@@ -76,11 +76,13 @@ class RuntimeStatsEngine(RuntimeEngine):
         plugin = self.jit_runtime
         if plugin is None:
             plugin = interp._execution_plugin
-        if plugin is not None:
+        jit_enabled = plugin is not None and interp.debugger is None
+        if jit_enabled:
+            assert plugin is not None
             interp.attach_execution_plugin(plugin)
         interp._native_dispatcher = select_runtime_dispatch_entry(
             self.collect_runtime_stats,
-            plugin is not None,
+            jit_enabled,
         )
         super()._activate_interpreter(interp)
 
@@ -92,7 +94,7 @@ class RuntimeStatsEngine(RuntimeEngine):
         return super().idle_hook(budget)
 
     def _run_bound(
-        self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int
+        self, interp: NativeInterpreter, call_state: InterpreterCall
     ) -> RuntimeBoundaryResult:
         native_dispatch = call_state._ip != RETURN_SENTINEL_IP
         metrics = call_state.context._native_result
@@ -104,7 +106,7 @@ class RuntimeStatsEngine(RuntimeEngine):
             # their counters inside the QA dispatcher, but start this boundary
             # with a clean aggregate.
             metrics.reset_counters()
-        result = super()._run_bound(interp, call_state, idle_budget)
+        result = super()._run_bound(interp, call_state)
         if self.collect_runtime_stats:
             if native_dispatch:
                 self.stat_interp_steps += int(metrics.interpreted_block_count)
@@ -122,19 +124,18 @@ class RuntimeStatsEngine(RuntimeEngine):
         interp: NativeInterpreter,
         func_index: int,
         args: tuple[WasmNumber, ...] | list[WasmNumber],
-        idle_budget: int = 4,
     ) -> Result[StaticVector[WasmNumber], Trap]:
         """QA-only driver for collecting native dispatch counters around a call."""
         self._activate_interpreter(interp)
-        return self.complete_call(interp, interp.start(func_index, args), idle_budget)
+        return self.complete_call(interp, interp.start(func_index, args))
 
     def complete_call(
-        self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int = 4
+        self, interp: NativeInterpreter, call_state: InterpreterCall
     ) -> Result[StaticVector[WasmNumber], Trap]:
         self._activate_interpreter(interp)
         while not call_state.finished:
-            call_state = self.run(interp, call_state, idle_budget).call_state
-        self.idle_hook(idle_budget)
+            call_state = self.run(interp, call_state).call_state
+        self.idle_hook()
         if call_state.trap is not None:
             return Result.err(call_state.trap)
         assert call_state.results is not None

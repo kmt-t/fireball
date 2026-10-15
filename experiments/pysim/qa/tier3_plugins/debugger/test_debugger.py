@@ -635,19 +635,27 @@ def test_dbg_12_continue_returns_to_python_only_at_actual_stop(
     assert steps == [1], "continue must not return through Python for each instruction"
 
 
-def test_dbg_13_interpreter_rejects_attaching_debugger_to_native_plugin() -> None:
-    """GOTCHA-DBG-01: Interpreter enforces native plugin and debugger incompatibility."""
-    from qa.shared.helpers import expect_assertion, make_native_interpreter
+def test_dbg_13_debugger_disables_native_plugin_execution_without_rejecting_attach() -> None:
+    """Attaching a debugger keeps execution available while bypassing JIT traces."""
+    from qa.shared.helpers import make_native_interpreter
     from qa.shared.jit_manager import JITRuntimeManager
     from qa.shared.x64_jit import TraceCompiler
+    from tier2_runtime.abi import native_abi
+    from tier3_plugins.debugger.debugger import DebuggerManager
 
     module = RuntimeEngineDebugDriver().load_wasm(wat_to_wasm("(module (func))"))
     interpreter = make_native_interpreter(module)
     plugin = JITRuntimeManager(jit_compiler=TraceCompiler())
     try:
         interpreter.attach_execution_plugin(plugin)
-        with expect_assertion("native execution plugins cannot be combined with debugger"):
-            interpreter.attach_debugger(DebuggerManager())
+        debugger = DebuggerManager()
+        interpreter.attach_debugger(debugger)
+        assert interpreter.debugger is debugger
+        assert interpreter._native_dispatcher is native_abi.RUN_DISPATCH
+        assert interpreter.idle_hook() == 0
+        assert interpreter.call(0, []).unwrap() == []
+        interpreter.detach_debugger()
+        assert interpreter._native_dispatcher is plugin.native_entry
     finally:
         plugin.close()
 

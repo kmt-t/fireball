@@ -69,7 +69,7 @@ struct fb_native_jit_provider {
   /** @brief 解決済みブロックを観測する。記録した場合は1、対象外は0を返す。 */
   int (*observe_block)(std::uintptr_t owner, block_index_t block_index, wasm_pc_t pc);
   /** @brief 境界の履歴と候補処理を実行し、完了を示す1を返す。 */
-  int (*finish_boundary)(std::uintptr_t owner, std::uint32_t status, std::uint32_t budget);
+  int (*finish_boundary)(std::uintptr_t owner, std::uint32_t status);
 };
 
 struct fb_native_dispatch_call {
@@ -77,7 +77,6 @@ struct fb_native_dispatch_call {
   std::uint32_t *stack;
   std::uint32_t *locals;
   const fb_native_jit_provider *jit_provider;
-  std::uint32_t idle_budget;
 };
 
 struct fb_native_step_call {

@@ -182,7 +182,7 @@ def test_native_const_capacity_traps_without_partial_push(
     for index in range(stack_capacity):
         context.stack.write_raw_at(index, 0xA5A50000 + index)
     before = tuple(context.stack.raw_at(index) for index in range(stack_capacity))
-    monkeypatch.setattr(interpreter_module.Interpreter, "_new_context", lambda self: context)
+    monkeypatch.setattr(interpreter_module.NativeInterpreter, "_new_context", lambda self: context)
     call = make_native_interpreter(module).start(0, ())
     assert call.finished and call.trap is not None
     assert call.trap.code == TrapCode.OPERAND_STACK_CAPACITY

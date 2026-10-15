@@ -87,7 +87,7 @@ def _build_module(iterations: int, block_repetitions: int) -> tuple[bytes, int]:
 def _run_once(interpreter: NativeInterpreter) -> InterpreterCall:
     call_state = interpreter.start(0, ())
     while not call_state.finished:
-        call_state = interpreter.step_native_boundary(call_state, idle_budget=0).call_state
+        call_state = interpreter.step_native_boundary(call_state).call_state
     assert call_state.trap is None
     assert call_state.results is not None and len(call_state.results) == 0
     return call_state

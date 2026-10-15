@@ -27,6 +27,7 @@ from config import FB_CONF_INTERPRETER_YIELD_THRESHOLD
 from qa.shared.jit_cache import HotspotBitmap
 from qa.shared.runtime_stats import RuntimeStatsEngine
 from qa.shared.x64_jit import TraceCompiler
+from runtime_driver import run_runtime_call
 from system_containers import ReadOnlyFlatMapView, StaticVector
 from tier2_runtime.interpreter.control_flow import (
     build_control_map,
@@ -150,11 +151,11 @@ class JITCompilerBenchmark:
             )
 
             # Warm up and compile the hot traces before measuring native execution.
-            interp_jit.call(fn_idx, [100], idle_budget=0).unwrap()
-            interp_jit.idle_hook(budget=10)
+            run_runtime_call(runtime_engine, interp_jit, fn_idx, [100]).unwrap()
+            runtime_engine.idle_hook(budget=10)
 
             t0 = time.perf_counter()
-            res_jit = interp_jit.call(fn_idx, [LOOP_COUNT], idle_budget=0).unwrap()
+            res_jit = run_runtime_call(runtime_engine, interp_jit, fn_idx, [LOOP_COUNT]).unwrap()
             t1 = time.perf_counter()
             jit_times_ms.append((t1 - t0) * 1000)
             jit_results.append(int(res_jit[0]))

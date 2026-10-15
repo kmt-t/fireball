@@ -23,6 +23,7 @@ from bench_jit import JITCompilerBenchmark
 from config import FB_CONF_INTERPRETER_YIELD_THRESHOLD
 from qa.private.interpreter_native_abi import NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE
 from qa.shared.runtime_stats import RuntimeStatsEngine
+from runtime_driver import run_runtime_call
 from tier2_runtime.interpreter.interpreter import (
     Interpreter,
     InterpreterBindings,
@@ -166,17 +167,11 @@ def main() -> None:
             execution_plugin=None if measured_stats is not None else plugin,
             yield_threshold=FB_CONF_INTERPRETER_YIELD_THRESHOLD,
         )
-        if measured_stats is None:
-            warmup_result = interpreter.call(function_index, [100], idle_budget=0).unwrap()
-        else:
-            warmup_result = runtime_engine.call(
-                interpreter, function_index, [100], idle_budget=0
-            ).unwrap()
+        warmup_result = run_runtime_call(
+            runtime_engine, interpreter, function_index, [100]
+        ).unwrap()
         assert int(warmup_result[0]) == 4_950
-        if measured_stats is None:
-            interpreter.idle_hook(budget=10)
-        else:
-            runtime_engine.idle_hook(budget=10)
+        runtime_engine.idle_hook(budget=10)
         if measured_stats is not None:
             measured_stats.reset_stats()
 
@@ -185,12 +180,9 @@ def main() -> None:
         batch_start = time.perf_counter()
         try:
             for _ in range(repetitions):
-                if measured_stats is None:
-                    result = interpreter.call(function_index, arguments, idle_budget=0).unwrap()
-                else:
-                    result = runtime_engine.call(
-                        interpreter, function_index, arguments, idle_budget=0
-                    ).unwrap()
+                result = run_runtime_call(
+                    runtime_engine, interpreter, function_index, arguments
+                ).unwrap()
         finally:
             elapsed_ms = (time.perf_counter() - batch_start) * 1000.0
             perf_stat.set_enabled(False)

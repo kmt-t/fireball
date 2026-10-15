@@ -14,8 +14,7 @@ from ipc_router import FB_URI_HAL_STDOUT, IPCStatus, Role
 from qa.private.debugger_support import make_debug_execution
 from qa.shared.fixtures.platform_drivers import create_reference_platform_drivers
 from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext
-from qa.shared.helpers import expect_assertion, make_native_interpreter
-from qa.shared.jit_manager import JITRuntimeManager
+from qa.shared.helpers import make_native_interpreter
 from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
 from qa.shared.runtime_support import compile_runtime_block, make_runtime_engine
 from qa.shared.x64_jit import TraceCompiler
@@ -82,18 +81,6 @@ def _load_factor_levels() -> tuple[tuple[str, ...], ...]:
 
 
 PAIRWISE_FACTORS = _load_factor_levels()
-
-
-def _assert_debugger_jit_composition_rejected() -> None:
-    module = parse_standalone(bytes(wasmtime.wat2wasm("(module (func))")))
-    plugin = JITRuntimeManager(jit_compiler=TraceCompiler())
-    try:
-        interpreter = make_native_interpreter(module)
-        interpreter.attach_execution_plugin(plugin)
-        with expect_assertion("native execution plugins cannot be combined with debugger"):
-            interpreter.attach_debugger(DebuggerManager())
-    finally:
-        plugin.close()
 
 
 def _case_wat(storage_mode: str, mem_width: str, host_mode: str) -> str:
@@ -225,16 +212,15 @@ def test_debugger_registers_breakpoint_and_resume(dbg_mode: str) -> None:
 
 
 def run_single_pairwise_case(case_id: str, case_tuple: tuple[str, ...]) -> str:
-    engine_mode, cache_mode, mem_width, storage_mode, host_mode, sched_mode, dbg_mode = case_tuple
-    if engine_mode in ("jit", "hybrid") and dbg_mode in ("inspect", "active"):
-        _assert_debugger_jit_composition_rejected()
-        return "rejected"
+    _engine_mode, _cache_mode, _mem_width, _storage_mode, _host_mode, _sched_mode, _dbg_mode = (
+        case_tuple
+    )
     with ExitStack() as resources:
         return _run_workload(case_id, case_tuple, resources)
 
 
 def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStack) -> str:
-    engine_mode, cache_mode, mem_width, storage_mode, host_mode, sched_mode, _ = case_tuple
+    engine_mode, cache_mode, mem_width, storage_mode, host_mode, sched_mode, dbg_mode = case_tuple
     backend = UvwasiReferenceContext()
     sysv = System.with_drivers(create_reference_platform_drivers(backend))
     resources.callback(sysv.shutdown)
@@ -337,6 +323,8 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
         phys_mem=sysv.phys_mem,
         yield_threshold=4,
     )
+    if dbg_mode != "detached":
+        interp.attach_debugger(DebuggerManager())
     _prepare_cache(engine, module, cache_mode, engine_mode)
     main_index = module.export_func_index("main")
     schedule: list[str] = []
@@ -346,13 +334,13 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
         schedule.append("guest-start")
         state = interp.start(main_index, (n_iters,))
         while not state.finished:
-            boundary = engine.run(interp, state, idle_budget=2)
+            boundary = engine.run(interp, state)
             state = boundary.call_state
             if boundary.yield_requested and not state.finished:
                 yielded_pcs.append(state.current_pc())
                 schedule.append("guest-yield")
                 yield (ChannelAction.YIELD, None)
-        result = engine.complete_call(interp, state, idle_budget=2).unwrap()
+        result = engine.complete_call(interp, state).unwrap()
         schedule.append("guest-done")
         return tuple(result)
 
@@ -374,7 +362,7 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
         pte = sysv.vmmio.ptes.view().find(0xE0001)
         assert pte is not None and pte.owner_id == task.task_id and pte.physical_base_addr == 4096
     if sched_mode == "noint":
-        results = engine.call(interp, main_index, (n_iters,), idle_budget=2).unwrap()
+        results = engine.call(interp, main_index, (n_iters,)).unwrap()
         assert sysv.scheduler.current_task is task
         assert schedule == [] and yielded_pcs == []
     else:
@@ -460,11 +448,10 @@ def test_pairwise_plan_covers_all_declared_factor_pairs() -> None:
     ids=tuple(pairwise_case_id(number) for number in range(1, len(PAIRWISE_CASES) + 1)),
 )
 def test_pairwise_case(case_number: int, case_tuple: tuple[str, ...]) -> None:
-    """各行を独立実行し、禁止構成の拒否と許可構成の結果を区別する。"""
+    """各構成を独立実行し、debugger付きnative engineのinterpreter動作も検査する。"""
     case_id = pairwise_case_id(case_number)
     outcome = run_single_pairwise_case(case_id, case_tuple)
-    forbidden = case_tuple[0] != "interp" and case_tuple[6] != "detached"
-    assert outcome == ("rejected" if forbidden else "executed"), case_id
+    assert outcome == "executed", case_id
 
 
 @pytest.mark.parametrize("engine_mode", ("jit", "hybrid"))

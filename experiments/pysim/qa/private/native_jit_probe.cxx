@@ -424,7 +424,7 @@ static int qa_observe_block(std::uintptr_t owner, block_index_t, wasm_pc_t) {
   return owner == 0 ? -1 : 1;
 }
 
-static int qa_finish_boundary(std::uintptr_t owner, std::uint32_t, std::uint32_t) {
+static int qa_finish_boundary(std::uintptr_t owner, std::uint32_t) {
   return owner == 0 ? 0 : 1;
 }
 

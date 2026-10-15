@@ -4,7 +4,6 @@ Reference Concept Implementation: COOS Round-Robin Scheduler
 Implementation Invariants & Gotchas:
 - Pure FIFO round-robin dispatch without priority (ADR_CoosPureRoundRobin).
 - Fixed task-capacity bound (FB_CONF_MAX_TASKS = 16) at the behavioral-model level.
-- This concept uses Python built-in containers; bounded-allocation behavior is modeled by pysim.
 - GOTCHA-SCHED-01: READY tasks are dispatched in FIFO order when running tasks yield;
   non-yielding tasks can prevent further dispatch, so fairness and response time are not guaranteed.
 - ADR_InterruptRescheduleGeneration: an accepted interrupt advances one generation;

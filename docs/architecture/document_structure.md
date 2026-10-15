@@ -225,13 +225,14 @@ Fireball の Tier 構造では、上位 Tier が粗粒度の方針を示す。�
 | *(暗黙・全件)* | テスト仕様（振る舞い網羅） | `docs/qa/tier*/` に所有Tier別で配置するテスト仕様書。WASM命令セットの横断仕様は `docs/qa/specs/` に置く | 各コンポーネント設計書の `<!-- evidence: ... -->` にリポジトリルート相対パスで宣言する。テストケースは設計正本から期待結果を導出する。対応する参照実装と責務上の対象外理由はマトリクスで確認し、実装の現在値から期待結果を逆算しない。 |
 
 実行可能参照実装の必要性は、[`verification_factor_matrix.md`](docs/qa/verification_factor_matrix.md)のコンポーネント行を正本とする。
+evidenceの`implementation`は参照実装の実在パスを示す。`benchmark`と`benchmark_record`は参照実装の測定入口と結果記録を示し、製品APIや対象ハードウェアの資源適合を証明しない。
 通常の実装コンポーネントは、独立したコンセプトコードと実行テストを結び付ける。
 次の例外は、同マトリクスが責務と代替証拠を明記した対象に限る。
 
 - 契約だけの文書は、evidenceに`contract-only: true`を宣言する。実装側の参照実装と契約テストへ結び付ける。
 - `system_config`は静的設定の正本であり、実行時アルゴリズムを持たない。設定の直接検査と抽象構成モデルを用いる。
 - `runtime_vsoc`、`jit_compiler`、`jit_runtime`は、現行x64実装を直接実行するテストと形式モデルを用いる。独立コンセプト層を`N/A`とする理由を各仕様に記述する。
-- `runtime_observability`、`guest_profiler`、`libfireball`は、マトリクスに指定したpysim参照モデルを既存の実行可能証拠として使う。evidenceの`implementation`に実在パスを示し、検証できる範囲を限定する。
+- `runtime_observability`、`guest_profiler`、`libfireball`は、マトリクスに指定した参照実装を実行可能証拠として使う。evidenceの`implementation`は参照実装の実在パスを示し、製品実装との一致を主張せず、検証できる範囲を限定する。
 
 実装ファイルが存在するだけでは、コンセプト層の欠落を免除しない。
 マトリクスが未実装・未検証とする性質を、別層の成功から検証済みと推定しない。

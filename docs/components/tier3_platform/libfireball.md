@@ -5,7 +5,7 @@
      test: docs/qa/tier3_platform/libfireball_test_spec.md
 -->
 
-本書はゲスト側 `libfireball` の設計目標を定義する。Python参照実装 [`libfireball.py`](experiments/pysim/tier3_platform/libfireball.py) は汎用host-call引数の詰め替えと専用vIRQ/vDMA port転送をモデル化する。raw 4 importにはC++参照wrapperがあり、WIT生成bindingの静的リンクと実Interpreter実行を第8節の範囲で検証する。WASI Preview1変換、URI Resolver、HALバッファ処理はゲスト側ライブラリに未実装である。
+本書はゲスト側 `libfireball` の設計目標を定義する。汎用host-callの引数配置、専用vIRQ/vDMA port転送、およびWASI Preview1の標準出力・標準エラー変換を扱う。
 
 
 ## 1. コンセプト
@@ -188,10 +188,6 @@ sequenceDiagram
 
 特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。
 
-### raw host-call参照実装
+### host-call bindingの契約
 <!-- traceability: {WIT_Interface_Spec} -->
-[`libfireball.hxx`](experiments/pysim/native/tier3_platform/libfireball/libfireball.hxx) は汎用host-callの0〜6引数を固定7引数へ配置するinline wrapperである。
-専用vIRQ/vDMA入口はWITから生成したbindingを使用する。
-[`build_guest.py`](tools/guest_bindings/build_guest.py) が生成bindingを静的archiveへ格納し、guestへリンクする。
-この実装範囲はraw 4 importである。
-WASI Preview1とHAL loweringは本実装の対象外である。
+汎用host-callの0〜6引数を固定7引数の呼出規約へ配置する。専用vIRQ/vDMA入口はWITで定義したbindingを使用する。WASI Preview1変換は本書§1に、HAL bufferの処理はTier 2 HAL仕様に従う。

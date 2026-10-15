@@ -23,7 +23,7 @@
 
 ### 整数型と座標系
 
-ネイティブABIは [`integer_types.hxx`](experiments/pysim/tier2_runtime/abi/integer_types.hxx) のC互換`typedef`を使い、参照実装は [`integer_types.py`](experiments/pysim/tier2_runtime/abi/integer_types.py) の`NewType`を使う。同じ基底整数型でも、PC、関数コード内IP、コード範囲、ブロック番号、フレーム内word位置を別名で区別する。16bit値の無効値は`0xFFFF`、8bit値の無効値は`0xFF`とする。
+ネイティブABIはC互換`typedef`を使う。同じ基底整数型でも、PC、関数コード内IP、コード範囲、ブロック番号、フレーム内word位置を別名で区別する。16bit値の無効値は`0xFFFF`、8bit値の無効値は`0xFF`とする。
 
 | 型 | 基底型 | 用途と上限根拠 |
 | :--- | :--- | :--- |
@@ -118,7 +118,7 @@ CallFrameは関数実行view、ローカル基点、オペランドstack基点�
 
 ### 委譲シグネチャ
 
-JIT trace entryは`bool (execution_context*, const uint8_t*, uint32_t*, const uint8_t*) noexcept`を使う。`true`なら通常完了で、未接続chain targetに到達した終端dispatcherだけが終端metadata pointerを一時的に`execution_context.rel`へ格納し、`execution_context.ip`へ終端命令位置を設定する。`false`ならtrapまたはCPS exitであり、Interpreter dispatcherは後続実行を中断する。Interpreter Runtime APIは`bool (execution_context*, const uint8_t *&, uint32_t *&, uint32_t *&, const uint8_t *&)`、JIT Runtime APIは`bool (execution_context*, uint32_t *&, uint32_t *&, const uint8_t*)`を使う。Interpreter側の`rel`は関数注釈プールを指し、JIT側の`rel` cursorはtrace pool anchor内のRuntime API recordを指す。recordはu8 slot/count/span、`code_ip_t` source IP、型幅のimmediate payloadから成る。traceごとのanchorはheader相対参照を一つ持ち、終端API recordのannotation offsetから関数注釈プールを読む。Interpreterの意味処理とAPI prototypeは[`native_wasm_operations.cxx`](experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.cxx)、JIT専用wrapper・prototype・opcode対応表は[`jit_runtime_apis.cxx`](experiments/pysim/native/tier3_plugins/jit/jit_runtime_apis.cxx)に置く。両者のopcode handler/API tableは独立している。
+JIT trace entryは`bool (execution_context*, const uint8_t*, uint32_t*, const uint8_t*) noexcept`を使う。`true`なら通常完了で、未接続chain targetに到達した終端dispatcherだけが終端metadata pointerを一時的に`execution_context.rel`へ格納し、`execution_context.ip`へ終端命令位置を設定する。`false`ならtrapまたはCPS exitであり、Interpreter dispatcherは後続実行を中断する。Interpreter Runtime APIは`bool (execution_context*, const uint8_t *&, uint32_t *&, uint32_t *&, const uint8_t *&)`、JIT Runtime APIは`bool (execution_context*, uint32_t *&, uint32_t *&, const uint8_t*)`を使う。Interpreter側の`rel`は関数注釈プールを指し、JIT側の`rel` cursorはtrace pool anchor内のRuntime API recordを指す。recordはu8 slot/count/span、`code_ip_t` source IP、型幅のimmediate payloadから成る。traceごとのanchorはheader相対参照を一つ持ち、終端API recordのannotation offsetから関数注釈プールを読む。InterpreterとJITのopcode handler/API tableは独立している。
 
 Runtime APIはtrace operationとして共通コード領域のtableから呼び出す。API固有の実行状態・trap状態を`execution_context`へ反映し、`true`で後続JIT operationへ継続する。`false`ではJIT stencilが後続operationを実行せずabort slotへ分岐し、RuntimeEngineが`execution_context`の終了理由を判定する。 `{JIT_RuntimeAPI}`
 

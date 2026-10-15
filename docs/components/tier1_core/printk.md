@@ -73,7 +73,7 @@ graph TD
 
 ### 3.3 主要な構成要素と診断イベント
 
-COOSとIPCは下表の異常系イベントのみを出力する。イベントIDと書式は [`printk.py`](experiments/pysim/tier1_core/printk.py) およびTier 3 Sinkと同期する。
+COOSとIPCは下表の異常系イベントのみを出力する。イベントIDと書式は下表で定義し、Tier 3 Sinkと共有する。
 
 | イベントID | 呼出し元 | レベル | 書式 | 引数 `arg0..arg3` |
 | :--- | :--- | :--- | :--- | :--- |
@@ -97,7 +97,7 @@ COOSとIPCは下表の異常系イベントのみを出力する。イベントI
 
 辞書IDは`0..0xFFFFFF`、各引数は`u32`の範囲に限る。
 未知ID、不正レベル、ヘッダ欠損、引数部欠損は契約違反として検出する。
-pysimはこれらをassertで即時検出する。未知IDから次の境界を推測して復号を継続しない。
+未知IDから次の境界を推測して復号を継続しない。
 異なる引数数の辞書と旧20バイト固定形式は対象外である。
 
 ### 4.2 バイナリのBase64出力
@@ -153,7 +153,7 @@ sequenceDiagram
 
 `write_event` は診断出力の失敗を処理継続条件にしない。出力先が利用できない場合も、元の状態遷移・拒否結果・契約アサーションを維持する。
 
-PythonとC++は[`printk.hxx`](experiments/pysim/native/tier1_core/printk/printk.hxx)の同期バイト出力実装を共有する。イベントのレコード作成とBase64符号化はC++で行う。pysimの物理Sinkと辞書復号のアダプタはPythonで実装する。C++の任意計測構成は同じバイト出力へ`label=value`形式の64ビット数値を出力できる。計測状態の整形は計測を所有する側で行い、printkとPythonの物理Sinkは利用側固有の状態を解釈しない。
+イベントのレコード作成とBase64符号化を行い、同期バイト出力する。任意の計測構成は同じバイト出力へ`label=value`形式の64ビット数値を出力できる。計測状態の整形は計測を所有する側で行い、printkは利用側固有の状態を解釈しない。
 
 ### 5.2 URI・IPC・WITインターフェース
 
@@ -192,7 +192,7 @@ Base64は既知入力の出力、借用範囲、20バイト上限、完全書込
 ### 7.3 テスト仕様書との連携
 
 [`runtime_logging_test_spec.md`](docs/qa/tier2_runtime/runtime_logging_test_spec.md)のTEST-LOG-14、17、18へ結び付ける。
-実行テストは[`test_logging.py`](experiments/pysim/qa/tier2_runtime/test_logging.py)である。
+出力とイベント辞書の検証は[`runtime_logging_test_spec.md`](docs/qa/tier2_runtime/runtime_logging_test_spec.md)に従う。
 この共有テスト仕様へのリンクは検証証拠であり、Tier 2ロガーへ動作契約を委譲するものではない。
 
 ### 7.4 既知の制限・対象外

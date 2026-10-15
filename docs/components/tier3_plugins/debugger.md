@@ -220,4 +220,4 @@ GDB RSP、ブレークポイント、インタープリタ専用デバッグ構�
 
 ## 8. 設計判断と参考実装
 
-デバッグ実行を `Interpreter + Debugger` に静的限定し、`Debugger + JIT` は構成時に拒否する。デバッガはJITキャッシュを所有せず、メモリ書き換え時のキャッシュ無効化も担当しない。概念コードの構成例は [`debugger_concept.py`](docs/components/tier3_plugins/concepts/debugger_concept.py) を参照する。現行RSPの検証証拠は [`debugger_test_spec.md`](docs/qa/tier3_plugins/debugger_test_spec.md) と対応するpysimテストに置く。
+デバッグ実行を `Interpreter + Debugger` に静的限定し、`Debugger + JIT` は構成時に拒否する。デバッガはJITキャッシュを所有せず、メモリ書き換え時のキャッシュ無効化も担当しない。概念コードの構成例は [`debugger_concept.py`](docs/components/tier3_plugins/concepts/debugger_concept.py) を参照する。現行RSPの検証観点は [`debugger_test_spec.md`](docs/qa/tier3_plugins/debugger_test_spec.md) に置く。

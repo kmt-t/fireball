@@ -69,7 +69,8 @@ JIT_X64_TRACE_CHAIN_ENTRY_OFFSET: int = 20
 JIT_TRACE_HEADER_BYTES: int = JIT_X64_TRACE_HEADER_BYTES
 # Trace-header offsets describe the x64 code-cache ABI.
 # Common-code offsets are code-region offsets, not trace-header field offsets.
-# The common area contains the assembly-generated chain dispatcher and the Runtime API function table.
+# The common area contains the chain dispatcher and a borrowed pointer to the Runtime API table.
+# The read-only table itself remains in Tier 3 JIT plugin storage.
 JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET: int = 0
 JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES: int = 256
 # Default for synthetic traces; generated traces use their actual byte length.

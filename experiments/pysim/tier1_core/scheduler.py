@@ -1160,12 +1160,22 @@ class Scheduler:
         self.current_task = None
         return task
 
-    def run_until_idle(self, budget: int | None = None) -> None:
-        """Runs cooperative tasks within the budget; fires hooks only with no READY task or event."""
+    def run_until_idle(self) -> None:
+        """Runs cooperative tasks until idle with the default step limit.
+
+        The limit scales with the READY count at the call. Idle hooks fire only with no READY task or event.
+        """
+        self.run_until_idle_within(max(1000, len(self._ready) * 64 + 16))
+
+    def run_until_idle_within(self, budget: int) -> None:
+        """Runs cooperative tasks for at most ``budget`` steps; idle hooks fire only with no READY task or event.
+
+        Exhausting the budget with a READY task left does not count as idle (TEST-COOS-10).
+        """
         previous_task = self.current_task
         self.drain_interrupts()
         self._begin_reschedule_round()
-        step_budget = budget if budget is not None else max(1000, len(self._ready) * 64 + 16)
+        step_budget = budget
         idle_hooks_called = False
         while step_budget > 0:
             self.drain_interrupts()

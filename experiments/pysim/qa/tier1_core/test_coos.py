@@ -382,8 +382,8 @@ def test_coos_10_idle_detection_when_all_blocked():
     assert task.state == TaskState.SUSPENDED_CSP, "the sole task must be blocked, not terminated"
 
 
-@pytest.mark.parametrize("budget", (1, None), ids=("one-step", "default-budget"))
-def test_coos_10_budget_exhaustion_with_ready_task_is_not_idle(budget: int | None) -> None:
+@pytest.mark.parametrize("budget", (1, 1000), ids=("one-step", "small-budget"))
+def test_coos_10_budget_exhaustion_with_ready_task_is_not_idle(budget: int) -> None:
     """TEST-COOS-10: 予算終了時にREADYが残ればidle hookを呼ばない。"""
     sched = Scheduler()
     idle_calls: list[int] = []
@@ -395,7 +395,7 @@ def test_coos_10_budget_exhaustion_with_ready_task_is_not_idle(budget: int | Non
 
     task = sched.get_task(sched.spawn("worker", worker()).unwrap())
     assert task is not None
-    sched.run_until_idle(budget=budget)
+    sched.run_until_idle_within(budget)
     assert task.state == TaskState.READY
     assert tuple(sched._ready) == (task,)
     assert idle_calls == []
@@ -414,7 +414,7 @@ def test_coos_10_pending_event_at_budget_end_is_not_idle() -> None:
 
     task = sched.get_task(sched.spawn("notifier", notifier()).unwrap())
     assert task is not None
-    sched.run_until_idle(budget=1)
+    sched.run_until_idle_within(1)
     assert task.state == TaskState.TERMINATED
     assert not sched._ready
     assert len(sched.interrupt_event_queue) == 1

@@ -56,13 +56,21 @@ class RuntimeEngine:
         "module",
     )
 
-    def __init__(
-        self,
-        drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS,
-        bump_allocator: BumpAllocator | None = None,
-    ):
+    def __init__(self, drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS):
         # RuntimeEngine is the runtime owner; loaders borrow this arena.
-        self._bump_allocator = bump_allocator if bump_allocator is not None else BumpAllocator()
+        self._initialize(drive_mode, BumpAllocator())
+
+    @classmethod
+    def with_allocator(
+        cls, allocator: BumpAllocator, drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS
+    ) -> RuntimeEngine:
+        """Build a runtime around a caller-owned arena selected by its parent."""
+        engine = cls.__new__(cls)
+        engine._initialize(drive_mode, allocator)
+        return engine
+
+    def _initialize(self, drive_mode: RuntimeDriveMode, allocator: BumpAllocator) -> None:
+        self._bump_allocator = allocator
         self.drive_mode = drive_mode
         self.module: Module | None = None
         self._virq: VirqDispatcher | None = None

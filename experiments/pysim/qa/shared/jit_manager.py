@@ -374,12 +374,10 @@ class JITRuntimeManager(NativeJITRuntimeManager):
 
         assert 0 <= total_visits <= 0xFFFF_FFFF_FFFF_FFFF
         pointer = ctypes.cast(visits.native_address, ctypes.POINTER(ctypes.c_uint32))
-        assert (
-            native_abi.RUNTIME_VISITS(
-                self.cache._native.pointer, pointer, len(visits), total_visits
-            )
-            == 1
+        result = native_abi.RUNTIME_VISITS(
+            self.cache._native.pointer, pointer, len(visits), total_visits
         )
+        assert result == 1
         return False
 
     def is_trackable(self, pc: int) -> bool:
@@ -396,7 +394,8 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         """Record one candidate execution without changing the execution boundary."""
 
         assert 0 <= pc <= 0xFFFF_FFFF
-        assert native_abi.RUNTIME_RECORD(self.cache._native.pointer, pc) == 1
+        result = native_abi.RUNTIME_RECORD(self.cache._native.pointer, pc)
+        assert result == 1
         return False
 
     def on_interpreter_exit(self, yield_requested: bool) -> None:
@@ -438,7 +437,8 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         """Remove a permanently unsupported block from the candidate mask."""
 
         assert 0 <= pc <= 0xFFFF_FFFF
-        assert native_abi.RUNTIME_SUPPRESS(self.cache._native.pointer, pc) == 1
+        result = native_abi.RUNTIME_SUPPRESS(self.cache._native.pointer, pc)
+        assert result == 1
 
     def _describe_trace(self, trace: JITTrace) -> None:
         """Attach loader metadata to the descriptor before native snapshot publication."""
@@ -465,7 +465,8 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         lengths = (ctypes.c_uint32 * len(code_lengths))(*code_lengths)
         bases = (ctypes.c_uint32 * len(pc_bases))(*pc_bases) if pc_bases else None
         size = ctypes.c_uint64()
-        assert native_abi.REGION_SIZE(lengths, bases, len(lengths), ctypes.byref(size)) == 1
+        result = native_abi.REGION_SIZE(lengths, bases, len(lengths), ctypes.byref(size))
+        assert result == 1
         self._code_bytes = size.value
         cards = int(native_abi.CARD_COUNT(self._code_bytes, self._card_shift))
         assert cards >= 0
@@ -502,7 +503,8 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             self._block_inputs,
             len(self._block_inputs),
         )
-        assert native_abi.RUNTIME_BIND_PROFILE(self._native.pointer, self._profile) == 1
+        result = native_abi.RUNTIME_BIND_PROFILE(self._native.pointer, self._profile)
+        assert result == 1
 
     @property
     def hotspot_profiling_enabled(self) -> bool:
@@ -526,7 +528,8 @@ class JITRuntimeManager(NativeJITRuntimeManager):
 
     def on_yield(self) -> None:
         self._begin()
-        assert native_abi.RUNTIME_YIELD(self._native.pointer) == 1
+        result = native_abi.RUNTIME_YIELD(self._native.pointer)
+        assert result == 1
         self._check()
 
     def idle_hook(self, budget: int = 4) -> int:

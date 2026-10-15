@@ -159,7 +159,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 
 def parse_single_function_module(code: bytes, results: tuple[int, ...] = ()) -> Module:
     """Load a single-function binary fixture through the product ROM parser."""
-    from tier2_runtime.wasm.reader import parse
+    from tier2_runtime.wasm.reader import parse_standalone
 
     type_payload = b"\x01\x60\x00" + _encode_leb128_u32(len(results)) + bytes(results)
     body = b"\x00" + code
@@ -174,7 +174,7 @@ def parse_single_function_module(code: bytes, results: tuple[int, ...] = ()) -> 
         + _encode_leb128_u32(len(code_payload))
         + code_payload
     )
-    return parse(memoryview(binary))
+    return parse_standalone(memoryview(binary))
 
 
 def make_interpreter_bindings(
@@ -240,7 +240,9 @@ def make_interpreter(
         imported_tables,
         imported_memory,
     )
-    return Interpreter(module, bindings, vmmio=vmmio, phys_mem=phys_mem, logger=logger)
+    return Interpreter.with_module_allocator(
+        module, bindings, vmmio=vmmio, phys_mem=phys_mem, logger=logger
+    )
 
 
 def make_native_interpreter(
@@ -266,6 +268,16 @@ def make_native_interpreter(
         imported_tables,
         imported_memory,
     )
+    if bump_allocator is None:
+        return NativeInterpreter.with_module_allocator(
+            module,
+            bindings,
+            vmmio=vmmio,
+            phys_mem=phys_mem,
+            logger=logger,
+            execution_plugin=execution_plugin,
+            yield_threshold=yield_threshold,
+        )
     return NativeInterpreter(
         module,
         bindings,

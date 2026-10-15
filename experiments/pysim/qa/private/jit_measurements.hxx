@@ -6,7 +6,9 @@
 #include <array>
 #include <cassert>
 #include <chrono>
+#include <cstdint>
 #include <limits>
+#include <string_view>
 
 #include "../../native/tier1_core/printk/printk.hxx"
 #include "../../native/tier3_plugins/jit/jit_chain_diagnostics.hxx"
@@ -16,6 +18,12 @@ namespace fireball {
 struct jit_measurements {
   static constexpr std::uint32_t no_pc = std::numeric_limits<std::uint32_t>::max();
   static constexpr std::size_t trace_capacity = 3u * FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY;
+  static constexpr std::array<std::uint8_t, 9> control_opcodes{0x02, 0x03, 0x04, 0x05, 0x0B,
+                                                               0x0C, 0x0D, 0x0E, 0x0F};
+  static constexpr std::array<std::string_view, control_opcodes.size()> control_opcode_names{
+      "block", "loop", "if", "else", "end", "br", "br_if", "br_table", "return"};
+  static constexpr std::size_t chain_reason_count =
+      static_cast<std::size_t>(jit_chain_reason::count);
 
   bool auto_age = true;
   bool owns_memory = true;
@@ -38,6 +46,8 @@ struct jit_measurements {
       chain_construction_reasons{};
   std::array<std::uint64_t, static_cast<std::size_t>(jit_chain_reason::count)>
       chain_runtime_reasons{};
+  std::array<std::array<std::uint64_t, chain_reason_count>, control_opcodes.size()>
+      chain_runtime_control_reasons{};
   std::uint64_t chain_construction_attempts = 0;
   std::uint64_t chain_runtime_transitions = 0;
   std::uint64_t chain_runtime_unclassified = 0;
@@ -104,6 +114,32 @@ struct jit_measurements {
         return false;
       }
     }
+    for (std::size_t opcode_index = 0; opcode_index < control_opcode_names.size(); ++opcode_index) {
+      for (std::size_t reason_index = 0; reason_index < jit_chain_reason_names.size();
+           ++reason_index) {
+        const auto count = chain_runtime_control_reasons[opcode_index][reason_index];
+        if (count == 0) {
+          continue;
+        }
+        std::array<char, 80> label{};
+        constexpr std::string_view prefix = "jit.chain_runtime_op.";
+        std::size_t offset = 0;
+        const auto append = [&label, &offset](std::string_view text) {
+          for (const auto character : text) {
+            assert(offset + 1 < label.size());
+            label[offset++] = character;
+          }
+        };
+        append(prefix);
+        append(control_opcode_names[opcode_index]);
+        append(".");
+        append(jit_chain_reason_names[reason_index]);
+        label[offset] = '\0';
+        if (!printk_u64(writer, label.data(), count)) {
+          return false;
+        }
+      }
+    }
     return true;
   }
 
@@ -112,12 +148,21 @@ struct jit_measurements {
     ++chain_construction_attempts;
     ++chain_construction_reasons[static_cast<std::size_t>(reason)];
   }
-  void record_chain_runtime(jit_chain_reason reason) {
+  void record_chain_runtime(jit_chain_reason reason, std::uint8_t opcode = 0xFF) {
     assert(reason < jit_chain_reason::count);
     ++chain_runtime_reasons[static_cast<std::size_t>(reason)];
+    for (std::size_t index = 0; index < control_opcodes.size(); ++index) {
+      if (control_opcodes[index] == opcode) {
+        ++chain_runtime_control_reasons[index][static_cast<std::size_t>(reason)];
+        return;
+      }
+    }
   }
   void reset_chain_runtime() {
     chain_runtime_reasons.fill(0);
+    for (auto &reasons : chain_runtime_control_reasons) {
+      reasons.fill(0);
+    }
     chain_runtime_transitions = 0;
     chain_runtime_unclassified = 0;
     chain_runtime_unobserved_trace_exits = 0;

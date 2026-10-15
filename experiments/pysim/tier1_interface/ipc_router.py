@@ -394,11 +394,10 @@ class IPCMessage:
         target_k = pack_key32(scope_kind, data_type, key_id)
         return self.get(target_k)
 
-    def get(self, key: int, default: int | None = None) -> int | None:
+    def get(self, key: int) -> int | None:
         """Retrieves a value via flat_map_view binary search over entries in the memory block."""
         self._check_ownership()
-        value = self.payload.find(key)
-        return default if value is None else value
+        return self.payload.find(key)
 
     def __getitem__(self, key: int) -> int:
         val = self.get(key)
@@ -433,7 +432,8 @@ def kv_entries_to_bytes(
     """Unpacks AoS (key32, val32) entries back into raw bytes using length metadata."""
     entries_view = ReadOnlyFlatMapView(entries)
     length_value = entries_view.find(0)
-    total_len = 0 if length_value is None else length_value
+    assert length_value is not None, "IPC payload is missing its length entry"
+    total_len = length_value
     if max_len is not None:
         total_len = min(total_len, max_len)
 
@@ -441,8 +441,8 @@ def kv_entries_to_bytes(
     idx = 1
     while len(buf) < total_len:
         value = entries_view.find(idx)
-        v = 0 if value is None else value
-        chunk = v.to_bytes(4, "little")
+        assert value is not None, f"IPC payload is missing data entry {idx}"
+        chunk = value.to_bytes(4, "little")
         buf.extend(chunk)
         idx += 1
     return bytes(buf[:total_len])

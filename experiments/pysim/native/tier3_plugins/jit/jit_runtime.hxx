@@ -189,8 +189,6 @@ public:
   /** @brief Loaderが解決した後続PCを返す。 */
   wasm_pc_t trace_successor_pc(jit_cache_entry value) const;
   block_index_t trace_successor_block_index(jit_cache_entry value) const;
-  /** @brief Loaderが解決したループ先PCを返す。 */
-  wasm_pc_t trace_loop_target_pc(jit_cache_entry value) const;
   /** @brief 静的な前方チェイニングが可能なソースかを判定する。 */
   bool can_chain_from(jit_cache_entry value) const;
   /** @brief 後続PCとフレーム境界が連結可能かを判定する。 */

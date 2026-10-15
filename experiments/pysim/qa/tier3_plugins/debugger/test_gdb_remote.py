@@ -152,7 +152,7 @@ def test_debugger_sink_is_replaceable() -> None:
     valid_query = GDBRspProtocol.format_packet("?")
     connection = _MemoryDebuggerConnection((malformed_write + valid_query).encode("latin1"))
     sink = _MemoryDebuggerSink(connection)
-    server = GDBServer(DebuggerManager(), transport=sink)
+    server = GDBServer(DebuggerManager(), sink)
     memory = bytearray(b"keep")
     task = server.run_task(0, DebugTestView(memory=memory), {})
     next(task)
@@ -204,7 +204,7 @@ def test_gdb_remote_socket_session():
     mem[0:8] = b"TESTDATA"
     execution = make_debug_execution(mod, 0, (2, 0, 0, 0), memory=mem)
     dbg = DebuggerManager(engine=execution)
-    server = GDBServer(dbg=dbg, host="127.0.0.1", port=0)
+    server = GDBServer.with_socket_transport(dbg, host="127.0.0.1", port=0)
     ctx = execution.context
     # Start TCP Server on dynamic port
     port = server.start(current_pc=block10.head_pc, ctx=ctx, blocks=blocks)

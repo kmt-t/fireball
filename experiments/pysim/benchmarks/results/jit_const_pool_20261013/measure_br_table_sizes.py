@@ -21,7 +21,7 @@ configure_import_paths(PYSIM, BENCH)
 
 from bump_allocator import BumpAllocator
 from tier2_runtime.interpreter.control_flow import iter_scan_instrs
-from tier2_runtime.wasm.leb128 import decode_unsigned
+from tier2_runtime.wasm.leb128 import decode_unsigned_full
 from tier2_runtime.wasm.module import BasicBlock
 from tier2_runtime.wasm.opcodes import BR_TABLE
 from tier2_runtime.wasm.reader import parse
@@ -46,7 +46,7 @@ def measure_module(
         code = module.code_for(function_index + len(module.imports))
         for instruction in iter_scan_instrs(code):
             if instruction.opcode == BR_TABLE:
-                label_count, _ = decode_unsigned(code, instruction.offset + 1)
+                label_count, _ = decode_unsigned_full(code, instruction.offset + 1)
                 label_counts.append(label_count)
 
     target_count = sum(count + 1 for count in label_counts)

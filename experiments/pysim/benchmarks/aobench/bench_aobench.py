@@ -30,7 +30,7 @@ from tier2_runtime.interpreter.interpreter import (
     NativeInterpreter,
 )
 from tier2_runtime.runtime.engine import RuntimeEngine
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
@@ -45,19 +45,19 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     with open(wasm_path, "rb") as f:
         wasm_bytes = f.read()
 
-    module = parse(memoryview(wasm_bytes))
+    module = parse_standalone(memoryview(wasm_bytes))
 
     main_fn = module.export_func_index("main")
 
     # Keep the Python reference and strict C++ interpreter timings distinct.
     sysv_python = System()
-    wasi_python = WasiHostContext(sysv_python)
+    wasi_python = WasiHostContext.create_default(sysv_python)
     sysv_python.start_hal_driver(
         DummyDriver(sysv_python.pool, transport=sysv_python.transport), FB_URI_HAL_STDOUT
     ).unwrap()
     funcs_python = wasi_python.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_python.guest_memory, ())
-    interp_python = Interpreter(
+    interp_python = Interpreter.with_module_allocator(
         module,
         InterpreterBindings.with_memory_and_functions(wasi_python.guest_memory, funcs_python),
     )
@@ -68,13 +68,13 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
     python_time_ms = (t1_python - t0_python) * 1000
 
     sysv_native = System()
-    wasi_native = WasiHostContext(sysv_native)
+    wasi_native = WasiHostContext.create_default(sysv_native)
     sysv_native.start_hal_driver(
         DummyDriver(sysv_native.pool, transport=sysv_native.transport), FB_URI_HAL_STDOUT
     ).unwrap()
     funcs_native = wasi_native.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_native.guest_memory, ())
-    interp_native = NativeInterpreter(
+    interp_native = NativeInterpreter.with_module_allocator(
         module,
         InterpreterBindings.with_memory_and_functions(wasi_native.guest_memory, funcs_native),
     )
@@ -89,7 +89,7 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
 
     # 2. Tier 3 JIT Hybrid Execution
     sysv_t3 = System()
-    wasi_ctx_t3 = WasiHostContext(sysv_t3)
+    wasi_ctx_t3 = WasiHostContext.create_default(sysv_t3)
     sysv_t3.start_hal_driver(
         DummyDriver(sysv_t3.pool, transport=sysv_t3.transport), FB_URI_HAL_STDOUT
     ).unwrap()
@@ -132,11 +132,11 @@ def run_aobench(debug: bool = False) -> dict[str, int | float]:
         collect_runtime_stats=True,
     )
     # JIT cache references belong to one manager and are stored in block metadata.
-    diagnostic_module = parse(memoryview(wasm_bytes))
+    diagnostic_module = parse_standalone(memoryview(wasm_bytes))
     diagnostic_main_fn = diagnostic_module.export_func_index("main")
     diagnostic_engine.register_module_blocks(diagnostic_module)
     sysv_diagnostic = System()
-    wasi_diagnostic = WasiHostContext(sysv_diagnostic)
+    wasi_diagnostic = WasiHostContext.create_default(sysv_diagnostic)
     sysv_diagnostic.start_hal_driver(
         DummyDriver(sysv_diagnostic.pool, transport=sysv_diagnostic.transport),
         FB_URI_HAL_STDOUT,

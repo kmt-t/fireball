@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tier2_runtime.wasm.reader import parse_standalone
+
 """
 Unit tests for Tier 2 Runtime: Syscall & WASI Environment
 Traceability: runtime_syscall_test_spec.md
@@ -41,7 +43,6 @@ from system import (
 )
 from tier2_runtime.vsoc.virq import FB_CONF_VIRQ_MAX_NODES, INVALID_FUNCTION_INDEX, VirqNode
 from tier2_runtime.wasm.module import Module
-from tier2_runtime.wasm.reader import parse
 
 
 def test_syscall_01_unknown_id_returns_nosys():
@@ -83,7 +84,6 @@ def test_syscall_02_host_call_system_control():
 def test_syscall_04_guest_yield_hands_off_to_ready_task():
     """TEST-SYS-01: SYS_YIELD returns to COOS at a resumable guest boundary."""
     from scheduler import ChannelAction, TaskState
-    from tier2_runtime.wasm.reader import parse
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
     wasm = wat_to_wasm(
@@ -111,10 +111,10 @@ def test_syscall_04_guest_yield_hands_off_to_ready_task():
         )
         """
     )
-    module = parse(wasm)
+    module = parse_standalone(wasm)
     system = System()
     try:
-        host = WasiHostContext(system)
+        host = WasiHostContext.create_default(system)
         host_functions = host.build_interpreter_host_functions(module)
         interpreter = make_native_interpreter(
             module,
@@ -321,7 +321,6 @@ def test_syscall_04_vdma_host_call_transfer(destination_kind: str, transport: st
     """TEST-SYS-20: 実guestの成功復帰直後にCPU読出しし、HAL実体まで確認する。"""
     from tier2_runtime.hal.dispatch import HalBufferMapStatus
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
-    from tier2_runtime.wasm.reader import parse
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
     system = System()
@@ -340,7 +339,7 @@ def test_syscall_04_vdma_host_call_transfer(destination_kind: str, transport: st
             if transport == "import"
             else ""
         )
-        module = parse(
+        module = parse_standalone(
             wat_to_wasm(f"""
           (module {import_decl}
             (memory (export "memory") 1)
@@ -349,7 +348,7 @@ def test_syscall_04_vdma_host_call_transfer(destination_kind: str, transport: st
               i32.const 32 i32.const {destination} i32.load align=1 i32.store))
         """)
         )
-        host = WasiHostContext(system)
+        host = WasiHostContext.create_default(system)
         host.guest_memory[16:20] = b"\x44\x33\x22\x11"
         bindings = InterpreterBindings.with_memory_and_functions(
             host.guest_memory,
@@ -403,7 +402,7 @@ def test_vdma_dynamic_bounds_rejection_preserves_real_buffer(offset: int, count:
     system = System()
     task = system.start_runtime_task(name="dynamic_owner").unwrap()
     try:
-        host = WasiHostContext(system)
+        host = WasiHostContext.create_default(system)
         host.guest_memory[:] = b"\x5a" * len(host.guest_memory)
         handle = system.pool.buffer(1)
         assert_result_1 = system.pool.map_for_io(handle.buffer_id)
@@ -439,7 +438,6 @@ def test_dynamic_guest_access_checks_full_instruction_width(operation: str, widt
         TrapCode as InterpreterTrapCode,
     )
     from tier2_runtime.vmmio.controller import TrapCode as VmmioTrapCode
-    from tier2_runtime.wasm.reader import parse
 
     system = System()
     owner = system.start_runtime_task(name="dynamic_width_owner").unwrap()
@@ -458,14 +456,14 @@ def test_dynamic_guest_access_checks_full_instruction_width(operation: str, widt
             suffix = "8" if width == 1 else "16" if width == 2 else ""
             instruction = f"{scalar}.const 17 {scalar}.store{suffix} align=1 i32.const 19"
             result_type = "i32"
-        module = parse(
+        module = parse_standalone(
             wat_to_wasm(f"""
           (module (memory 1)
             (func (param i32) (result {result_type}) local.get 0 {instruction}))
         """)
         )
         guest_memory = bytearray(b"\x5a" * 65536)
-        interpreter = NativeInterpreter(
+        interpreter = NativeInterpreter.with_module_allocator(
             module,
             InterpreterBindings.with_memory(guest_memory),
             vmmio=system.vmmio,
@@ -511,7 +509,7 @@ def test_syscall_21_vdma_rejects_non_owner_shm_without_mutation(warm_tlb: bool) 
     owner = sysv.start_runtime_task(name="shm_owner").unwrap()
     try:
         guest_memory = bytearray(b"source-data" + b"\xa5" * 53)
-        host = WasiHostContext(sysv, guest_memory=guest_memory)
+        host = WasiHostContext.with_guest_memory(sysv, guest_memory)
         transfer = host.get_handler_for_import("fireball", "vdma_start")
         assert transfer is not None
         destination = 0xE000_3000
@@ -563,7 +561,7 @@ def test_syscall_21_vdma_rejects_non_owner_shm_without_mutation(warm_tlb: bool) 
 
 
 def _make_syscall_virq_module() -> Module:
-    return parse(
+    return parse_standalone(
         memoryview(
             wat_to_wasm(
                 "(module "
@@ -583,7 +581,7 @@ def test_syscall_05_virq_registration_host_calls():
         sysv.runtime_engine.register_module_blocks(_make_syscall_virq_module())
         from tier3_platform.drivers.wasi.context import WasiHostContext
 
-        host = WasiHostContext(sysv, guest_memory=bytearray(64))
+        host = WasiHostContext.with_guest_memory(sysv, bytearray(64))
         virq_register = host.get_handler_for_import("fireball", "virq_register")
         assert virq_register is not None
         dispatcher = sysv.runtime_engine._virq
@@ -614,7 +612,7 @@ def test_syscall_31_virq_unregister_is_deferred_until_commit() -> None:
     sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         sysv.runtime_engine.register_module_blocks(_make_syscall_virq_module())
-        host = WasiHostContext(sysv, guest_memory=bytearray(64))
+        host = WasiHostContext.with_guest_memory(sysv, bytearray(64))
         register = host.get_handler_for_import("fireball", "virq_register")
         unregister = host.get_handler_for_import("fireball", "virq_unregister")
         assert register is not None and unregister is not None
@@ -650,7 +648,7 @@ def test_syscall_32_invalid_virq_registration_preserves_active_and_pending(
     sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         sysv.runtime_engine.register_module_blocks(_make_syscall_virq_module())
-        host = WasiHostContext(sysv, guest_memory=bytearray(64))
+        host = WasiHostContext.with_guest_memory(sysv, bytearray(64))
         register = host.get_handler_for_import("fireball", "virq_register")
         assert register is not None
         dispatcher = sysv.runtime_engine._virq
@@ -681,7 +679,7 @@ def test_syscall_32_invalid_virq_unregister_preserves_active_and_pending(node_id
     sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         sysv.runtime_engine.register_module_blocks(_make_syscall_virq_module())
-        host = WasiHostContext(sysv, guest_memory=bytearray(64))
+        host = WasiHostContext.with_guest_memory(sysv, bytearray(64))
         register = host.get_handler_for_import("fireball", "virq_register")
         unregister = host.get_handler_for_import("fireball", "virq_unregister")
         assert register is not None and unregister is not None
@@ -963,7 +961,7 @@ def test_syscall_07_wasi_fd_write():
         message = b"hello from wasm\n"
         guest_mem[32 : 32 + len(message)] = message
         struct.pack_into("<II", guest_mem, 0, 32, len(message))
-        WasiHostContext(sysv, guest_memory=guest_mem)
+        WasiHostContext.with_guest_memory(sysv, guest_mem)
         sysv.start_hal_driver(
             DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
         ).unwrap()
@@ -991,7 +989,7 @@ def test_wasi_01_fd_write_scatter_gather():
         # 2 iovecs at offset 0 and 8
         struct.pack_into("<II", guest_mem, 0, 32, len(chunk1))
         struct.pack_into("<II", guest_mem, 8, 64, len(chunk2))
-        WasiHostContext(sysv, guest_memory=guest_mem)
+        WasiHostContext.with_guest_memory(sysv, guest_mem)
         sysv.start_hal_driver(
             DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
         ).unwrap()
@@ -1019,7 +1017,7 @@ def test_wasi_01b_fd_write_prevalidates_all_iovecs():
         struct.pack_into("<II", guest_mem, 0, 32, 3)
         struct.pack_into("<II", guest_mem, 8, 200, 1)
         struct.pack_into("<I", guest_mem, 120, 0xA5A5A5A5)
-        WasiHostContext(sysv, guest_memory=guest_mem)
+        WasiHostContext.with_guest_memory(sysv, guest_mem)
         sysv.start_hal_driver(
             DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
         ).unwrap()
@@ -1038,7 +1036,7 @@ def test_wasi_02_fd_read_eof():
     """TEST-SYS-81: WASI_FD_READ reports 0 bytes read (EOF) without crashing."""
     backend = UvwasiReferenceContext()
     backend.stdin_pos = len(backend.stdin_buffer)
-    sysv = System(drivers=create_reference_platform_drivers(backend))
+    sysv = System.with_drivers(create_reference_platform_drivers(backend))
     sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         from tier3_platform.drivers.hal.dummy import DummyDriver
@@ -1050,7 +1048,7 @@ def test_wasi_02_fd_read_eof():
         expected[48:52] = bytes(4)
         stdin_before = bytes(backend.stdin_buffer)
         position_before = backend.stdin_pos
-        WasiHostContext(sysv, guest_memory=guest_mem)
+        WasiHostContext.with_guest_memory(sysv, guest_mem)
         sysv.start_hal_driver(
             DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
         ).unwrap()
@@ -1072,10 +1070,10 @@ def test_wasi_03_fd_close():
     opened = backend.files.view().find(3)
     kept = backend.files.view().find(4)
     assert opened is not None and kept is not None
-    sysv = System(drivers=create_reference_platform_drivers(backend))
+    sysv = System.with_drivers(create_reference_platform_drivers(backend))
     sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
-        WasiHostContext(sysv, guest_memory=bytearray(64))
+        WasiHostContext.with_guest_memory(sysv, bytearray(64))
         assert sysv.fireball_call(FbSyscallId.WASI_FD_CLOSE, 3, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert backend.files.view().find(3) is None
         assert backend.files.view().find(4) is kept
@@ -1089,11 +1087,11 @@ def test_wasi_04_clock_time_get_monotonic():
     """TEST-SYS-83: WASI_CLOCK_TIME_GET writes monotonic 64-bit nanosecond timestamp to guest memory."""
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
-    sysv = System(drivers=create_reference_platform_drivers())
+    sysv = System.with_drivers(create_reference_platform_drivers())
     sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         guest_mem = bytearray(b"\xa5" * 64)
-        WasiHostContext(sysv, guest_memory=guest_mem)
+        WasiHostContext.with_guest_memory(sysv, guest_mem)
         lower = time.monotonic_ns()
         assert (
             sysv.fireball_call(FbSyscallId.WASI_CLOCK_TIME_GET, 1, 0, 16, 0, 0, 0)
@@ -1140,11 +1138,11 @@ def test_wasi_06_random_get():
 
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
-    sysv = System(drivers=create_reference_platform_drivers())
+    sysv = System.with_drivers(create_reference_platform_drivers())
     sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         guest_mem = bytearray(b"\xa5" * 64)
-        WasiHostContext(sysv, guest_memory=guest_mem)
+        WasiHostContext.with_guest_memory(sysv, guest_mem)
         payload = bytes.fromhex("00 12 34 56 78 9a bc de ff 01 23 45 67 89 ab cd")
         with patch(
             "qa.shared.fixtures.uvwasi_reference.os.urandom", return_value=payload
@@ -1161,14 +1159,14 @@ def test_wasi_06_random_get():
 
 def test_wasi_07_invalid_fd_returns_badf():
     """TEST-SYS-91: WASI_FD_WRITE to invalid fd (e.g. fd=99) returns EBADF."""
-    sysv = System(drivers=create_reference_platform_drivers())
+    sysv = System.with_drivers(create_reference_platform_drivers())
     sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
         from tier3_platform.drivers.wasi.context import WasiHostContext
 
         guest_mem = bytearray(64)
         struct.pack_into("<II", guest_mem, 0, 16, 8)
-        WasiHostContext(sysv, guest_memory=guest_mem)
+        WasiHostContext.with_guest_memory(sysv, guest_mem)
         before = bytes(guest_mem)
         res = sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 99, 0, 1, 48, 0, 0)
         assert res == WasiErrno.BADF
@@ -1186,7 +1184,7 @@ def test_wasi_08_out_of_bounds_offset_returns_fault():
         from tier3_platform.drivers.wasi.context import WasiHostContext
 
         guest_mem = bytearray(b"\xa5" * 64)
-        WasiHostContext(sysv, guest_memory=guest_mem)
+        WasiHostContext.with_guest_memory(sysv, guest_mem)
         before = bytes(guest_mem)
         # iovs_ptr way past 64 bytes
         res = sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0x10000, 1, 48, 0, 0)
@@ -1199,15 +1197,15 @@ def test_wasi_08_out_of_bounds_offset_returns_fault():
 
 def test_wasi_jit_trampoline_invokes_the_registered_handler():
     """The JIT trampoline resolves and invokes the same WASI host handler."""
-    from tier2_runtime.wasm.reader import parse
+    from tier2_runtime.wasm.reader import parse_standalone
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm('(module (import "wasi_snapshot_preview1" "proc_exit" (func (param i32))))')
     )
     sysv = System()
     try:
-        context = WasiHostContext(sysv)
+        context = WasiHostContext.create_default(sysv)
         trampolines = context.build_jit_trampolines(module)
         assert len(trampolines) == 1
         address = trampolines[0]

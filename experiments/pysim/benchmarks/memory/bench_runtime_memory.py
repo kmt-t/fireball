@@ -147,13 +147,13 @@ def _measure(
         if observe_execution
         else None
     )
-    engine = observer if observer is not None else RuntimeEngine(bump_allocator=arena)
+    engine = observer if observer is not None else RuntimeEngine.with_allocator(arena)
     module = engine.load_wasm(workload.wasm)
     loaded = arena.offset
     arena.phase = "instantiate"
     sysv = System()
     if workload.wasi:
-        wasi = WasiHostContext(sysv)
+        wasi = WasiHostContext.create_default(sysv)
         sysv.start_hal_driver(
             DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT
         ).unwrap()

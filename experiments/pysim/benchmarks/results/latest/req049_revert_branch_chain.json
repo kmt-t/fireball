@@ -1,0 +1,849 @@
+{
+  "request": "REQ-049",
+  "date_utc": "2026-10-14T23:07:35.410416+00:00",
+  "baseline_commit": "24749028979cffbfb54a95352008cdb4eebf9c18",
+  "target_definition": "REQ-049 code commit 870225e4, reverting REQ-033 branch-chain behavior on top of req-033-control-ops-trace",
+  "method": {
+    "cpu_affinity": [
+      2
+    ],
+    "release_flags": "-O3 -flto=thin -DNDEBUG",
+    "independent_processes_per_condition": 3,
+    "aobench": "JIT; 3 warmups and 7 timed frames per process; 32x16 and 320x180",
+    "arithmetic": "100000 loop iterations; 3 separately initialized JIT executions per process; expected result 704982704",
+    "call_dispatch": "native interpreter; baseline/direct/indirect; 10000 iterations and 3 repeats per process",
+    "baseline_pairing": "Each candidate comparison has three paired baseline processes, run immediately before its corresponding candidate process for each workload."
+  },
+  "builds": {
+    "base": {
+      "worktree": "/tmp/review/work/req049-base",
+      "head": "24749028979cffbfb54a95352008cdb4eebf9c18",
+      "source_manifest_sha256": "fd39d05f64aa9574b59d984df58601375f68ddfad755013f6ef2cf4dc6b31519",
+      "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_files": [
+        "experiments/pysim/native/tier1_core/printk/build_native.ps1",
+        "experiments/pysim/native/tier1_core/printk/build_native.sh",
+        "experiments/pysim/native/tier1_core/printk/printk.cxx",
+        "experiments/pysim/native/tier1_core/printk/printk.hxx",
+        "experiments/pysim/native/tier2_runtime/interpreter/build_native.ps1",
+        "experiments/pysim/native/tier2_runtime/interpreter/build_native.sh",
+        "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx",
+        "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter_runtime.hxx",
+        "experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.cxx",
+        "experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/build_native.ps1",
+        "experiments/pysim/native/tier3_plugins/jit/build_native.sh",
+        "experiments/pysim/native/tier3_plugins/jit/common_code.cxx",
+        "experiments/pysim/native/tier3_plugins/jit/common_code_abi.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/executable_memory.cxx",
+        "experiments/pysim/native/tier3_plugins/jit/executable_memory_abi.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_chain_diagnostics.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_internal.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_runtime.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_runtime_abi.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_runtime_apis.cxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_runtime_apis.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_types.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/lir/x64/common.S",
+        "experiments/pysim/native/tier3_plugins/jit/lir/x64/operations.S",
+        "experiments/pysim/native/tier3_plugins/jit/lir/x64/trace.S",
+        "experiments/pysim/native/tier3_plugins/jit/profiling.cxx",
+        "experiments/pysim/native/tier3_plugins/jit/profiling.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/stencils_x64.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/trace_compiler.cxx",
+        "experiments/pysim/native/tier3_plugins/jit/trace_compiler_abi.hxx",
+        "experiments/pysim/tier1_core/config.py",
+        "tools/jit_stencil_gen/README.md",
+        "tools/jit_stencil_gen/abi_probe.cxx",
+        "tools/jit_stencil_gen/generate_assembly.py"
+      ],
+      "libraries": {
+        "interpreter_sha256": "34288018f127a5e9f811c6ade7677ca46c1783ea379605380b7a0c3bff225839",
+        "jit_sha256": "5ddf8b945a744ad2249dea8aba81be5ec81cc2f3eaa49458321952c32f593f9a",
+        "printk_sha256": "cf80471d13971db80a4326e1c3bc69f4115faea3305eb469e90f3a5928137224"
+      },
+      "build_flags": "Clang C++23 -O3 -flto=thin -DNDEBUG; interpreter and JIT build_native.sh --release",
+      "clang": "Ubuntu clang version 21.1.8 (6ubuntu1)",
+      "python": "Python 3.13.15"
+    },
+    "target": {
+      "worktree": "/tmp/review/work/req049-target",
+      "head": "870225e45101a3d70ecfcf6ced2952f6c8a39efb",
+      "source_manifest_sha256": "b6743d36fcc83e2ecd90cf5ef44ee154c2bcf50168947eefff0ad31ca5d4846b",
+      "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_files": [
+        "experiments/pysim/native/tier1_core/printk/build_native.ps1",
+        "experiments/pysim/native/tier1_core/printk/build_native.sh",
+        "experiments/pysim/native/tier1_core/printk/printk.cxx",
+        "experiments/pysim/native/tier1_core/printk/printk.hxx",
+        "experiments/pysim/native/tier2_runtime/interpreter/build_native.ps1",
+        "experiments/pysim/native/tier2_runtime/interpreter/build_native.sh",
+        "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter.cxx",
+        "experiments/pysim/native/tier2_runtime/interpreter/native_interpreter_runtime.hxx",
+        "experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.cxx",
+        "experiments/pysim/native/tier2_runtime/interpreter/native_wasm_operations.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/build_native.ps1",
+        "experiments/pysim/native/tier3_plugins/jit/build_native.sh",
+        "experiments/pysim/native/tier3_plugins/jit/common_code.cxx",
+        "experiments/pysim/native/tier3_plugins/jit/common_code_abi.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/executable_memory.cxx",
+        "experiments/pysim/native/tier3_plugins/jit/executable_memory_abi.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_chain_diagnostics.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_internal.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_runtime.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_runtime_abi.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_runtime_apis.cxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_runtime_apis.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/jit_types.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/lir/x64/common.S",
+        "experiments/pysim/native/tier3_plugins/jit/lir/x64/operations.S",
+        "experiments/pysim/native/tier3_plugins/jit/lir/x64/trace.S",
+        "experiments/pysim/native/tier3_plugins/jit/profiling.cxx",
+        "experiments/pysim/native/tier3_plugins/jit/profiling.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/stencils_x64.hxx",
+        "experiments/pysim/native/tier3_plugins/jit/trace_compiler.cxx",
+        "experiments/pysim/native/tier3_plugins/jit/trace_compiler_abi.hxx",
+        "experiments/pysim/tier1_core/config.py",
+        "tools/jit_stencil_gen/README.md",
+        "tools/jit_stencil_gen/abi_probe.cxx",
+        "tools/jit_stencil_gen/generate_assembly.py"
+      ],
+      "libraries": {
+        "interpreter_sha256": "d3b27f903c8dae8b450f47430c9567d18acf5ff601456abbb0d323a9b7b8ee21",
+        "jit_sha256": "fdfb4b5daad5208c4dd48967f05930b4ddcc4b88ec321735de20da9e6cc74912",
+        "printk_sha256": "cf80471d13971db80a4326e1c3bc69f4115faea3305eb469e90f3a5928137224"
+      },
+      "build_flags": "Clang C++23 -O3 -flto=thin -DNDEBUG; interpreter and JIT build_native.sh --release",
+      "clang": "Ubuntu clang version 21.1.8 (6ubuntu1)",
+      "python": "Python 3.13.15"
+    }
+  },
+  "comparisons": {
+    "target": {
+      "aobench_32x16": {
+        "baseline": {
+          "process_medians_ms": [
+            4.659461,
+            4.65337,
+            4.622032
+          ],
+          "median_ms": 4.65337,
+          "min_process_median_ms": 4.622032,
+          "max_process_median_ms": 4.659461,
+          "processes": [
+            {
+              "engine": "jit",
+              "width": 32,
+              "height": 16,
+              "warmup": 3,
+              "repeats": 7,
+              "yield_threshold": 4096,
+              "samples_ms": [
+                4.650664,
+                4.632742,
+                4.943301,
+                4.767804,
+                4.659461,
+                4.914888,
+                4.658169
+              ],
+              "median_ms": 4.659461,
+              "frame_bytes": 528,
+              "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+              "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+              "runner_sha256": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218",
+              "interpreter_library_sha256": "8b4fcc1a0bc0d18b41c9f6d8f929ae92eac4a3ac0d979205f91994a784d48a02",
+              "jit_library_sha256": "a3eb65bd026b69ceb27631a97468cfb0ae1a8ab9efa17a3c898808b7738b4578",
+              "python": "3.13.15",
+              "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+            },
+            {
+              "engine": "jit",
+              "width": 32,
+              "height": 16,
+              "warmup": 3,
+              "repeats": 7,
+              "yield_threshold": 4096,
+              "samples_ms": [
+                4.65337,
+                4.656556,
+                4.512607,
+                4.468645,
+                4.599018,
+                4.687774,
+                4.65889
+              ],
+              "median_ms": 4.65337,
+              "frame_bytes": 528,
+              "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+              "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+              "runner_sha256": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218",
+              "interpreter_library_sha256": "8b4fcc1a0bc0d18b41c9f6d8f929ae92eac4a3ac0d979205f91994a784d48a02",
+              "jit_library_sha256": "a3eb65bd026b69ceb27631a97468cfb0ae1a8ab9efa17a3c898808b7738b4578",
+              "python": "3.13.15",
+              "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+            },
+            {
+              "engine": "jit",
+              "width": 32,
+              "height": 16,
+              "warmup": 3,
+              "repeats": 7,
+              "yield_threshold": 4096,
+              "samples_ms": [
+                4.474976,
+                4.469827,
+                5.476286,
+                4.608937,
+                5.63899,
+                4.622032,
+                4.773193
+              ],
+              "median_ms": 4.622032,
+              "frame_bytes": 528,
+              "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+              "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+              "runner_sha256": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218",
+              "interpreter_library_sha256": "8b4fcc1a0bc0d18b41c9f6d8f929ae92eac4a3ac0d979205f91994a784d48a02",
+              "jit_library_sha256": "a3eb65bd026b69ceb27631a97468cfb0ae1a8ab9efa17a3c898808b7738b4578",
+              "python": "3.13.15",
+              "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+            }
+          ]
+        },
+        "candidate": {
+          "process_medians_ms": [
+            5.317089,
+            4.542192,
+            4.536452
+          ],
+          "median_ms": 4.542192,
+          "min_process_median_ms": 4.536452,
+          "max_process_median_ms": 5.317089,
+          "processes": [
+            {
+              "engine": "jit",
+              "width": 32,
+              "height": 16,
+              "warmup": 3,
+              "repeats": 7,
+              "yield_threshold": 4096,
+              "samples_ms": [
+                6.701024,
+                5.397739,
+                4.545678,
+                5.317089,
+                4.613605,
+                5.985096,
+                4.713281
+              ],
+              "median_ms": 5.317089,
+              "frame_bytes": 528,
+              "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+              "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+              "runner_sha256": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218",
+              "interpreter_library_sha256": "75545087216bebff3ce13b902235f4798b99a6b57a89c86b4de735ba1411ce3b",
+              "jit_library_sha256": "8d9c8c5d8e78ed9821c1d8e0e7acc0227e0a1b4913e95243bc6ffa132c733649",
+              "python": "3.13.15",
+              "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+            },
+            {
+              "engine": "jit",
+              "width": 32,
+              "height": 16,
+              "warmup": 3,
+              "repeats": 7,
+              "yield_threshold": 4096,
+              "samples_ms": [
+                4.490756,
+                4.578329,
+                4.542192,
+                4.667216,
+                4.521514,
+                4.513348,
+                4.627081
+              ],
+              "median_ms": 4.542192,
+              "frame_bytes": 528,
+              "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+              "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+              "runner_sha256": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218",
+              "interpreter_library_sha256": "75545087216bebff3ce13b902235f4798b99a6b57a89c86b4de735ba1411ce3b",
+              "jit_library_sha256": "8d9c8c5d8e78ed9821c1d8e0e7acc0227e0a1b4913e95243bc6ffa132c733649",
+              "python": "3.13.15",
+              "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+            },
+            {
+              "engine": "jit",
+              "width": 32,
+              "height": 16,
+              "warmup": 3,
+              "repeats": 7,
+              "yield_threshold": 4096,
+              "samples_ms": [
+                4.442607,
+                4.452896,
+                4.456031,
+                4.554415,
+                4.541451,
+                4.536452,
+                4.676082
+              ],
+              "median_ms": 4.536452,
+              "frame_bytes": 528,
+              "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+              "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+              "runner_sha256": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218",
+              "interpreter_library_sha256": "75545087216bebff3ce13b902235f4798b99a6b57a89c86b4de735ba1411ce3b",
+              "jit_library_sha256": "8d9c8c5d8e78ed9821c1d8e0e7acc0227e0a1b4913e95243bc6ffa132c733649",
+              "python": "3.13.15",
+              "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+            }
+          ]
+        },
+        "delta_percent_vs_paired_baseline": {
+          "process_deltas_percent": [
+            14.113821319676244,
+            -2.389193208362972,
+            -1.8515665837017137
+          ],
+          "median_percent": -1.8515665837017137,
+          "min_percent": -2.389193208362972,
+          "max_percent": 14.113821319676244
+        }
+      },
+      "aobench_320x180": {
+        "baseline": {
+          "process_medians_ms": [
+            456.312832,
+            467.651156,
+            461.230805
+          ],
+          "median_ms": 461.230805,
+          "min_process_median_ms": 456.312832,
+          "max_process_median_ms": 467.651156,
+          "processes": [
+            {
+              "engine": "jit",
+              "width": 320,
+              "height": 180,
+              "warmup": 3,
+              "repeats": 7,
+              "yield_threshold": 4096,
+              "samples_ms": [
+                459.360173,
+                455.459779,
+                452.134509,
+                456.312832,
+                459.536712,
+                457.809216,
+                454.688509
+              ],
+              "median_ms": 456.312832,
+              "frame_bytes": 57780,
+              "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+              "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+              "runner_sha256": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218",
+              "interpreter_library_sha256": "8b4fcc1a0bc0d18b41c9f6d8f929ae92eac4a3ac0d979205f91994a784d48a02",
+              "jit_library_sha256": "a3eb65bd026b69ceb27631a97468cfb0ae1a8ab9efa17a3c898808b7738b4578",
+              "python": "3.13.15",
+              "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+            },
+            {
+              "engine": "jit",
+              "width": 320,
+              "height": 180,
+              "warmup": 3,
+              "repeats": 7,
+              "yield_threshold": 4096,
+              "samples_ms": [
+                467.651156,
+                470.45439,
+                461.136801,
+                478.045445,
+                473.196851,
+                462.071496,
+                464.269771
+              ],
+              "median_ms": 467.651156,
+              "frame_bytes": 57780,
+              "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+              "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+              "runner_sha256": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218",
+              "interpreter_library_sha256": "8b4fcc1a0bc0d18b41c9f6d8f929ae92eac4a3ac0d979205f91994a784d48a02",
+              "jit_library_sha256": "a3eb65bd026b69ceb27631a97468cfb0ae1a8ab9efa17a3c898808b7738b4578",
+              "python": "3.13.15",
+              "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+            },
+            {
+              "engine": "jit",
+              "width": 320,
+              "height": 180,
+              "warmup": 3,
+              "repeats": 7,
+              "yield_threshold": 4096,
+              "samples_ms": [
+                461.230805,
+                454.409278,
+                452.103521,
+                454.593922,
+                466.810545,
+                503.562266,
+                470.774958
+              ],
+              "median_ms": 461.230805,
+              "frame_bytes": 57780,
+              "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+              "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+              "runner_sha256": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218",
+              "interpreter_library_sha256": "8b4fcc1a0bc0d18b41c9f6d8f929ae92eac4a3ac0d979205f91994a784d48a02",
+              "jit_library_sha256": "a3eb65bd026b69ceb27631a97468cfb0ae1a8ab9efa17a3c898808b7738b4578",
+              "python": "3.13.15",
+              "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+            }
+          ]
+        },
+        "candidate": {
+          "process_medians_ms": [
+            452.912042,
+            455.622683,
+            451.03679
+          ],
+          "median_ms": 452.912042,
+          "min_process_median_ms": 451.03679,
+          "max_process_median_ms": 455.622683,
+          "processes": [
+            {
+              "engine": "jit",
+              "width": 320,
+              "height": 180,
+              "warmup": 3,
+              "repeats": 7,
+              "yield_threshold": 4096,
+              "samples_ms": [
+                450.321373,
+                459.894881,
+                450.707044,
+                452.912042,
+                452.430422,
+                453.178539,
+                461.864408
+              ],
+              "median_ms": 452.912042,
+              "frame_bytes": 57780,
+              "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+              "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+              "runner_sha256": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218",
+              "interpreter_library_sha256": "75545087216bebff3ce13b902235f4798b99a6b57a89c86b4de735ba1411ce3b",
+              "jit_library_sha256": "8d9c8c5d8e78ed9821c1d8e0e7acc0227e0a1b4913e95243bc6ffa132c733649",
+              "python": "3.13.15",
+              "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+            },
+            {
+              "engine": "jit",
+              "width": 320,
+              "height": 180,
+              "warmup": 3,
+              "repeats": 7,
+              "yield_threshold": 4096,
+              "samples_ms": [
+                455.68508,
+                449.793989,
+                449.682441,
+                461.82763,
+                461.386887,
+                453.519625,
+                455.622683
+              ],
+              "median_ms": 455.622683,
+              "frame_bytes": 57780,
+              "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+              "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+              "runner_sha256": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218",
+              "interpreter_library_sha256": "75545087216bebff3ce13b902235f4798b99a6b57a89c86b4de735ba1411ce3b",
+              "jit_library_sha256": "8d9c8c5d8e78ed9821c1d8e0e7acc0227e0a1b4913e95243bc6ffa132c733649",
+              "python": "3.13.15",
+              "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+            },
+            {
+              "engine": "jit",
+              "width": 320,
+              "height": 180,
+              "warmup": 3,
+              "repeats": 7,
+              "yield_threshold": 4096,
+              "samples_ms": [
+                451.03679,
+                453.540555,
+                450.879185,
+                451.538506,
+                461.639138,
+                450.829803,
+                450.474429
+              ],
+              "median_ms": 451.03679,
+              "frame_bytes": 57780,
+              "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+              "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+              "runner_sha256": "4d71f1aa8e875982957a5c03d33aa878319c539f9e0b7d485c36d76b21e81218",
+              "interpreter_library_sha256": "75545087216bebff3ce13b902235f4798b99a6b57a89c86b4de735ba1411ce3b",
+              "jit_library_sha256": "8d9c8c5d8e78ed9821c1d8e0e7acc0227e0a1b4913e95243bc6ffa132c733649",
+              "python": "3.13.15",
+              "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43"
+            }
+          ]
+        },
+        "delta_percent_vs_paired_baseline": {
+          "process_deltas_percent": [
+            -0.745275995219008,
+            -2.572103767022449,
+            -2.2101765297311338
+          ],
+          "median_percent": -2.2101765297311338,
+          "min_percent": -2.572103767022449,
+          "max_percent": -0.745275995219008
+        }
+      },
+      "arithmetic_jit_100k": {
+        "baseline": {
+          "process_medians_ms": [
+            18.624459,
+            18.633486,
+            18.674754
+          ],
+          "median_ms": 18.633486,
+          "min_process_median_ms": 18.624459,
+          "max_process_median_ms": 18.674754,
+          "processes": [
+            {
+              "iterations": 100000,
+              "max_ms": 18.713015,
+              "median_ms": 18.624459,
+              "min_ms": 18.438773,
+              "results": [
+                704982704,
+                704982704,
+                704982704
+              ],
+              "samples_ms": [
+                18.713015,
+                18.624459,
+                18.438773
+              ],
+              "workload": "arithmetic_jit_100k"
+            },
+            {
+              "iterations": 100000,
+              "max_ms": 18.78547,
+              "median_ms": 18.633486,
+              "min_ms": 18.509445,
+              "results": [
+                704982704,
+                704982704,
+                704982704
+              ],
+              "samples_ms": [
+                18.78547,
+                18.509445,
+                18.633486
+              ],
+              "workload": "arithmetic_jit_100k"
+            },
+            {
+              "iterations": 100000,
+              "max_ms": 18.692807,
+              "median_ms": 18.674754,
+              "min_ms": 18.661859,
+              "results": [
+                704982704,
+                704982704,
+                704982704
+              ],
+              "samples_ms": [
+                18.674754,
+                18.661859,
+                18.692807
+              ],
+              "workload": "arithmetic_jit_100k"
+            }
+          ]
+        },
+        "candidate": {
+          "process_medians_ms": [
+            18.289915,
+            18.87155,
+            18.781172
+          ],
+          "median_ms": 18.781172,
+          "min_process_median_ms": 18.289915,
+          "max_process_median_ms": 18.87155,
+          "processes": [
+            {
+              "iterations": 100000,
+              "max_ms": 18.900806,
+              "median_ms": 18.289915,
+              "min_ms": 18.167265,
+              "results": [
+                704982704,
+                704982704,
+                704982704
+              ],
+              "samples_ms": [
+                18.900806,
+                18.289915,
+                18.167265
+              ],
+              "workload": "arithmetic_jit_100k"
+            },
+            {
+              "iterations": 100000,
+              "max_ms": 24.64925,
+              "median_ms": 18.87155,
+              "min_ms": 18.814535,
+              "results": [
+                704982704,
+                704982704,
+                704982704
+              ],
+              "samples_ms": [
+                18.87155,
+                18.814535,
+                24.64925
+              ],
+              "workload": "arithmetic_jit_100k"
+            },
+            {
+              "iterations": 100000,
+              "max_ms": 19.757145,
+              "median_ms": 18.781172,
+              "min_ms": 18.766735,
+              "results": [
+                704982704,
+                704982704,
+                704982704
+              ],
+              "samples_ms": [
+                19.757145,
+                18.781172,
+                18.766735
+              ],
+              "workload": "arithmetic_jit_100k"
+            }
+          ]
+        },
+        "delta_percent_vs_paired_baseline": {
+          "process_deltas_percent": [
+            -1.7962615719468777,
+            1.2776138614105648,
+            0.5698495412576943
+          ],
+          "median_percent": 0.5698495412576943,
+          "min_percent": -1.7962615719468777,
+          "max_percent": 1.2776138614105648
+        }
+      },
+      "call_dispatch": {
+        "baseline": {
+          "baseline": {
+            "process_medians_ms": [
+              2.051211,
+              2.246245,
+              2.038336
+            ],
+            "median_ms": 2.051211,
+            "min_process_median_ms": 2.038336,
+            "max_process_median_ms": 2.246245,
+            "samples_ms_per_process": [
+              [
+                2.053475,
+                2.051211,
+                2.018549
+              ],
+              [
+                2.108598,
+                2.246245,
+                2.317808
+              ],
+              [
+                2.095172,
+                2.038336,
+                2.018119
+              ]
+            ]
+          },
+          "direct": {
+            "process_medians_ms": [
+              2.2439,
+              2.277954,
+              2.305295
+            ],
+            "median_ms": 2.277954,
+            "min_process_median_ms": 2.2439,
+            "max_process_median_ms": 2.305295,
+            "samples_ms_per_process": [
+              [
+                2.233501,
+                2.2439,
+                2.400322
+              ],
+              [
+                2.283745,
+                2.277954,
+                2.264228
+              ],
+              [
+                2.335231,
+                2.305295,
+                2.289194
+              ]
+            ]
+          },
+          "indirect": {
+            "process_medians_ms": [
+              2.329299,
+              2.269779,
+              2.252887
+            ],
+            "median_ms": 2.269779,
+            "min_process_median_ms": 2.252887,
+            "max_process_median_ms": 2.329299,
+            "samples_ms_per_process": [
+              [
+                2.263888,
+                2.373963,
+                2.329299
+              ],
+              [
+                2.258508,
+                2.269779,
+                2.414669
+              ],
+              [
+                2.252887,
+                2.242187,
+                2.25951
+              ]
+            ]
+          }
+        },
+        "candidate": {
+          "baseline": {
+            "process_medians_ms": [
+              2.113056,
+              2.132923,
+              2.059296
+            ],
+            "median_ms": 2.113056,
+            "min_process_median_ms": 2.059296,
+            "max_process_median_ms": 2.132923,
+            "samples_ms_per_process": [
+              [
+                2.113056,
+                2.119588,
+                2.050899
+              ],
+              [
+                2.132923,
+                2.08312,
+                2.223673
+              ],
+              [
+                2.078942,
+                2.059296,
+                2.053445
+              ]
+            ]
+          },
+          "direct": {
+            "process_medians_ms": [
+              2.253619,
+              2.296359,
+              2.261864
+            ],
+            "median_ms": 2.261864,
+            "min_process_median_ms": 2.253619,
+            "max_process_median_ms": 2.296359,
+            "samples_ms_per_process": [
+              [
+                2.299193,
+                2.253619,
+                2.247557
+              ],
+              [
+                2.290438,
+                2.338517,
+                2.296359
+              ],
+              [
+                2.261864,
+                2.218563,
+                2.305776
+              ]
+            ]
+          },
+          "indirect": {
+            "process_medians_ms": [
+              2.305986,
+              2.362221,
+              2.29752
+            ],
+            "median_ms": 2.305986,
+            "min_process_median_ms": 2.29752,
+            "max_process_median_ms": 2.362221,
+            "samples_ms_per_process": [
+              [
+                2.341343,
+                2.26483,
+                2.305986
+              ],
+              [
+                2.362221,
+                2.292762,
+                2.452539
+              ],
+              [
+                2.255311,
+                2.29752,
+                2.548359
+              ]
+            ]
+          }
+        },
+        "delta_percent_vs_paired_baseline": {
+          "baseline": {
+            "process_deltas_percent": [
+              3.0150481837314613,
+              -5.044952799004565,
+              1.028289742221089
+            ],
+            "median_percent": 1.028289742221089,
+            "min_percent": -5.044952799004565,
+            "max_percent": 3.0150481837314613
+          },
+          "direct": {
+            "process_deltas_percent": [
+              0.43312981861935995,
+              0.8079618815832079,
+              -1.883967127851316
+            ],
+            "median_percent": 0.43312981861935995,
+            "min_percent": -1.883967127851316,
+            "max_percent": 0.8079618815832079
+          },
+          "indirect": {
+            "process_deltas_percent": [
+              -1.0008590567376685,
+              4.072731309964528,
+              1.9811468573434965
+            ],
+            "median_percent": 1.9811468573434965,
+            "min_percent": -1.0008590567376685,
+            "max_percent": 4.072731309964528
+          }
+        }
+      }
+    }
+  }
+}

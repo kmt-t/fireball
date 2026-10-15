@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import tier2_runtime.interpreter.interpreter as interpreter_module
 from qa.shared.helpers import make_native_interpreter, wat_to_wasm
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 
 _TEST_FILE = Path(__file__).resolve()
 _PYSIM_DIR = _TEST_FILE.parents[3]
@@ -173,7 +173,9 @@ def test_native_const_capacity_traps_without_partial_push(
     }
     expression = expressions[constant]
     result_type = expression.split(".")[0]
-    module = parse(wat_to_wasm(f"(module (func (result {result_type}) nop nop {expression}))"))
+    module = parse_standalone(
+        wat_to_wasm(f"(module (func (result {result_type}) nop nop {expression}))")
+    )
     context = interpreter_module.ExecutionContext(module)
     context.stack._capacity = stack_capacity
     context.stack.set_size(initial_size)
@@ -245,7 +247,7 @@ def test_release_bulk_memory_preserves_annotation_cursor(
         if operation == "copy"
         else "i32.const 8 i32.const 42 i32.const 4"
     )
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             f'(module (memory 1) (func (export "run") (result i32) '
             f"{operands} memory.{operation} i32.const 42))"
@@ -253,7 +255,7 @@ def test_release_bulk_memory_preserves_annotation_cursor(
     )
     memory = bytearray(65536)
     memory[:4] = b"data"
-    interpreter = NativeInterpreter(
+    interpreter = NativeInterpreter.with_module_allocator(
         module, InterpreterBindings.with_memory(memory), native_dispatcher=release_dispatcher
     )
     assert interpreter.call(0, []).unwrap() == [42]

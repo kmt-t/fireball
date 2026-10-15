@@ -34,7 +34,7 @@ from tier2_runtime.abi.integer_types import (
 )
 from tier2_runtime.wasm.binary import WasmSectionReader
 from tier2_runtime.wasm.builder import WasmModuleBuilder
-from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
+from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned, decode_unsigned_full
 from tier2_runtime.wasm.module import (
     F32,
     F64,
@@ -65,9 +65,8 @@ SEC_DATA = 11
 ELEM_TYPE_FUNCREF = 0x70
 
 
-def _read_value_type(data: memoryview, off: int, end: int | None = None) -> int:
-    limit = len(data) if end is None else end
-    require_wasm(0 <= off < limit <= len(data), "value type exceeds section bounds")
+def _read_value_type(data: memoryview, off: int, end: int) -> int:
+    require_wasm(0 <= off < end <= len(data), "value type exceeds section bounds")
     value_type = data[off]
     require_wasm(
         value_type == I32 or value_type == I64 or value_type == F32 or value_type == F64,
@@ -808,12 +807,12 @@ def _analyze_control(
         return
     if opcode == op.BR_TABLE:
         state.pop(I32)
-        label_count, cursor = decode_unsigned(state.code, offset + 1)
+        label_count, cursor = decode_unsigned_full(state.code, offset + 1)
         default_depth = operand
         depths: StaticVector[int] = StaticVector(capacity=label_count + 1)
         default_type = state.pop_label(default_depth)
         for _ in range(label_count):
-            depth, cursor = decode_unsigned(state.code, cursor)
+            depth, cursor = decode_unsigned_full(state.code, cursor)
             depths.append(depth)
             label_type = state.pop_label(depth)
             require_wasm(label_type == default_type, "br_table label types differ")
@@ -845,7 +844,10 @@ def _analyze_stack_ops(
         left_type is None or right_type is None or left_type == right_type,
         "SELECT operands have different types",
     )
-    selected_type = left_type if left_type is not None else right_type
+    if left_type is None:
+        selected_type = right_type
+    else:
+        selected_type = left_type
     if selected_type is None:
         selected_type = I32
     if selected_type == I64 or selected_type == F64:
@@ -943,7 +945,7 @@ def _memory_alignment_exponent(opcode: int) -> int:
 
 
 def _validate_memory_alignment(state: _StackTypeAnalysisState, opcode: int, offset: int) -> None:
-    alignment, _ = decode_unsigned(state.code, offset + 1)
+    alignment, _ = decode_unsigned_full(state.code, offset + 1)
     require_wasm(
         alignment <= _memory_alignment_exponent(opcode),
         "memory alignment exceeds the natural alignment",
@@ -1011,10 +1013,10 @@ def _analyze_fc_instruction(
         return
 
     require_wasm(state.module.memory is not None, "bulk memory instruction requires linear memory")
-    _, cursor = decode_unsigned(state.code, offset + 1)
+    _, cursor = decode_unsigned_full(state.code, offset + 1)
     if subopcode == op.FC_MEMORY_COPY:
-        destination_memory, cursor = decode_unsigned(state.code, cursor)
-        source_memory, _ = decode_unsigned(state.code, cursor)
+        destination_memory, cursor = decode_unsigned_full(state.code, cursor)
+        source_memory, _ = decode_unsigned_full(state.code, cursor)
         require_wasm(
             destination_memory == 0 and source_memory == 0,
             "invalid WASM binary: destination_memory == 0 and source_memory == 0",
@@ -1027,7 +1029,7 @@ def _analyze_fc_instruction(
     require_wasm(
         subopcode == op.FC_MEMORY_FILL, "invalid WASM binary: subopcode == op.FC_MEMORY_FILL"
     )
-    memory_index, _ = decode_unsigned(state.code, cursor)
+    memory_index, _ = decode_unsigned_full(state.code, cursor)
     require_wasm(memory_index == 0, "invalid WASM binary: memory_index == 0")
     state.pop(I32)  # length
     state.pop(I32)  # fill value
@@ -1046,8 +1048,8 @@ def _analyze_call(state: _StackTypeAnalysisState, opcode: int, offset: int, oper
     )
     if opcode == op.CALL_INDIRECT:
         require_wasm(len(state.module.tables) > 0, "CALL_INDIRECT requires a table")
-        _, table_index_end = decode_unsigned(state.code, offset + 1)
-        table_index, _ = decode_unsigned(state.code, table_index_end)
+        _, table_index_end = decode_unsigned_full(state.code, offset + 1)
+        table_index, _ = decode_unsigned_full(state.code, table_index_end)
         require_wasm(table_index == 0, "only table index zero is supported")
         state.pop(I32)
     assert function_type.params is not None and function_type.results is not None
@@ -1307,11 +1309,8 @@ def _parse_with_allocator(data: memoryview, allocator: BumpAllocator) -> Module:
     return builder.finish(_index_stack_value_widths)
 
 
-def parse(data: memoryview, allocator: BumpAllocator | None = None) -> Module:
+def parse(data: memoryview, allocator: BumpAllocator) -> Module:
     """Parse a module transactionally using its loader metadata arena."""
-
-    if allocator is None:
-        allocator = BumpAllocator()
     watermark = allocator.save()
     loaded = False
     try:
@@ -1322,3 +1321,8 @@ def parse(data: memoryview, allocator: BumpAllocator | None = None) -> Module:
     finally:
         if not loaded:
             allocator.restore(watermark)
+
+
+def parse_standalone(data: memoryview) -> Module:
+    """Parse a standalone input using a fresh arena outside a runtime owner."""
+    return parse(data, BumpAllocator())

@@ -108,13 +108,13 @@ def _measure(
     samples: int,
     yield_threshold: int,
 ) -> tuple[list[float], list[float]]:
-    cached_interpreter = NativeInterpreter(
+    cached_interpreter = NativeInterpreter.with_module_allocator(
         module,
         InterpreterBindings.empty(),
         native_dispatcher=RUN_DISPATCH,
         yield_threshold=yield_threshold,
     )
-    uncached_interpreter = NativeInterpreter(
+    uncached_interpreter = NativeInterpreter.with_module_allocator(
         module,
         InterpreterBindings.empty(),
         native_dispatcher=no_cache_dispatcher,

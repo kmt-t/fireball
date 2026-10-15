@@ -29,7 +29,7 @@ from tier2_runtime.interpreter.interpreter import (
 )
 from tier2_runtime.syscall.hostcall import RuntimeHostCallGateway, VdmaTransfer, WasiErrno
 from tier2_runtime.vmmio.controller import VMMIO_PAGE_SIZE, VmmioStatus
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.wasi.context import WasiHostContext
 
 
@@ -127,7 +127,7 @@ class VdmaFixture:
         self.entry = entry
         self.owner_id = system.scheduler.current_task_id
         assert self.owner_id != 0
-        self.host = WasiHostContext(system)
+        self.host = WasiHostContext.create_default(system)
         self.memory = self.host.guest_memory
         self.memory[:] = b"\xa5" * len(self.memory)
         self.memory[:128] = bytes((37 * i + 11) & 255 for i in range(128))
@@ -158,7 +158,7 @@ class VdmaFixture:
             if entry == Entry.IMPORT
             else "local.get $dst local.get $src local.get $n memory.copy"
         )
-        module = parse(
+        module = parse_standalone(
             wat_to_wasm(f"""(module {import_decl}
               (memory (export "memory") 1)
               (func (export "transfer")

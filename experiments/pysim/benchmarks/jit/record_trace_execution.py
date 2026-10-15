@@ -50,7 +50,7 @@ def record_usage(output: Path, hot_functions: int, cold_functions: int, iteratio
         records.append(TraceExecutionRecord(pc, count, True))
 
     manager = JITRuntimeManager(jit_compiler=TraceCompiler(), retire_observer=on_retire)
-    engine = RuntimeEngine(bump_allocator=allocator)
+    engine = RuntimeEngine.with_allocator(allocator)
     engine.register_module_blocks(module)
     interpreter = NativeInterpreter(
         module,

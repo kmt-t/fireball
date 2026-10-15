@@ -28,7 +28,7 @@ from qa.shared.jit_manager import JITRuntimeManager as QaJitRuntimeManager
 from qa.shared.runtime_stats import RuntimeStatsEngine
 from system import System
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse, parse_standalone
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.wasi.context import WasiHostContext
@@ -74,10 +74,10 @@ def measure_aobench() -> list[dict[str, JsonValue]]:
     wasm_hash = hashlib.sha256(wasm).hexdigest()
     for width in (64, 128, 192, 256, 320):
         height = width * 9 // 16
-        module = parse(memoryview(wasm))
+        module = parse_standalone(memoryview(wasm))
         system = System()
         system.transport = StreamTransport(1 << 20)
-        wasi = WasiHostContext(system)
+        wasi = WasiHostContext.create_default(system)
         system.start_hal_driver(
             DummyDriver(system.pool, transport=system.transport), FB_URI_HAL_STDOUT
         )

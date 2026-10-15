@@ -479,7 +479,12 @@ class _DebugNativeInterpreter(NativeInterpreter):
 
     def __init__(self, module: Module, bindings: InterpreterBindings, control: _NativeDebugControl):
         self._execution_control = control
-        super().__init__(module, bindings, native_dispatcher=native_abi.RUN_DEBUG_DISPATCH)
+        super().__init__(
+            module,
+            bindings,
+            bump_allocator=module.require_allocator(),
+            native_dispatcher=native_abi.RUN_DEBUG_DISPATCH,
+        )
 
     def _new_context(self) -> ExecutionContext:
         """Construct the one context type with its debugger control pointer set."""

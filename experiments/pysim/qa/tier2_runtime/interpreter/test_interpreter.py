@@ -39,7 +39,7 @@ from tier2_runtime.wasm.module import (
     LocalLayout,
     Memory,
 )
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier2_runtime.wasm.validation import InvalidWasm
 
 
@@ -79,7 +79,7 @@ def test_intp_01_python_reference_cps_handlers_and_dispatch_table():
 
 def test_python_interpreter_preserves_shared_operand_stack_across_call():
     """The caller's live operand remains on the context stack across a nested call."""
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             '(module (func (export "main") (result i32) '
             "i32.const 10 call 1 i32.add) "
@@ -127,7 +127,7 @@ def test_control_opcodes_use_static_metadata_without_control_frames():
         attributes[CALL // 2] = 0
     assert opcode_has_attribute(CALL, OpcodeAttribute.CALL)
 
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             '(module (func (export "main") (result i32) '
             "(block $outer (result i32) (i32.const 17) (br $outer))))"
@@ -138,7 +138,7 @@ def test_control_opcodes_use_static_metadata_without_control_frames():
 
 
 def test_loader_builds_control_map_before_interpreter_creation():
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             "(module (global i64 (i64.const 0)) "
             '(func (export "main") i32.const 1 drop (block (br 0))))'
@@ -222,7 +222,7 @@ def test_loader_builds_control_map_before_interpreter_creation():
 def test_wasm_runtime_traps_keep_code_and_stop_following_effects(
     expression: str, result_type: str, expected_trap: InterpreterTrapCode, native: bool
 ) -> None:
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             "(module (memory 1) (global (mut i32) (i32.const 0)) "
             f"(func (result {result_type}) {expression} i32.const 99 global.set 0))"
@@ -238,7 +238,7 @@ def test_wasm_runtime_traps_keep_code_and_stop_following_effects(
 
 def test_intp_73_wide_frame_uses_compact_per_local_layout():
     """TEST-INTP-73: each local uses its precomputed packed word span."""
-    module = parse(
+    module = parse_standalone(
         memoryview(
             wat_to_wasm(
                 "(module (func (param i32 i64 f64) (result i64) (local i32 i64) local.get 1))"
@@ -321,14 +321,14 @@ def test_native_br_table_with_255_labels_preserves_branch_result():
         f"(block $target (local.get 0) (br_table {labels} $target))))"
     )
     assert wasm_bytes
-    module = parse(memoryview(wasm_bytes))
+    module = parse_standalone(memoryview(wasm_bytes))
     interpreter = make_native_interpreter(module)
     for selector in (0, 254, 255, 256):
         assert interpreter.call(module.export_func_index("dispatch"), [selector]).unwrap() == []
 
 
 def test_native_br_table_single_label_preserves_branch_result():
-    module = parse(
+    module = parse_standalone(
         memoryview(
             wat_to_wasm(
                 '(module (func (export "dispatch") (param i32) '
@@ -343,7 +343,7 @@ def test_native_br_table_single_label_preserves_branch_result():
 
 
 def test_native_br_table_default_only_preserves_branch_result():
-    module = parse(
+    module = parse_standalone(
         memoryview(
             wat_to_wasm(
                 '(module (func (export "dispatch") (param i32) '
@@ -360,7 +360,7 @@ def test_native_br_table_default_only_preserves_branch_result():
 def test_native_single_byte_local_boundary_and_multibyte_call():
     prior_functions = " ".join("(func)" for _ in range(128))
     locals_decl = " ".join("(local i32)" for _ in range(128))
-    module = parse(
+    module = parse_standalone(
         memoryview(
             wat_to_wasm(
                 f"(module {prior_functions} "
@@ -387,7 +387,7 @@ def test_native_call_dispatch_resolves_callee_and_caller_blocks(monkeypatch):
     )
 
     prior_functions = " ".join("(func)" for _ in range(128))
-    module = parse(
+    module = parse_standalone(
         memoryview(
             wat_to_wasm(
                 f"(module {prior_functions} (func (drop (i32.const 0))) "
@@ -407,7 +407,7 @@ def test_native_call_dispatch_resolves_callee_and_caller_blocks(monkeypatch):
         return status
 
     monkeypatch.setattr(NativeInterpreter, "run_native_dispatch", capture_stats)
-    interpreter = NativeInterpreter(
+    interpreter = NativeInterpreter.with_module_allocator(
         module,
         InterpreterBindings.empty(),
         native_dispatcher=RUN_DISPATCH_STATS,
@@ -420,7 +420,7 @@ def test_native_call_dispatch_resolves_callee_and_caller_blocks(monkeypatch):
 
 
 def test_native_runtime_api_false_stops_before_following_store():
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             '(module (memory 1) (func (export "main") '
             "i32.const 1 i32.const 0 i32.div_s drop "
@@ -460,7 +460,7 @@ def test_intp_01_handler_returns_specific_trap_outcome():
     from tier2_runtime.interpreter.interpreter import _HANDLERS
     from tier2_runtime.wasm.opcodes import UNREACHABLE
 
-    module = parse(wat_to_wasm("(module (func unreachable))"))
+    module = parse_standalone(wat_to_wasm("(module (func unreachable))"))
     call_state = Interpreter(module).start(0, [])
     assert get_call_cont(call_state) is not None
     ip, frame, _ = get_call_cont(call_state)
@@ -483,7 +483,7 @@ def test_intp_17_return_publishes_explicit_sentinel_before_frame_pop():
     """TEST-INTP-17: RETURN publishes the sentinel; the next step completes it."""
     from tier2_runtime.interpreter.interpreter import RETURN_SENTINEL_IP, RETURN_SENTINEL_PC
 
-    module = parse(wat_to_wasm("(module (func (result i32) i32.const 7 return))"))
+    module = parse_standalone(wat_to_wasm("(module (func (result i32) i32.const 7 return))"))
     interp = Interpreter(module)
     call_state = interp.step(interp.start(0, []))
     assert not call_state.finished
@@ -498,7 +498,7 @@ def test_intp_17_return_publishes_explicit_sentinel_before_frame_pop():
 
 def test_typed_block_results_keep_wide_native_slots():
     """Label pruning preserves i64/f32/f64 results through the shared raw stack."""
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             """(module
               (func (result i64)
@@ -524,7 +524,7 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
         NativeInterpreter,
     )
 
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             """
             (module
@@ -564,7 +564,7 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
     monkeypatch.setattr(NativeInterpreter, "run_native_dispatch", record_native_dispatch)
     iteration_count = FB_CONF_INTERPRETER_YIELD_THRESHOLD * 2 + 1
     results = (
-        NativeInterpreter(module, InterpreterBindings.empty())
+        NativeInterpreter.with_module_allocator(module, InterpreterBindings.empty())
         .call(function_index, [iteration_count])
         .unwrap()
     )
@@ -583,7 +583,7 @@ def test_native_dispatch_reuses_block_search_results_within_dispatch(monkeypatch
         NativeInterpreter,
     )
 
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             """(module
               (func (export "sum_to") (param $n i32) (result i32)
@@ -608,7 +608,7 @@ def test_native_dispatch_reuses_block_search_results_within_dispatch(monkeypatch
         return status
 
     monkeypatch.setattr(NativeInterpreter, "run_native_dispatch", capture_stats)
-    interpreter = NativeInterpreter(
+    interpreter = NativeInterpreter.with_module_allocator(
         module,
         InterpreterBindings.empty(),
         native_dispatcher=RUN_DISPATCH_STATS,
@@ -625,7 +625,7 @@ def test_intp_16_nested_return_consumes_sentinel_and_restores_caller():
     """TEST-INTP-16: nested return restores the caller on the shared stack."""
     from tier2_runtime.interpreter.interpreter import RETURN_SENTINEL_IP
 
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             """(module
               (func (result i32) i32.const 7 return)
@@ -662,7 +662,7 @@ def test_intp_16_nested_return_consumes_sentinel_and_restores_caller():
 
 def test_intp_06_memory_traps_are_handler_results():
     """vMMIO faults leave the handler as a trap result, never as a Python exception."""
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm("(module (memory 1) (func (param i32) (result i32) local.get 0 i32.load))")
     )
     interp = Interpreter(module, memory=bytearray(65536))
@@ -679,7 +679,7 @@ def test_intp_07_host_call_and_vmmio_separation():
 
     sysv = System()
     try:
-        module = parse(
+        module = parse_standalone(
             wat_to_wasm(
                 f"""(module
                   (import "fireball" "fireball_call"
@@ -696,7 +696,7 @@ def test_intp_07_host_call_and_vmmio_separation():
                     call $fireball_call))"""
             )
         )
-        wasi_ctx = WasiHostContext(sysv, guest_memory=bytearray(65536))
+        wasi_ctx = WasiHostContext.with_guest_memory(sysv, bytearray(65536))
         interp = Interpreter(
             module,
             memory=wasi_ctx.guest_memory,
@@ -726,7 +726,7 @@ def test_wasm_01_to_06_unsupported_features_rejected():
         b"\x0a\x06\x01\x04\x00\xfd\x00\x0b"
     )
     with pytest.raises(InvalidWasm, match="ERR_WASM_UNSUPPORTED_FEATURE"):
-        mod = parse(wasm_bytes)
+        mod = parse_standalone(wasm_bytes)
         interp = Interpreter(mod)
         interp.call(0, []).unwrap()
 
@@ -771,7 +771,7 @@ def test_wasm_10_to_15_control_flow_and_calls():
     if not wasm_bytes:
         print("    [SKIP] wasmtime not installed, skipping test_wasm_10_to_15")
         return
-    mod = parse(wasm_bytes)
+    mod = parse_standalone(wasm_bytes)
     interp = Interpreter(mod)
     # TEST-WASM-10: unreachable traps
     outcome = interp.call(mod.export_func_index("unreachable_fn"), [])
@@ -800,7 +800,7 @@ def test_wasm_20_21_drop_and_select():
     if not wasm_bytes:
         print("    [SKIP] wasmtime not installed, skipping test_wasm_20_21")
         return
-    mod = parse(wasm_bytes)
+    mod = parse_standalone(wasm_bytes)
     interp = Interpreter(mod)
     assert interp.call(mod.export_func_index("sel"), [1, 10, 20]).unwrap() == [10]
     assert interp.call(mod.export_func_index("sel"), [0, 10, 20]).unwrap() == [20]
@@ -823,7 +823,7 @@ def test_wasm_30_31_locals_and_globals():
     if not wasm_bytes:
         print("    [SKIP] wasmtime not installed, skipping test_wasm_30_31")
         return
-    mod = parse(wasm_bytes)
+    mod = parse_standalone(wasm_bytes)
     interp = Interpreter(mod)
     assert interp.call(mod.export_func_index("loc_glob"), [5]).unwrap() == [10]
     assert interp.globals[0] == 5
@@ -850,7 +850,7 @@ def test_wasm_40_to_46_memory_load_store_grow_and_data():
     if not wasm_bytes:
         print("    [SKIP] wasmtime not installed, skipping test_wasm_40_to_46")
         return
-    mod = parse(wasm_bytes)
+    mod = parse_standalone(wasm_bytes)
     mem = bytearray(65536)
     mod.init_memory_data(mem, ())
     interp = Interpreter(mod, memory=mem)
@@ -897,7 +897,7 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
     if not wasm_bytes:
         print("    [SKIP] wasmtime not installed, skipping test_wasm_50_to_56")
         return
-    mod = parse(wasm_bytes)
+    mod = parse_standalone(wasm_bytes)
     interp = Interpreter(mod)
     # TEST-WASM-54: Div by zero traps
     outcome = interp.call(mod.export_func_index("div_s"), [10, 0])
@@ -937,7 +937,7 @@ def test_wasm_f32_arithmetic_min_max_and_precision():
     if not wasm_bytes:
         print("    [SKIP] wasmtime not installed, skipping test_wasm_f32_arithmetic")
         return
-    mod = parse(wasm_bytes)
+    mod = parse_standalone(wasm_bytes)
     interp = Interpreter(mod)
 
     # 1. Single precision rounding: 1.0 + 1e-8 in double is > 1.0, but in f32 it rounds to 1.0
@@ -996,7 +996,7 @@ def test_intp_70_to_72_direct_bytecode_execution():
     if not wasm_bytes:
         print("    [SKIP] wasmtime not installed, skipping test_intp_70_to_72")
         return
-    module = parse(wasm_bytes)
+    module = parse_standalone(wasm_bytes)
     interp = Interpreter(module)
 
     # 1. TEST-INTP-18/75: independent call descriptors and local storage follow the native ABI.
@@ -1084,7 +1084,7 @@ def test_wasm_mvp_packed_memory_and_i64_float_conversions():
             "    [SKIP] wasmtime not installed, skipping test_wasm_mvp_packed_memory_and_i64_float_conversions"
         )
         return
-    module = parse(wasm_bytes)
+    module = parse_standalone(wasm_bytes)
     memory = bytearray(65536)
     module.init_memory_data(memory, ())
     interp = Interpreter(module, memory=memory)
@@ -1142,7 +1142,7 @@ def test_wasm_mvp_select_preserves_wide_operands():
           (select (local.get 1) (local.get 2) (local.get 3))))
     )
     """
-    module = parse(wat_to_wasm(wat))
+    module = parse_standalone(wat_to_wasm(wat))
     interp = Interpreter(module)
     import math
 
@@ -1175,7 +1175,7 @@ def test_wasm_mvp_typed_global_initializers_and_access():
       (func (export "set_f64") (param f64) (global.set $g_f64 (local.get 0)))
     )
     """
-    module = parse(wat_to_wasm(wat))
+    module = parse_standalone(wat_to_wasm(wat))
     interp = Interpreter(module)
     assert interp.call(module.export_func_index("get_i32"), []).unwrap() == [-7]
     assert interp.call(module.export_func_index("get_i64"), []).unwrap() == [-1234567890123]
@@ -1195,7 +1195,7 @@ def test_native_interpreter_executes_typed_global_get_set():
     """C++ global handlers read and write the same typed storage as Python."""
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             """(module
               (global $g_i32 (mut i32) (i32.const -7))
@@ -1212,7 +1212,7 @@ def test_native_interpreter_executes_typed_global_get_set():
               (func (export "set_f64") (param f64) (global.set $g_f64 (local.get 0))))"""
         )
     )
-    interpreter = NativeInterpreter(module, InterpreterBindings.empty())
+    interpreter = NativeInterpreter.with_module_allocator(module, InterpreterBindings.empty())
 
     assert interpreter.call(module.export_func_index("get_i32"), []).unwrap() == [-7]
     assert interpreter.call(module.export_func_index("get_i64"), []).unwrap() == [-1234567890123]
@@ -1249,7 +1249,7 @@ def test_wasm_mvp_imported_immutable_global_initializer():
       (func (export "get_copy") (result i64) (global.get $copy))
     )
     """
-    module = parse(wat_to_wasm(wat))
+    module = parse_standalone(wat_to_wasm(wat))
     imported_globals = StaticVector.of((0xFEDC_BA98_7654_3210,), capacity=1)
     interp = Interpreter(module, imported_globals=imported_globals)
     assert interp.call(module.export_func_index("get_copy"), []).unwrap() == [
@@ -1266,7 +1266,7 @@ def test_wasm_mvp_imported_linear_memory():
       (func (export "read") (result i32) (i32.load (i32.const 8)))
     )
     """
-    module = parse(wat_to_wasm(wat))
+    module = parse_standalone(wat_to_wasm(wat))
     memory = bytearray(65536)
     interp = Interpreter(
         module,
@@ -1290,7 +1290,7 @@ def test_wasm_mvp_imported_table_and_active_element_segment():
         (call_indirect (type $result_i32) (i32.const 0)))
     )
     """
-    module = parse(wat_to_wasm(wat))
+    module = parse_standalone(wat_to_wasm(wat))
     external_table = FunctionTable.from_sequence((None,))
     interp = Interpreter(
         module,
@@ -1306,7 +1306,7 @@ def test_wasm_mvp_imported_table_and_active_element_segment():
 @pytest.mark.parametrize("native", (False, True), ids=("python", "native"))
 def test_call_indirect_accepts_unselected_targets_with_other_signatures(native: bool):
     """A valid selected target remains callable beside a differently typed table slot."""
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             """
             (module
@@ -1330,7 +1330,7 @@ def test_call_indirect_accepts_unselected_targets_with_other_signatures(native: 
 @pytest.mark.parametrize("native", (False, True), ids=("python", "native"))
 def test_call_indirect_reads_wide_function_index_from_table_slot_two(native: bool):
     """A u16 function index is loaded from each loader-owned u32 table slot."""
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             """
             (module
@@ -1387,7 +1387,7 @@ def test_call_indirect_signature_mismatch_traps_before_entering_target(
         (call_indirect (type $expected) {arguments} (i32.const 0)))
     )
     """
-    module = parse(wat_to_wasm(wat))
+    module = parse_standalone(wat_to_wasm(wat))
 
     interpreter = make_native_interpreter(module) if native else Interpreter(module)
     call = interpreter.start(module.export_func_index("call"), [])
@@ -1401,7 +1401,7 @@ def test_call_indirect_signature_mismatch_traps_before_entering_target(
 @pytest.mark.parametrize("native", (False, True), ids=("python", "native"))
 def test_call_indirect_import_signature_mismatch_never_invokes_host(native: bool):
     """Imported targets are checked at the host boundary before callback side effects."""
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             """(module
               (type $expected (func (result i32)))
@@ -1446,7 +1446,7 @@ def test_call_indirect_links_structurally_equal_duplicate_signatures(native: boo
         (call_indirect (type $expected) (i32.const 0)))
     )
     """
-    module = parse(wat_to_wasm(wat))
+    module = parse_standalone(wat_to_wasm(wat))
     interpreter = make_native_interpreter(module) if native else Interpreter(module)
 
     assert interpreter.call(module.export_func_index("call"), []).unwrap() == [42]
@@ -1495,7 +1495,7 @@ def test_wasm_mvp_host_function_arguments_keep_declared_types():
           (i32.const 4)))
     )
     """
-    module = parse(wat_to_wasm(wat))
+    module = parse_standalone(wat_to_wasm(wat))
     received: StaticVector[WasmNumber] = StaticVector(capacity=4)
 
     def mix(i64_value: int, f32_value: float, f64_value: float, i32_value: int) -> float:
@@ -1530,7 +1530,7 @@ def test_python_runtime_api_uses_values_without_interpreter_state():
     """Host imports and memory management cross the API as WebAssembly values."""
     from tier2_runtime.runtime.python_api import HostFunction, PythonRuntimeAPI
 
-    module = parse(
+    module = parse_standalone(
         memoryview(
             wat_to_wasm(
                 """
@@ -1583,7 +1583,7 @@ def test_intp_73_local_layout_precomputes_offsets_and_sizes():
         ("", (), 0),
     )
     for declarations, expected_sizes, expected_slots in cases:
-        module = parse(memoryview(wat_to_wasm(f"(module (func {declarations}))")))
+        module = parse_standalone(memoryview(wat_to_wasm(f"(module (func {declarations}))")))
         function = module.functions[0]
         assert function.local_layout_cache is not None
         layout = function.local_layout_cache
@@ -1593,7 +1593,7 @@ def test_intp_73_local_layout_precomputes_offsets_and_sizes():
         )
         assert function.local_slot_count_cache == expected_slots
 
-    narrow_module = parse(
+    narrow_module = parse_standalone(
         memoryview(
             wat_to_wasm(
                 "(module (func (param i32 i32) (result i32) (local i32) "
@@ -1602,7 +1602,7 @@ def test_intp_73_local_layout_precomputes_offsets_and_sizes():
         )
     )
     assert Interpreter(narrow_module).call(0, [30, 12]).unwrap() == [42]
-    wide_module = parse(
+    wide_module = parse_standalone(
         memoryview(
             wat_to_wasm("(module (func (param i32 i64) (result i64) (local i64) local.get 1))")
         )
@@ -1626,13 +1626,13 @@ def test_intp_74_wide_local_adds_only_its_own_word_to_the_frame():
         )
 
     local_stack_words = 128  # NATIVE_VALUE_STACK_CAPACITY
-    narrow_module = parse(recursion(""))
+    narrow_module = parse_standalone(recursion(""))
     assert narrow_module.functions[0].local_slot_count_cache == 16
     # Sixteen i32 values per frame exactly fit eight active frames.
     assert 8 * 16 == local_stack_words
     assert Interpreter(narrow_module).call(0, [7]).unwrap() == [7]
     assert make_native_interpreter(narrow_module).call(0, [7]).unwrap() == [7]
-    wide_module = parse(recursion("(local $w f64)"))
+    wide_module = parse_standalone(recursion("(local $w f64)"))
     assert wide_module.functions[0].local_slot_count_cache == 18
     # The f64 adds two words; eight frames then exceed the fixed 128-word region.
     assert 8 * 18 > local_stack_words
@@ -1669,7 +1669,7 @@ def test_vmmio_load_rejects_unknown_success_status(monkeypatch, status: int) -> 
     from tier2_runtime.interpreter.handlers import _vmmio_load
     from tier2_runtime.vmmio.controller import VMMIOController
 
-    module = parse(wat_to_wasm("(module (memory 1) (func))"))
+    module = parse_standalone(wat_to_wasm("(module (memory 1) (func))"))
     controller = VMMIOController(guest_ram_size=65536, scheduler=Scheduler())
     interpreter = Interpreter(module, memory=bytearray(65536), vmmio=controller)
     monkeypatch.setattr(VMMIOController, "access", lambda *args, **kwargs: (status, 0))
@@ -1691,7 +1691,7 @@ def test_vmmio_load_preserves_backing_and_missing_dynamic_contract() -> None:
     controller.map_shm_page(0xE0000, phys_page=0, owner_id=1)
     physical = bytearray(4096)
     physical[16:20] = (37).to_bytes(4, "little")
-    module = parse(wat_to_wasm("(module (memory 1) (func))"))
+    module = parse_standalone(wat_to_wasm("(module (memory 1) (func))"))
     interpreter = Interpreter(module, memory=bytearray(65536), vmmio=controller, phys_mem=physical)
     assert _vmmio_load(interpreter._env, 0xD0000010, 4, False) == (61, None)
     assert _vmmio_load(interpreter._env, 0xE0000010, 4, False) == (37, None)
@@ -1718,7 +1718,7 @@ def test_function_entry_capacity_precedes_traps_and_side_effects(native: bool, c
     if callee:
         functions += "(func (param i32) local.get 0 call 0)"
         index = 1
-    module = parse(wat_to_wasm(f"(module (global (mut i32) (i32.const 0)) {functions})"))
+    module = parse_standalone(wat_to_wasm(f"(module (global (mut i32) (i32.const 0)) {functions})"))
     engine = make_native_interpreter(module) if native else Interpreter(module)
     call = engine.start(index, (1,))
     while not call.finished:
@@ -1734,7 +1734,7 @@ def test_function_entry_capacity_precedes_traps_and_side_effects(native: bool, c
 def test_callee_capacity_uses_entry_sp_after_arguments(native: bool, count: int):
     """Caller live values occupy capacity; parameters become locals before callee admission."""
     wide = " ".join(["i64.const 0"] * count + ["drop"] * count)
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(f"""(module
       (func (param i64) {wide})
       (func (result i64) i64.const 7 i64.const 1 call 0))""")

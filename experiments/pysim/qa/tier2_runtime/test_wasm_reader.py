@@ -31,7 +31,8 @@ from qa.shared.helpers import (
 )
 from system_containers import fold_mix32
 from tier2_runtime.interpreter.errors import TrapCode
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.leb128 import decode_unsigned_full
+from tier2_runtime.wasm.reader import parse, parse_standalone
 from tier2_runtime.wasm.validation import InvalidWasm
 
 _TEST_FILE = Path(__file__).resolve()
@@ -53,7 +54,7 @@ def test_br_table_annotation_uses_label_count_instead_of_instruction_width() -> 
 
 
 def test_loader_annotation_pool_resolves_branch_target_block_index() -> None:
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm('(module (func (export "f") (result i32) (block $b (br $b)) i32.const 7))')
     )
     function = module.functions[0]
@@ -100,12 +101,12 @@ def test_loader_rejects_br_table_label_count_above_u16() -> None:
 
 def test_loader_accepts_configured_type_local_and_function_limits() -> None:
     types = " ".join("(type (func))" for _ in range(FB_CONF_MAX_TYPES))
-    type_module = parse(wat_to_wasm(f"(module {types})"))
+    type_module = parse_standalone(wat_to_wasm(f"(module {types})"))
     assert len(type_module.types) == FB_CONF_MAX_TYPES
 
     imports = " ".join(f'(import "env" "f{index}" (func))' for index in range(FB_CONF_MAX_IMPORTS))
     functions = " ".join("(func)" for _ in range(FB_CONF_MAX_FUNCTIONS))
-    function_module = parse(wat_to_wasm(f"(module {imports} {functions})"))
+    function_module = parse_standalone(wat_to_wasm(f"(module {imports} {functions})"))
     assert len(function_module.imports) == FB_CONF_MAX_IMPORTS
     assert len(function_module.functions) == FB_CONF_MAX_FUNCTIONS
     assert len(function_module.imports) + len(function_module.functions) == (
@@ -113,23 +114,23 @@ def test_loader_accepts_configured_type_local_and_function_limits() -> None:
     )
 
     locals_ = " ".join("(local i32)" for _ in range(FB_CONF_MAX_LOCALS))
-    local_module = parse(wat_to_wasm(f'(module (func (export "f") {locals_}))'))
+    local_module = parse_standalone(wat_to_wasm(f'(module (func (export "f") {locals_}))'))
     assert len(local_module.functions[0].locals_extra) == FB_CONF_MAX_LOCALS
 
 
 def test_loader_accepts_and_rejects_nesting_depth_boundary() -> None:
     nested = "(block " * FB_CONF_MAX_NESTING_DEPTH + ")" * FB_CONF_MAX_NESTING_DEPTH
-    accepted = parse(wat_to_wasm(f'(module (func (export "f") {nested}))'))
+    accepted = parse_standalone(wat_to_wasm(f'(module (func (export "f") {nested}))'))
     assert accepted.functions[0].control_map is not None
 
     over_limit = FB_CONF_MAX_NESTING_DEPTH + 1
     nested_over_limit = "(block " * over_limit + ")" * over_limit
     with pytest.raises(InvalidWasm, match="ERR_WASM_UNSUPPORTED_FEATURE: block/loop/if nesting"):
-        parse(wat_to_wasm(f'(module (func (export "f") {nested_over_limit}))'))
+        parse_standalone(wat_to_wasm(f'(module (func (export "f") {nested_over_limit}))'))
 
 
 def test_loader_records_maximum_operand_stack_in_raw_words() -> None:
-    module = parse(
+    module = parse_standalone(
         wat_to_wasm(
             """(module
           (func (result i64)
@@ -157,7 +158,7 @@ def test_load_61_type_analysis_dispatch_is_immutable() -> None:
     with pytest.raises(TypeError):
         _STACK_ANALYSIS_DISPATCH[I32_ADD] = None
     assert _STACK_ANALYSIS_DISPATCH[I32_ADD] is add_handler
-    module = parse(memoryview(_build_test_wasm_binary()))
+    module = parse_standalone(memoryview(_build_test_wasm_binary()))
     assert module.code_for(0)[-2] == I32_ADD
     assert _STACK_ANALYSIS_DISPATCH[I32_CONST] is not add_handler
 
@@ -216,7 +217,7 @@ def test_load_04_decreasing_or_duplicate_section_rejects_and_rolls_back(
 
 def test_load_04_custom_sections_are_exempt_from_type_ordering() -> None:
     binary = _build_test_wasm_binary() + b"\x00\x02\x01x\x00\x02\x01y"
-    module = parse(memoryview(binary))
+    module = parse_standalone(memoryview(binary))
     assert module.export_func_index("add") == 0
 
 
@@ -245,7 +246,7 @@ def test_load_07_arena_exhaustion_rolls_back_partial_metadata_allocations() -> N
 def test_load_10_signature_and_code_accessors_borrow_original_binary() -> None:
     """TEST-LOAD-10: immutable variable-length metadata stays in the input ROM."""
     binary = _build_test_wasm_binary()
-    module = parse(memoryview(binary))
+    module = parse_standalone(memoryview(binary))
     assert module.source is not None and module.source.obj is binary
     record = module.types[0]
     assert record.param_count == 2
@@ -272,7 +273,7 @@ def test_load_10_signature_and_code_accessors_borrow_original_binary() -> None:
 
 
 def test_load_16_resolves_imported_global_offsets_for_active_segments() -> None:
-    module = parse(
+    module = parse_standalone(
         memoryview(
             wat_to_wasm(
                 '(module (import "host" "base" (global i32)) '
@@ -437,7 +438,7 @@ def test_load_24_qa_link_harness_enforces_registry_capacity() -> None:
 
 
 def test_load_46_parser_export_lookup_checks_names_when_hashes_collide() -> None:
-    module = parse(
+    module = parse_standalone(
         memoryview(wat_to_wasm('(module (func (export "ufbwjn")) (func (export "rsksbm")))'))
     )
 
@@ -472,25 +473,24 @@ def test_load_parameter_capacity_rejects_one_more_than_configured_limit() -> Non
 
 def test_load_31_more_than_64_exports_are_retained() -> None:
     names = [f"export_{index:03}" for index in range(65)]
-    module = parse(memoryview(_build_test_wasm_binary(export_names=names)))
+    module = parse_standalone(memoryview(_build_test_wasm_binary(export_names=names)))
     assert len(module.exports) == len(names)
     for name in names:
         assert module.export_func_index(name) == 0
 
 
 def test_load_32_unsigned_leb128_byte_budget() -> None:
-    from tier2_runtime.wasm.leb128 import decode_unsigned
 
     for bits, limit in ((32, 5), (64, 10)):
         with pytest.raises(InvalidWasm, match=f"maximum {limit} bytes"):
-            decode_unsigned(memoryview(b"\x80" * limit + b"\x00"), 0, bits=bits)
+            decode_unsigned_full(memoryview(b"\x80" * limit + b"\x00"), 0, bits=bits)
 
 
 def test_load_48_module_builds_basic_block_index() -> None:
     function_count = 40
     function_declarations = " ".join("(func)" for _ in range(function_count))
     wasm_bytes = wat_to_wasm(f"(module {function_declarations})")
-    module = parse(memoryview(wasm_bytes))
+    module = parse_standalone(memoryview(wasm_bytes))
 
     assert module.block_storage is not None
     assert len(module.blocks) == function_count
@@ -518,7 +518,7 @@ def test_loader_rejects_basic_block_count_above_u16_capacity() -> None:
     binary = _single_void_function_module(pattern * 21_845 + b"\x0b")
 
     with pytest.raises(InvalidWasm, match="basic block count exceeds u16 capacity"):
-        parse(memoryview(binary))
+        parse_standalone(memoryview(binary))
 
 
 def test_loader_accepts_basic_block_count_at_u16_capacity() -> None:
@@ -550,7 +550,7 @@ def test_load_57_includes_runtime_api_operations_in_trace_span() -> None:
             (func (export "popcount") (result i32)
               (i32.popcnt (i32.const 240))))"""
     )
-    module = parse(memoryview(wasm_bytes))
+    module = parse_standalone(memoryview(wasm_bytes))
 
     function = module.functions[0]
     entry = module.get_block(function.code_pc_offset)
@@ -558,7 +558,7 @@ def test_load_57_includes_runtime_api_operations_in_trace_span() -> None:
     assert entry.func_index == 0
     assert entry.head_pc == function.code_pc_offset
     code = module.code_for(0)
-    assert code[-1] == 0x0B  # END is a trace terminator, outside the body span.
+    assert code[-1] == 0x0B  # END is loader metadata, outside the executable body span.
     assert entry.byte_span == len(code) - 1
     assert entry.interpreter_annotation_byte_offset == 0
 
@@ -566,46 +566,49 @@ def test_load_57_includes_runtime_api_operations_in_trace_span() -> None:
 def test_load_51_keeps_unreachable_polymorphism_inside_its_control_frame() -> None:
     wasm_bytes = wat_to_wasm("(module (func (unreachable) (block (drop (i32.eqz (nop))))))")
     with pytest.raises(InvalidWasm, match="WASM operand stack underflow"):
-        parse(memoryview(wasm_bytes))
+        parse_standalone(memoryview(wasm_bytes))
 
 
 def test_load_52_rejects_custom_section_names_past_section_end() -> None:
     wasm_bytes = b"\x00asm\x01\x00\x00\x00\x00\x02\x03a"
     with pytest.raises(InvalidWasm, match="custom section name exceeds section bounds"):
-        parse(memoryview(wasm_bytes))
+        parse_standalone(memoryview(wasm_bytes))
 
 
 def test_load_53_bounds_leb128_and_section_counts_before_storage_configuration() -> None:
-    from tier2_runtime.wasm.leb128 import decode_signed, decode_unsigned
+    from tier2_runtime.wasm.leb128 import (
+        decode_signed_full,
+        decode_unsigned_full,
+    )
 
-    assert decode_unsigned(memoryview(b"\xff\xff\xff\xff\x0f"), 0) == (0xFFFF_FFFF, 5)
-    assert decode_signed(memoryview(b"\x80\x80\x80\x80\x78"), 0, bits=32) == (
+    assert decode_unsigned_full(memoryview(b"\xff\xff\xff\xff\x0f"), 0) == (0xFFFF_FFFF, 5)
+    assert decode_signed_full(memoryview(b"\x80\x80\x80\x80\x78"), 0, bits=32) == (
         -(1 << 31),
         5,
     )
     with pytest.raises(InvalidWasm, match="truncated unsigned LEB128"):
-        decode_unsigned(memoryview(b"\x80"), 0)
+        decode_unsigned_full(memoryview(b"\x80"), 0)
     with pytest.raises(InvalidWasm, match="exceeds width"):
-        decode_unsigned(memoryview(b"\xff\xff\xff\xff\x10"), 0)
+        decode_unsigned_full(memoryview(b"\xff\xff\xff\xff\x10"), 0)
     with pytest.raises(InvalidWasm, match="maximum 5 bytes"):
-        decode_unsigned(memoryview(b"\x80\x80\x80\x80\x80\x00"), 0)
+        decode_unsigned_full(memoryview(b"\x80\x80\x80\x80\x80\x00"), 0)
 
     over_capacity_types = b"\x00asm\x01\x00\x00\x00\x01\x02\x81\x02"
     with pytest.raises(InvalidWasm, match="exceeds configured maximum"):
-        parse(memoryview(over_capacity_types))
+        parse_standalone(memoryview(over_capacity_types))
     truncated_type_count = b"\x00asm\x01\x00\x00\x00\x01\x01\x80\x03\x01\x00"
     with pytest.raises(InvalidWasm, match="truncated unsigned LEB128"):
-        parse(memoryview(truncated_type_count))
+        parse_standalone(memoryview(truncated_type_count))
 
 
 def test_load_55_parser_enforces_configured_wasm_memory_page_limit() -> None:
     over_limit = _build_test_wasm_binary(memory_pages=FB_CONF_MAX_WASM_PAGES + 1)
     with pytest.raises(InvalidWasm, match="memory minimum exceeds FB_CONF_MAX_WASM_PAGES"):
-        parse(memoryview(over_limit))
+        parse_standalone(memoryview(over_limit))
 
 
 def test_load_56_rejects_overaligned_memory_access() -> None:
-    valid = parse(
+    valid = parse_standalone(
         memoryview(
             wat_to_wasm(
                 "(module (memory 1) (func (param i32) (result i32) local.get 0 i32.load align=4))"
@@ -617,7 +620,7 @@ def test_load_56_rejects_overaligned_memory_access() -> None:
         "(module (memory 1) (func (param i32) (result i32) local.get 0 i32.load align=8))"
     )
     with pytest.raises(InvalidWasm, match="memory alignment exceeds the natural alignment"):
-        parse(memoryview(invalid))
+        parse_standalone(memoryview(invalid))
 
 
 @pytest.mark.parametrize(
@@ -634,11 +637,11 @@ def test_load_56_rejects_overaligned_memory_access() -> None:
 def test_load_59_invalid_binary_traps_with_assertions_disabled(binary: bytes) -> None:
     script = """
 import sys
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier2_runtime.wasm.validation import InvalidWasm
 from tier2_runtime.interpreter.errors import TrapCode
 try:
-    parse(memoryview(bytes.fromhex(sys.argv[1])))
+    parse_standalone(memoryview(bytes.fromhex(sys.argv[1])))
 except InvalidWasm as error:
     if error.code != TrapCode.INVALID_WASM_BINARY:
         raise SystemExit(2)

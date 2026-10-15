@@ -408,6 +408,14 @@ RUNTIME_RESET_CHAIN_MEASUREMENTS = _NATIVE_LIBRARY.fb_jit_runtime_reset_chain_me
 RUNTIME_RESET_CHAIN_MEASUREMENTS.argtypes = (ctypes.c_void_p,)
 RUNTIME_RESET_CHAIN_MEASUREMENTS.restype = None
 
+CONTROL_OPCODE_COUNTS_RESET = _NATIVE_LIBRARY.fb_jit_control_opcode_counts_reset
+CONTROL_OPCODE_COUNTS_RESET.argtypes = ()
+CONTROL_OPCODE_COUNTS_RESET.restype = None
+
+CONTROL_OPCODE_COUNTS_READ = _NATIVE_LIBRARY.fb_jit_control_opcode_counts_read
+CONTROL_OPCODE_COUNTS_READ.argtypes = (ctypes.POINTER(ctypes.c_uint64),)
+CONTROL_OPCODE_COUNTS_READ.restype = None
+
 RUNTIME_YIELD = _NATIVE_LIBRARY.fb_jit_runtime_yield
 RUNTIME_YIELD.argtypes = (ctypes.c_void_p,)
 RUNTIME_YIELD.restype = ctypes.c_int
@@ -485,21 +493,19 @@ class NativeRuntimeStorage:
         assert 1 <= units <= 0xFFFF_FFFF and 1 <= scan_bytes <= 0xFFFF_FFFF
         state_view = (ctypes.c_uint8 * len(states)).from_buffer(states)
         dirty_view = (ctypes.c_uint8 * len(dirty)).from_buffer(dirty)
-        assert (
-            RUNTIME_BIND_CARDS(
-                self.pointer,
-                state_view,
-                len(states),
-                dirty_view,
-                len(dirty),
-                cards,
-                shift,
-                ctypes.byref(cursor),
-                units,
-                scan_bytes,
-            )
-            == 1
+        result = RUNTIME_BIND_CARDS(
+            self.pointer,
+            state_view,
+            len(states),
+            dirty_view,
+            len(dirty),
+            cards,
+            shift,
+            ctypes.byref(cursor),
+            units,
+            scan_bytes,
         )
+        assert result == 1
         self._states, self._dirty, self._cursor = state_view, dirty_view, cursor
 
 
@@ -563,17 +569,15 @@ def install_common_trace(
     assert 0 <= block_index <= 0xFFFF
     source = ctypes.cast(ctypes.c_char_p(blob), ctypes.POINTER(ctypes.c_uint8))
     entry = ctypes.c_size_t()
-    assert (
-        _COMMON_INSTALL(
-            ctypes.byref(memory),
-            offset,
-            source,
-            len(blob),
-            block_index,
-            ctypes.byref(entry),
-        )
-        == 1
+    result = _COMMON_INSTALL(
+        ctypes.byref(memory),
+        offset,
+        source,
+        len(blob),
+        block_index,
+        ctypes.byref(entry),
     )
+    assert result == 1
     return entry.value
 
 
@@ -850,7 +854,7 @@ def compile_wasm(block: WasmBlock, trace: TraceQaState) -> bytes | None:
         if boundary < block.code.byte_length
         else -1
     )
-    control_boundary = boundary_opcode in (0x02, 0x03, 0x04, 0x05, 0x0B, 0x0D, 0x0E, 0x0F)
+    control_boundary = boundary_opcode in (0x04, 0x0D, 0x0E, 0x0F)
     trace.next_pc = None if block.loops_to is not None or control_boundary else block.next_pc
     trace.loops_to = 0xFFFF_FFFF if block.loops_to is None else block.loops_to
     trace.result_words = header.result_words

@@ -443,7 +443,7 @@ def test_hal_15_file_log_sink_receives_internal_logs():
     backing = io.BytesIO()
     sink = FileLogSink(backing)
     log_dictionary = LogDictionary(entries=((0x300, "TEST_LOG: v=%d"),))
-    sysv = System(printk_sink=sink, log_dictionary=log_dictionary)
+    sysv = System.with_printk_sink(sink, log_dictionary)
     try:
         sysv.start_hal_driver(
             DummyDriver(sysv.pool, transport=sysv.transport), FB_URI_HAL_STDOUT

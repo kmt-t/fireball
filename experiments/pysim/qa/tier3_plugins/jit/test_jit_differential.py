@@ -32,7 +32,7 @@ from tier2_runtime.abi.interpreter_abi import NATIVE_VALUE_STACK_CAPACITY
 from tier2_runtime.interpreter.interpreter import NativeInterpreter, TrapCode
 from tier2_runtime.wasm.module import Module
 from tier2_runtime.wasm.opcodes import BR
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 
 MASK32 = 0xFFFFFFFF
 SUITE_WASM = _PYSIM_DIR / "benchmarks" / "profile" / "guest" / "suite.wasm"
@@ -54,7 +54,7 @@ def _guest(module: Module) -> NativeInterpreter:
 
 
 def _tier2_result(wasm: bytes, export: str, args: list[int]) -> int:
-    module = parse(wasm)
+    module = parse_standalone(wasm)
     memory = bytearray(module.memory.min_pages * 65536) if module.memory is not None else None
     if memory is not None:
         module.init_memory_data(memory, ())
@@ -294,7 +294,7 @@ def test_jitr_53_loop_entered_after_hot_block_uses_static_branch_metadata():
     resolve targets through loader metadata.
     """
     wasm = wat_to_wasm(LOOP_AFTER_HOT_BLOCK_WAT)
-    first_function_block_pc = parse(wasm).blocks[0].head_pc
+    first_function_block_pc = parse_standalone(wasm).blocks[0].head_pc
     _assert_jit_ran(_check_three_ways(wasm, "main", [30], compile_only=(first_function_block_pc,)))
 
 
@@ -378,7 +378,7 @@ def test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_inter
     interpreter, which stops on overflow, instead of the trace writing past the operand stack.
     """
     wasm = wat_to_wasm(_operand_overflow_wat())
-    interpreter_module = parse(wasm)
+    interpreter_module = parse_standalone(wasm)
     outcome = _guest(interpreter_module).call(interpreter_module.export_func_index("main"), [])
     assert not outcome.is_ok
     assert outcome.error is not None and outcome.error.code == TrapCode.OPERAND_STACK_CAPACITY
@@ -394,8 +394,8 @@ def test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_inter
     assert engine.stat_jit_invocations > 0, "`work` never ran compiled before the overflow"
 
 
-def test_jitr_69_forward_br_chains_preserve_static_nesting_metadata():
-    """The shared chain dispatcher trims a departed block frame before jumping to its target."""
+def test_jitr_69_forward_br_returns_through_cps_preserving_static_nesting_metadata():
+    """A forward branch leaves JIT and preserves static nesting for Interpreter CPS."""
     wat = """
     (module
       (func (export "main") (result i32) (local $i i32) (local $x i32)
@@ -434,8 +434,8 @@ def test_jitr_69_forward_br_chains_preserve_static_nesting_metadata():
     assert source_trace is not None and target_trace is not None
     assert source_trace.header._native.frame_depth == branch_source.frame_depth
     assert target_trace.header._native.frame_depth == branch_target.frame_depth
-    assert source_trace.chain_next == branch_target.head_pc
-    assert source_trace.header.chain_target_addr != 0
+    assert source_trace.chain_next is None
+    assert source_trace.header.chain_target_addr == 0
 
 
 # ---------------------------------------------------------------------------

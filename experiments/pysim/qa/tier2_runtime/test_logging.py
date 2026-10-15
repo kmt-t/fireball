@@ -35,7 +35,7 @@ from tier2_runtime.observability.logger import (
     LogResult,
     decode_log_records,
 )
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.printk import PrintkBuffer, PrintkSink
 
@@ -206,7 +206,7 @@ def test_log_11_dictionary_storage_ownership_separation():
 def test_printk_14_coos_and_ipc_diagnostics_preserve_event_ids_and_arguments():
     """TEST-LOG-14: T1診断がLoggerを通らずprintkへ記録されることを検査する。"""
     printk_sink = PrintkBuffer()
-    sysv = System(printk_sink=printk_sink)
+    sysv = System.with_printk_sink_and_default_dictionary(printk_sink)
     try:
         # 1. COOS Duplicate Task ID -> 0x0103
         def dummy_coro():
@@ -367,7 +367,7 @@ def test_log_12_interpreter_trap_diagnostic_logging(native: bool, entry: str) ->
         local.get 0 local.get 1 call $div_s)
     )
     """
-    mod = parse(wat_to_wasm(wat))
+    mod = parse_standalone(wat_to_wasm(wat))
     t = StreamTransport()
     try:
         dictionary = LogDictionary()

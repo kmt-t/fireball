@@ -16,7 +16,7 @@ Tests:
 import wasmtime
 from system import System
 from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterBindings
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.wasi.context import WasiHostContext
 
 SCENARIO3_WAT = """
@@ -74,12 +74,12 @@ SCENARIO3_WAT = """
 def test_scenario_recursion_and_tables():
     print("[*] Running Scenario 3: Recursion & Indirect Table Dispatch...")
     wasm_bytes = bytes(wasmtime.wat2wasm(SCENARIO3_WAT))
-    module = parse(wasm_bytes)
+    module = parse_standalone(wasm_bytes)
     sysv = System()
-    wasi_ctx = WasiHostContext(sysv)
+    wasi_ctx = WasiHostContext.create_default(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
     module.init_memory_data(wasi_ctx.guest_memory, ())
-    interp = Interpreter(
+    interp = Interpreter.with_module_allocator(
         module, InterpreterBindings.with_memory_and_functions(wasi_ctx.guest_memory, host_funcs)
     )
     # 1. Test Recursive Fibonacci (fib(12) = 144)

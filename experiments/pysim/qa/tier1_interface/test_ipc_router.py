@@ -30,6 +30,7 @@ from ipc_router import (
     OwnershipState,
     Role,
     ScopeKind,
+    kv_entries_to_bytes,
     pack_key32,
     unpack_key32,
 )
@@ -70,6 +71,16 @@ def _make_router(sched: Scheduler) -> IPCRouter:
     manager = MemoryManager(sched)
     assert manager.init_manager(0x00010000, FB_CONF_MEMORY_POOL_SIZE).is_ok
     return IPCRouter(sched, manager)
+
+
+def test_ipc_payload_length_and_data_entries_must_be_received() -> None:
+    """Zero values are valid; absent required entries indicate a receive failure."""
+    assert kv_entries_to_bytes(((0, 0),)) == b""
+    assert kv_entries_to_bytes(((0, 4), (1, 0))) == b"\x00\x00\x00\x00"
+    with pytest.raises(AssertionError, match="missing its length entry"):
+        kv_entries_to_bytes(())
+    with pytest.raises(AssertionError, match="missing data entry 1"):
+        kv_entries_to_bytes(((0, 1),))
 
 
 @contextmanager

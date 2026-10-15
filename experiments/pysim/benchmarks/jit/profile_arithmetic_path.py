@@ -29,7 +29,7 @@ from tier2_runtime.interpreter.interpreter import (
     NativeInterpreter,
 )
 from tier2_runtime.runtime.engine import RuntimeEngine
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
 
 LOOP_COUNT = 100_000
@@ -105,7 +105,7 @@ def main() -> None:
     assert repetitions > 0
     perf_stat = PerfStatControl(args.perf_control_fifo, args.perf_ack_fifo)
 
-    module = parse(memoryview(JITCompilerBenchmark._create_heavy_loop_binary()))
+    module = parse_standalone(memoryview(JITCompilerBenchmark._create_heavy_loop_binary()))
     function_index = module.export_func_index("heavy_loop")
     expected_result = _expected_result()
     observed_result = 0
@@ -116,7 +116,7 @@ def main() -> None:
     elapsed_ms = 0.0
 
     if args.path == "python-handler":
-        interpreter = Interpreter(module, InterpreterBindings.empty())
+        interpreter = Interpreter.with_module_allocator(module, InterpreterBindings.empty())
         warmup_result = JITCompilerBenchmark._run_python_interpreter(
             interpreter, function_index, 1_000
         )
@@ -133,7 +133,7 @@ def main() -> None:
             perf_stat.set_enabled(False)
         observed_result = int(result[0])
     elif args.path == "native-interpreter":
-        interpreter = NativeInterpreter(module, InterpreterBindings.empty())
+        interpreter = NativeInterpreter.with_module_allocator(module, InterpreterBindings.empty())
         warmup_result = interpreter.call(function_index, [1_000]).unwrap()
         assert int(warmup_result[0]) == 499_500
         arguments = [LOOP_COUNT]
@@ -157,7 +157,7 @@ def main() -> None:
             )
             runtime_engine = measured_stats
         else:
-            runtime_engine = RuntimeEngine(bump_allocator=module.allocator)
+            runtime_engine = RuntimeEngine.with_allocator(module.require_allocator())
         runtime_engine.register_module_blocks(module)
         interpreter = NativeInterpreter(
             module,
@@ -208,7 +208,9 @@ def main() -> None:
         plugin.close()
         # A JIT manager stores cache references in the Module's block metadata.
         # Parse a distinct fixture for the diagnostic manager below.
-        diagnostic_module = parse(memoryview(JITCompilerBenchmark._create_heavy_loop_binary()))
+        diagnostic_module = parse_standalone(
+            memoryview(JITCompilerBenchmark._create_heavy_loop_binary())
+        )
         diagnostic_function_index = diagnostic_module.export_func_index("heavy_loop")
         diagnostic = RuntimeStatsEngine(
             jit_runtime=JITRuntimeManager(reserve_native_region),

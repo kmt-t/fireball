@@ -31,7 +31,7 @@ from tier2_runtime.interpreter.interpreter import (
 )
 from tier2_runtime.runtime.engine import RuntimeBoundaryResult
 from tier2_runtime.wasm.module import Module
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_plugins.jit.jit_manager import JITRuntimeManager
 
 
@@ -90,7 +90,7 @@ def _new_runtime(module: Module) -> tuple[JITRuntimeManager, TimedRuntime, Nativ
 def _measure_arithmetic() -> dict[str, object]:
     from bench_jit import JITCompilerBenchmark
 
-    module = parse(memoryview(JITCompilerBenchmark._create_heavy_loop_binary()))
+    module = parse_standalone(memoryview(JITCompilerBenchmark._create_heavy_loop_binary()))
     function_index = module.export_func_index("heavy_loop")
     manager, engine, interpreter = _new_runtime(module)
     try:
@@ -126,10 +126,10 @@ def _measure_aobench() -> dict[str, object]:
 
     wasm_path = _BENCH / "aobench" / "aobench.wasm"
     wasm = wasm_path.read_bytes()
-    module = parse(memoryview(wasm))
+    module = parse_standalone(memoryview(wasm))
     system = System()
     system.transport = StreamTransport(1 << 20)
-    wasi = WasiHostContext(system)
+    wasi = WasiHostContext.create_default(system)
     system.start_hal_driver(
         DummyDriver(system.pool, transport=system.transport), FB_URI_HAL_STDOUT
     ).unwrap()

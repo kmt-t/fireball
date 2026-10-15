@@ -21,7 +21,6 @@
 #ifndef FB_CONTEXT_REL_OFFSET
 #error "FB_CONTEXT_REL_OFFSET must come from the production C++ ABI probe"
 #endif
-
 .intel_syntax noprefix
 .text
 

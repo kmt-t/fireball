@@ -138,7 +138,10 @@ class BasicBlock(ctypes.Structure):
 
     @next_pc.setter
     def next_pc(self, value: wasm_pc_t | None) -> None:
-        self._next_pc = 0xFFFF_FFFF if value is None else value
+        if value is None:
+            self._next_pc = 0xFFFF_FFFF
+            return
+        self._next_pc = value
 
     @property
     def loops_to(self) -> wasm_pc_t | None:
@@ -147,7 +150,10 @@ class BasicBlock(ctypes.Structure):
 
     @loops_to.setter
     def loops_to(self, value: wasm_pc_t | None) -> None:
-        self._loops_to = 0xFFFF_FFFF if value is None else value
+        if value is None:
+            self._loops_to = 0xFFFF_FFFF
+            return
+        self._loops_to = value
 
     @property
     def next_block_index(self) -> block_index_t | None:
@@ -156,7 +162,10 @@ class BasicBlock(ctypes.Structure):
 
     @next_block_index.setter
     def next_block_index(self, value: block_index_t | None) -> None:
-        self._next_block_index = 0xFFFF if value is None else value
+        if value is None:
+            self._next_block_index = 0xFFFF
+            return
+        self._next_block_index = value
 
     @property
     def loops_to_block_index(self) -> block_index_t | None:
@@ -165,7 +174,10 @@ class BasicBlock(ctypes.Structure):
 
     @loops_to_block_index.setter
     def loops_to_block_index(self, value: block_index_t | None) -> None:
-        self._loops_to_block_index = 0xFFFF if value is None else value
+        if value is None:
+            self._loops_to_block_index = 0xFFFF
+            return
+        self._loops_to_block_index = value
 
 
 class BasicBlockStorage:
@@ -178,7 +190,6 @@ class BasicBlockStorage:
         capacity: int,
         allocator: BumpAllocator | None = None,
         arena_offset: int | None = None,
-        arena_size: int | None = None,
     ) -> None:
         assert capacity >= 0
         self.capacity = capacity
@@ -187,10 +198,7 @@ class BasicBlockStorage:
         # point into _native; record bytes exist only in that ABI array.
         self._entries: StaticVector[BasicBlock] = StaticVector(capacity=capacity)
         self._arena_offset = arena_offset
-        self._arena_size = (
-            capacity * ctypes.sizeof(BasicBlock) if arena_size is None else arena_size
-        )
-        assert self._arena_size == capacity * ctypes.sizeof(BasicBlock)
+        self._arena_size = capacity * ctypes.sizeof(BasicBlock)
         if allocator is not None and self._arena_size:
             assert self._arena_offset is None
             self._arena_offset = allocator.allocate(self._arena_size, ctypes.alignment(BasicBlock))
@@ -686,6 +694,11 @@ class Module:
         """Return the bytes reserved while loading this module."""
 
         return self._arena_size
+
+    def require_allocator(self) -> BumpAllocator:
+        """Return the loader arena, asserting that the module is fully loaded."""
+        assert self.allocator is not None, "module has no loader allocator"
+        return self.allocator
 
     def configure_section_capacities(
         self,

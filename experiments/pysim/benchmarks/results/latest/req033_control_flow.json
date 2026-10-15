@@ -1,0 +1,425 @@
+{
+  "baseline": {
+    "aobench_320x180": {
+      "max_ms": 761.214584,
+      "median_ms": 748.47637,
+      "min_ms": 742.906094,
+      "process_medians_ms": [
+        742.906094,
+        748.47637,
+        761.214584
+      ],
+      "repeats_per_process": 7,
+      "warmup_per_process": 3
+    },
+    "aobench_32x16": {
+      "max_ms": 7.268907,
+      "median_ms": 7.221458,
+      "min_ms": 7.200598,
+      "process_medians_ms": [
+        7.200598,
+        7.221458,
+        7.268907
+      ],
+      "repeats_per_process": 7,
+      "warmup_per_process": 3
+    },
+    "arithmetic_jit_ms_per_100k": {
+      "max": 20.533,
+      "median": 20.37325,
+      "min": 19.7585,
+      "profile_repetitions_per_process": 4,
+      "samples": [
+        20.533,
+        20.37325,
+        19.7585
+      ],
+      "yield_threshold": 64
+    },
+    "call_dispatch_native_ms": {
+      "baseline": {
+        "max_ms": 2.39511,
+        "median_ms": 2.365295,
+        "min_ms": 2.327073,
+        "process_medians_ms": [
+          2.39511,
+          2.365295,
+          2.327073
+        ]
+      },
+      "direct": {
+        "max_ms": 2.809854,
+        "median_ms": 2.801709,
+        "min_ms": 2.728803,
+        "process_medians_ms": [
+          2.809854,
+          2.728803,
+          2.801709
+        ]
+      },
+      "indirect": {
+        "max_ms": 2.857413,
+        "median_ms": 2.817208,
+        "min_ms": 2.80802,
+        "process_medians_ms": [
+          2.817208,
+          2.80802,
+          2.857413
+        ]
+      }
+    },
+    "control_counts_phase0": {
+      "aobench": {
+        "chain_runtime_transitions": 47001,
+        "dynamic_trace_terminator_executions": {
+          "block": 519,
+          "br": 9728,
+          "br_if": 5522,
+          "br_table": 0,
+          "else": 2462,
+          "end": 27954,
+          "if": 7564,
+          "loop": 0,
+          "return": 0
+        }
+      },
+      "arithmetic_loop": {
+        "chain_runtime_transitions": 1563,
+        "dynamic_trace_terminator_executions": {
+          "block": 0,
+          "br": 100000,
+          "br_if": 100001,
+          "br_table": 0,
+          "else": 0,
+          "end": 0,
+          "if": 0,
+          "loop": 0,
+          "return": 0
+        }
+      },
+      "bench_call_dispatch.baseline": {
+        "chain_runtime_transitions": 157,
+        "dynamic_trace_terminator_executions": {
+          "block": 0,
+          "br": 10000,
+          "br_if": 10001,
+          "br_table": 0,
+          "else": 0,
+          "end": 0,
+          "if": 0,
+          "loop": 0,
+          "return": 0
+        }
+      },
+      "bench_call_dispatch.direct": {
+        "chain_runtime_transitions": 20001,
+        "dynamic_trace_terminator_executions": {
+          "block": 0,
+          "br": 0,
+          "br_if": 10001,
+          "br_table": 0,
+          "else": 0,
+          "end": 10000,
+          "if": 0,
+          "loop": 0,
+          "return": 0
+        }
+      },
+      "bench_call_dispatch.indirect": {
+        "chain_runtime_transitions": 20001,
+        "dynamic_trace_terminator_executions": {
+          "block": 0,
+          "br": 0,
+          "br_if": 10001,
+          "br_table": 0,
+          "else": 0,
+          "end": 10000,
+          "if": 0,
+          "loop": 0,
+          "return": 0
+        }
+      }
+    },
+    "trace_execution_counts": {
+      "aobench_320x180": {
+        "chain_runtime_transitions": 5256290,
+        "jit_bodies": 5327605
+      },
+      "aobench_32x16": {
+        "chain_runtime_transitions": 47001,
+        "jit_bodies": 50065
+      },
+      "arithmetic_loop": {
+        "chain_runtime_transitions": 1563,
+        "jit_bodies": 3128
+      }
+    }
+  },
+  "current": {
+    "control_and_trace_counts": [
+      {
+        "dispatcher_trace_transitions": 1,
+        "dynamic_trace_terminator_executions": {
+          "br": 100000,
+          "br_if": 100001
+        },
+        "interpreter_steps": 4,
+        "jit_bodies": 3126,
+        "legacy_counter_exit_reasons": {
+          "backedge": 0,
+          "frame_depth_mismatch": 0,
+          "linked": 0,
+          "loop_target": 0,
+          "oldest_bank": 0,
+          "result_words": 0,
+          "self_loop": 0,
+          "successor_block_index_mismatch": 0,
+          "successor_not_resident": 0,
+          "unsupported_control_flow": 0
+        },
+        "legacy_counter_unobserved_trace_exits": 1563,
+        "trace_exits_to_interpreter": 1563,
+        "workload": "arithmetic_loop"
+      },
+      {
+        "dispatcher_trace_transitions": 41818,
+        "dynamic_trace_terminator_executions": {
+          "br": 10125,
+          "br_if": 5803,
+          "if": 7948
+        },
+        "height": 16,
+        "interpreter_steps": 108812,
+        "jit_bodies": 54647,
+        "legacy_counter_exit_reasons": {
+          "backedge": 0,
+          "frame_depth_mismatch": 0,
+          "linked": 0,
+          "loop_target": 0,
+          "oldest_bank": 0,
+          "result_words": 0,
+          "self_loop": 0,
+          "successor_block_index_mismatch": 0,
+          "successor_not_resident": 0,
+          "unsupported_control_flow": 0
+        },
+        "legacy_counter_unobserved_trace_exits": 41889,
+        "trace_exits_to_interpreter": 236,
+        "width": 32,
+        "workload": "aobench"
+      },
+      {
+        "dispatcher_trace_transitions": 4585506,
+        "dynamic_trace_terminator_executions": {
+          "br": 1114861,
+          "br_if": 616302,
+          "if": 891123
+        },
+        "height": 180,
+        "interpreter_steps": 12538493,
+        "jit_bodies": 6013345,
+        "legacy_counter_exit_reasons": {
+          "backedge": 0,
+          "frame_depth_mismatch": 0,
+          "linked": 0,
+          "loop_target": 0,
+          "oldest_bank": 0,
+          "result_words": 0,
+          "self_loop": 0,
+          "successor_block_index_mismatch": 0,
+          "successor_not_resident": 0,
+          "unsupported_control_flow": 0
+        },
+        "legacy_counter_unobserved_trace_exits": 4593746,
+        "trace_exits_to_interpreter": 25619,
+        "width": 320,
+        "workload": "aobench"
+      },
+      {
+        "dispatcher_trace_transitions": 1,
+        "dynamic_trace_terminator_executions": {
+          "br": 10000,
+          "br_if": 10001
+        },
+        "interpreter_steps": 4,
+        "jit_bodies": 314,
+        "legacy_counter_exit_reasons": {
+          "backedge": 0,
+          "frame_depth_mismatch": 0,
+          "linked": 0,
+          "loop_target": 0,
+          "oldest_bank": 0,
+          "result_words": 0,
+          "self_loop": 0,
+          "successor_block_index_mismatch": 0,
+          "successor_not_resident": 0,
+          "unsupported_control_flow": 0
+        },
+        "legacy_counter_unobserved_trace_exits": 157,
+        "trace_exits_to_interpreter": 157,
+        "workload": "bench_call_dispatch.baseline"
+      },
+      {
+        "dispatcher_trace_transitions": 19845,
+        "dynamic_trace_terminator_executions": {
+          "br_if": 10001
+        },
+        "interpreter_steps": 20004,
+        "jit_bodies": 20001,
+        "legacy_counter_exit_reasons": {
+          "backedge": 0,
+          "frame_depth_mismatch": 0,
+          "linked": 0,
+          "loop_target": 0,
+          "oldest_bank": 0,
+          "result_words": 0,
+          "self_loop": 0,
+          "successor_block_index_mismatch": 0,
+          "successor_not_resident": 0,
+          "unsupported_control_flow": 0
+        },
+        "legacy_counter_unobserved_trace_exits": 20001,
+        "trace_exits_to_interpreter": 157,
+        "workload": "bench_call_dispatch.direct"
+      },
+      {
+        "dispatcher_trace_transitions": 19845,
+        "dynamic_trace_terminator_executions": {
+          "br_if": 10001
+        },
+        "interpreter_steps": 10004,
+        "jit_bodies": 30002,
+        "legacy_counter_exit_reasons": {
+          "backedge": 10000,
+          "frame_depth_mismatch": 0,
+          "linked": 0,
+          "loop_target": 0,
+          "oldest_bank": 0,
+          "result_words": 0,
+          "self_loop": 0,
+          "successor_block_index_mismatch": 0,
+          "successor_not_resident": 0,
+          "unsupported_control_flow": 0
+        },
+        "legacy_counter_unobserved_trace_exits": 10001,
+        "trace_exits_to_interpreter": 157,
+        "workload": "bench_call_dispatch.indirect"
+      }
+    ],
+    "timings": {
+      "aobench": {
+        "320x180": {
+          "all_frames_match": true,
+          "frame_sha256": "6d04ea80d9a1fd773c85d413057d64797f32dbb257a753d767a378d730d7d699",
+          "max_ms": 770.099376,
+          "median_ms": 769.897949,
+          "min_ms": 763.078282,
+          "process_medians_ms": [
+            763.078282,
+            769.897949,
+            770.099376
+          ],
+          "repeats_per_process": 7,
+          "warmup_per_process": 3
+        },
+        "32x16": {
+          "all_frames_match": true,
+          "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+          "max_ms": 7.423155,
+          "median_ms": 7.341091,
+          "min_ms": 7.335121,
+          "process_medians_ms": [
+            7.423155,
+            7.341091,
+            7.335121
+          ],
+          "repeats_per_process": 7,
+          "warmup_per_process": 3
+        }
+      },
+      "arithmetic_jit_ms_per_100k": {
+        "max_ms": 21.65005799906794,
+        "median_ms": 20.645462005631998,
+        "min_ms": 20.386417003464885,
+        "process_medians_ms": [
+          20.645462005631998,
+          21.65005799906794,
+          20.386417003464885
+        ],
+        "result": 704982704,
+        "samples_per_process": 3
+      },
+      "call_dispatch_native_ms": {
+        "baseline": {
+          "max_ms": 2.513024,
+          "median_ms": 2.486244,
+          "min_ms": 2.477578,
+          "process_medians_ms": [
+            2.513024,
+            2.486244,
+            2.477578
+          ]
+        },
+        "direct": {
+          "max_ms": 2.897783,
+          "median_ms": 2.849383,
+          "min_ms": 2.848079,
+          "process_medians_ms": [
+            2.897783,
+            2.848079,
+            2.849383
+          ]
+        },
+        "indirect": {
+          "max_ms": 2.936425,
+          "median_ms": 2.926897,
+          "min_ms": 2.897512,
+          "process_medians_ms": [
+            2.897512,
+            2.926897,
+            2.936425
+          ]
+        }
+      },
+      "metadata": {
+        "cpu_affinity": [
+          2
+        ],
+        "measurement": "3 independent processes; AO each 3 warmups + 7 timed frames; arithmetic benchmark uses 3 timed runs/process; call dispatch 3 repeats/process",
+        "python": "3.13.15"
+      }
+    }
+  },
+  "date": "2026-10-14",
+  "full_benchmark_suite": {
+    "aobench_32x16": {
+      "hybrid_jit_ms": 15.32,
+      "native_dispatch_trace_transitions": 40589
+    },
+    "arithmetic_100k_ms": {
+      "all_results_match": true,
+      "hybrid_jit": 20.77,
+      "native_interpreter": 23.27,
+      "python": 3702.51,
+      "result": 704982704
+    },
+    "elapsed_seconds": 31.64,
+    "exit": "PASS",
+    "sections_passed": 6
+  },
+  "host": {
+    "architecture": "x86_64",
+    "cpu_affinity": [
+      2
+    ],
+    "platform": "Linux 7.0.0-38-generic with glibc 2.43",
+    "processor": "AMD Ryzen 5 5500GT",
+    "python": "3.13.15"
+  },
+  "method": {
+    "baseline": "REQ-020 Phase 4 working-tree measurements captured before REQ-033; source_worktree_modified=true",
+    "current_timing": "3 independent processes; AO 3 warmups and 7 timed frames per process; arithmetic 3 timed samples per process; call dispatch 3 repeats per process",
+    "timing_build": "Clang C++23 -O3 -flto=thin product native libraries; QA counters collected separately from timing runs",
+    "transition_note": "Legacy chain-reason counter cannot observe current direct native branch-chain exits. Current dispatcher_trace_transitions and jit_bodies are listed separately; do not treat unlike counters as a direct delta."
+  }
+}

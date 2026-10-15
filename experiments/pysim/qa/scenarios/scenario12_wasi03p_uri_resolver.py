@@ -57,13 +57,13 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     )
     stdout_transport = StreamTransport()
     dictionary = LogDictionary()
-    sysv = System(
-        drivers=PlatformDriverConfiguration(
+    sysv = System.configured(
+        PlatformDriverConfiguration(
             stdout_transport=stdout_transport,
             printk=PrintkSink(PrintkBuffer(), dictionary.decode_record),
             wasi_backend=UvwasiReferenceContext(),
         ),
-        log_dictionary=dictionary,
+        dictionary,
     )
     engine = Wasi03pEngine(sysv)
     runtime_task = sysv.start_runtime_task(name="scenario12_runtime").unwrap()
@@ -169,7 +169,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     )
 
     # 5. Directly test the host compatibility wrapper, without a guest adapter.
-    wasi_ctx = WasiHostContext(sysv)
+    wasi_ctx = WasiHostContext.create_default(sysv)
     uri_bytes = b"fireball://hal/stdout/0"
     wasi_ctx.guest_memory[100 : 100 + len(uri_bytes)] = uri_bytes
     res = wasi_ctx.wasi03p_get_interface(100, len(uri_bytes))

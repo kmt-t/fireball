@@ -29,7 +29,7 @@ from tier2_runtime.vmmio.controller import (
     VMMIOController,
     VmmioStatus,
 )
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 
 
 def test_scenario_vmmio_virtual_devices():
@@ -139,14 +139,14 @@ def test_scenario_vmmio_virtual_devices():
     )
     """
     wasm_bytes = bytes(wasmtime.wat2wasm(wat))
-    module = parse(wasm_bytes)
+    module = parse_standalone(wasm_bytes)
     phys_memory = bytearray(0x40000)
     # Put test pattern in physical memory at 0x30040 (offset 0x40 in page 0x30)
     phys_memory[0x30040:0x30044] = (0xCAFEBABE).to_bytes(4, "little")
 
     guest_ram = bytearray(64 * 1024)
     module.init_memory_data(guest_ram, ())
-    interp = Interpreter(
+    interp = Interpreter.with_module_allocator(
         module,
         InterpreterBindings.with_memory(guest_ram),
         vmmio=controller,

@@ -140,14 +140,13 @@ class Tier3PTE:
         write: bool = True,
         exec_: bool = False,
         owner_id: int = FB_TASK_ID_INVALID,
-        physical_base_addr: int | None = None,
+        *,
+        physical_base_addr: int,
         mapping_size: int = VMMIO_PAGE_SIZE,
         mapped_storage: memoryview | None = None,
     ):
         self.phys_page = phys_page
-        self.physical_base_addr = (
-            (phys_page << VMMIO_PAGE_SHIFT) if physical_base_addr is None else physical_base_addr
-        )
+        self.physical_base_addr = physical_base_addr
         self.mapping_size = mapping_size
         self.mapped_storage = mapped_storage
         self.valid = valid
@@ -276,6 +275,7 @@ class VMMIOController:
                 write=True,
                 exec_=False,
                 owner_id=owner_id,
+                physical_base_addr=phys_page << VMMIO_PAGE_SHIFT,
                 mapping_size=len(storage),
                 mapped_storage=storage,
             ),
@@ -317,6 +317,7 @@ class VMMIOController:
                 read=read,
                 write=write,
                 exec_=True,
+                physical_base_addr=phys_page << VMMIO_PAGE_SHIFT,
             ),
         )
         assert inserted, "vMMIO PTE table capacity exceeded"
@@ -466,7 +467,9 @@ class VMMIOController:
                 return (TrapCode.OUT_OF_BOUNDS, 0)
             if value is not None and static_pte.value_handler is not None:
                 result = static_pte.value_handler(addr.offset(), value & 0xFFFF_FFFF, is_write)
-                return (VmmioStatus.OK_STATIC_DEVICE, 0 if result is None else result)
+                if result is None:
+                    return (VmmioStatus.OK_STATIC_DEVICE, 0)
+                return (VmmioStatus.OK_STATIC_DEVICE, result)
             if static_pte.handler is not None:
                 static_pte.handler(addr.device_metadata(), addr.offset(), is_write)
             return (VmmioStatus.OK_STATIC_DEVICE, 0)

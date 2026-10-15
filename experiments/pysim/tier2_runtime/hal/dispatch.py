@@ -458,7 +458,7 @@ class HalTask:
             self.processed_count += 1
             cmd_id = msg.get(ARG_CMD_ID)
             if cmd_id is None:
-                cmd_id = msg.get(ARG_QUERY_CMD_ID, 0x00)
+                cmd_id = msg.get(ARG_QUERY_CMD_ID)
 
             assert cmd_id is not None
             if cmd_id == WasiIpcCmd.POLL_WAIT:

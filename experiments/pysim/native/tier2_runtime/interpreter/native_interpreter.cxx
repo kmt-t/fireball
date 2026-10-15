@@ -793,14 +793,27 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
   assert(completed_trace_exit != nullptr);
   assert(completed_trace_exit->body_end_ip <= frame.function_view->code_size);
   assert(context.ip == completed_trace_exit->body_end_ip);
-  assert(completed_trace_exit->block_index == source_block.next_block_index);
+  const auto completed_block_index = context.current_block_index;
+  assert(completed_block_index < module->block_count);
+  const auto &completed_block = module->blocks[completed_block_index];
+  assert(completed_block.function_index == frame.function_view->function_index);
+  assert(completed_trace_exit->next_pc == completed_block.next_pc);
+  assert(completed_trace_exit->block_index == completed_block.next_block_index);
   frame.boundary_next_pc = completed_trace_exit->next_pc;
   frame.boundary_loops_to = completed_trace_exit->loops_to;
   assert(completed_trace_exit->result_words <=
          static_cast<std::uint32_t>(context.stack_limit - context.stack_pointer));
   context.stack_pointer += completed_trace_exit->result_words;
-  context.current_block_index = completed_trace_exit->block_index;
-  dispatch_rel = interpreter_rel_after_jit_trace(frame, block_index,
+  const auto branch_terminator_pending =
+      context.ip < context.code_size &&
+      (context.code[context.ip] == 0x04 || context.code[context.ip] == 0x0C ||
+       context.code[context.ip] == 0x0D);
+  // The Interpreter CPS handler still needs the source block for an unexecuted
+  // branch terminator after the trace has returned.
+  if (!branch_terminator_pending) {
+    context.current_block_index = completed_trace_exit->block_index;
+  }
+  dispatch_rel = interpreter_rel_after_jit_trace(frame, completed_block_index,
                                                  completed_trace_exit->interpreter_rel_bytes);
   context.rel = dispatch_rel;
   return trace.body_count;

@@ -537,39 +537,14 @@ template <jit_measurement_policy Measurement>
 wasm_pc_t jit_runtime<Measurement>::trace_successor_pc(jit_cache_entry value) const {
   jit_wasm_block storage{};
   const auto *metadata = block_metadata_for_trace(*trace_header(value), storage);
-  if (metadata == nullptr) {
-    return jit_invalid_pc;
-  }
-  const auto terminator = metadata->offset + metadata->byte_span;
-  if (metadata->code.data != nullptr && terminator < metadata->code.bytes &&
-      metadata->code.data[terminator] == 0x0D && metadata->loops_to != jit_invalid_pc &&
-      metadata->loops_to <= metadata->head_pc) {
-    return metadata->loops_to;
-  }
-  return metadata->next_pc;
+  return metadata == nullptr ? jit_invalid_pc : metadata->next_pc;
 }
 
 template <jit_measurement_policy Measurement>
 block_index_t jit_runtime<Measurement>::trace_successor_block_index(jit_cache_entry value) const {
   jit_wasm_block storage{};
   const auto *metadata = block_metadata_for_trace(*trace_header(value), storage);
-  if (metadata == nullptr) {
-    return jit_invalid_block_index;
-  }
-  const auto terminator = metadata->offset + metadata->byte_span;
-  if (metadata->code.data != nullptr && terminator < metadata->code.bytes &&
-      metadata->code.data[terminator] == 0x0D && metadata->loops_to != jit_invalid_pc &&
-      metadata->loops_to <= metadata->head_pc) {
-    return metadata->loops_to_block_index;
-  }
-  return metadata->next_block_index;
-}
-
-template <jit_measurement_policy Measurement>
-wasm_pc_t jit_runtime<Measurement>::trace_loop_target_pc(jit_cache_entry value) const {
-  jit_wasm_block storage{};
-  const auto *metadata = block_metadata_for_trace(*trace_header(value), storage);
-  return metadata == nullptr ? jit_invalid_pc : metadata->loops_to;
+  return metadata == nullptr ? jit_invalid_block_index : metadata->next_block_index;
 }
 
 static bool chain_terminator_is_unsupported(const jit_wasm_block &source) {
@@ -581,11 +556,9 @@ static bool chain_terminator_is_unsupported(const jit_wasm_block &source) {
     return false;
   }
   switch (source.code.data[terminator]) {
-  case 0x02: // block
-  case 0x03: // loop
-  case 0x04: // if
-  case 0x05: // else
-  case 0x0B: // end
+  case 0x04: // if remains an Interpreter CPS boundary.
+  case 0x0C: // br remains an Interpreter CPS boundary.
+  case 0x0D: // br_if remains an Interpreter CPS boundary.
   case 0x0E: // br_table
   case 0x0F: // return
     return true;
@@ -597,11 +570,10 @@ static bool chain_terminator_is_unsupported(const jit_wasm_block &source) {
 [[maybe_unused]] static jit_chain_reason
 chain_source_rejection_reason(const jit_trace_header &header, const jit_wasm_block &source) {
   const auto terminator = source.offset + source.byte_span;
-  const bool conditional_backedge = source.code.data != nullptr && terminator < source.code.bytes &&
-                                    source.code.data[terminator] == 0x0D &&
-                                    source.loops_to != jit_invalid_pc &&
-                                    source.loops_to <= source.head_pc;
-  const auto successor = conditional_backedge ? source.loops_to : source.next_pc;
+  if (chain_terminator_is_unsupported(source)) {
+    return jit_chain_reason::unsupported_control_flow;
+  }
+  const auto successor = source.next_pc;
   if (successor == source.head_pc) {
     return jit_chain_reason::self_loop;
   }
@@ -611,7 +583,12 @@ chain_source_rejection_reason(const jit_trace_header &header, const jit_wasm_blo
   if (source.loops_to != jit_invalid_pc) {
     return jit_chain_reason::loop_target;
   }
-  if (header.result_words != 0) {
+  const auto opcode = terminator < source.code.bytes && source.code.data != nullptr
+                          ? source.code.data[terminator]
+                          : std::uint8_t{0xFF};
+  const bool syntax_delimiter =
+      opcode == 0x02 || opcode == 0x03 || opcode == 0x05 || opcode == 0x0B;
+  if (header.result_words != 0 && !syntax_delimiter) {
     return jit_chain_reason::result_words;
   }
   return chain_terminator_is_unsupported(source) ? jit_chain_reason::unsupported_control_flow
@@ -644,21 +621,24 @@ bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
     return trace_header(value)->result_words == 0;
   }
   const auto opcode = source->code.data[terminator];
-  if (trace_header(value)->result_words != 0 && opcode != 0x0C && opcode != 0x0D) {
+  const bool syntax_delimiter =
+      opcode == 0x02 || opcode == 0x03 || opcode == 0x05 || opcode == 0x0B;
+  if (trace_header(value)->result_words != 0 && !syntax_delimiter) {
     return false;
   }
   switch (opcode) {
-  case 0x02: // block
-  case 0x03: // loop
-  case 0x04: // if
-  case 0x05: // else
-  case 0x0B: // end
+  case 0x02: // Syntax delimiters have no emitted operation; loader metadata links past them.
+  case 0x03:
+  case 0x05:
+  case 0x0B:
+    return true;
   case 0x0E: // br_table
   case 0x0F: // return
     return false;
-  case 0x0C: // Static forward BR has a loader-resolved trace successor.
-  case 0x0D: // The runtime API resolves the taken or fallthrough edge.
-    return true;
+  case 0x04: // if returns through Interpreter CPS.
+  case 0x0C: // br returns through Interpreter CPS.
+  case 0x0D: // br_if returns through Interpreter CPS.
+    return false;
   default:
     return true;
   }
@@ -683,14 +663,24 @@ bool jit_runtime<Measurement>::can_chain_to(jit_cache_entry value, jit_cache_ent
   assert(source != nullptr);
   if constexpr (!std::is_void_v<Measurement>) {
     if (source->code.data == nullptr) {
-      // A depth change requires proof that the source terminator is BR.
+      // Metadata-only fixtures cannot prove a control-flow depth transition.
       return false;
     }
   }
   assert(source->code.data != nullptr);
   const auto terminator = source->offset + source->byte_span;
-  return terminator < source->code.bytes &&
-         (source->code.data[terminator] == 0x0C || source->code.data[terminator] == 0x0D);
+  if (terminator >= source->code.bytes) {
+    return false;
+  }
+  switch (source->code.data[terminator]) {
+  case 0x02: // block delimiter opens one static nesting level.
+  case 0x03: // loop delimiter opens one static nesting level.
+  case 0x05: // else delimiter skips to after the matching end.
+  case 0x0B: // end delimiter closes one static nesting level.
+    return true;
+  default:
+    return false;
+  }
 }
 
 template <jit_measurement_policy Measurement>
@@ -765,11 +755,7 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
       reason = jit_chain_reason::successor_not_resident;
     } else if (measurements.pending_runtime_frame_depth !=
                trace_header(*target.trace_entry)->frame_depth) {
-      const auto terminator = source->offset + source->byte_span;
-      const bool static_branch =
-          terminator < source->code.bytes && source->code.data[terminator] == 0x0C;
-      reason = static_branch ? jit_chain_reason::unsupported_control_flow
-                             : jit_chain_reason::frame_depth_mismatch;
+      reason = jit_chain_reason::frame_depth_mismatch;
     } else if (target.bank_id == cache.oldest_bank_id) {
       reason = jit_chain_reason::oldest_bank;
     } else {
@@ -781,7 +767,12 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
     ++measurements.chain_runtime_unclassified;
     return;
   }
-  measurements.record_chain_runtime(reason);
+  auto source_opcode = std::uint8_t{0xFF};
+  const auto source_terminator = static_cast<std::uint64_t>(source->offset) + source->byte_span;
+  if (source->code.data != nullptr && source_terminator < source->code.bytes) {
+    source_opcode = source->code.data[source_terminator];
+  }
+  measurements.record_chain_runtime(reason, source_opcode);
   measurements.pending_runtime_result_words = 0;
   measurements.pending_runtime_frame_depth = 0;
 }
@@ -808,14 +799,9 @@ void jit_runtime<Measurement>::record_chain_construction(jit_cache_entry source)
     } else if (trace_header(*target.trace_entry)->block_index != successor_index) {
       reason = jit_chain_reason::successor_block_index_mismatch;
     } else if (!can_chain_to(source, *target.trace_entry)) {
-      const auto terminator = source_block->offset + source_block->byte_span;
-      const bool static_branch = terminator < source_block->code.bytes &&
-                                 source_block->code.data != nullptr &&
-                                 source_block->code.data[terminator] == 0x0C;
-      reason =
-          !static_branch && header->frame_depth != trace_header(*target.trace_entry)->frame_depth
-              ? jit_chain_reason::frame_depth_mismatch
-              : jit_chain_reason::unsupported_control_flow;
+      reason = header->frame_depth != trace_header(*target.trace_entry)->frame_depth
+                   ? jit_chain_reason::frame_depth_mismatch
+                   : jit_chain_reason::unsupported_control_flow;
     } else if (target.bank_id == cache.oldest_bank_id &&
                header->chain_target_address != trace_entry_address(*target.trace_entry)) {
       reason = jit_chain_reason::oldest_bank;
@@ -870,14 +856,16 @@ void jit_runtime<Measurement>::link_resident_successor(jit_cache_entry source) {
   if (target.trace_entry != nullptr) {
     if (target.bank_id != cache.oldest_bank_id && target_can_chain) {
       set_chain_target(source, target.trace_entry);
-      return;
+    } else if (target.bank_id == cache.oldest_bank_id && target_can_chain &&
+               trace_header(source)->chain_target_address !=
+                   trace_entry_address(*target.trace_entry)) {
+      set_chain_target(source, nullptr);
+    } else if (!target_can_chain) {
+      set_chain_target(source, nullptr);
     }
-    if (target.bank_id == cache.oldest_bank_id && target_can_chain &&
-        trace_header(source)->chain_target_address == trace_entry_address(*target.trace_entry)) {
-      return;
-    }
+  } else {
+    set_chain_target(source, nullptr);
   }
-  set_chain_target(source, nullptr);
 }
 
 template <jit_measurement_policy Measurement>
@@ -992,8 +980,8 @@ void jit_runtime<Measurement>::unlink_retiring_bank(std::uint32_t id) {
          reference != jit_cache_state::no_reference;
          reference = cache.inbound_chain_next[reference]) {
       const auto source = cache_entry_at_reference(reference);
-      assert(source.resident());
       // Sources in the retiring bank disappear with their targets.
+      assert(source.resident());
       if (bank_of_reference(reference) != id && trace_successor_pc(source) == target.head_pc &&
           trace_header(source)->chain_target_address == address) {
         set_chain_target(source, nullptr);

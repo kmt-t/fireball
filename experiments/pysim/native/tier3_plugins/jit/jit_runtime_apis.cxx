@@ -19,6 +19,31 @@ using namespace fireball::wasm_runtime;
 using jit_runtime_api_pointer = bool (*)(execution_context *, std::uint32_t *&, std::uint32_t *&,
                                          const std::uint8_t *);
 
+inline constexpr std::array<std::uint8_t, 9> control_opcode_values{0x02, 0x03, 0x04, 0x05, 0x0B,
+                                                                   0x0C, 0x0D, 0x0E, 0x0F};
+#if FB_CONF_JIT_BLOCK_COUNTERS
+std::array<std::uint64_t, control_opcode_values.size()> control_opcode_runtime_api_counts{};
+
+inline void record_control_opcode_runtime_api(std::uint8_t opcode) {
+  for (std::size_t index = 0; index < control_opcode_values.size(); ++index) {
+    if (control_opcode_values[index] == opcode) {
+      ++control_opcode_runtime_api_counts[index];
+      return;
+    }
+  }
+}
+
+template <std::uint8_t Opcode, jit_runtime_api_pointer RuntimeApi>
+inline bool jit_runtime_api_counted(execution_context *context, std::uint32_t *&sp,
+                                    std::uint32_t *&local_base, const std::uint8_t *rel) {
+  record_control_opcode_runtime_api(Opcode);
+  return RuntimeApi(context, sp, local_base, rel);
+}
+#define FB_JIT_CONTROL_API(opcode, api) &jit_runtime_api_counted<opcode, api>
+#else
+#define FB_JIT_CONTROL_API(opcode, api) api
+#endif
+
 inline bool jit_runtime_unreachable(execution_context *context, [[maybe_unused]] std::uint32_t *&sp,
                                     [[maybe_unused]] std::uint32_t *&local_base,
                                     [[maybe_unused]] const std::uint8_t *rel) {
@@ -82,51 +107,6 @@ inline bool jit_runtime_api_annotated(execution_context *context, std::uint32_t 
     context->ip = instruction_offset(*context, instruction_ip);
   }
   return completed;
-}
-
-template <auto RuntimeApi>
-inline bool jit_runtime_api_branch(execution_context *context, std::uint32_t *&sp,
-                                   std::uint32_t *&local_base,
-                                   const std::uint8_t *annotation_offset_record) {
-  assert(annotation_offset_record != nullptr);
-  auto &frame = active_frame(*context);
-  assert(frame.function_view != nullptr);
-  const auto &function = *frame.function_view;
-  const auto annotation_offset = load_jit_value<annotation_offset_t>(annotation_offset_record);
-  assert(annotation_offset <= function.interpreter_annotation_byte_count);
-  assert(function.interpreter_annotation_pool != nullptr ||
-         function.interpreter_annotation_byte_count == 0);
-  const auto *annotation = function.interpreter_annotation_pool == nullptr
-                               ? nullptr
-                               : function.interpreter_annotation_pool + annotation_offset;
-  const std::uint8_t *instruction_ip = context->code + context->ip;
-  auto *cursor = annotation;
-  const auto completed = RuntimeApi(context, instruction_ip, sp, local_base, cursor);
-  if (completed || !cps_exit_pending(*context) || cps_exit_kind(*context) != kBlockBoundary ||
-      context->rel == nullptr || context->current_block_index == kInvalidBlockIndex ||
-      context->ip >= context->code_size ||
-      context->loop_jump_count >= context->loop_jump_threshold) {
-    return completed;
-  }
-
-  std::int32_t header_offset = 0;
-  std::memcpy(&header_offset, context->rel, sizeof(header_offset));
-  auto *source_header = reinterpret_cast<jit_trace_header *>(
-      const_cast<std::uint8_t *>(context->rel + header_offset));
-  if (source_header->chain_target_address == 0) {
-    return false;
-  }
-  auto *target_header = reinterpret_cast<jit_trace_header *>(source_header->chain_target_address -
-                                                             sizeof(jit_trace_header));
-  const auto target_pc = function.code_pc_offset + context->ip;
-  if (target_header->block_index != context->current_block_index ||
-      target_header->head_pc != target_pc) {
-    return false;
-  }
-
-  context->ip = instruction_offset(*context, instruction_ip);
-  clear_cps_exit(*context);
-  return true;
 }
 
 template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
@@ -194,15 +174,12 @@ constexpr auto make_opcode_jit_runtime_api_table() {
   std::array<jit_runtime_api_pointer, 256> apis{};
   apis[0x00] = &jit_runtime_unreachable;
   apis[0x01] = &jit_runtime_api_passthrough<&runtime_nop>;
-  apis[0x02] = &jit_runtime_api_annotated<&runtime_block>;
-  apis[0x03] = &jit_runtime_api_annotated<&runtime_block>;
-  apis[0x04] = &jit_runtime_api_annotated<&runtime_if>;
-  apis[0x05] = &jit_runtime_api_annotated<&runtime_else>;
-  apis[0x0B] = &jit_runtime_api_annotated<&runtime_end>;
-  apis[0x0C] = &jit_runtime_api_branch<&runtime_br>;
-  apis[0x0D] = &jit_runtime_api_branch<&runtime_br_if>;
-  apis[0x0E] = &jit_runtime_api_annotated<&runtime_br_table>;
-  apis[0x0F] = &jit_runtime_api_passthrough<&runtime_return>;
+  apis[0x02] = FB_JIT_CONTROL_API(0x02, &jit_runtime_api_annotated<&runtime_block>);
+  apis[0x03] = FB_JIT_CONTROL_API(0x03, &jit_runtime_api_annotated<&runtime_block>);
+  apis[0x05] = FB_JIT_CONTROL_API(0x05, &jit_runtime_api_annotated<&runtime_else>);
+  apis[0x0B] = FB_JIT_CONTROL_API(0x0B, &jit_runtime_api_annotated<&runtime_end>);
+  apis[0x0E] = FB_JIT_CONTROL_API(0x0E, &jit_runtime_api_annotated<&runtime_br_table>);
+  apis[0x0F] = FB_JIT_CONTROL_API(0x0F, &jit_runtime_api_passthrough<&runtime_return>);
   apis[0x10] = &jit_runtime_api_annotated<&runtime_call<false>>;
   apis[0x11] = &jit_runtime_api_annotated<&runtime_call<true>>;
   apis[0x1A] = &jit_runtime_api_passthrough<&runtime_drop>;
@@ -477,6 +454,7 @@ constexpr auto make_jit_runtime_api_function_table() {
 
 inline constexpr auto kJitRuntimeApiFunctionTable = make_jit_runtime_api_function_table();
 static_assert(kJitRuntimeApiCount == kJitRuntimeApiFunctionTable.size());
+#undef FB_JIT_CONTROL_API
 
 /** @brief プラグインの保存領域にある読み取り専用API表の先頭を借用する。 */
 const jit_runtime_api_pointer *runtime_api_table_data() {
@@ -508,4 +486,20 @@ extern "C" int fb_jit_runtime_api_slot(std::uint32_t opcode, std::uint32_t fc_pr
   }
   *slot = value;
   return 1;
+}
+
+extern "C" void fb_jit_control_opcode_counts_reset() {
+#if FB_CONF_JIT_BLOCK_COUNTERS
+  fireball::jit_api::control_opcode_runtime_api_counts.fill(0);
+#endif
+}
+
+extern "C" void fb_jit_control_opcode_counts_read(std::uint64_t *counts) {
+  assert(counts != nullptr);
+#if FB_CONF_JIT_BLOCK_COUNTERS
+  std::copy(fireball::jit_api::control_opcode_runtime_api_counts.begin(),
+            fireball::jit_api::control_opcode_runtime_api_counts.end(), counts);
+#else
+  std::fill_n(counts, fireball::jit_api::control_opcode_values.size(), 0);
+#endif
 }

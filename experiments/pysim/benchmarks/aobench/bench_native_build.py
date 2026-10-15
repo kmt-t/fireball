@@ -23,7 +23,7 @@ from ipc_router import FB_URI_HAL_STDOUT
 from system import System
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 from tier2_runtime.runtime.engine import RuntimeEngine
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.hal.stream import StreamTransport
 from tier3_platform.drivers.wasi.context import WasiHostContext
@@ -68,10 +68,10 @@ def measure(
     height = width * 9 // 16 if height_override is None else height_override
     assert height > 0
     wasm_path = Path(__file__).with_name("aobench.wasm")
-    module = parse(memoryview(wasm_path.read_bytes()))
+    module = parse_standalone(memoryview(wasm_path.read_bytes()))
     system = System()
     system.transport = StreamTransport(1 << 20)
-    wasi = WasiHostContext(system)
+    wasi = WasiHostContext.create_default(system)
     system.start_hal_driver(
         DummyDriver(system.pool, transport=system.transport), FB_URI_HAL_STDOUT
     ).unwrap()

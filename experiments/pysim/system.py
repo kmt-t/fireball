@@ -92,6 +92,7 @@ from tier3_platform.drivers.platform_config import (
     PlatformDriverConfiguration,
     create_default_platform_drivers,
 )
+from tier3_platform.drivers.printk import PrintkBuffer
 
 # runtime_vmmio.md §4.3: real static-device addresses.
 IPCR_BASE = 0xC000_1000
@@ -139,18 +140,38 @@ class System:
         (reused from ipc_router_concept.py) with its fixed 3-service registry.
     """
 
-    def __init__(
-        self,
-        printk_sink: PrintkWriter | None = None,
-        drivers: PlatformDriverConfiguration | None = None,
-        log_dictionary: LogDictionary | None = None,
-    ):
-        self.dictionary = log_dictionary if log_dictionary is not None else LogDictionary()
-        self.drivers = (
-            drivers
-            if drivers is not None
-            else create_default_platform_drivers(self.dictionary.decode_record, printk_sink)
-        )
+    def __init__(self) -> None:
+        """Build the standard host configuration with concrete default dependencies."""
+        dictionary = LogDictionary()
+        drivers = create_default_platform_drivers(dictionary.decode_record, PrintkBuffer())
+        self._initialize(drivers, dictionary)
+
+    @classmethod
+    def configured(cls, drivers: PlatformDriverConfiguration, dictionary: LogDictionary) -> System:
+        """Build a system from an explicitly selected driver bundle and log dictionary."""
+        instance = cls.__new__(cls)
+        instance._initialize(drivers, dictionary)
+        return instance
+
+    @classmethod
+    def with_drivers(cls, drivers: PlatformDriverConfiguration) -> System:
+        """Build a system with explicit drivers and a fresh log dictionary."""
+        return cls.configured(drivers, LogDictionary())
+
+    @classmethod
+    def with_printk_sink(cls, printk_sink: PrintkWriter, dictionary: LogDictionary) -> System:
+        """Build a system with an explicit printk sink and log dictionary."""
+        drivers = create_default_platform_drivers(dictionary.decode_record, printk_sink)
+        return cls.configured(drivers, dictionary)
+
+    @classmethod
+    def with_printk_sink_and_default_dictionary(cls, printk_sink: PrintkWriter) -> System:
+        """Build a system with an explicit sink and a fresh log dictionary."""
+        return cls.with_printk_sink(printk_sink, LogDictionary())
+
+    def _initialize(self, drivers: PlatformDriverConfiguration, dictionary: LogDictionary) -> None:
+        self.dictionary = dictionary
+        self.drivers = drivers
         self.wasi_backend = self.drivers.wasi_backend
         self.printk = self.drivers.printk
         self.transport = self.drivers.stdout_transport
@@ -835,12 +856,11 @@ class System:
         """
         from tier3_plugins.debugger.gdb_server import GDBServer
 
-        gdb_srv = GDBServer(
-            dbg,
-            host=host,
-            port=port,
-            transport=self.drivers.debugger_sink,
-        )
+        debugger_sink = self.drivers.debugger_sink
+        if debugger_sink is None:
+            gdb_srv = GDBServer.with_socket_transport(dbg, host=host, port=port)
+        else:
+            gdb_srv = GDBServer(dbg, debugger_sink)
         bound_port = gdb_srv.bind_socket()
         outcome = self.scheduler.spawn(
             "gdbserver_task",

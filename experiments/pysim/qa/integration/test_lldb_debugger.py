@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 from qa.private.debugger_support import make_debug_execution
-from tier2_runtime.wasm.reader import parse
+from tier2_runtime.wasm.reader import parse_standalone
 from tier3_plugins.debugger.debugger import DebuggerManager, InterpreterExecutionControl
 from tier3_plugins.debugger.gdb_server import GDBServer
 
@@ -96,7 +96,7 @@ def test_lldb_resolves_dwarf_breakpoint_and_stops_in_fireball(tmp_path: Path) ->
     assert compile_result.returncode == 0, compile_result.stderr
 
     wasm_bytes = wasm_path.read_bytes()
-    module = parse(memoryview(wasm_bytes))
+    module = parse_standalone(memoryview(wasm_bytes))
     function_index = module.export_func_index("add_one")
     execution = make_debug_execution(
         module,
@@ -106,7 +106,7 @@ def test_lldb_resolves_dwarf_breakpoint_and_stops_in_fireball(tmp_path: Path) ->
     debugger = _ObservedDebuggerManager(engine=execution)
     blocks = {block.head_pc: block for block in module.blocks}
     entry_pc = execution.call.current_pc()
-    server = GDBServer(dbg=debugger, host="127.0.0.1", port=0)
+    server = GDBServer.with_socket_transport(debugger, host="127.0.0.1", port=0)
 
     try:
         port = server.start(current_pc=entry_pc, ctx=execution.context, blocks=blocks)

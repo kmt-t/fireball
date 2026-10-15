@@ -301,8 +301,8 @@ def test_trace_compiler_bitwise_and_shifts_pic():
     assert ctx.local_stack[3] == (0x0F << 2)
 
 
-def test_trace_chaining_between_traces():
-    """TEST-JITC-04: Resident consecutive traces chain through common code."""
+def test_branch_traces_return_through_interpreter_cps():
+    """A branch terminator returns to the Interpreter CPS handler."""
     wat = """
     (module
       (func (export "f") (param i32) (result i32)
@@ -326,16 +326,17 @@ def test_trace_chaining_between_traces():
     engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     block_a, block_b = instruction_blocks(mod)[:2]
-    # Compile trace B first, then A (enabling immediate forward chaining)
+    # Compile trace B first, then A. A branch terminator still leaves JIT unchained.
     trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
     engine.jit_runtime.cache.insert(trace_b)
     trace_a = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_a)
     engine.jit_runtime.cache.insert(trace_a)
-    assert trace_a.chain_next == block_b.head_pc
-    _assert_trace_uses_common_chain_dispatcher(trace_a)
+    assert trace_a.chain_next is None
+    assert trace_a.header.chain_target_addr == 0
     results = engine.call(Interpreter(mod), 0, [10]).unwrap()
     assert results[0] == 30
     assert engine.stat_jit_invocations >= 2
+    assert engine.stat_native_control_handlers > 0
 
 
 def test_hybrid_interpreter_to_jit_trace_elevation():
@@ -366,16 +367,16 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
     loop_pc = next(block.head_pc for block in instruction_blocks(mod) if block.loops_to is not None)
     results = engine.call(Interpreter(mod, yield_threshold=3), 0, [5]).unwrap()
     assert results[0] == 15
-    # One JIT invocation repeats its body and calls the C++ branch handler
-    # before returning at the count-based yield boundary.
-    assert engine.stat_jit_invocations == 1
+    # Each iteration enters the trace; Interpreter CPS counts the backedges
+    # and returns at the shared yield boundary.
+    assert engine.stat_jit_invocations == 2
     assert engine.stat_native_control_handlers > 0
     assert engine.stat_interp_steps >= 3
     assert engine.jit_runtime.cache.find_trace(loop_pc) is not None
 
 
 def test_jit_chaining_uses_loader_resolved_successors():
-    """TEST-JITC-54: JIT chaining uses loader-resolved block successors directly."""
+    """TEST-JITC-54: Straight-line successor chaining follows Loader metadata across delimiters."""
     wat = """
     (module
       (func (export "f") (param i32) (result i32)
@@ -384,7 +385,6 @@ def test_jit_chaining_uses_loader_resolved_successors():
           i32.const 10
           i32.add
           local.set 0
-          br $b
         )
         local.get 0
         i32.const 3
@@ -400,18 +400,18 @@ def test_jit_chaining_uses_loader_resolved_successors():
     mod = engine.load_wasm(wasm_bytes)
     block_a, block_b = instruction_blocks(mod)[:2]
 
-    # Make B resident before compiling A so the native successor chain can be formed.
+    # Make B resident before compiling A so the delimiter-resolved straight-line edge can link.
     trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
     engine.jit_runtime.cache.insert(trace_b)
 
     trace_a = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_a)
     engine.jit_runtime.cache.insert(trace_a)
 
-    # Logical successor metadata resolves past the block delimiter to B's head.
+    # The `end` delimiter has no emitted operation; Loader metadata resolves to B.
     assert trace_a.chain_next == block_b.head_pc
     _assert_trace_uses_common_chain_dispatcher(trace_a)
 
-    # Execute from A: the common chain dispatcher tail-jumps into B; result is (5 + 10) * 3.
+    # Execute from A: the chain passes the delimiter and runs B; result is (5 + 10) * 3.
     results = engine.call(Interpreter(mod), 0, [5]).unwrap()
     assert results[0] == 45
     assert engine.stat_jit_invocations >= 2
@@ -425,7 +425,7 @@ def test_jit_chaining_uses_loader_resolved_successors():
     engine2.jit_runtime.cache.insert(trace_a2)
     assert trace_a2.chain_next is None  # B is not resident yet
 
-    # Inserting B resolves A's logical successor metadata and patches its native chain target.
+    # Inserting B resolves A's Loader-described straight-line successor.
     trace_b2 = compile_module_block(engine2.jit_runtime.jit_compiler, mod2, block_b2)
     engine2.jit_runtime.cache.insert(trace_b2)
 

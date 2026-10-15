@@ -15,7 +15,7 @@ from tier2_runtime.interpreter.control_flow import (
     _count_interpreter_annotation_pool_bytes,
     iter_scan_instrs,
 )
-from tier2_runtime.wasm.leb128 import decode_unsigned
+from tier2_runtime.wasm.leb128 import decode_unsigned_full
 from tier2_runtime.wasm.module import BasicBlock
 from tier2_runtime.wasm.opcodes import (
     BLOCK,
@@ -67,7 +67,7 @@ def estimate(code: memoryview) -> tuple[int, dict[str, int]]:
         elif op == BR_IF:
             size = 4  # target pair plus encoded width for untaken branch
         elif op == BR_TABLE:
-            label_count, _ = decode_unsigned(code, ins.offset + 1)
+            label_count, _ = decode_unsigned_full(code, ins.offset + 1)
             size = 4 + (label_count + 1) * 3  # u32 count; (frame u8, block u16) pairs
         elif op == IF:
             size = 4  # then and else block indices u16

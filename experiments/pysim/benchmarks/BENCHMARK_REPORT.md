@@ -1,97 +1,57 @@
 # PySIM ベンチマークレポート（2026-10-14）
-<!-- traceability: {ThreadedInterpreter} {Wasm32Only} {JIT_CardAgingSweep} {JIT_MultiBuffer_Cache} {MemoryBoundaryCheck} -->
+<!-- traceability: {ThreadedInterpreter} {Wasm32Only} {JIT_CardAgingSweep} {JIT_MultiBuffer_Cache} {MemoryBoundaryCheck} {JIT_LazyChaining} {JIT_BackedgeYield} -->
 
-本書は2026-10-14に実行した最新測定だけを記録する。結果はx86_64上の参照実装の値であり、ARMv8-Mの速度、物理RAM、ROM適合性を示さない。測定時のHEADは`37253e695d62bd9d4d9c6ab54eb31f81defe1ec8`で、worktreeは変更中だった。個別測定のsource hash、コンパイラ、ライブラリhashは[証跡一式](results/20261014/req020_phase4/full/)に保存した。
+本書は今回の最新測定だけを記録する。結果はx86_64上の参照実装の値であり、ARMv8-Mの速度、物理RAM、ROM適合性を示さない。比較用の変更前値はREQ-020 Phase 4の変更中worktreeで測った。測定元のworktreeは変更中で、固定revisionの結果ではない。
 
-ホストはAMD Ryzen 5 5500GT、Linux 7.0.0-38-generic x86_64、Python 3.13.15、Ubuntu clang 21.1.8である。AO/WAMR、呼出し、0xFC計測はCPU 2、統合・メモリ・資源計測はCPU 3に固定した。通常native buildはClang C++23 `-O3 -flto=thin`、releaseは`-O3 -DNDEBUG -flto=thin`を使った。WAMR比較もrelease buildである。
+ホストはAMD Ryzen 5 5500GT、Linux 7.0.0-38-generic x86_64、Python 3.13.15である。時間測定はCPU 2に固定した。製品native libraryはClang C++23 `-O3 -flto=thin`でビルドした。QA用カウンタはassert有効の別ビルドで測った。
 
-再実行コマンドと設定は[commands.md](results/20261014/req020_phase4/full/commands.md)を参照する。
+全測定のサンプル、実行回数、実行カウンタは[最新REQ-033計測JSON](results/latest/req033_control_flow.json)に記録した。
 
 ## 統合ベンチマーク
 
-登録済み6系統を独立プロセスで3回実行し、全回完走した。総時間の中央値は35.31秒、範囲は34.85–35.33秒である。算術ループのPython、NativeInterpreter、JITの結果は全回`704,982,704`で一致した。JIT cacheの世代hit、退役chain解除、モジュール単位PC検索も全回PASSだった。
+`benchmarks/run_all.py`は6セクションすべてを31.64秒で実行し、PASSした。算術ループの結果はPython、NativeInterpreter、JITで一致した。
 
-| 測定 | 中央値（3回の範囲） |
-| :--- | ---: |
-| JIT trace compile | 27,221 traces/sec（26,656–29,812） |
-| 算術ループ100,000回・Python | 4,076.54 ms（4,020.92–4,077.87） |
-| 算術ループ100,000回・NativeInterpreter | 24.18 ms（23.68–27.94） |
-| 算術ループ100,000回・Hybrid JIT | 21.66 ms（20.60–21.85） |
-| AO-Bench 32×16・Python | 4,830.47 ms（4,742.90–4,902.17） |
-| AO-Bench 32×16・NativeInterpreter | 13.07 ms（11.21–14.35） |
-| AO-Bench 32×16・Hybrid JIT | 17.96 ms（14.34–18.09） |
+| セクション | 最新結果 |
+| :--- | :--- |
+| Linear memory | raw bytearray 32-bit read/write 9.39 M ops/s、linear RAM 10.85 MB/s |
+| vMMIO | TLB hit 0.78 M ops/s、miss walk 0.71 M ops/s、hit/walk 1.09x |
+| JITと算術ループ | trace compile 28,885 traces/s。100,000回の算術ループはPython 3,702.51 ms、NativeInterpreter 23.27 ms、JIT 20.77 ms。結果は`704,982,704`で一致 |
+| JIT cache | 小・中working setのhit rate 100.00%、大working set 99.93%。退役済みtraceのchain解除はPASS |
+| Card aging | 条件別実行時間は61、190、188、185、184 ms。cache eviction後も実行を完了 |
+| AO-Bench 32×16 | Python 4,450.45 ms、NativeInterpreter 11.42 ms、Hybrid JIT 15.32 ms。出力一致、dispatcher trace transition 40,589 |
 
-AO-Benchのこの入力ではHybrid JITはNativeInterpreterより遅かった。キャッシュ代謝とageingの計数条件は3回とも一致し、全ageing変種で実行を完了した。各回の全指標は[統合run 1](results/20261014/req020_phase4/full/unified_runs/unified_run1.log)、[run 2](results/20261014/req020_phase4/full/unified_runs/unified_run2.log)、[run 3](results/20261014/req020_phase4/full/unified_runs/unified_run3.log)にある。
+## REQ-033の時間比較
 
-## release AO-Bench比較
+AO-Benchは各プロセスでwarmupを3回、計時を7回行った。算術ループとcall dispatchは各3プロセスで測った。表の中央値と範囲はプロセスごとの中央値から集計した。
 
-各processでwarmup 3回、計時7回を取り、processごとの中央値の中央値を示す。比較する各engineの出力frameとWASM hashは一致した。
-
-| 解像度 | NativeInterpreter | Hybrid JIT | WAMR |
+| Workload | 変更前 ms | 最新 ms | 中央値の差 |
 | :--- | ---: | ---: | ---: |
-| 64×36 | 17.388 ms（16.525–19.575） | 19.565 ms（18.888–24.516） | 5.013 ms（4.988–6.855） |
-| 128×72 | 70.553 ms（65.366–74.202） | 79.547 ms（78.335–82.661） | 20.630 ms（19.779–23.902） |
-| 192×108 | 152.357 ms（148.245–156.541） | 191.400 ms（185.188–194.873） | 46.515 ms（44.146–55.987） |
-| 256×144 | 278.835 ms（278.211–288.449） | 321.701 ms（309.142–325.400） | 83.001 ms（81.473–83.609） |
-| 320×180 | 432.691 ms（428.750–447.980） | 512.855 ms（504.792–517.793） | 142.168 ms（132.526–147.260） |
+| AO-Bench 32×16 Hybrid JIT | 7.221458（7.200598–7.268907） | 7.341091（7.335121–7.423155） | +1.66% |
+| AO-Bench 320×180 Hybrid JIT | 748.476370（742.906094–761.214584） | 769.897949（763.078282–770.099376） | +2.86% |
+| 算術ループ 100,000回 Hybrid JIT | 20.373250（19.758500–20.533000） | 20.645462（20.386417–21.650058） | +1.34% |
+| `bench_call_dispatch` baseline Native | 2.365295（2.327073–2.395110） | 2.486244（2.477578–2.513024） | +5.11% |
+| `bench_call_dispatch` direct Native | 2.801709（2.728803–2.809854） | 2.849383（2.848079–2.897783） | +1.70% |
+| `bench_call_dispatch` indirect Native | 2.817208（2.808020–2.857413） | 2.926897（2.897512–2.936425） | +3.89% |
 
-追加した32×16測定は各engineを3 process、warmup 3回、計時7回で実行した。中央値はNativeInterpreter 4.229 ms（4.158–4.229）、Hybrid JIT 4.712 ms（4.652–4.790）、WAMR 1.077 ms（1.077–1.098）だった。検証frameは528 byteである。全trialとbuild hashは[AO-Bench/WAMR JSON](results/20261014/req020_phase4/full/aobench_wamr.json)と[32×16 JSON](results/20261014/req020_phase4/full/aobench_32x16_release.json)に保存した。
+最新の中央値はすべて変更前より遅かった。小さな時間差だけから原因や性能改善を結論づけない。call dispatchのNative測定はNativeInterpreterの計測であり、JIT call tracingの性能ではない。`call`と`call_indirect`を含むblockはREQ-031までJIT候補から外し、Interpreterへ渡す。
 
-## Interpreter 0xFCとcall dispatch
+## 制御命令とtrace遷移
 
-0xFC測定は3 processの中央値を集計した。8種類の飽和変換ではNative実装が306.7–398.1 ns/instruction、Python referenceが32.7–38.5 μs/instructionだった。`memory.copy`の長さ16/256/4096 byteではNativeが240/321/2,027 ns、Pythonが41.1/49.7/257.8 μsだった。`memory.fill`はNativeが244/317/1,993 ns、Pythonが36.2/47.3/169.1 μsだった。
+動的命令数はQA Runtime APIの実呼出し数である。`block`、`loop`、`else`、`end`は構文metadataになり、最新のRuntime API実行数には含まれない。
 
-vDMA memory.copyのroute別中央値は次のとおりである。
+| Workload | 変更前の動的制御API数 | 最新の動的制御API数 | JIT bodies 変更前 → 最新 |
+| :--- | :--- | :--- | :--- |
+| 算術ループ 100k | `br` 100,000、`br_if` 100,001 | `br` 100,000、`br_if` 100,001 | 3,128 → 3,126 |
+| AO-Bench 32×16 | `block` 519、`br` 9,728、`br_if` 5,522、`else` 2,462、`end` 27,954、`if` 7,564 | `br` 10,125、`br_if` 5,803、`if` 7,948 | 50,065 → 54,647 |
+| AO-Bench 320×180 | 変更前のopcode別内訳なし | `br` 1,114,861、`br_if` 616,302、`if` 891,123 | 5,327,605 → 6,013,345 |
+| call dispatch baseline | `br` 10,000、`br_if` 10,001 | `br` 10,000、`br_if` 10,001 | 最新314 bodies |
+| call dispatch direct | `br_if` 10,001、`end` 10,000 | `br_if` 10,001 | 最新20,001 bodies |
+| call dispatch indirect | `br_if` 10,001、`end` 10,000 | `br_if` 10,001 | 最新30,002 bodies |
 
-| Route | Native enabled API | Python reference |
-| :--- | ---: | ---: |
-| linear → dynamic | 34.781 μs/transfer | 62.271 μs/transfer |
-| shared → linear | 28.480 μs/transfer | 48.864 μs/transfer |
-| dynamic → passthrough | 41.583 μs/transfer | 60.939 μs/transfer |
-| passthrough → shared | 34.848 μs/transfer | 61.557 μs/transfer |
+変更前後のJIT body数は同じRuntimeStatsEngine計数である。AO-Benchではbody数が32×16で9.15%、320×180で12.87%増えた。最新のdispatcher trace transition数は算術ループ1、AO-Bench 32×16で41,818、320×180で4,585,506である。これは変更前のchain runtime transition数1,563、47,001、5,256,290とは異なる境界を数えるため、直接の差分として扱わない。
 
-call dispatchは10,000 iteration、process内3 repeatsを3 processで測定した。下表はprocess medianの中央値である。
+変更後の旧出口理由カウンタは直接native chainの出口を特定できず、unobservedを記録した。値は算術ループ1,563、AO-Bench 32×16で41,889、320×180で4,593,746だった。この理由別カウンタから制御命令ごとの出口数は算出していない。代わりにJIT body数、dispatcher transition数、interpreter exit数を別々に記録した。
 
-| Engine | Baseline | Direct call | Indirect call |
-| :--- | ---: | ---: | ---: |
-| Native | 2.516 ms（2.449–3.264） | 2.895 ms（2.805–3.794） | 2.904 ms（2.859–2.919） |
-| Python | 463.064 ms（459.941–490.545） | 944.828 ms（920.954–950.518） | 998.632 ms（986.422–1,021.583） |
+## 検証範囲
 
-試行ごとの0xFC結果は[run 1](results/20261014/req020_phase4/full/fc_runs/fc_run1.json)、[run 2](results/20261014/req020_phase4/full/fc_runs/fc_run2.json)、[run 3](results/20261014/req020_phase4/full/fc_runs/fc_run3.json)、call dispatchは[JSON一式](results/20261014/req020_phase4/full/call_dispatch_runs/)にある。
-
-## runtime memoryとresource inventory
-
-Loaderの参照layoutとhost-native ABIによるarena計測では、3回呼出し後の最大値は次のとおりだった。JITの実行region要求はHybrid構成の別領域である。
-
-| Workload | Load後 | Arena最大 | ゲスト論理memory | JIT plugin領域要求 |
-| :--- | ---: | ---: | ---: | ---: |
-| arithmetic | 390 byte | 3,184 byte | 0 byte | 12,288 byte（Hybrid） |
-| indirect calls | 1,263 byte | 4,296 byte | 0 byte | 12,288 byte（Hybrid） |
-| kernel suite | 51,911 byte | 56,712 byte | 65,536 byte | 12,288 byte（Hybrid） |
-| AO-Bench 32×16 | 5,741 byte | 8,968 byte | 65,536 byte | 12,288 byte（Hybrid） |
-
-表の12,288 byteはHybrid構成のJIT plugin領域要求で、実行コード領域8,192 byteを含む。積算JIT runtime構造体は1,656 byteである。JIT compilerの既知compile call chainは22,656 byteで、scratch 1,588 byteは`compile_one_candidate`のstack frame内に含まれる。この値は全caller/callee/ABI frameを含む上限証明ではない。製品側`inc/`と`src/`は3,704 SLOC（上限20,000）だった。Python/native参照実装の規模とx86_64 ELF値は製品firmwareのRAM/ROM値へ加算しない。
-
-測定詳細は[runtime memory JSON](results/20261014/req020_phase4/full/runtime_memory.json)、[resource inventory JSON](results/20261014/req020_phase4/full/resource_inventory.json)、[製品SLOC JSON](results/20261014/req020_phase4/full/sloc.json)にある。
-
-## REQ-020 backward chaining比較
-
-変更前はcommit `37253e695d62bd9d4d9c6ab54eb31f81defe1ec8`、変更後は同じsource baseline上のworking treeで測定した。transition値はQA counter buildで同一条件を使った。変更後は全workloadで未分類・未観測transitionが0になり、AO-Benchで成功linkも分類された。
-
-| Workload | Runtime transitions | Backedge / self-loop（変更前 → 後） | 変更後の追加確認 |
-| :--- | ---: | ---: | :--- |
-| arithmetic loop | 200,001 → 1,563（−99.2%） | backedge 100,000 → 1,562 | unclassified 0、unobserved 0 |
-| AO-Bench 32×16 | 53,749 → 47,001（−12.6%） | backedge 9,728 → 6,320 | linked 66、unclassified 0、unobserved 0 |
-| AO-Bench 320×180 | 6,000,649 → 5,256,290（−12.4%） | backedge 1,062,587 → 686,397 | linked 6,951、unclassified 0、unobserved 0 |
-| kernel suite | 456,501 → 203,012（−55.5%） | backedge 70,249 → 43,082; self-loop 188,539 → 2,939 | unclassified 0、unobserved 0 |
-
-Yield応答は、yield statusを返したRuntime境界呼出しの経過時間を3独立processで測った。各processで観測した最大値の中央値とmin/maxを示す。算術ループは100,000回の1呼出しで1,562境界、AO-Bench 32×16は7計測frameで合計1,638境界を記録した。
-
-| Workload | 変更前の最大観測時間 | 変更後の最大観測時間 |
-| :--- | ---: | ---: |
-| 算術ループ 100k | 0.084 ms（0.071–1.532） | 0.200 ms（0.029–2.568） |
-| AO-Bench 32×16 | 1.859 ms（0.146–2.054） | 2.475 ms（2.119–3.280） |
-
-括弧内はprocessごとの最大観測時間のmin/maxである。OSの実行待ちによる外れ値が含まれるため、実時間上限を示さない。全試行、yield件数、buildとsourceのhashは[yield応答JSON](results/20261014/req020_phase4/full/yield_response.json)に記録した。算術ループの3 process中央値は21.819 msから20.373 ms（−6.6%）に下がった。AO-BenchのJIT時間は32×16で7.137 msから7.221 ms（+1.2%）、320×180で748.413 msから748.476 ms（ほぼ横ばい）だった。
-
-変更前後の各sampleは[比較JSON（before）](results/20261014/req020_phase4/comparison_before.json)と[comparison_after.json](results/20261014/req020_phase4/comparison_after.json)、transition counterは[変更前](results/20261014/req020_phase0/measurements.json)と[変更後](results/20261014/req020_phase4/chain_reasons_after.json)に保存した。変更後のcounter測定runnerは[`measure_chain_reasons.py`](results/20261014/req020_phase4/measure_chain_reasons.py)である。
+フルQAは30/30グループがPASSした。通常sandboxではlocalhost socketを使うGDBの2試験だけが拒否され、権限付き再実行で2件ともPASSした。統合シナリオは12/12、WASM workload suiteは3/3、最適化モード比較は12件PASSした。

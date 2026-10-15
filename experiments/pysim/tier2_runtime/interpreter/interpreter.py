@@ -38,7 +38,7 @@ import struct
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, Self
 
 from bump_allocator import BumpAllocator
 from config import (
@@ -94,7 +94,7 @@ from tier2_runtime.runtime.python_api import (
 from tier2_runtime.runtime.recovery import Result
 from tier2_runtime.syscall.hostcall import VdmaTransfer
 from tier2_runtime.vmmio.controller import VMMIOController
-from tier2_runtime.wasm.leb128 import decode_unsigned
+from tier2_runtime.wasm.leb128 import decode_unsigned_full
 from tier2_runtime.wasm.module import (
     F32,
     F64,
@@ -704,7 +704,10 @@ class CallFrame:
 
     @boundary_next_pc.setter
     def boundary_next_pc(self, value: int | None) -> None:
-        self.native.boundary_next_pc = 0xFFFF_FFFF if value is None else value
+        if value is None:
+            self.native.boundary_next_pc = 0xFFFF_FFFF
+            return
+        self.native.boundary_next_pc = value
 
     @property
     def boundary_loops_to(self) -> int | None:
@@ -713,7 +716,10 @@ class CallFrame:
 
     @boundary_loops_to.setter
     def boundary_loops_to(self, value: int | None) -> None:
-        self.native.boundary_loops_to = 0xFFFF_FFFF if value is None else value
+        if value is None:
+            self.native.boundary_loops_to = 0xFFFF_FFFF
+            return
+        self.native.boundary_loops_to = value
 
     @property
     def locals(self) -> _LocalStackWindow:
@@ -752,7 +758,7 @@ class NativeModuleExecution:
         module: Module,
         env: ExecEnv,
         tables: Sequence[FunctionTable],
-        allocator: BumpAllocator | None = None,
+        allocator: BumpAllocator,
     ):
         if module.block_storage is None:
             module.build_basic_block_index(allocator)
@@ -999,7 +1005,7 @@ class Interpreter:
         phys_mem: bytearray | None = None,
         logger: LoggerPort | None = None,
         *,
-        bump_allocator: BumpAllocator | None = None,
+        bump_allocator: BumpAllocator,
         native_dispatcher: NativeDispatchEntryPoint = _native_abi.RUN_DISPATCH,
         yield_threshold: int = FB_CONF_INTERPRETER_YIELD_THRESHOLD,
     ):
@@ -1008,9 +1014,7 @@ class Interpreter:
         self.yield_threshold = yield_threshold
         self.module = module
         self.initialization_trap: Trap | None = None
-        self.bump_allocator = (
-            bump_allocator if bump_allocator is not None else module.allocator
-        ) or BumpAllocator()
+        self.bump_allocator = bump_allocator
         self.module.relocate_to(self.bump_allocator)
         self.logger = logger
         self.memory = bindings.memory
@@ -1089,6 +1093,32 @@ class Interpreter:
             outcome = self.call(self.module.start_function, ())
             self.initialization_trap = outcome.error
 
+    @classmethod
+    def with_module_allocator(
+        cls: type[Self],
+        module: Module,
+        bindings: InterpreterBindings,
+        vmmio: VMMIOController | None = None,
+        phys_mem: bytearray | None = None,
+        logger: LoggerPort | None = None,
+        *,
+        native_dispatcher: NativeDispatchEntryPoint = _native_abi.RUN_DISPATCH,
+        yield_threshold: int = FB_CONF_INTERPRETER_YIELD_THRESHOLD,
+    ) -> Self:
+        """Create an interpreter using the allocator that loaded its module."""
+        allocator = module.allocator
+        assert allocator is not None, "module has no loader allocator"
+        return cls(
+            module,
+            bindings,
+            vmmio,
+            phys_mem,
+            logger,
+            bump_allocator=allocator,
+            native_dispatcher=native_dispatcher,
+            yield_threshold=yield_threshold,
+        )
+
     def attach_debugger(self, debugger: DebuggerAttachment) -> None:
         """
         Records the attached debugger. Unlike the legacy block harness's
@@ -1155,7 +1185,10 @@ class Interpreter:
         call_state = self.start(func_index, args)
         while not call_state.finished:
             override = yield call_state
-            call_state = override if override is not None else self.step(call_state)
+            if override is None:
+                call_state = self.step(call_state)
+            else:
+                call_state = override
         yield call_state
 
     def start(self, func_index: int, args: Sequence[WasmNumber]) -> InterpreterCall:
@@ -1316,7 +1349,7 @@ class Interpreter:
         assert 0 <= ip < len(frame.code)
         opcode = frame.code[ip]
         if opcode == CALL:
-            callee_func_index, _ = decode_unsigned(frame.code, ip + 1)
+            callee_func_index, _ = decode_unsigned_full(frame.code, ip + 1)
             assert self.module.is_import(callee_func_index), (
                 "C++ dispatcher returned a defined guest call instead of executing it"
             )
@@ -1327,8 +1360,8 @@ class Interpreter:
                 call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
             return True
         if opcode == CALL_INDIRECT:
-            _, off = decode_unsigned(frame.code, ip + 1)
-            table_index, _ = decode_unsigned(frame.code, off)
+            _, off = decode_unsigned_full(frame.code, ip + 1)
+            table_index, _ = decode_unsigned_full(frame.code, off)
             table_slot = _to_u32(frame.values[-1])
             assert table_index < len(self.tables)
             table = self.tables[table_index]
@@ -1349,7 +1382,7 @@ class Interpreter:
             self._resolve_native_memory_boundary(call_state, opcode, ip)
             return False
         if opcode == FC_PREFIX:
-            subopcode, _ = decode_unsigned(frame.code, ip + 1)
+            subopcode, _ = decode_unsigned_full(frame.code, ip + 1)
             assert subopcode == FC_MEMORY_COPY or subopcode == FC_MEMORY_FILL, (
                 f"C++ interpreter does not implement 0xFC subopcode {subopcode}"
             )
@@ -1760,11 +1793,11 @@ class Interpreter:
         the callee's freshly-built entry frame.
         """
         if opcode == CALL:
-            callee_func_index, next_ip = decode_unsigned(frame.code, ip + 1)
+            callee_func_index, next_ip = decode_unsigned_full(frame.code, ip + 1)
             callee_ft = self.module.func_type(callee_func_index)
         else:
-            typeidx, off = decode_unsigned(frame.code, ip + 1)
-            tableidx, next_ip = decode_unsigned(frame.code, off)
+            typeidx, off = decode_unsigned_full(frame.code, ip + 1)
+            tableidx, next_ip = decode_unsigned_full(frame.code, off)
             table = frame.env.tables[tableidx]
             table_slot = _to_u32(frame.values.pop_back())
             if table_slot >= len(table):
@@ -1853,7 +1886,7 @@ class NativeInterpreter(Interpreter):
         phys_mem: bytearray | None = None,
         logger: LoggerPort | None = None,
         *,
-        bump_allocator: BumpAllocator | None = None,
+        bump_allocator: BumpAllocator,
         native_dispatcher: NativeDispatchEntryPoint = _native_abi.RUN_DISPATCH,
         execution_plugin: NativeExecutionPlugin | None = None,
         yield_threshold: int = FB_CONF_INTERPRETER_YIELD_THRESHOLD,
@@ -1871,6 +1904,34 @@ class NativeInterpreter(Interpreter):
             logger,
             bump_allocator=bump_allocator,
             native_dispatcher=native_dispatcher,
+            yield_threshold=yield_threshold,
+        )
+
+    @classmethod
+    def with_module_allocator(
+        cls,
+        module: Module,
+        bindings: InterpreterBindings,
+        vmmio: VMMIOController | None = None,
+        phys_mem: bytearray | None = None,
+        logger: LoggerPort | None = None,
+        *,
+        native_dispatcher: NativeDispatchEntryPoint = _native_abi.RUN_DISPATCH,
+        execution_plugin: NativeExecutionPlugin | None = None,
+        yield_threshold: int = FB_CONF_INTERPRETER_YIELD_THRESHOLD,
+    ) -> NativeInterpreter:
+        """Create a native interpreter using its module's loader allocator."""
+        allocator = module.allocator
+        assert allocator is not None, "module has no loader allocator"
+        return cls(
+            module,
+            bindings,
+            vmmio,
+            phys_mem,
+            logger,
+            bump_allocator=allocator,
+            native_dispatcher=native_dispatcher,
+            execution_plugin=execution_plugin,
             yield_threshold=yield_threshold,
         )
 

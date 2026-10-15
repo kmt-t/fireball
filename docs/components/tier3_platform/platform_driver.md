@@ -190,7 +190,7 @@ UART および SEGGER RTT は同一のRaw RSPバイトトランスポート契�
 ### 7.1 検証対象の不変条件
 - **非同期割り込み境界分離**: ISR からタスク状態を直接変更せずキュー経由で安全にディスパッチすること（`interrupt_boundary_model.py` の `isr_does_not_update_task_state_directly` および `interrupt_event_reaches_scheduler_boundary`）。
 - **固定長スロット境界保護**: 要求サイズが 256 バイトを超える場合の即時拒絶（`GOTCHA-HAL-01`）。
-- **32bitタイマー折り返し**: 1周期未満の測定区間に限り、符号なしモジュロ差分が経過tick数を返すこと（`platform_driver_concept.py` の `test_u32_timer_elapsed_handles_wraparound`）。pysimの実タイマーはホストの64bit `time.monotonic_ns()` を使用するため、物理32bitカウンタの折り返しは実機統合時に別途検証する。
+- **32bitタイマー折り返し**: 1周期未満の測定区間に限り、符号なしモジュロ差分が経過tick数を返すこと（`platform_driver_concept.py` の `test_u32_timer_elapsed_handles_wraparound`）。物理タイマーの折り返しは対象ハードウェアとの統合時に検証する。
 
 ### 7.2 テスト仕様書との連携
 本コンポーネントの物理実装テストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, TEST-HAL-15）の検証手順・期待結果は、[`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を正本とする。本書で定義する実装上の注意点に対応する検証も同書を参照する。HAL契約レベルのテストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を参照する。TEST-HAL-15 は物理HALドライバの起動ではなく、ホスト側ファイルSinkの直接注入と標準出力分離を確認する。

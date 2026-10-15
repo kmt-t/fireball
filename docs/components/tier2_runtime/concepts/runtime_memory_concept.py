@@ -472,9 +472,8 @@ class HALFixedBufferManager:
 # Test Suite: system_memory_test_spec.md (TEST-MEM-01 ~ TEST-MEM-13, contract-level) and
 # runtime_memory_test_spec.md: software-contract and virtual mapping cases.
 # TEST-MEM-14/15/16 (page-granular isolation, vMMIO FC=14 PTE/TLB sync, owner-mismatch
-# trap) are physical-implementation cases covered instead by pysim's real
-# MemoryManager/VMMIOController (experiments/pysim/qa/tier3_platform/
-# test_memory.py's test_mem_14_*/test_mem_15_*), not duplicated here.
+# trap) are physical integration cases. Their expected results belong to
+# runtime_memory_test_spec.md and are outside this lightweight contract model.
 # =============================================================================
 
 
@@ -722,8 +721,7 @@ def test_mem_12_shm_id_kv_pair_encoding() -> None:
     (1) the pack/unpack bit-layout formula itself, exercised on arbitrary non-canonical
         values so it cannot pass by re-declaring the same numbers twice;
     (2) the specific FUNCTIONAL(0b000)/uint32_t(0b00001) byte value ipc_router.md's table
-        assigns, which real kv_pair producers (experiments/pysim/tier1_core/ipc_router.py's
-        ScopeKind.FUNCTIONAL / DataType.UINT32) must independently reproduce as 0x01."""
+        assigns, which producers must independently reproduce as 0x01."""
 
     def pack_type_byte(scope: int, dtype: int) -> int:
         return ((scope & 0x7) << 5) | (dtype & 0x1F)

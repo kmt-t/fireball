@@ -395,7 +395,10 @@ def test_coos_10_budget_exhaustion_with_ready_task_is_not_idle(budget: int | Non
 
     task = sched.get_task(sched.spawn("worker", worker()).unwrap())
     assert task is not None
-    sched.run_until_idle(budget=budget)
+    if budget is None:
+        sched.run_until_idle()
+    else:
+        sched.run_until_idle_with_budget(budget)
     assert task.state == TaskState.READY
     assert tuple(sched._ready) == (task,)
     assert idle_calls == []
@@ -414,7 +417,7 @@ def test_coos_10_pending_event_at_budget_end_is_not_idle() -> None:
 
     task = sched.get_task(sched.spawn("notifier", notifier()).unwrap())
     assert task is not None
-    sched.run_until_idle(budget=1)
+    sched.run_until_idle_with_budget(1)
     assert task.state == TaskState.TERMINATED
     assert not sched._ready
     assert len(sched.interrupt_event_queue) == 1

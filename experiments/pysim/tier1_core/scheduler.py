@@ -1160,12 +1160,26 @@ class Scheduler:
         self.current_task = None
         return task
 
-    def run_until_idle(self, budget: int | None = None) -> None:
-        """Runs cooperative tasks within the budget; fires hooks only with no READY task or event."""
+    def run_until_idle(self) -> None:
+        """Runs cooperative tasks to idle with the scheduler's default step budget."""
         previous_task = self.current_task
         self.drain_interrupts()
         self._begin_reschedule_round()
-        step_budget = budget if budget is not None else max(1000, len(self._ready) * 64 + 16)
+        step_budget = max(1000, len(self._ready) * 64 + 16)
+        self._drive_until_idle(step_budget)
+        self.current_task = previous_task
+
+    def run_until_idle_with_budget(self, budget: int) -> None:
+        """Runs cooperative tasks up to an explicit step budget."""
+        assert budget >= 0, "step budget must be non-negative"
+        previous_task = self.current_task
+        self.drain_interrupts()
+        self._begin_reschedule_round()
+        self._drive_until_idle(budget)
+        self.current_task = previous_task
+
+    def _drive_until_idle(self, step_budget: int) -> None:
+        """Drives the prepared run loop and fires hooks only at a true idle boundary."""
         idle_hooks_called = False
         while step_budget > 0:
             self.drain_interrupts()
@@ -1232,7 +1246,6 @@ class Scheduler:
 
         if not idle_hooks_called and not self._ready and len(self.interrupt_event_queue) == 0:
             self._run_idle_hooks()
-        self.current_task = previous_task
 
     def run_to_completion(self, max_sweeps: int = 1000) -> None:
         for _ in range(max_sweeps):

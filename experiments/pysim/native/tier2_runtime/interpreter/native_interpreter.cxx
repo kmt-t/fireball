@@ -1092,7 +1092,7 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
   }
   if constexpr (WithJit) {
     [[maybe_unused]] const auto finished =
-        jit_provider->finish_boundary(jit_provider->owner, result->status, call.idle_budget);
+        jit_provider->finish_boundary(jit_provider->owner, result->status);
     assert(finished == 1);
   }
   return 1;

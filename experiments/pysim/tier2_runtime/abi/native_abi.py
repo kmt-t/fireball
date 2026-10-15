@@ -17,7 +17,6 @@ class NativeDispatchCall(ctypes.Structure):
         ("stack", ctypes.c_void_p),
         ("locals", ctypes.c_void_p),
         ("jit_provider", ctypes.c_void_p),
-        ("idle_budget", ctypes.c_uint32),
     )
 
 
@@ -129,14 +128,12 @@ def run_native_dispatch(
     call: NativeDispatchCall,
     result: NativeResult,
     jit_provider: int = 0,
-    idle_budget: int = 0,
 ) -> NativeDispatchResult:
     """Run native dispatch from its context-owned state and borrowed value stacks."""
     call.context = context_address
     call.stack = stack_address
     call.locals = locals_address
     call.jit_provider = jit_provider
-    call.idle_budget = idle_budget
     status = entry(ctypes.byref(call), ctypes.byref(result))
     assert status == 1, (
         f"C++ interpreter ABI rejected call with status {status} and error {result.error_code}"

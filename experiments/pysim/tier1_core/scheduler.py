@@ -1165,7 +1165,9 @@ class Scheduler:
         previous_task = self.current_task
         self.drain_interrupts()
         self._begin_reschedule_round()
-        step_budget = budget if budget is not None else max(1000, len(self._ready) * 64 + 16)
+        step_budget = max(1000, len(self._ready) * 64 + 16)
+        if budget is not None:
+            step_budget = budget
         idle_hooks_called = False
         while step_budget > 0:
             self.drain_interrupts()

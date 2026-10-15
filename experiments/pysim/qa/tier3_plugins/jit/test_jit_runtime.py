@@ -108,7 +108,6 @@ def _qa_trace_counted_call(
     interpreter: NativeInterpreter,
     function_index: int,
     args: list[int],
-    idle_budget: int = 4,
 ) -> StaticVector[int]:
     """Run a JIT call through the QA snapshot dispatcher with trace-body counters."""
     engine._activate_interpreter(interpreter)
@@ -117,8 +116,8 @@ def _qa_trace_counted_call(
         manager, engine.collect_runtime_stats
     )
     while not call_state.finished:
-        call_state = engine._run_bound(interpreter, call_state, idle_budget).call_state
-    engine.idle_hook(idle_budget)
+        call_state = engine._run_bound(interpreter, call_state).call_state
+    engine.idle_hook()
     assert call_state.trap is None
     assert call_state.results is not None
     return call_state.results
@@ -2921,7 +2920,7 @@ def _run_with_runtime_engine(
     engine._activate_interpreter(interpreter)
     call_state = interpreter.start(function_index, args)
     while not call_state.finished:
-        boundary = engine.run(interpreter, call_state, idle_budget=0)
+        boundary = engine.run(interpreter, call_state)
         assert not boundary.yield_requested
         call_state = boundary.call_state
     return call_state
@@ -3051,7 +3050,7 @@ def test_jitr_defined_call_after_import_keeps_call_annotation_and_stack_prefix()
         vmmio=jit_vmmio,
         phys_mem=jit_physical_memory,
     )
-    actual = engine.call(interpreter, caller, [], idle_budget=0).unwrap()
+    actual = engine.call(interpreter, caller, []).unwrap()
     assert actual == expected == [43]
     assert jit_memory == reference_memory
     assert int.from_bytes(jit_memory[:4], "little") == 43
@@ -3251,13 +3250,13 @@ def test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary():
     function_index = module.export_func_index("main")
     try:
         for _ in range(2):
-            outcome = interp._complete_call(interp.start(function_index, []), idle_budget=0)
+            outcome = interp._complete_call(interp.start(function_index, []))
             assert not outcome.is_ok
             assert outcome.error is not None and outcome.error.code == 15
 
         assert plugin.idle_hook(1) == 1
         call_state = interp.start(function_index, [])
-        status = interp.run_native_dispatch(call_state, idle_budget=0)
+        status = interp.run_native_dispatch(call_state)
         assert status == 2
         assert call_state.finished
         assert call_state.trap is not None and call_state.trap.code == 15
@@ -3290,10 +3289,10 @@ def test_jitr_runtime_api_continues_into_following_jit_operations():
     interp = Interpreter(module, execution_plugin=plugin)
     function_index = module.export_func_index("f")
     try:
-        assert interp.call(function_index, [], idle_budget=0).unwrap() == [29]
-        assert interp.call(function_index, [], idle_budget=0).unwrap() == [29]
+        assert interp.call(function_index, []).unwrap() == [29]
+        assert interp.call(function_index, []).unwrap() == [29]
         assert plugin.idle_hook(1) == 1
-        assert interp.call(function_index, [], idle_budget=0).unwrap() == [29]
+        assert interp.call(function_index, []).unwrap() == [29]
     finally:
         plugin.close()
         for backing in backings:
@@ -4053,7 +4052,7 @@ def test_native_product_plugin_close_clears_borrowed_block_references():
             assert interpreter.call(0, [100]).unwrap() == [5050]
             plugin.idle_hook(16)
             assert any(block.jit_cache_reference != 0xFF for block in module.blocks)
-            assert interpreter.call(0, [50], idle_budget=0).unwrap() == [1275]
+            assert interpreter.call(0, [50]).unwrap() == [1275]
         finally:
             plugin.close()
         assert all(block.jit_cache_reference == 0xFF for block in module.blocks)

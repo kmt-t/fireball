@@ -767,6 +767,62 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     assert engine.jit_runtime.cache.find_trace(loop_pc) is not None
 
 
+def test_runtime_yield_services_jit_while_only_guest_task_is_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A yielding runtime task services queued JIT work without scheduler idleness."""
+    engine = make_runtime_engine(
+        card_shift=2,
+        jit_compiler=TraceCompiler(),
+        min_trace_bytes=1,
+        candidate_threshold=0,
+        drive_mode=RuntimeDriveMode.COOS,
+    )
+    system = System()
+    system.runtime_engine = engine
+    module = parse_standalone(
+        wat_to_wasm(
+            """(module
+              (func (export "count") (param $limit i32) (result i32) (local $i i32)
+                (loop $again
+                  local.get $i i32.const 1 i32.add local.tee $i
+                  local.get $limit i32.lt_u br_if $again)
+                local.get $i))"""
+        )
+    )
+    interpreter = make_native_interpreter(
+        module,
+        bump_allocator=engine.bump_allocator,
+        yield_threshold=1,
+    )
+    idle_budgets: list[int] = []
+    runtime_type = type(engine)
+    original_idle_hook = runtime_type.idle_hook
+
+    def observe_idle_hook(runtime: RuntimeEngine, budget: int = 4) -> int:
+        if runtime is engine:
+            idle_budgets.append(budget)
+        return original_idle_hook(runtime, budget)
+
+    monkeypatch.setattr(runtime_type, "idle_hook", observe_idle_hook)
+    try:
+        guest_id = system.scheduler.spawn(
+            "guest",
+            system.run_guest(interpreter, module.export_func_index("count"), (100,)),
+        ).unwrap()
+
+        system.scheduler.run_until_idle(budget=12)
+
+        task = system.scheduler.get_task(guest_id)
+        assert task is not None and task.state == TaskState.READY
+        assert engine.jit_runtime.compilation_pcs, (
+            "JIT compilation must progress before the task ends"
+        )
+        assert idle_budgets, "runtime must service the plugin at cooperative yield boundaries"
+    finally:
+        system.shutdown()
+
+
 def test_tier_03_branch_transitions_use_interpreter_cps():
     """TEST-TIER-03: Branch transitions use Interpreter CPS between resident traces."""
     wat = """

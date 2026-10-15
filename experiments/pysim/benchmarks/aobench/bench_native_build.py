@@ -20,6 +20,7 @@ from _bootstrap import configure_import_paths, reserve_native_region
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from ipc_router import FB_URI_HAL_STDOUT
+from runtime_driver import run_runtime_call
 from system import System
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 from tier2_runtime.runtime.engine import RuntimeEngine
@@ -93,12 +94,10 @@ def measure(
     try:
         for frame_index in range(warmup + repeats):
             if frame_index == warmup and plugin is not None:
-                while plugin.idle_hook(256) != 0:
+                while runtime.idle_hook(256) != 0:
                     pass
             started = time.perf_counter_ns()
-            interpreter.call(
-                function_index, [width, height], idle_budget=4 if frame_index < warmup else 0
-            ).unwrap()
+            run_runtime_call(runtime, interpreter, function_index, [width, height]).unwrap()
             elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000
             frame = system.transport.drain_output()
             assert len(frame) == (width + 1) * height

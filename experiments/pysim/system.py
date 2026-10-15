@@ -346,12 +346,11 @@ class System:
         interp: NativeInterpreter,
         func_index: int,
         args: SequenceView[WasmNumber],
-        idle_budget: int = 4,
     ) -> Generator[tuple[ChannelAction, None], None, Result[StaticVector[WasmNumber], Trap]]:
         """Drive one shared runtime boundary at a time and own COOS handoffs."""
         call_state = interp.start(func_index, args)
         while not call_state.finished:
-            boundary = self.runtime_engine.run(interp, call_state, idle_budget)
+            boundary = self.runtime_engine.run(interp, call_state)
             call_state = boundary.call_state
             task = self.scheduler.current_task
             assert task is not None, "guest execution requires an active COOS task"
@@ -361,11 +360,13 @@ class System:
             if not call_state.finished and (
                 boundary.yield_requested or generation_yield or syscall_yield
             ):
+                if not boundary.yield_requested:
+                    self.runtime_engine.idle_hook()
                 yield (ChannelAction.YIELD, None)
         if call_state.trap is not None:
             return Result.err(call_state.trap)
         assert call_state.results is not None
-        interp.idle_hook(idle_budget)
+        self.runtime_engine.idle_hook()
         return Result.ok(call_state.results)
 
     def bind_runtime(

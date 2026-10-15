@@ -139,13 +139,18 @@ class RuntimeEngine:
     ) -> int:
         if self._virq_interp is None:
             return int(VirqDispatchResult.REJECT)
-        outcome = self._virq_interp.call(
+        interp = self._virq_interp
+        call_state = interp.start(
             function_index,
             (vector_id, source_id, cause_code, payload0, payload1),
         )
-        if not outcome.is_ok:
+        while not call_state.finished:
+            call_state = self.run(interp, call_state).call_state
+        self.idle_hook()
+        if call_state.trap is not None:
             return int(VirqDispatchResult.REJECT)
-        results = outcome.unwrap()
+        assert call_state.results is not None
+        results = call_state.results
         if not results:
             return int(VirqDispatchResult.REJECT)
         return int(results[0]) & 0xFFFF_FFFF
@@ -164,18 +169,20 @@ class RuntimeEngine:
         self,
         interp: NativeInterpreter,
         call_state: InterpreterCall,
-        idle_budget: int = 4,
     ) -> RuntimeBoundaryResult:
         """Advance the Interpreter once and return its scheduler boundary."""
         self._activate_interpreter(interp)
-        return self._run_bound(interp, call_state, idle_budget)
+        return self._run_bound(interp, call_state)
 
     def _run_bound(
-        self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int
+        self, interp: NativeInterpreter, call_state: InterpreterCall
     ) -> RuntimeBoundaryResult:
         """Advance an already-bound Interpreter through one scheduler boundary."""
         assert not call_state.finished, "cannot advance a completed interpreter call"
-        return self._run_native_boundary(interp, call_state, idle_budget)
+        boundary = self._run_native_boundary(interp, call_state)
+        if boundary.yield_requested:
+            self.idle_hook()
+        return boundary
 
     def _activate_interpreter(self, interp: NativeInterpreter) -> None:
         """Activate one interpreter that borrows the constructor-selected arena."""
@@ -187,10 +194,10 @@ class RuntimeEngine:
         self._virq_interp = interp
 
     def _run_native_boundary(
-        self, interp: NativeInterpreter, call_state: InterpreterCall, idle_budget: int
+        self, interp: NativeInterpreter, call_state: InterpreterCall
     ) -> RuntimeBoundaryResult:
         """Ask the Interpreter to advance its own dispatcher to one boundary."""
-        boundary = interp.step_native_boundary(call_state, idle_budget=idle_budget)
+        boundary = interp.step_native_boundary(call_state)
         return RuntimeBoundaryResult(
             boundary.call_state,
             boundary.yield_requested,

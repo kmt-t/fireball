@@ -263,7 +263,7 @@ template <jit_measurement_policy Measurement> struct jit_provider_adapter {
   /** @brief コンパイルキューを指定予算で処理する。 */
   static int fb_jit_runtime_compile(runtime_type *runtime, std::uint32_t budget);
   /** @brief 実行境界の履歴を処理し、必要なら候補をコンパイルする。 */
-  static int finish_boundary(runtime_type *runtime, int yielded, std::uint32_t budget);
+  static int finish_boundary(runtime_type *runtime, int yielded);
   /** @brief 配置されたランタイムの寿命を終了する。 */
   static void fb_jit_runtime_close(runtime_type *runtime);
   /** @brief Interpreterへ常駐トレースの実行情報を渡す。 */
@@ -272,8 +272,7 @@ template <jit_measurement_policy Measurement> struct jit_provider_adapter {
   /** @brief 対象ブロックの実行履歴を記録する。 */
   static int observe_runtime_block(std::uintptr_t owner, block_index_t block_index, wasm_pc_t pc);
   /** @brief Interpreterの終了状態をJITの境界処理へ変換する。 */
-  static int finish_runtime_boundary(std::uintptr_t owner, std::uint32_t status,
-                                     std::uint32_t budget);
+  static int finish_runtime_boundary(std::uintptr_t owner, std::uint32_t status);
   /** @brief カード状態と2つのビット領域の必要サイズを返す。 */
   static std::size_t workspace_size(const fireball_wasm_module_execution_view_native *view);
   /** @brief 状態と作業領域を実行領域のアラインメントへ切り上げる。 */

@@ -27,7 +27,7 @@ from qa.shared.helpers import (
 )
 from qa.shared.helpers import make_interpreter as Interpreter
 from system_containers import StaticVector
-from tier2_runtime.interpreter.interpreter import ExecutionContext, Trap, WasmNumber
+from tier2_runtime.interpreter.interpreter import Trap, WasmNumber
 from tier2_runtime.interpreter.interpreter import TrapCode as InterpreterTrapCode
 from tier2_runtime.runtime.engine import RuntimeEngine
 from tier2_runtime.vmmio.controller import TrapCode
@@ -43,11 +43,8 @@ from tier2_runtime.wasm.reader import parse_standalone
 from tier2_runtime.wasm.validation import InvalidWasm
 
 
-def test_intp_01_python_reference_cps_handlers_and_dispatch_table():
-    """TEST-INTP-01 (Python reference): handlers share stack-backed state.
-
-    The reference table is not evidence of the native dispatcher implementation (TEST-INTP-02).
-    """
+def test_intp_01_python_reference_uses_plain_activation_arrays():
+    """TEST-INTP-01: reference activations use ordinary arrays and loader control metadata."""
     import inspect
 
     from tier2_runtime.interpreter.interpreter import _HANDLERS
@@ -76,9 +73,19 @@ def test_intp_01_python_reference_cps_handlers_and_dispatch_table():
         f"Expected at least 30 registered MVP opcode handlers, found {registered_count}"
     )
 
+    module = parse_standalone(wat_to_wasm("(module (func (result i32) i32.const 7))"))
+    reference = Interpreter(module)
+    frame = reference.start(0, [])._frame
+    assert frame is not None
+    assert type(frame.values._words) is list
+    assert type(frame.locals._words) is list
+    assert frame.control_map is module.functions[0].control_map
+    assert not hasattr(frame, "native")
+    assert not hasattr(frame, "_native_interpreter_annotations")
 
-def test_python_interpreter_preserves_shared_operand_stack_across_call():
-    """The caller's live operand remains on the context stack across a nested call."""
+
+def test_python_interpreter_keeps_each_activation_operand_array_separate():
+    """A nested call has its own operand array while the caller's live value remains intact."""
     module = parse_standalone(
         wat_to_wasm(
             '(module (func (export "main") (result i32) '
@@ -88,19 +95,19 @@ def test_python_interpreter_preserves_shared_operand_stack_across_call():
     )
     interpreter = Interpreter(module)
     call_state = interpreter.start(module.export_func_index("main"), [])
-    context_stack = call_state.context.stack
     caller = call_state._frame
 
     assert caller is not None
-    assert caller.values is context_stack
+    caller_values = caller.values
+    call_state = interpreter.step(call_state)
+    assert call_state._frame is caller
     call_state = interpreter.step(call_state)
     callee = call_state._frame
     assert callee is not None and callee is not caller
-    assert callee.values is context_stack
-    assert len(context_stack) == 1
-    assert context_stack.raw_at(0) == 10
+    assert callee.values is not caller_values
+    assert caller_values == [10]
 
-    for _ in range(5):
+    for _ in range(16):
         if call_state.finished:
             break
         call_state = interpreter.step(call_state)
@@ -399,10 +406,10 @@ def test_native_call_dispatch_resolves_callee_and_caller_blocks(monkeypatch):
     native_dispatch = NativeInterpreter.run_native_dispatch
     observations: list[NativeDiagnosticResult] = []
 
-    def capture_stats(self, call_state, idle_budget=0):
+    def capture_stats(self, call_state):
         result = NativeDiagnosticResult()
         call_state.context._native_result = result
-        status = native_dispatch(self, call_state, idle_budget)
+        status = native_dispatch(self, call_state)
         observations.append(result)
         return status
 
@@ -486,6 +493,7 @@ def test_intp_17_return_publishes_explicit_sentinel_before_frame_pop():
     module = parse_standalone(wat_to_wasm("(module (func (result i32) i32.const 7 return))"))
     interp = Interpreter(module)
     call_state = interp.step(interp.start(0, []))
+    call_state = interp.step(call_state)
     assert not call_state.finished
     assert get_call_cont(call_state) is not None
     sentinel_ip, _, _ = get_call_cont(call_state)
@@ -494,6 +502,38 @@ def test_intp_17_return_publishes_explicit_sentinel_before_frame_pop():
     completed = interp.step(call_state)
     assert completed.finished
     assert completed.results == [7]
+
+
+def test_interpreter_step_contract_is_substitutable_with_native_interpreter():
+    """Interpreter.step and NativeInterpreter.step accept the same resumable contract."""
+    module = parse_standalone(
+        wat_to_wasm(
+            """(module
+              (func (export "sum_to") (param $n i32) (result i32) (local $sum i32)
+                (block $exit
+                  (loop $top
+                    (br_if $exit (i32.eqz (local.get $n)))
+                    (local.set $sum (i32.add (local.get $sum) (local.get $n)))
+                    (local.set $n (i32.sub (local.get $n) (i32.const 1)))
+                    (br $top)))
+                (local.get $sum)))"""
+        )
+    )
+    function_index = module.export_func_index("sum_to")
+    results: list[tuple[int, ...]] = []
+
+    for interpreter in (Interpreter(module), make_native_interpreter(module)):
+        call_state = interpreter.start(function_index, (9,))
+        for _ in range(512):
+            if call_state.finished:
+                break
+            call_state = interpreter.step(call_state)
+        assert call_state.finished
+        assert call_state.trap is None
+        assert call_state.results is not None
+        results.append(tuple(call_state.results))
+
+    assert results == [(45,), (45,)]
 
 
 def test_typed_block_results_keep_wide_native_slots():
@@ -551,13 +591,8 @@ def test_native_interpreter_returns_to_python_at_loop_yield_counts(monkeypatch):
     def record_native_dispatch(
         self: NativeInterpreter,
         call_state: InterpreterCall,
-        idle_budget: int = 0,
     ) -> int:
-        result = native_dispatch(
-            self,
-            call_state,
-            idle_budget,
-        )
+        result = native_dispatch(self, call_state)
         returned_statuses.append(result)
         return result
 
@@ -600,10 +635,10 @@ def test_native_dispatch_reuses_block_search_results_within_dispatch(monkeypatch
     native_dispatch = NativeInterpreter.run_native_dispatch
     observations: list[NativeDiagnosticResult] = []
 
-    def capture_stats(self, call_state, idle_budget=0):
+    def capture_stats(self, call_state):
         result = NativeDiagnosticResult()
         call_state.context._native_result = result
-        status = native_dispatch(self, call_state, idle_budget)
+        status = native_dispatch(self, call_state)
         observations.append(result)
         return status
 
@@ -622,9 +657,7 @@ def test_native_dispatch_reuses_block_search_results_within_dispatch(monkeypatch
 
 
 def test_intp_16_nested_return_consumes_sentinel_and_restores_caller():
-    """TEST-INTP-16: nested return restores the caller on the shared stack."""
-    from tier2_runtime.interpreter.interpreter import RETURN_SENTINEL_IP
-
+    """TEST-INTP-16: nested returns restore the caller activation and its local stack."""
     module = parse_standalone(
         wat_to_wasm(
             """(module
@@ -640,19 +673,11 @@ def test_intp_16_nested_return_consumes_sentinel_and_restores_caller():
     )
     interp = Interpreter(module)
     state = interp.start(1, [])
-    state = interp.step(state)
-    assert not state.finished
-    assert get_call_cont(state) is not None
-    assert get_call_cont(state)[0] == 0
-    state = interp.step(state)
-    assert not state.finished
-    assert get_call_cont(state) is not None
-    assert get_call_cont(state)[0] == RETURN_SENTINEL_IP
-    state = interp.step(state)
-    assert not state.finished
-    assert get_call_cont(state) is not None
-    assert state.func_index == 1
-    assert get_call_cont(state)[0] != RETURN_SENTINEL_IP
+    while not state.finished:
+        state = interp.step(state)
+    assert state.results == [8]
+    assert not state.context.call_frame_stack
+    assert len(state.context.local_stack) == 0
     completed = interp.call(1, []).unwrap()
     assert completed == [8]
     assert interp.call(3, []).unwrap() == [71]
@@ -666,7 +691,9 @@ def test_intp_06_memory_traps_are_handler_results():
         wat_to_wasm("(module (memory 1) (func (param i32) (result i32) local.get 0 i32.load))")
     )
     interp = Interpreter(module, memory=bytearray(65536))
-    stepped = interp.step(interp.start(0, [0x8000_0000]))
+    stepped = interp.start(0, [0x8000_0000])
+    while not stepped.finished:
+        stepped = interp.step(stepped)
     assert stepped.finished
     assert stepped.results is None
     assert isinstance(stepped.trap, Trap)
@@ -999,32 +1026,16 @@ def test_intp_70_to_72_direct_bytecode_execution():
     module = parse_standalone(wasm_bytes)
     interp = Interpreter(module)
 
-    # 1. TEST-INTP-18/75: independent call descriptors and local storage follow the native ABI.
-    context = ExecutionContext(module)
-    built = interp._build_frame(0, StaticVector.of((15,), capacity=64), context).unwrap()
-    assert built is not None
-    frame, locals_arr = built
+    # 1. The reference frame owns plain operand/local arrays and loader metadata.
+    frame = interp.start(0, [15])._frame
+    assert frame is not None
     assert frame.code == module.code_for(0)
     assert frame.control_map is not None
     assert frame.control_map is module.functions[0].control_map
-    assert context.call_frame_stack[-1] is frame
-    assert context.call_stack == context.native_call_frames.address
-    assert len(context.call_frame_stack) == 1
-    native_frame = context.native_call_frames[-1]
-    assert native_frame.func_index == 0
-    assert native_frame.function_view == ctypes.addressof(frame._native_function_view)
-    assert frame._native_function_view.code != 0
-    assert frame._native_function_view.code_size == len(frame.code)
-    assert native_frame.local_base == context.local_stack.value_ptr(frame.frame_offset).value
-    # Two i32 locals: the frame uses 4-byte slots, so it occupies two raw words.
-    assert frame.local_layout.total_words == 2
-    assert context.local_stack_pointer == context.local_stack.value_ptr(2).value
-    assert len(context.local_stack) == 2
-    context.end_call_frame(frame)
-    assert context.local_stack_pointer == context.local_stack_base
-    assert len(context.call_frame_stack) == 0
-    assert not context.native_call_frames
-    assert len(context.local_stack) == 0
+    assert frame.locals.layout.total_words == 2
+    assert frame.locals._words == [15, 0]
+    assert frame.values._words == []
+    assert not hasattr(frame, "native")
 
     # 2. TEST-INTP-71 & TEST-INTP-72: Execution proceeds by direct byte reading and ip addition
     res = interp.call(0, [15]).unwrap()

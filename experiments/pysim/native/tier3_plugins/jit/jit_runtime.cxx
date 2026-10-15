@@ -1496,14 +1496,8 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_compile(runtime_type *runt
 }
 
 template <jit_measurement_policy Measurement>
-int jit_provider_adapter<Measurement>::finish_boundary(runtime_type *runtime, int yielded,
-                                                       std::uint32_t budget) {
+int jit_provider_adapter<Measurement>::finish_boundary(runtime_type *runtime, int yielded) {
   runtime->analyze_observation_history(yielded != 0);
-  if (runtime->hotspots.compile_queue.count != 0 &&
-      (yielded != 0 ||
-       runtime->hotspots.compile_queue.count == runtime->hotspots.compile_queue.capacity)) {
-    runtime->compile_queued_candidates(budget);
-  }
   return 1;
 }
 
@@ -1565,11 +1559,10 @@ int jit_provider_adapter<Measurement>::observe_runtime_block(std::uintptr_t owne
 
 template <jit_measurement_policy Measurement>
 int jit_provider_adapter<Measurement>::finish_runtime_boundary(std::uintptr_t owner,
-                                                               std::uint32_t status,
-                                                               std::uint32_t budget) {
+                                                               std::uint32_t status) {
   assert(owner != 0);
   auto *runtime = reinterpret_cast<runtime_type *>(owner);
-  return finish_boundary(runtime, status == 5, budget);
+  return finish_boundary(runtime, status == 5);
 }
 
 template <jit_measurement_policy Measurement>

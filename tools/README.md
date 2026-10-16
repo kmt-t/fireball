@@ -121,18 +121,16 @@ Core Spec SuiteはMVP互換の固定選択セットであり、WebAssembly Core�
 | 用語候補の静的確認 | <code>powershell tools/llm-word.ps1 -quick</code> | <code>./tools/llm-word.sh --quick</code> | LLM 判定なし（未作成の埋め込みを Ollama のローカルモデルで生成） |
 | 用語揺れの意味判定 | <code>powershell tools/llm-word.ps1</code> | <code>./tools/llm-word.sh</code> | ローカル Ollama の Clef Flash を既定で使用 |
 | キーワードのリスク評価 | <code>powershell tools/risk.ps1</code> | <code>./tools/risk.sh</code> | ローカル Ollama の Clef Flash を既定で使用 |
-| 文書単体のレビュー | <code>powershell tools/llm-single-review.ps1 -file &lt;path&gt;</code> | <code>./tools/llm-single-review.sh --file &lt;path&gt;</code> | ローカル Ollama の Clef Flash を既定で使用 |
-| キーワード定義・参照ペアのレビュー | <code>powershell tools/llm-keyword-review.ps1 -keyword &lt;name&gt;</code> | <code>./tools/llm-keyword-review.sh --keyword &lt;name&gt;</code> | 定義セクションと参照セクションを1組ずつ評価。ローカル Ollama の Clef Flash を既定で使用 |
-| {VERIFY_LLM} 義務の履行 | <code>powershell tools/llm-judge.ps1</code> | <code>./tools/llm-judge.sh</code> | ローカル Ollama の Clef Flash を既定で使用し、判定を記録 |
+| 文書単体のレビュー | <code>powershell tools/llm-single-review.ps1 -file &lt;path&gt;</code> | <code>./tools/llm-single-review.sh --file &lt;path&gt;</code> | 設定済みの既定バックエンドを使用 |
+| キーワード定義・参照ペアのレビュー | <code>powershell tools/llm-keyword-review.ps1 -keyword &lt;name&gt;</code> | <code>./tools/llm-keyword-review.sh --keyword &lt;name&gt;</code> | 定義セクションと参照セクションを1組ずつ評価 |
+| {VERIFY_LLM} 義務の履行 | <code>powershell tools/llm-judge.ps1</code> | <code>./tools/llm-judge.sh</code> | 設定済みの既定バックエンドを使用し、判定を記録 |
 | 保存済み判定のスコア検索 | <code>powershell tools/llm-findings.ps1 -minConfidence 0.70</code> | <code>./tools/llm-findings.sh --min-confidence 0.70</code> | DBを検索。既定バックエンドに絞る。API利用なし |
 
 LLM監査はローカルとクラウドのどちらのバックエンドでも、ユーザーから明示指示があった場合だけ実行する。OpenRouter 経由の Jev は課金対象である。
 <code>{VERIFY_LLM}</code> の義務は <code>llm-judge</code> で記録付きで履行する。詳細なオプションは [spec-integrator のリファレンス](spec-integrator/README.md) を参照する。
-既定の判定バックエンドはローカル Ollama の Clef Flash (`clef-flash`) である。OpenRouter 経由の Jev (`typesafe/jev-1.13`) は `--backend jev` で選択する。Jevを使う場合は `OPENROUTER_API_KEY` を設定する。
+OpenRouter 経由の Jev (`typesafe/jev-1.13`) は `--backend jev` で選択する。Jevを使う場合は `OPENROUTER_API_KEY` を設定する。モデルと埋め込みAPIの設定・利用方法は [spec-integrator の仕様書](spec-integrator/docs/specification.md) と[リファレンス](spec-integrator/README.md)を参照する。
 
-Clef Flash の利用には Ollama 0.35.1 以降が必要である。初回は `ollama pull clef-flash` を実行する。モデルは64Kコンテキストに対応し、設定の `context_window_tokens` は65,536 tokenである。モデルとコンテキストの設定は `spec-integrator.yaml` を参照する。
-
-バックエンドの既定値は接続先を選ぶものであり、LLM監査はユーザーの明示指示なしに実行しない。埋め込み生成には引き続きローカル Ollama の `qwen3-embedding` を使う。
+LLM監査はユーザーから明示的な指示がある場合だけ実行する。
 
 ```bash
 # OPENROUTER_API_KEY を設定したシェルで実行する

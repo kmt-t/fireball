@@ -121,9 +121,9 @@ llm_judge:
       model: "typesafe/jev-1.13"
     clef-flash:
       endpoint: "http://localhost:11434/v1/systemone"
-      model: "clef-flash"
+      model: "nimble-v3:9b-q4_K_M"
       requires_api_key: false
-      context_window_tokens: 65536
+      context_window_tokens: 32768
   checks:
     - id: "vertical_consistency"
       name: "Vertical Consistency (Definition vs. Designs)"

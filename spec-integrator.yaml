@@ -63,30 +63,35 @@ obligation:
 verification_matrix:
   enabled: true
   strict: true
-  document: "docs/qa/verification_factor_matrix.md"
-  component_root: "docs/components"
-  test_spec_root: "docs/qa"
-  factor_csv: "docs/qa/specs/pairwise_factors.csv"
-  scenario_dir: "experiments/pysim/qa/scenarios"
-  scenario_runner: "experiments/pysim/qa/scenarios/run_all.py"
-  unit_runner: "experiments/pysim/qa/run_all.py"
-  integration_dir: "experiments/pysim/qa/integration"
-  integration_runner: "experiments/pysim/qa/integration/run_all.py"
-  workload_dir: "experiments/pysim/qa/workloads"
-  workload_runner: "experiments/pysim/qa/workloads/run_all.py"
-  pairwise_test: "experiments/pysim/qa/integration/test_pairwise_combinations.py"
-  expected:
-    component_specs: 26
-    concept_files: 15
-    formal_models: 23
-    test_specs: 25
-    pysim_unit_suites: 30
-    pysim_integration_suites: 4
-    pysim_workload_suites: 3
-    scenarios: 12
-    pairwise_factors: 7
-    pairwise_cases: 26
-    pairwise_interactions: 288
+  product:
+    document: "docs/qa/product_verification_matrix.md"
+    component_root: "docs/components"
+    test_spec_root: "docs/qa"
+    expected:
+      component_specs: 26
+      concept_files: 15
+      formal_models: 23
+      test_specs: 25
+  pysim:
+    document: "experiments/pysim/qa/verification_matrix.md"
+    qa_root: "experiments/pysim/qa"
+    factor_csv: "experiments/pysim/qa/pairwise_factors.csv"
+    scenario_dir: "experiments/pysim/qa/scenarios"
+    scenario_runner: "experiments/pysim/qa/scenarios/run_all.py"
+    unit_runner: "experiments/pysim/qa/run_all.py"
+    integration_dir: "experiments/pysim/qa/integration"
+    integration_runner: "experiments/pysim/qa/integration/run_all.py"
+    workload_dir: "experiments/pysim/qa/workloads"
+    workload_runner: "experiments/pysim/qa/workloads/run_all.py"
+    pairwise_test: "experiments/pysim/qa/integration/test_pairwise_combinations.py"
+    expected:
+      unit_suites: 30
+      integration_suites: 4
+      workload_suites: 3
+      scenarios: 12
+      pairwise_factors: 7
+      pairwise_cases: 26
+      pairwise_interactions: 288
 
 consistency:
   enabled: true

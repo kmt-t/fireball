@@ -449,7 +449,7 @@ Linux x86_64、CPython 3.14.6、WASI-SDK 27.0、Clang 20.1.8で52件が成功し
 | TEST-ENTRY-07 | テスト依存の配置 | Pythonプロジェクトmetadataとdependency groupsを読む | QA packageがproject runtime dependenciesに含まれない | `test_entrypoint_07_test_dependencies_are_dev_only` |
 | TEST-ENTRY-08 | QA import pathの分離 | `pytest.ini`の`pythonpath`を読む | QA rootをtop-level import pathに含めない | `test_entrypoint_08_qa_is_not_a_top_level_pytest_import_root` |
 
-正本は [`verification_factor_matrix.md`](docs/qa/verification_factor_matrix.md) とする。実行コマンドを示す。
+実行可能な受入試験の配置と実行コマンドは、各実装の試験ランナーで管理する。
 
 
 入口の試験は各機能の受入試験を代替しない。

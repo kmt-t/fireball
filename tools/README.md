@@ -8,7 +8,8 @@
 | :--- | :--- | :--- |
 | 開発・実装上の必須条件 | [開発ルール](../.agents/rules/development-policy.md)、各コーディングルール | 守るべき条件を定める。 |
 | 検証の反パターン | [verification-antipatterns](../.agents/rules/verification-antipatterns.md) | 証拠のない検証、恒真アサーション、未結線テストなどを防ぐ。 |
-| コンポーネントごとの必要証跡と網羅性 | [検証因子・成果物マトリクス](../docs/qa/verification_factor_matrix.md) | 必要な検証成果物と因子の対応を定める。 |
+| 製品仕様の証拠連鎖 | [製品仕様・証拠マトリクス](../docs/qa/product_verification_matrix.md) | コンポーネント設計、コンセプト、形式モデル、テスト仕様の対応を定める。 |
+| PySim実行QAの在庫と被覆 | [PySim QA実行マトリクス](../experiments/pysim/qa/verification_matrix.md) | 参照シミュレータのテスト登録、シナリオ、因子水準の実行網羅を管理する。製品適合の証拠にはしない。 |
 | テスト仕様・結果の配置 | [品質保証資料の案内](../docs/qa/README.md) | テスト仕様と記録済み証跡を分類する。 |
 | 検証の選び方と実行入口 | この文書 | 変更範囲に合うコマンドを選ぶ。 |
 | ドキュメント検証の運用手順 | この文書 | 対象を絞り、正本と検査結果を照合する。 |
@@ -22,11 +23,11 @@
 | :--- | :--- | :--- |
 | **準備・更新** | フォーマッタはファイルを変更する。build は DocGraph と用語索引、整合性の基準データを更新する。どちらも合否を示す検査ではない。 | format-doc、format-src、build |
 | **決定的な品質ゲート** | ドキュメント構造・要求追跡・Tier・形式モデル・WIT・証跡・検証義務・整合性を機械判定する。コード規約や結線済みテストも対象にする。 | check-doc、check-src |
-| **証拠の実行** | 単体・結合テスト、形式モデル、シナリオ、ベンチマークを実行して動作や性質を確かめる。必要な証拠と登録先はマトリクスで確認する。 | 各検証成果物の実行入口。pysim は [experiments/pysim/README.md](../experiments/pysim/README.md) を参照。 |
+| **証拠の実行** | 単体・結合テスト、形式モデル、シナリオ、ベンチマークを実行して動作や性質を確かめる。必要な証拠と登録先は製品仕様マトリクスまたは PySim QA マトリクスで確認する。 | 各検証成果物の実行入口。pysim は [experiments/pysim/README.md](../experiments/pysim/README.md) を参照。 |
 | **参考警告** | GiNZA の日本語可読性警告など、機械判定だけで合否を決められない箇所をレビュー候補として示す。 | check-doc の文章可読性警告 |
 | **意味・リスク監査** | LLM による用語揺れ、リスク、意味整合性を調べる。API 利用を伴う監査はユーザーの明示指示がある場合だけ実行する。 | risk、llm-word、llm-single-review、llm-keyword-review、llm-judge |
 
-check-doc と check-src は、検証因子・成果物マトリクスも確認する。マトリクスだけを調べるときは check-verification-matrix を使う。ゲートの識別子と判定内容は CLI リファレンスに集約する。
+check-doc と check-src は、製品仕様マトリクスと PySim QA マトリクスをそれぞれの所有範囲で確認する。両マトリクスだけを調べるときは check-verification-matrix を使う。ゲートの識別子と判定内容は CLI リファレンスに集約する。
 
 ## 専門レビューの使い分け
 

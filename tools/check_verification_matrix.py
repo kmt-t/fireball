@@ -1,9 +1,4 @@
-"""Strict completeness checker for Fireball verification matrices.
-
-This checker is deliberately independent from the document database.  It
-checks the concrete artifact inventory, the executable registrations, and the
-pairwise data that the database cannot infer from prose alone.
-"""
+"""Strict completeness checker for product and PySim verification matrices."""
 
 from __future__ import annotations
 
@@ -28,6 +23,9 @@ def _load_config(config_path: Path) -> dict:
         raise MatrixCheckError("verification_matrix.enabled must be true")
     if not matrix.get("strict", False):
         raise MatrixCheckError("verification_matrix.strict must be true")
+    for scope in ("product", "pysim"):
+        if not isinstance(matrix.get(scope), dict):
+            raise MatrixCheckError(f"verification_matrix.{scope} must be configured")
     return matrix
 
 
@@ -47,24 +45,46 @@ def _test_spec_paths(test_spec_root: Path) -> list[Path]:
     )
 
 
-def _artifact_inventory(repo_root: Path, matrix: dict) -> dict[str, list[str]]:
-    root = repo_root / matrix["component_root"]
+def _product_inventory(repo_root: Path, matrix: dict) -> dict[str, list[str]]:
+    component_root = repo_root / matrix["component_root"]
     inventory = {
         "component_specs": sorted(
             _relative(path, repo_root)
-            for path in root.glob("tier*/*.md")
+            for path in component_root.glob("tier*/*.md")
             if path.name != "FORMAT.md"
         ),
         "concept_files": sorted(
-            _relative(path, repo_root) for path in root.glob("tier*/concepts/*_concept.py")
+            _relative(path, repo_root)
+            for path in component_root.glob("tier*/concepts/*_concept.py")
         ),
         "formal_models": sorted(
-            _relative(path, repo_root) for path in root.glob("tier*/formal/*_model.py")
+            _relative(path, repo_root)
+            for path in component_root.glob("tier*/formal/*_model.py")
         ),
         "test_specs": sorted(
             _relative(path, repo_root)
             for path in _test_spec_paths(repo_root / matrix["test_spec_root"])
         ),
+    }
+    expected = matrix["expected"]
+    for key in inventory:
+        _require_count(key, len(inventory[key]), int(expected[key]))
+    return inventory
+
+
+def _unit_suite_paths(repo_root: Path, matrix: dict) -> list[str]:
+    qa_root = repo_root / matrix["qa_root"]
+    excluded = {"integration", "scenarios", "workloads"}
+    return sorted(
+        _relative(path, repo_root)
+        for path in qa_root.rglob("test_*.py")
+        if path.relative_to(qa_root).parts[0] not in excluded
+    )
+
+
+def _pysim_inventory(repo_root: Path, matrix: dict) -> dict[str, list[str]]:
+    inventory = {
+        "unit_suites": _unit_suite_paths(repo_root, matrix),
         "scenarios": sorted(
             _relative(path, repo_root)
             for path in (repo_root / matrix["scenario_dir"]).glob("scenario[0-9]*_*.py")
@@ -78,20 +98,21 @@ def _artifact_inventory(repo_root: Path, matrix: dict) -> dict[str, list[str]]:
             for path in (repo_root / matrix["workload_dir"]).glob("test_*.py")
         ),
         "factor_csv": [_relative(repo_root / matrix["factor_csv"], repo_root)],
+        "unit_runner": [_relative(repo_root / matrix["unit_runner"], repo_root)],
+        "scenario_runner": [_relative(repo_root / matrix["scenario_runner"], repo_root)],
+        "integration_runner": [_relative(repo_root / matrix["integration_runner"], repo_root)],
+        "workload_runner": [_relative(repo_root / matrix["workload_runner"], repo_root)],
+        "pairwise_test": [_relative(repo_root / matrix["pairwise_test"], repo_root)],
     }
     expected = matrix["expected"]
-    for key in ("component_specs", "concept_files", "formal_models", "test_specs", "scenarios"):
-        _require_count(key, len(inventory[key]), int(expected[key]))
-    _require_count(
-        "pysim_integration_suites",
-        len(inventory["integration_suites"]),
-        int(expected["pysim_integration_suites"]),
-    )
-    _require_count(
-        "pysim_workload_suites",
-        len(inventory["workload_suites"]),
-        int(expected["pysim_workload_suites"]),
-    )
+    expected_counts = {
+        "unit_suites": "unit_suites",
+        "scenarios": "scenarios",
+        "integration_suites": "integration_suites",
+        "workload_suites": "workload_suites",
+    }
+    for key, expected_key in expected_counts.items():
+        _require_count(key, len(inventory[key]), int(expected[expected_key]))
     return inventory
 
 
@@ -157,19 +178,14 @@ def _check_pairwise(repo_root: Path, matrix: dict, factors: list[dict[str, objec
     _require_count("pairwise_factors", len(factors), int(expected["pairwise_factors"]))
     _require_count("pairwise_cases", len(cases), int(expected["pairwise_cases"]))
 
-    case_ids: set[str] = set()
     covered: set[tuple[int, int, object, object]] = set()
     for case_number, row in enumerate(cases, start=1):
         if not isinstance(row, tuple) or len(row) != len(factors):
             raise MatrixCheckError("every pairwise row must contain all factors; IDs are generated")
-        case_id = f"TEST-PAIR-{case_number:02d}"
-        if case_id in case_ids:
-            raise MatrixCheckError(f"duplicate generated pairwise case ID: {case_id}")
-        case_ids.add(case_id)
         for index, factor in enumerate(factors):
             if row[index] not in factor["levels"]:
                 raise MatrixCheckError(
-                    f"{case_id}: {factor['id']} has undeclared level {row[index]!r}"
+                    f"TEST-PAIR-{case_number:02d}: {factor['id']} has undeclared level {row[index]!r}"
                 )
         for left, right in combinations(range(len(factors)), 2):
             covered.add((left, right, row[left], row[right]))
@@ -186,45 +202,45 @@ def _check_pairwise(repo_root: Path, matrix: dict, factors: list[dict[str, objec
         raise MatrixCheckError(f"pairwise coverage missing {len(missing)} interactions")
 
 
-def _registered_paths(source: str, variable: str, directory_name: str) -> set[str]:
-    del variable  # The caller names the registration variable for readability.
+def _registered_paths(source: str, directory_name: str) -> set[str]:
     pattern = rf"{directory_name}\s*/\s*[\"']([^\"']+)[\"']"
     return set(re.findall(pattern, source))
 
 
-def _check_runner_inventory(repo_root: Path, matrix: dict, inventory: dict[str, list[str]]) -> None:
-    scenario_dir = repo_root / matrix["scenario_dir"]
-    scenario_runner = repo_root / matrix["scenario_runner"]
-    scenario_source = scenario_runner.read_text(encoding="utf-8")
-    registered_scenarios = _registered_paths(scenario_source, "SCENARIOS", "SCENARIO_DIR")
+def _registered_unit_paths(source: str) -> set[str]:
+    registered: set[str] = set()
+    for match in re.finditer(r"TEST_DIR\s*/\s*([^\n,)]+)", source):
+        parts = re.findall(r'"([^"]+)"', match.group(1))
+        if parts and parts[-1].endswith(".py"):
+            registered.add("/".join(parts))
+    return registered
+
+
+def _check_pysim_runners(repo_root: Path, matrix: dict, inventory: dict[str, list[str]]) -> None:
+    qa_root = repo_root / matrix["qa_root"]
+    unit_source = (repo_root / matrix["unit_runner"]).read_text(encoding="utf-8")
+    registered_units = _registered_unit_paths(unit_source)
+    actual_units = {
+        (repo_root / path).relative_to(qa_root).as_posix()
+        for path in inventory["unit_suites"]
+    }
+    if registered_units != actual_units:
+        missing = sorted(actual_units - registered_units)
+        extra = sorted(registered_units - actual_units)
+        raise MatrixCheckError(f"unit suite registration mismatch: missing={missing}, extra={extra}")
+
+    scenario_source = (repo_root / matrix["scenario_runner"]).read_text(encoding="utf-8")
+    registered_scenarios = _registered_paths(scenario_source, "SCENARIO_DIR")
     actual_scenarios = {Path(path).name for path in inventory["scenarios"]}
     if registered_scenarios != actual_scenarios:
         missing = sorted(actual_scenarios - registered_scenarios)
         extra = sorted(registered_scenarios - actual_scenarios)
         raise MatrixCheckError(f"scenario registration mismatch: missing={missing}, extra={extra}")
-    if not scenario_dir.exists():
-        raise MatrixCheckError(f"scenario directory does not exist: {scenario_dir}")
-
-    unit_runner = repo_root / matrix["unit_runner"]
-    unit_source = unit_runner.read_text(encoding="utf-8")
-    registered_units: set[str] = set()
-    for match in re.finditer(r"TEST_DIR\s*/\s*([^\n,)]+)", unit_source):
-        parts = re.findall(r'"([^"]+)"', match.group(1))
-        if parts and parts[-1].endswith(".py"):
-            registered_units.add("/".join(parts))
-    _require_count(
-        "pysim_unit_suites", len(registered_units), int(matrix["expected"]["pysim_unit_suites"])
-    )
 
     for category in ("integration", "workload"):
-        directory = repo_root / matrix[f"{category}_dir"]
         runner = repo_root / matrix[f"{category}_runner"]
-        runner_source = runner.read_text(encoding="utf-8")
-        registered = _registered_paths(
-            runner_source,
-            f"{category.upper()}_SUITES",
-            f"{category.upper()}_DIR",
-        )
+        source = runner.read_text(encoding="utf-8")
+        registered = _registered_paths(source, f"{category.upper()}_DIR")
         actual = {Path(path).name for path in inventory[f"{category}_suites"]}
         if registered != actual:
             missing = sorted(actual - registered)
@@ -232,8 +248,6 @@ def _check_runner_inventory(repo_root: Path, matrix: dict, inventory: dict[str, 
             raise MatrixCheckError(
                 f"{category} suite registration mismatch: missing={missing}, extra={extra}"
             )
-        if not directory.exists():
-            raise MatrixCheckError(f"{category} directory does not exist: {directory}")
 
     pairwise_source = (repo_root / matrix["pairwise_test"]).read_text(encoding="utf-8")
     required_fragments = (
@@ -241,54 +255,86 @@ def _check_runner_inventory(repo_root: Path, matrix: dict, inventory: dict[str, 
         "def run_single_pairwise_case",
         "case_id = pairwise_case_id(case_number)",
         "run_single_pairwise_case(case_id, case_tuple)",
-    )
-    required_execution_fragments = (
-        *required_fragments,
         '"case_number,case_tuple",',
         "tuple(enumerate(PAIRWISE_CASES, start=1))",
         "def test_pairwise_case(case_number: int, case_tuple: tuple[str, ...])",
         "ids=tuple(pairwise_case_id(number) for number in range(1, len(PAIRWISE_CASES) + 1))",
     )
-    for fragment in required_execution_fragments:
+    for fragment in required_fragments:
         if fragment not in pairwise_source:
             raise MatrixCheckError(f"pairwise test has no generated-ID execution hook: {fragment}")
 
 
-def _check_document(repo_root: Path, matrix: dict, inventory: dict[str, list[str]]) -> None:
-    document_path = repo_root / matrix["document"]
-    if not document_path.is_file():
-        raise MatrixCheckError(f"matrix document does not exist: {document_path}")
-    document = document_path.read_text(encoding="utf-8")
-    for heading in ("成果物連鎖マトリクス", "因子カタログ", "シナリオ因子マトリクス", "検証ゲート"):
+def _check_document(
+    repo_root: Path,
+    document_path: str,
+    inventory: dict[str, list[str]],
+    required_sections: tuple[str, ...],
+    forbidden_paths: tuple[str, ...],
+) -> None:
+    path = repo_root / document_path
+    if not path.is_file():
+        raise MatrixCheckError(f"matrix document does not exist: {path}")
+    document = path.read_text(encoding="utf-8")
+    for heading in required_sections:
         if heading not in document:
             raise MatrixCheckError(f"matrix document is missing required section: {heading}")
     if "MISSING" in document:
         raise MatrixCheckError("matrix document contains MISSING; intentional N/A must be explicit")
+    for forbidden in forbidden_paths:
+        if forbidden in document:
+            raise MatrixCheckError(f"matrix document crosses its ownership boundary: {forbidden}")
     for paths in inventory.values():
-        for path in paths:
-            if path not in document:
-                raise MatrixCheckError(f"matrix document does not list artifact: {path}")
-    for scenario_path in inventory["scenarios"]:
-        if Path(scenario_path).name not in document:
-            raise MatrixCheckError(f"matrix document does not list scenario: {scenario_path}")
+        for artifact in paths:
+            if artifact not in document:
+                raise MatrixCheckError(f"matrix document does not list artifact: {artifact}")
 
 
 def run(repo_root: Path, config_path: Path) -> None:
     matrix = _load_config(config_path)
-    inventory = _artifact_inventory(repo_root, matrix)
-    factors = _load_factors(repo_root, matrix)
-    _check_pairwise(repo_root, matrix, factors)
-    _check_runner_inventory(repo_root, matrix, inventory)
-    _check_document(repo_root, matrix, inventory)
+    product = matrix["product"]
+    pysim = matrix["pysim"]
+    product_inventory = _product_inventory(repo_root, product)
+    pysim_inventory = _pysim_inventory(repo_root, pysim)
+    factors = _load_factors(repo_root, pysim)
+    _check_pairwise(repo_root, pysim, factors)
+    _check_pysim_runners(repo_root, pysim, pysim_inventory)
+    _check_document(
+        repo_root,
+        product["document"],
+        product_inventory,
+        ("成果物連鎖マトリクス", "成果物インベントリ", "適用範囲"),
+        ("experiments/pysim/",),
+    )
+    _check_document(
+        repo_root,
+        pysim["document"],
+        pysim_inventory,
+        (
+            "実行資産",
+            "コンポーネント単体スイート",
+            "結合スイート",
+            "システムシナリオ",
+            "WASMワークロード",
+            "因子カタログ",
+            "シナリオ因子マトリクス",
+            "PySim QAゲート",
+        ),
+        ("docs/components/", "docs/qa/"),
+    )
     print(
-        "[PASS] verification matrix: "
-        f"{len(inventory['component_specs'])} specs, "
-        f"{len(inventory['concept_files'])} concepts, "
-        f"{len(inventory['formal_models'])} formal models, "
-        f"{len(inventory['test_specs'])} test specs, "
-        f"{len(inventory['scenarios'])} scenarios, "
-        f"{len(inventory['integration_suites'])} integration suites, "
-        f"{len(inventory['workload_suites'])} WASM workload suites, pairwise complete"
+        "[PASS] product verification matrix: "
+        f"{len(product_inventory['component_specs'])} specs, "
+        f"{len(product_inventory['concept_files'])} concepts, "
+        f"{len(product_inventory['formal_models'])} formal models, "
+        f"{len(product_inventory['test_specs'])} test specs"
+    )
+    print(
+        "[PASS] PySim QA matrix: "
+        f"{len(pysim_inventory['unit_suites'])} unit suites, "
+        f"{len(pysim_inventory['integration_suites'])} integration suites, "
+        f"{len(pysim_inventory['workload_suites'])} WASM workload suites, "
+        f"{len(pysim_inventory['scenarios'])} scenarios, pairwise complete"
     )
 
 

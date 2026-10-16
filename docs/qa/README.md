@@ -1,8 +1,8 @@
 # 品質保証資料
 
-`docs/qa/` は、検証条件、期待結果、横断的な検証証跡を管理する。テスト仕様書は対応する設計正本から導出し、試験ケースID、前提条件、手順、期待結果を定義する。実装コードの配置や実行手順は本ディレクトリで管理しない。
+`docs/qa/` は、製品の検証条件、期待結果、横断的な検証証跡を管理する。テスト仕様書は対応する設計正本から導出し、試験ケースID、前提条件、手順、期待結果を定義する。実装コードの配置や実行手順は本ディレクトリで管理しない。
 
-`*_test_spec.md` は [`FORMAT.md`](docs/qa/FORMAT.md) に従う。結合シナリオ、検証因子マトリクス、実行結果は各資料の目的に従って記述する。
+`*_test_spec.md` は [`FORMAT.md`](docs/qa/FORMAT.md) に従う。製品の結合受入条件と検証結果は各資料の目的に従って記述する。
 
 ## 資料
 
@@ -10,9 +10,8 @@
 | :--- | :--- |
 | [architecture_review_report.md](docs/qa/architecture_review_report.md) | アーキテクチャと設計資料のレビュー結果 |
 | [integration_test_scenarios.md](docs/qa/integration_test_scenarios.md) | コンポーネント間の結合受入シナリオ |
-| [verification_factor_matrix.md](docs/qa/verification_factor_matrix.md) | 検証成果物と因子の対応マトリクス |
+| [product_verification_matrix.md](docs/qa/product_verification_matrix.md) | 製品仕様、コンセプト、形式モデル、テスト仕様の対応マトリクス |
 | [wasm_core_mvp_test_results.md](docs/qa/wasm_core_mvp_test_results.md) | 選定したWASM Core Spec試験の結果 |
-| [pairwise_factors.csv](docs/qa/specs/pairwise_factors.csv) | 直交表で使う因子と水準 |
 
 ## テスト仕様書
 

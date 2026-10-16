@@ -69,7 +69,7 @@ def pairwise_case_id(case_number: int) -> str:
 def _load_factor_levels() -> tuple[tuple[str, ...], ...]:
     levels: list[list[str]] = []
     factor_ids: list[str] = []
-    with (_REPO_ROOT / "docs/qa/specs/pairwise_factors.csv").open(
+    with (_REPO_ROOT / "experiments/pysim/qa/pairwise_factors.csv").open(
         newline="", encoding="utf-8"
     ) as stream:
         for row in csv.DictReader(stream):

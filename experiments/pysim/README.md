@@ -279,3 +279,8 @@ uv run python experiments/pysim/benchmarks/memory/bench_resource_inventory.py \
 | 過去の基準計測metadata | [`20261014/pre_req017_latest/metadata.json`](benchmarks/results/20261014/pre_req017_latest/metadata.json) |
 
 入力WASMのROM byte length、ホストELF section、Python管理領域、32-bit参照レイアウトとx86_64 ABIの組合せ、JIT runtime構造体、およびC++ compile stackは各測定結果のscopeに従って扱う。WASM logical linear memoryをMCU物理RAMと同一視しない。Cortex-M33への容量適合を判定するときは、対象ABI、物理配置、同時生存数、linker map、stack、driver領域を含めて別途計上する。
+
+
+## PySim QA inventory
+
+Executable PySim QA suite registration, scenario coverage, and pairwise execution are cataloged in [`verification_matrix.md`](experiments/pysim/qa/verification_matrix.md). Passing these checks validates the reference simulator and does not establish production conformance.

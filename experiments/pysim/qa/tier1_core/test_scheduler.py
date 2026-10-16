@@ -25,6 +25,38 @@ from scheduler import (
     Task,
     TaskState,
 )
+from tier1_core.printk import PrintkLevel
+
+
+class CapturedPrintk:
+    """QA sink that records scheduler event calls and supplies a write result."""
+
+    __slots__ = ("event_result", "events")
+
+    def __init__(self, event_result: int = 1) -> None:
+        self.event_result = event_result
+        self.events: list[tuple[int, int, int, int, int, int]] = []
+
+    def write(self, data: memoryview) -> int:
+        return self.event_result
+
+    def write_base64(self, data: memoryview) -> int:
+        return self.event_result
+
+    def write_raw(self, data: memoryview) -> int:
+        return self.event_result
+
+    def write_event(
+        self,
+        level: PrintkLevel,
+        event: int,
+        arg0: int = 0,
+        arg1: int = 0,
+        arg2: int = 0,
+        arg3: int = 0,
+    ) -> int:
+        self.events.append((int(level), event, arg0, arg1, arg2, arg3))
+        return self.event_result
 
 
 class CountedReadyTask(Task):
@@ -754,6 +786,93 @@ def test_sched_17_interrupt_fifo_rejects_overflow_then_reuses_consumed_slot() ->
     assert_result_20 = queue.pop()
     assert assert_result_20 is None
     assert len(queue) == 0
+
+
+def test_sched_20_slice_at_threshold_does_not_emit_diagnostic() -> None:
+    """TEST-SCHED-20: A 300 us slice produces no warning and preserves READY order."""
+    now_ns = 100
+    printk = CapturedPrintk()
+
+    def clock_ns() -> int:
+        return now_ns
+
+    scheduler = Scheduler(printk=printk, clock_ns=clock_ns)
+
+    def worker():
+        nonlocal now_ns
+        now_ns += 300_000
+        yield None
+
+    task_id = scheduler.spawn("named-task", worker()).unwrap()
+    task = scheduler.get_task(task_id)
+    assert task is not None
+    assert scheduler.step() is task
+
+    assert printk.events == []
+    assert task.state == TaskState.READY
+    assert list(scheduler._ready) == [task]
+
+
+def test_sched_21_over_threshold_slice_emits_one_task_id_and_duration_event() -> None:
+    """TEST-SCHED-21: An over-threshold yield writes one event with identity and duration."""
+    now_ns = 100
+    printk = CapturedPrintk()
+
+    def clock_ns() -> int:
+        return now_ns
+
+    scheduler = Scheduler(printk=printk, clock_ns=clock_ns)
+
+    def worker():
+        nonlocal now_ns
+        now_ns += 350_000
+        yield None
+
+    task_id = scheduler.spawn("named-task", worker()).unwrap()
+    task = scheduler.get_task(task_id)
+    assert task is not None
+    assert scheduler.step() is task
+
+    assert printk.events == [(int(PrintkLevel.WARN), 0x0105, task_id, 0, 350_000, 0)]
+    assert task.state == TaskState.READY
+    assert list(scheduler._ready) == [task]
+
+
+def test_sched_22_slice_log_failure_preserves_scheduler_order_and_results() -> None:
+    """TEST-SCHED-22: A failed diagnostic write does not change round-robin behavior."""
+    now_ns = 0
+    events: list[str] = []
+    printk = CapturedPrintk(event_result=0)
+
+    def clock_ns() -> int:
+        return now_ns
+
+    scheduler = Scheduler(printk=printk, clock_ns=clock_ns)
+
+    def slow_task():
+        nonlocal now_ns
+        events.append("slow")
+        now_ns += 350_000
+        yield None
+        events.append("slow-resumed")
+
+    def peer_task():
+        events.append("peer")
+        yield None
+        events.append("peer-resumed")
+
+    slow_id = scheduler.spawn("slow-task", slow_task()).unwrap()
+    peer_id = scheduler.spawn("peer-task", peer_task()).unwrap()
+    slow = scheduler.get_task(slow_id)
+    peer = scheduler.get_task(peer_id)
+    assert slow is not None and peer is not None
+
+    scheduler.run_until_idle()
+
+    assert printk.events == [(int(PrintkLevel.WARN), 0x0105, slow_id, 0, 350_000, 0)]
+    assert events == ["slow", "peer", "slow-resumed", "peer-resumed"]
+    assert slow.state == peer.state == TaskState.TERMINATED
+    assert scheduler.pending_task_count() == 0
 
 
 if __name__ == "__main__":

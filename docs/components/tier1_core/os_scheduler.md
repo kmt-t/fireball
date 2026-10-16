@@ -64,6 +64,7 @@ flowchart TD
 | タイマー待機確認間隔 | 外部イベントも確認するアイドル待機の上限間隔 | `u32` | `FB_CONF_TIMER_IDLE_POLL_SLICE_NS`、既定値1ms |
 | 現在のタスク | 現在CPUコアを占有しているタスク | 構造体への参照 | `task_context` (NULL許容) |
 | 再スケジュール要求 | 割り込み通知の保留状態、要求世代、および一巡対象マスク | 原子状態と固定長ビットマップ | `reschedule_pending`, `reschedule_generation`, `round_target_mask` |
+| 実行区間ログ閾値 | yield協調境界で記録対象を判定する設定値 | `u64` | `FB_CONF_TASK_SLICE_LOG_THRESHOLD_NS`、既定値300,000 ns（300 µs）。計測値は保持しない |
 | 状態可視化API | 外部から全タスクの待機・実行状態を安全に監視するためのメソッド群。ロックフリーな読み取り専用構造（Double Buffering）を採用し、実行中タスクをブロックせずに O(1) で状態を即座に取得可能。 | 関数オブジェクト | `Scheduler::get_task_states` (読み取り専用) |
 
 ## 4. 動的モデル
@@ -80,6 +81,7 @@ flowchart TD
     - **検証範囲**: 形式検証モデル `formal/coos_channel_model.py` は、モデル内のスケジューラ復帰と他の READY タスクのディスパッチを検証する。 `{GOTCHA-SCHED-01}` <!-- definition: {GOTCHA-SCHED-01} -->
 - **時刻待機**: `wait_until(deadline_ns)`を呼んだタスクを`BLOCKED_TIMER`へ移す。READYタスクを先に実行し、READYキューが空の場合はアイドルフックを実行してから単調時計の次回期限または外部イベント確認時点まで待つ。待機中も最大1ms間隔で割り込みFIFOを確認する。期限到達後は期限待ちタスクをREADYキュー末尾へ戻す。
 - **時刻待ちタスク終了後の期限キャッシュ (`GOTCHA-SCHED-03`)**: `task_killed`は`BLOCKED_TIMER`も終了対象として受け付け、期限登録を解除して生存する時刻待ちタスクから最小期限を再計算する。最早期限の取消し後に古い最小値を残すと、取消し済み期限で不要なアイドル待機サイクルが発生する。終了済みタスクは期限到達で再起床しない。 {GOTCHA-SCHED-03} <!-- definition: {GOTCHA-SCHED-03} -->
+- **タスク実行区間の診断ログ**: タスクが実行権を得てからyield協調境界へ戻るまでを、プラットフォームが提供する単調計数値で計測する。yield時に経過時間を確定し、300 µsを超えた区間だけを既存の`printk`診断イベント一件として出力する。ログにはタスクIDをタスク名の識別子として含め、経過時間をナノ秒で記録する。閾値は設定値`FB_CONF_TASK_SLICE_LOG_THRESHOLD_NS`（既定値300,000 ns）とする。計測値は記録後にスケジューラへ保持しない。pysimはホスト単調時計を使い、QAは既存の時計供給機構で値を与える。時計の具体的な実装はプラットフォーム仕様に属する。ログ出力の成否はタスク状態、READY順、実行権移譲を変えない。この記録は診断のみであり、タスクを停止・優先・切替せず、実時間の上限も保証しない。 <!-- traceability: {TaskSliceDurationLog} -->
 - **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED/BLOCKED_TIMER/SUSPENDED_CSP）」となった場合にアイドル・ハンドラ（Periodic Task、ログフラッシュ、JITバッチコンパイル等）を実行する。
 - **割り込み処理**: HALからの原因付き`interrupt-event`通知（`notify_interrupt(event)`）を受信し、固定長FIFOから回収する。`vector_id`に対応するvSoCランタイム待機タスクへイベント本体を引き渡したうえで、そのタスクをREADYキュー末尾に追加する。COOSはvIRQ階層の評価やゲスト関数呼出しを行わない。
 - **割り込み時の協調再スケジュール (`ADR_InterruptRescheduleGeneration`)**:

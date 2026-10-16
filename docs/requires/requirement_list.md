@@ -76,6 +76,7 @@ graph LR
 | `{GLOBAL_UseCpp20Coroutine}` | C++20/23 コルーチンを活用し、標準的な言語機能によるコンテキストスイッチを実現する。 | 高 | レビュー |
 | `{LowOverheadSwitch}` | コンテキスト切り替え時のレジスタ退避・復帰を最小化し、数サイクルでのタスク遷移を目指す。 | 高 | 計測 <!-- definition: {LowOverheadSwitch} --> |
 | `{COOS_Deterministic}` | コンテキストスイッチを明示的なポイントに限定し、確定的な実行を確保する。 | 高 | テスト <!-- definition: {COOS_Deterministic} --> |
+| `{TaskSliceDurationLog}` | OSはタスクの実行区間を計測し、300 µsを超えた区間をタスク名（`task_id`を識別子とする）と時間つきでログに出す。この要求は診断のみであり、スケジューリング順序とタスクの扱いを変えず、実時間の上限を保証しない。 | 中 | テスト <!-- definition: {TaskSliceDurationLog} --> |
 | `CSPCommunication` | ホーアCSPに基づき、所有権移譲によるゼロコピーメッセージパッシングを行う。 | 高 | テスト |
 | `{IPC_ZeroCopy}` | 通信時のデータコピーを排除する。 | 高 | テスト <!-- definition: {IPC_ZeroCopy} --> |
 | `{GLOBAL_InterruptWakeup}` | 割り込み発生時、固定5ワードの原因付きイベントを有界FIFOへ記録し、協調境界で関連タスクをウェイクアップする。ゲスト配送の階層ディスパッチはvSoCへ委譲する。 | 高 | テスト |

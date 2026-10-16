@@ -291,6 +291,7 @@ def test_printk_14_coos_and_ipc_diagnostics_preserve_event_ids_and_arguments():
         (PrintkEvent.COOS_TASK_CAPACITY, 2),
         (PrintkEvent.COOS_DUPLICATE_TASK, 1),
         (PrintkEvent.COOS_IRQ_OVERFLOW, 2),
+        (PrintkEvent.COOS_LONG_TASK_SLICE, 3),
         (PrintkEvent.IPC_RBAC_DENIED, 2),
         (PrintkEvent.IPC_UNKNOWN_URI, 1),
         (PrintkEvent.IPC_MSG_TOO_LARGE, 2),
@@ -298,7 +299,7 @@ def test_printk_14_coos_and_ipc_diagnostics_preserve_event_ids_and_arguments():
     ),
 )
 def test_printk_14_all_event_lengths_match_shared_dictionary(event, argument_count):
-    """TEST-LOG-14: 全8イベントを同期復号し、未使用引数を省略する。"""
+    """TEST-LOG-14: 全9イベントを同期復号し、未使用引数を省略する。"""
     receiver = LogDictionary()
     assert receiver.argument_count(int(event)) == argument_count
     capture = PrintkBuffer()
@@ -312,6 +313,7 @@ def test_printk_14_all_event_lengths_match_shared_dictionary(event, argument_cou
         PrintkEvent.COOS_TASK_CAPACITY: "COOS: task capacity exceeded (max=0, attempted=305419896)",
         PrintkEvent.COOS_DUPLICATE_TASK: "COOS: duplicate task id rejected (task=0)",
         PrintkEvent.COOS_IRQ_OVERFLOW: "COOS: irq queue overflow dropped (vector=0, dropped_total=305419896)",
+        PrintkEvent.COOS_LONG_TASK_SLICE: "COOS: long task slice (task=0, duration_ns=0x12345678aaaaaaaa)",
         PrintkEvent.IPC_RBAC_DENIED: "IPC: rbac denied (sender_role=0, target_role=305419896)",
         PrintkEvent.IPC_UNKNOWN_URI: "IPC: unknown uri routing failed (uri_handle=0)",
         PrintkEvent.IPC_MSG_TOO_LARGE: "IPC: message too large (kv_count=0, max=305419896)",

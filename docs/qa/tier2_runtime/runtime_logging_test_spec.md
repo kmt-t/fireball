@@ -25,7 +25,7 @@
 | TEST-LOG-11 | ログ辞書ストレージ所有権分離 | 外部で固定辞書ストレージを定義 | ログ辞書初期化 | ログ辞書および非所有ビューは外部ストレージを参照し、実行中の辞書追加を提供しない | logging_concept.py `` |
 | TEST-LOG-12 | インタープリタ実行時トラップの診断ログ出力 | Python参照とNativeの双方で関数index=1の`local.get 0; local.get 1; i32.div_s; end`にロガーを結線する | 直接呼出しと別callerからの呼出しで第2引数を0とし、trap後にflushする | Code section payloadは関数数、unused関数のbody、対象bodyのsizeとlocals宣言を含むため、`i32.div_s`のPCはpayload先頭相対`0x0000000A`となる。ERROR、イベントID=`0x030F`、PC=`0x0000000A`、PC引数1個の8バイトが出力される。ホスト展開も同じPCを示す | 4.2.1、`GOTCHA-LOG-04`、`{WasmCodeSectionPC}`、`` |
 | TEST-LOG-13 | トラップログ辞書のインタープリタ・ロガー間同期 | `interpreter.TRAP_LOG_EVENTS` と `logger.STANDARD_DIAGNOSTIC_EVENTS` を突合 | 全17トラップ原因コードを走査 | 各イベントIDおよびフォーマット文字列が両モジュール間で完全一致する（登録漏れ・字面ずれの機械的検出） | 4.2.1, `GOTCHA-LOG-04` |
-| TEST-LOG-14 | Tier 1 printkイベントとのレコード互換性 | COOS/IPCの異常条件と共有printk Sinkを用意する | 各操作の拒否結果とSinkへ同期出力された全レコードを照合する | COOS/IPCはTier 2 Loggerを呼ばず、同じ可変長レコードをprintkの書込み時に復号して同期出力する。全8イベントの改行付きテキストと未使用引数の省略を照合する | [`printk.md`](docs/components/tier1_core/printk.md)、`` |
+| TEST-LOG-14 | Tier 1 printkイベントとのレコード互換性 | COOS/IPCの異常条件と共有printk Sinkを用意する | 各操作の拒否結果とSinkへ同期出力された全レコードを照合する | COOS/IPCはTier 2 Loggerを呼ばず、同じ可変長レコードをprintkの書込み時に復号して同期出力する。全9イベントの改行付きテキストと未使用引数の省略を照合する | [`printk.md`](docs/components/tier1_core/printk.md)、`` |
 | TEST-LOG-15 | 辞書IDによる転送長と境界の復元 | 引数0〜4個の辞書を送受信側で同一内容から生成する | 異なる長さを連続送信し、独立した期待バイト列と全展開結果を照合する | 各長さは4、8、12、16、20バイトとなる。未使用スロットの非0値は送信されず、使用引数の0値は省略されない。`%%`は引数数に含めない。送信経路で書式を走査しない | runtime_logging.md 4.2、`` |
 | TEST-LOG-16 | 境界を決定できない入力の拒否 | 未登録IDと欠損レコードを用意する | 送信側の状態と受信側の拒否を検査する | 未登録IDは投入前にassertで拒否され、リング・Sinkに副作用がない。受信側は未知ID、不正レベル、ヘッダ欠損、引数欠損でassertとなる | runtime_logging.md 4.2、`` |
 

@@ -81,6 +81,7 @@ COOSとIPCは下表の異常系イベントのみを出力する。イベントI
 | `0x0102` | COOS | `ERROR` | `COOS: task capacity exceeded (max=%d, attempted=%d)` | `max_tasks`, `attempted_count`, `0`, `0` |
 | `0x0103` | COOS | `ERROR` | `COOS: duplicate task id rejected (task=%d)` | `task_id`, `0`, `0`, `0` |
 | `0x0104` | COOS | `WARN` | `COOS: irq queue overflow dropped (vector=%d, dropped_total=%d)` | `vector_id`, `dropped_total`, `0`, `0` |
+| `0x0105` | COOS | `WARN` | `COOS: long task slice (task=%u, duration_ns=0x%08x%08x)` | `task_id`, `duration_ns` 上位32bit、`duration_ns` 下位32bit、`0` |
 | `0x0201` | IPC | `WARN` | `IPC: rbac denied (sender_role=%d, target_role=%d)` | `sender_role`, `target_role`, `0`, `0` |
 | `0x0202` | IPC | `WARN` | `IPC: unknown uri routing failed (uri_handle=%d)` | `uri_handle`, `0`, `0`, `0` |
 | `0x0203` | IPC | `ERROR` | `IPC: message too large (kv_count=%d, max=%d)` | `kv_count`, `max_kv_pairs`, `0`, `0` |

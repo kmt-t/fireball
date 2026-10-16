@@ -59,6 +59,7 @@ class PrintkEvent(IntEnum):
     COOS_TASK_CAPACITY = 0x0102
     COOS_DUPLICATE_TASK = 0x0103
     COOS_IRQ_OVERFLOW = 0x0104
+    COOS_LONG_TASK_SLICE = 0x0105
 
     IPC_RBAC_DENIED = 0x0201
     IPC_UNKNOWN_URI = 0x0202
@@ -71,6 +72,7 @@ PRINTK_DICTIONARY: tuple[tuple[int, str], ...] = (
     (0x0102, "COOS: task capacity exceeded (max=%d, attempted=%d)"),
     (0x0103, "COOS: duplicate task id rejected (task=%d)"),
     (0x0104, "COOS: irq queue overflow dropped (vector=%d, dropped_total=%d)"),
+    (0x0105, "COOS: long task slice (task=%u, duration_ns=0x%08x%08x)"),
     (0x0201, "IPC: rbac denied (sender_role=%d, target_role=%d)"),
     (0x0202, "IPC: unknown uri routing failed (uri_handle=%d)"),
     (0x0203, "IPC: message too large (kv_count=%d, max=%d)"),

@@ -8,7 +8,7 @@
 純粋協調型ラウンドロビンスケジューラ（`{ADR_CoosPureRoundRobin}`）の、タスクライフサイクル・READYキュー・イベント駆動起床（`{ADR_EventDrivenWakeQueue}`）に関する振る舞いを定義する。CSPランデブーと値の所有権移譲は対象外とする。実装上の注意点はコンポーネント仕様書を参照し、本書では対応する検証条件を扱う。
 
 ## 2. テストケース一覧
-<!-- traceability: {ADR_EventDrivenWakeQueue} {GLOBAL_IdleDetection} {GOTCHA-SCHED-03} -->
+<!-- traceability: {ADR_EventDrivenWakeQueue} {GLOBAL_IdleDetection} {GOTCHA-SCHED-03} {TaskSliceDurationLog} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -31,6 +31,9 @@
 | TEST-SCHED-17 | 割り込みFIFOのロックフリー性と容量境界 | ISR producerとCOOS consumerが同一の固定長SPSC FIFOを使用 | producerが満杯まで投入し、consumerが順に取り出し、空きスロットへ再投入する | mutex／スピンロックなしでFIFO順序を保ち、満杯時は既存イベントを上書きせず`false`を返し、consumer後に再利用できる | `{GLOBAL_InterruptWakeup}` |
 | TEST-SCHED-18 | 時刻待機中の他タスク実行・アイドルフック・期限起床 | 時刻待機タスクとREADYタスクが各1つ存在し、単調時計を制御できる | 待機タスクが未来期限を登録して`BLOCKED_TIMER`へ移る | READYタスクが時刻を進める前に実行される。READYキューが空になった時点でアイドルフックを呼び、その後に次回期限まで待つ。待機タスクは期限到達後にREADYキュー末尾へ戻って完了する | `{GLOBAL_IdleDetection}` |
 | TEST-SCHED-19 | タイマー待ちタスク終了時の期限解除 | 異なる未来期限を持つ`BLOCKED_TIMER`タスクが2つある | 早い期限のタスクを`task_killed`し、残るタスクを実行する | 終了タスクは期限到達で再開せず、残るタスクは自身の期限で一度だけ再開する。取り消した期限で余分な起床・待機周期を発生させない | pysim ``, `GOTCHA-SCHED-03` |
+| TEST-SCHED-20 | 閾値以下の実行区間では診断ログを出さない | QAハーネスが単調時計の開始値とyield時刻を供給し、実行区間が300 µs以下である | タスクを一度実行してyieldさせる | printkイベントは出力されず、タスクは従来どおりREADYキュー末尾へ戻る | `{TaskSliceDurationLog}` |
+| TEST-SCHED-21 | 閾値を超える実行区間を一件記録する | QAハーネスが単調時計の開始値とyield時刻を供給し、実行区間が300 µsを超える | タスクを一度実行してyieldさせる | printkへ診断イベントを一度だけ出力し、タスクIDを名前の識別子として経過時間とともに含む。タスクは従来どおりREADYキュー末尾へ戻る | `{TaskSliceDurationLog}` |
+| TEST-SCHED-22 | 診断ログ出力失敗後も通常のスケジューリング結果を保つ | 閾値を超える区間を実行し、printk出力先が失敗を返す | 対象タスクをyieldさせ、後続のREADYタスクも実行する | printkの失敗結果にかかわらずREADY順、タスク状態、および実行結果が通常時と一致する | `{TaskSliceDurationLog}`, `printk.md` |
 
 ### 実装上の注意点に対応する検証
 <!-- traceability: {GOTCHA-SCHED-01} {GOTCHA-SCHED-02} {GOTCHA-SCHED-03} -->
@@ -62,6 +65,7 @@
 | TEST-SCHED-16 | ``、``、``、``、`` | 最古終了スロット返却、生存タスク保存、300回の有限ID再利用と待機マスク、共有メモリ移送、明示IDとの混在、および自動割当のタスク検索不使用を確認する。共有メモリはタスク終了前に解放する |
 | TEST-SCHED-17 | `` | 満杯拒否、既存原因レコード保存、消費後の再利用 |
 | TEST-SCHED-18、19 | ``、`` | READY優先、期限時刻、idle・sleep列、取消し後の生存待機者 |
+| TEST-SCHED-20、21、22 | pysim `test_scheduler.py` | 閾値以下・超過の境界ログ、タスクIDを名前の識別子として経過時間とともに含む単一イベント、ログ失敗前後の実行順・状態・結果 |
 
 所有権移譲、送信元の無効化、受信先の内容を観測し、スケジューラケース数へは含めない。
 
@@ -76,6 +80,10 @@
 2026-10-02にLinux・プロジェクトのuv環境で同スイートを再実行した。
 対象ソースは[`scheduler.py`](experiments/pysim/tier1_core/scheduler.py)である。
 19件成功、0件失敗、0件skip、0件xfailである。
+
+2026-10-16にLinux・CPython 3.13.15・uv環境でTier 1 Coreを実行した。
+`experiments/pysim/qa/tier1_core`の78件が成功し、失敗とskipはなかった。
+追加した`TEST-SCHED-20`から`TEST-SCHED-22`は、閾値境界、タスクIDとナノ秒値を含む単一printkイベント、出力失敗時の実行順・状態・結果を直接確認した。
 
 
 TEST-SCHED-08/13の追加ケースは、QA側の`Task`派生クラスで前後リンクへの読み書きを数える。

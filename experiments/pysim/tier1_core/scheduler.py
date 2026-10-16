@@ -39,6 +39,7 @@ FB_CONF_MAX_CONSECUTIVE_HANDOFFS = 4
 FB_CONF_INTERRUPT_QUEUE_SIZE = 16
 FB_CONF_MAX_IDLE_HOOKS = 8
 FB_CONF_TIMER_IDLE_POLL_SLICE_NS = 1_000_000
+FB_CONF_TASK_SLICE_LOG_THRESHOLD_NS = 300_000
 
 
 class SchedulerError(Enum):
@@ -544,6 +545,20 @@ class Scheduler:
         """Returns the authenticated identity of the task currently running."""
         assert self.current_task is not None, "No task is currently running"
         return self.current_task.task_id
+
+    def _log_task_slice_duration(self, task: Task, started_at_ns: int) -> None:
+        """Emit one diagnostic event for a slice exceeding the configured threshold."""
+        duration_ns = self._clock_ns() - started_at_ns
+        assert duration_ns >= 0, "monotonic scheduler clock moved backwards"
+        if duration_ns <= FB_CONF_TASK_SLICE_LOG_THRESHOLD_NS or self.printk is None:
+            return
+        self.printk.write_event(
+            PrintkLevel.WARN,
+            PrintkEvent.COOS_LONG_TASK_SLICE,
+            task.task_id,
+            duration_ns >> 32,
+            duration_ns & 0xFFFF_FFFF,
+        )
 
     def activate_task(self, task: Task) -> None:
         """Activates a scheduler-registered task for a synchronous host entrypoint."""
@@ -1141,6 +1156,7 @@ class Scheduler:
             self._ready.enqueue(task)
             self.current_task = None
             return task
+        slice_started_at_ns = self._clock_ns()
         try:
             wait_on = next(task.coro)
         except StopIteration as e:
@@ -1151,6 +1167,7 @@ class Scheduler:
             self.current_task = None
             return task
 
+        self._log_task_slice_duration(task, slice_started_at_ns)
         if wait_on is None or wait_on[0] == ChannelAction.YIELD:
             task.state = TaskState.READY
             self._ready.enqueue(task)
@@ -1201,6 +1218,7 @@ class Scheduler:
                 self._ready.enqueue(task)
                 self.current_task = None
                 continue
+            slice_started_at_ns = self._clock_ns()
             try:
                 wait_on = next(task.coro)
             except StopIteration as e:
@@ -1210,6 +1228,7 @@ class Scheduler:
                 self._complete_reschedule_if_ready()
                 self.current_task = None
                 continue
+            self._log_task_slice_duration(task, slice_started_at_ns)
             if wait_on is None:
                 task.state = TaskState.READY
                 self._ready.enqueue(task)

@@ -656,6 +656,11 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
     """Real native/JIT guest execution cooperates with COOS and flushes logs on idle."""
     sink = PrintkBuffer()
     system = System.with_printk_sink(sink, LogDictionary(entries=((0x10, "wasm iteration=%d"),)))
+
+    def clock_ns() -> int:
+        return 0
+
+    system.scheduler._clock_ns = clock_ns  # QA clock isolates this logger's flush assertions.
     system.runtime_engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
         card_shift=2,

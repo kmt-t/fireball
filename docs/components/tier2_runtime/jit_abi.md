@@ -105,7 +105,7 @@ Tier 2は共有実行状態とブロック開始PCを実行拡張へ渡す接続
 
 providerのlookupと観測callbackは0または1を返す。0はcache missまたは観測対象外を示す。境界処理callbackは1を返す。これ以外は内部接続契約の違反として呼出し直後でassertし、WASMのtrapや継続可能な内部エラーへ変換しない。callbackの実行はassert式の外へ置く。
 
-ネイティブdispatchには `execution_context`、値スタック基点、ローカルスタック基点、実行拡張、yield境界で使うコンパイル予算だけを渡す。命令位置、コードと制御スタックの情報、スタック位置と容量、local base、関数番号、yieldしきい値は `execution_context` と現在のCallFrameから取得し、別の呼出し構造体へ複製しない。戻り値はstatusとABIエラーだけを持ち、命令位置、スタック位置、trap codeは `execution_context` を唯一の格納先とする。実行拡張は `owner`、本体実行入口、観測入口で構成する。観測入口はInterpreterが対象ブロックを実行した後に候補判定と履歴記録を一度に行う。候補マスクと履歴配列をInterpreterへ渡さず、複製もしない。
+ネイティブdispatchには `execution_context`、値スタック基点、ローカルスタック基点、実行拡張を渡す。命令位置、コードと制御スタックの情報、スタック位置と容量、local base、関数番号、yieldしきい値は `execution_context` と現在のCallFrameから取得し、別の呼出し構造体へ複製しない。戻り値はstatusとABIエラーだけを持ち、命令位置、スタック位置、trap codeは `execution_context` を唯一の格納先とする。実行拡張は `owner`、本体実行入口、観測入口で構成する。観測入口はInterpreterが対象ブロックを実行した後に候補判定と履歴記録を一度に行う。候補マスクと履歴配列をInterpreterへ渡さず、複製もしない。
 
 CallFrameは関数実行view、ローカル基点、オペランドstack基点、復帰IP、JIT境界PC、u16復帰block indexを持つ40バイトの固定構造体である。関数番号は同じ関数を示すfunction viewの`function_index`から得る。コード・ローカル配置・引数・結果の静的値はfunction viewから得る。viewはLoaderが求めた`max_operand_stack_words`を32bit語単位で保持し、x64上で72バイトである。関数入口で引数を除いたSPを基準にこの最大高を検査し、関数途中のtrace入口には容量の再検査を置かない。`rel`はCallFrameに保存せず、Interpreterは基本ブロック開始時に注釈offsetから求める。関数呼出しスタックは32個の記述子とu8深さを保持する固定長配列で、全体は1,288バイトである。定数バッファ参照、関数参照、モジュール参照はWASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{META_NoStdVector}`
 

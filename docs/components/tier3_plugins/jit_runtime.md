@@ -50,7 +50,7 @@ Tier 3の`jit_runtime`はコンパイル候補の処理と常駐コード管理�
 
 命令スコア表、Runtime API slot表と関数表はコンパイル時の不変表とする。関数表は読み取り専用領域に一つだけ保持し、共通コード領域にはその借用アドレスを一つ置く。プラグインの保存領域は、借用するJIT実行状態より長く存続する。固定幅即値の読み出しは`load_jit_immediate<Value, Index>`で値型と位置をコンパイル時に確定する。Loaderが検証済みの命令範囲をスコア評価する内部手続きは、入力破損を候補外の値へ変換せず、契約違反としてassertする。
 
-実行境界ではC++が履歴を分析し、境界と処理予算に応じてコンパイル要求を処理する。待ち列、コンパイラ、キャッシュ配置、再配置、ヘッダpatchは同じC++プラグイン内の呼出しで完了する。履歴と待ち列の内部操作、機械語テンプレート、中間コンパイル結果はプラグイン境界へ公開しない。検証用の観測はQA側で行う。
+実行境界ではC++が履歴を分析し、固定容量の待ち列が空になるまでコンパイル要求を処理する。待ち列、コンパイラ、キャッシュ配置、再配置、ヘッダpatchは同じC++プラグイン内の呼出しで完了する。履歴と待ち列の内部操作、機械語テンプレート、中間コンパイル結果はプラグイン境界へ公開しない。検証用の観測はQA側で行う。
 
 共通機械語の生成、トレース再配置、およびヘッダpatchはJIT共通コード経路が担う。実行可能領域の確保・解放、初期権限設定、patch区間と命令キャッシュ同期は実行領域providerが担う。対象ごとのW^X権限切替もprovider境界に置く。カード操作、履歴、および待ち列の更新はホットスポット管理の責務である。
 
@@ -87,7 +87,7 @@ JIT拡張はInterpreterへ接続する選択可能コンポーネントである
   JIT entry表と履歴はJIT拡張の領域内に固定長で確保する。キャッシュ更新時にも同じ領域を再利用する。
 - **x64参照コード領域 (8KB)**: x64参照構成では4KBページ2枚分の領域を使う。先頭2KBはassembly生成chain dispatcherとRuntime API表の参照用の非エビクション領域とする。残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はTBDである。
   共通コード領域のchain dispatcherは`0x000`から配置する。固定slotは256バイトである。Tier 3 JITが所有するJIT Runtime API function pointer tableへの借用ポインタをこの固定slotの直後に置き、操作stencilからopcode対応APIを呼び出す。Interpreter opcode handler表からRuntime API関数ポインタを取得しない。`chain_target_addr`が0の場合に限り、終端dispatcherは現在trace末尾のmetadata pointerを`execution_context.rel`へ一時保存し、`body_end_ip`を`execution_context.ip`へ設定して`true`を返す。`false`はtrap/CPS exitまたはyield境界を示す。接続済みの場合はtarget headerから`const_rel_offset`を取得し、target traceへtail-jumpする。操作間の継続deltaはtrace末尾poolに保持しない。`if`、`br`、`br_if`はtraceに含めず、完了したtraceの後にC++ Interpreter dispatcherがCPS handlerで処理する。分岐先へnative chainしない。chain dispatcherはopcodeを判定しない。`native/tier3_plugins/jit/lir/x64/common.S`を対象x64 ABIでアセンブルし、raw binaryとして共通領域へ一度だけ配置する。読み取り専用のRuntime API表はキャッシュへ複製しない。表への8バイトの借用アドレスだけをdispatcher固定slotの後ろへ初期化する。未使用の共通領域を初期化時にゼロ埋めしない。ARMv8-Mの配置方式と命令列はTBDである。
-- **オンデマンドコンパイルキュー (On-demand Compile Queue)**: Tier 3 JIT拡張内で`HOT`に達した基本ブロックindexを保持する固定容量LIFOキューである。Runtimeのidle hookは全タスクidle時と協調境界で拡張へ処理予算を渡す。通常の予算は成功コンパイル数ではなく、取り出して処理した候補数に適用する。コンパイル失敗と既存trace等によるスキップも1件に数える。固定キュー満杯時は通常予算の例外として、その場で全候補を処理してキューを空にする。処理件数の上限は固定キュー容量であり、実時間の上限は保証しない。先行ブロックより後続を先に常駐させ、直線後続chainを接続する。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
+- **オンデマンドコンパイルキュー (On-demand Compile Queue)**: Tier 3 JIT拡張内で`HOT`に達した基本ブロックindexを保持する固定容量LIFOキューである。Runtimeのidle hookは全タスクidle時と協調境界で拡張を呼び出す。拡張は待ち列が空になるまで候補を処理し、候補数による打ち切りを行わない。コンパイル失敗と既存trace等によるスキップも待ち列から取り除く。固定キューが満杯になると、その場で待ち列全体を処理する。固定容量は一度に処理する候補数を制限するが、実時間の上限は保証しない。先行ブロックより後続を先に常駐させ、直線後続chainを接続する。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
 - **被チェイン逆引きテーブル (Inbound Chain Index Table)**: 常駐traceの後続PCをキーとする64バケットの固定長ハッシュ表である。各バケットの先頭参照64バイトと、最大72エントリの次参照72バイトで構成する。退役するtargetのPCから候補sourceを取り出し、後続PCと現在のtarget addressを照合してリンクを更新または解除する。エントリ索引を再構築するときに逆引き表も再構築する。
 - **chainメタデータ**: `chain_next_pc`は接続先PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpする常駐targetを保持する。直線後続だけを接続し、分岐opcodeからのchain targetは登録しない。循環chainの`chain_body_count`と`chain_words`は、最大72件の常駐traceを有界に巡回し、rootから最初の再訪までのtraceを一度ずつ数えて求める。退役時は被chain逆引き表でリンクを解除する。接続条件は [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) §7.4に示す。
 - **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである。Interpreterが解決した基本ブロックindexと`UnifiedPC`を各8バイトレコードに保持する。Runtimeは単一moduleに束縛されるため、レコードへ`module_id`を複製しない。容量は`JIT_HISTORY_CAPACITY`以下で指定する。待ち列容量は`JIT_COMPILE_QUEUE_CAPACITY`以下で指定する。Interpreter実行区間の終了時だけ履歴順に分析し、JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}`
@@ -388,14 +388,13 @@ QA専用の実行回数・退役記録の計測契約、抽象モデル、およ
 
 ## 8. 設計判断と参考実装
 
-### 8.1 コンパイル時期と候補処理予算
+### 8.1 コンパイル時期と待ち列処理
 <!-- traceability: {ADR_JitCompileScheduling} {JIT_ReverseCompilationOrder} -->
 
-- **ステータス**: 採用。C++の待ち列処理は候補処理数で予算を消費する。
+- **ステータス**: 採用。全タスクidle時と協調境界で待ち列を処理する。
 - **背景**: 全タスクidle時だけのコンパイルでは、継続的に実行可能なタスクがある構成で候補処理が進まない。固定キューの満杯時にも処理を進める必要がある。
-- **選択肢**: 全タスクidle時だけ処理する方式と、協調境界でもidle hookを実行する方式を比較する。予算の単位は成功数と候補処理数を比較する。
-- **結論**: 協調境界でも処理する。通常のidle hookは失敗・スキップを含む候補処理数で予算を消費する。満杯時は通常予算の例外として固定キュー容量ぶんをその場で全件処理する。
-- **理由と影響**: 通常処理の仕事量を件数で制限し、満杯時は候補を失わずキューを空にする。満杯時には通常予算より多くの処理を行うため、コンパイルによる停止時間が増える。
+- **結論**: 協調境界でも処理する。idle hookは固定容量LIFO待ち列の全候補を処理して空にする。待ち列が満杯になった場合は、その場で全候補を処理する。
+- **理由と影響**: 待ち列に入った候補を次の実行境界へ持ち越さない。固定容量は一度に処理する候補数を制限するが、コンパイル時間や実時間応答を保証しない。
 
 ### 8.2 キャッシュ代謝とスラッシング防止の未決事項
 <!-- traceability: {Challenge_JITCacheEfficiency} {ADR_SafeQueuingOnHotMiss} -->

@@ -212,14 +212,14 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 - [`jit_cache_model.py`](docs/components/tier3_plugins/formal/jit_cache_model.py)による抽象的なW^X不変条件、3面キャッシュ代謝、2-bit FSMの形式検証そのもの。
 - ARMv8-Mの物理メモリ保護機構、JIT配置、命令同期、実機レイテンシ（すべてTBD）。
 
-### コンパイル候補の処理予算
+### コンパイル候補の待ち列処理
 <!-- traceability: {ADR_JitCompileScheduling} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITR-80 | 通常予算は候補処理数に適用する | 固定キューに成功、失敗、既存traceによるスキップ候補がある | 協調境界のidle hookへ0、1、キュー件数未満の予算を渡す | 成否によらず候補処理で1件消費する。処理数は予算以下であり、未処理候補を保持する | `jit_runtime.md`「コンパイル時期と候補処理予算」 |
-| TEST-JITR-81 | 満杯時の全件処理 | 固定キューが容量に達する。通常予算は容量未満である | 満杯契機の候補処理を実行する | 通常予算の例外として固定容量ぶんをその場で全件処理する。失敗・スキップを含めてキューが空となる | `jit_runtime.md`「コンパイル時期と候補処理予算」 |
+| TEST-JITR-80 | idle hookで候補待ち列の全件を処理する | 固定キューに複数のコンパイル可能な候補がある | 協調境界でidle hookを呼ぶ | 待ち列の全候補をLIFO順にコンパイルし、待ち列を空にする | `jit_runtime.md`「コンパイル時期と待ち列処理」 |
+| TEST-JITR-81 | キュー満杯時に全候補を同期処理する | 固定キューが容量に達する | 満杯契機の候補処理を実行する | 失敗・スキップを含めて全候補を処理し、待ち列が空となる | `jit_runtime.md`「コンパイル時期と待ち列処理」 |
 | TEST-JITR-88 | trace headerからLoader blockを直接参照する | moduleのLoader blockからtraceをコンパイルしてcacheへ挿入する | trace headerのblock indexとLoader配列の位置を比較し、JIT実行後の結果も検証する | indexが一致し、trace終端のmetadataをPC検索せずに取得する | `jit_runtime.md`「trace headerとLoader block metadata」 |
 | TEST-JITR-89 | 循環chainの有限集計と退役時の相互unlink | 2 traceの循環linkと同じbankへの配置 | 常駐中の`chain_body_count`/`chain_words`を確認し、bankを退役させて両端のlinkを確認する | body数は相異なる2 trace、stack量は最大要件に一致する。循環探索は有限で終わり、退役時はresident inbound linkを解除する | `jit_runtime.md`、`jit_loop_chain_model.py`、pysim `` |
 
-TEST-JITR-80の候補数予算は現行の成功数予算へ未追従である。TEST-JITR-81は現行の全件処理を採用契約として直接検証するためのケースである。対応する実行テストと形式モデルの追加・更新は未完了とする。
+TEST-JITR-80とTEST-JITR-81は、idle hookおよび満杯時に待ち列全体を処理する契約を検証する。

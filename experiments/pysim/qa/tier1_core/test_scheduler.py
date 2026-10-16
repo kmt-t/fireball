@@ -659,8 +659,8 @@ def test_sched_04_06_07_interrupt_defers_targeted_wakeup_until_drain() -> None:
     assert b.state == TaskState.BLOCKED
 
 
-def test_sched_11_unnotified_waiter_remains_blocked_at_idle() -> None:
-    """TEST-SCHED-11: An unnotified IRQ waiter remains blocked while the scheduler is idle."""
+def test_sched_11_run_until_idle_returns_with_irq_waiter_blocked() -> None:
+    """TEST-SCHED-11: run_until_idle returns with an unnotified IRQ waiter blocked."""
     scheduler = Scheduler()
     idle_calls: list[int] = []
     scheduler.set_idle_hook(lambda: idle_calls.append(1))
@@ -670,10 +670,12 @@ def test_sched_11_unnotified_waiter_remains_blocked_at_idle() -> None:
         yield (ChannelAction.BLOCK, None)
 
     task = scheduler.get_task(scheduler.spawn("waiter", waiter()).unwrap())
-    scheduler.run_until_idle()
+    run_result = scheduler.run_until_idle()
+    assert run_result is None
     assert task.state == TaskState.BLOCKED
     assert task.waiting_irq == 7
     assert list(scheduler._ready) == []
+    assert len(scheduler.interrupt_event_queue) == 0
     assert idle_calls == [1]
 
 

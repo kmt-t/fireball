@@ -48,7 +48,6 @@ Function shares use the corresponding process CPU_TIME as denominator. JIT dispa
 
 ## 通常ベンチマーク
 
-プロファイラを使わない同一build・同一条件の比較は[`aobench_interpreter_jit_wamr_20261011_latest_retest.txt`](aobench_interpreter_jit_wamr_20261011_latest_retest.txt)を正とする。320x180の3プロセス中央値はInterpreter 479.342 ms、JIT 621.428 msであり、JITは1.296倍（29.6%）遅い。frame SHA-256は一致する。
 
 ## モジュール内訳
 

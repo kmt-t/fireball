@@ -97,13 +97,11 @@ def measure_aobench() -> list[dict[str, JsonValue]]:
         output_hash = ""
         for frame_index in range(4):
             if frame_index == 3:
-                while plugin.idle_hook(256) != 0:
-                    pass
+                plugin.idle_hook()
             runtime.call(
                 interpreter,
                 main_index,
                 [width, height],
-                idle_budget=4 if frame_index < 3 else 0,
             )
             frame = system.transport.drain_output()
             assert len(frame) == (width + 1) * height

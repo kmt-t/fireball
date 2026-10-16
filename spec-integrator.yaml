@@ -420,6 +420,153 @@ prose_readability:
 
 source_verification:
   enabled: true
+  complexity:
+    threshold: 15
+    targets:
+      cpp:
+        include_paths: ["inc/**", "src/**"]
+        exclude_paths: ["src/allocator/malloc.c"]
+        extensions: [".hxx", ".cxx", ".c"]
+      python_pysim:
+        include_paths: ["experiments/pysim/**"]
+        exclude_paths:
+          - "experiments/pysim/qa/**"
+          - "experiments/pysim/benchmarks/**"
+          - "experiments/pysim/native/**"
+        extensions: [".py"]
+    allowlist:
+      - group: python_pysim
+        file: experiments/pysim/system.py
+        function: _ipc_send
+        line: 649
+        ccn: 20
+        plan_req: REQ-037
+      - group: python_pysim
+        file: experiments/pysim/system.py
+        function: _ipc_recv
+        line: 710
+        ccn: 16
+        plan_req: REQ-037
+      - group: python_pysim
+        file: experiments/pysim/tier1_core/scheduler.py
+        function: run_until_idle
+        line: 1180
+        ccn: 21
+        plan_req: REQ-037
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
+        function: build_control_map
+        line: 598
+        ccn: 42
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
+        function: iter_scan_instrs
+        line: 764
+        ccn: 17
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
+        function: _count_interpreter_annotation_pool_bytes
+        line: 862
+        ccn: 27
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
+        function: build_interpreter_annotation_pool
+        line: 910
+        ccn: 50
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
+        function: extract_basic_blocks
+        line: 1209
+        ccn: 39
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/interpreter/handlers.py
+        function: _h_fc_prefix
+        line: 1668
+        ccn: 33
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
+        function: step_native_boundary
+        line: 1262
+        ccn: 17
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
+        function: _try_native_step_to_boundary
+        line: 1576
+        ccn: 19
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
+        function: _step
+        line: 1645
+        ccn: 21
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
+        function: _enter_or_resolve_call
+        line: 1742
+        ccn: 22
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/interpreter/reference_interpreter.py
+        function: __init__
+        line: 351
+        ccn: 27
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/vmmio/controller.py
+        function: access
+        line: 414
+        ccn: 35
+        plan_req: REQ-037
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/wasm/reader.py
+        function: _analyze_control
+        line: 741
+        ccn: 27
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/wasm/reader.py
+        function: _memory_alignment_exponent
+        line: 910
+        ccn: 23
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier2_runtime/wasm/reader.py
+        function: _analyze_conversion
+        line: 1138
+        ccn: 23
+        plan_req: REQ-042
+      - group: python_pysim
+        file: experiments/pysim/tier3_platform/drivers/wasi/context.py
+        function: fd_write
+        line: 404
+        ccn: 16
+        plan_req: REQ-037
+      - group: python_pysim
+        file: experiments/pysim/tier3_plugins/debugger/debugger.py
+        function: handle_packet
+        line: 327
+        ccn: 57
+        plan_req: REQ-037
+      - group: python_pysim
+        file: experiments/pysim/tier3_plugins/debugger/gdb_server.py
+        function: run_task
+        line: 69
+        ccn: 16
+        plan_req: REQ-037
+      - group: python_pysim
+        file: experiments/pysim/tier3_plugins/debugger/gdb_server.py
+        function: _server_loop
+        line: 155
+        ccn: 18
+        plan_req: REQ-037
   groups:
     cpp:
       description: "C/C++ core hypervisor and platform code"
@@ -433,6 +580,8 @@ source_verification:
         - id: "cpp_rules"
           enabled: true
           rules: ["forbidden_malloc", "forbidden_new", "forbidden_exceptions", "forbidden_rtti", "fireball_namespace"]
+        - id: "complexity"
+          enabled: true
 
     python_concepts:
       description: "Python reference concept implementations"
@@ -507,6 +656,8 @@ source_verification:
         - id: "pysim_assert_side_effects"
           enabled: true
         - id: "run_tests"
+          enabled: true
+        - id: "complexity"
           enabled: true
 
 pysim_imports:

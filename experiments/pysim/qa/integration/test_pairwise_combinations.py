@@ -416,7 +416,8 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
     with sysv.scheduler.task_context(task):
         for index in range(4):
             assert not sysv.pool.can_view(sysv.pool.buffer(index), 0, 1)
-    if engine_mode == "interp":
+    # GOTCHA-DBG-02: an attached debugger keeps execution interpreter-only.
+    if engine_mode == "interp" or dbg_mode != "detached":
         assert engine.stat_jit_invocations == 0
     else:
         assert engine.stat_jit_invocations > 0, f"{case_id}: no generated trace was executed"

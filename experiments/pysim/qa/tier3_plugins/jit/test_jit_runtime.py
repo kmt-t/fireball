@@ -244,12 +244,13 @@ def test_hotspot_02_history_ring_buffered_yield_drain():
 
 
 def test_hotspot_03_lifo_compile_queue_batch_drain():
-    """TEST-HOTSPOT-03 / TEST-JITR-12: HOT traces are queued to LIFO compile queue and batch-compiled into Active bank."""
+    """TEST-HOTSPOT-03 / TEST-JITR-12 / TEST-JITR-80: Drain all queued HOT traces in LIFO order."""
     compiler = TraceCompiler()
     engine = make_runtime_engine(
         jit_compiler=compiler,
         min_trace_bytes=1,
         candidate_threshold=0,
+        compile_queue_capacity=4,
     )
     wat = """(module
       (func (export "f0") (result i32) i32.const 10 i32.const 20 i32.add)
@@ -264,16 +265,12 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
         engine.jit_runtime.record_block_head(pc)
     engine.jit_runtime.on_yield()
     assert engine.jit_runtime.has_pending_compilation()
-    count = engine.idle_hook(budget=2)
-    assert count == 2
-    assert engine.jit_runtime.compilation_pcs == (pcs[2], pcs[1]), (
+    count = engine.idle_hook()
+    assert count == 3
+    assert engine.jit_runtime.compilation_pcs == tuple(reversed(pcs)), (
         "LIFO compilation order required {JIT_ReverseCompilationOrder}"
     )
-    assert engine.jit_runtime.cache.find_trace(pcs[2]) is not None
-    assert engine.jit_runtime.cache.find_trace(pcs[1]) is not None
-    assert engine.jit_runtime.cache.find_trace(pcs[0]) is None
-    assert engine.jit_runtime.has_pending_compilation()
-    assert engine.idle_hook(budget=2) == 1
+    assert all(engine.jit_runtime.cache.find_trace(pc) is not None for pc in pcs)
     assert not engine.jit_runtime.has_pending_compilation()
 
 
@@ -886,14 +883,14 @@ def test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace():
     engine.jit_runtime.on_yield()
     engine.jit_runtime.cache.insert(JITTrace(pc, lambda: 0, size_bytes=64))
 
-    compiled = engine.idle_hook(budget=4)
+    compiled = engine.idle_hook()
 
     assert compiled == 0, "a pc already resident in the cache must not be recompiled"
     assert engine.jit_runtime.bitmap.get_state(pc) == CardState.COMPILED
 
 
 def test_jitr_compile_queue_overflow_compiles_on_the_spot():
-    """JITR: When compile_queue reaches capacity, all queued traces are compiled on the spot."""
+    """TEST-JITR-81: When compile_queue fills, all queued traces compile synchronously."""
     wat = """
     (module
       (func (export "f0") i32.const 1 drop i32.const 2 drop return)
@@ -952,7 +949,7 @@ def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
     engine.jit_runtime.record_block_head(pc)
     engine.jit_runtime.on_yield()
 
-    assert engine.idle_hook(budget=1) == 0
+    assert engine.idle_hook() == 0
     assert engine.jit_runtime.bitmap.get_state(pc) == CardState.HOT
     assert not engine.jit_runtime.trackable.is_marked(pc)
     assert not engine.jit_runtime.has_pending_compilation()
@@ -2281,8 +2278,9 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
     assert manager.block_lookups == []
     if expected_heads:
         assert manager.has_pending_compilation()
-        manager.idle_hook(budget=len(expected_heads))
+        manager.idle_hook()
         assert manager.block_lookups == []
+        assert not manager.has_pending_compilation()
     else:
         assert not manager.has_pending_compilation()
 
@@ -2612,9 +2610,9 @@ def test_jitr_empty_yield_skips_python_control_work():
             self.record_calls = 0
             self.snapshot_calls = 0
 
-        def idle_hook(self, budget: int = 4) -> int:
+        def idle_hook(self) -> int:
             self.idle_calls += 1
-            return super().idle_hook(budget)
+            return super().idle_hook()
 
         def lookup(self, pc: int) -> JITTrace | None:
             self.lookup_calls += 1
@@ -3254,7 +3252,7 @@ def test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary():
             assert not outcome.is_ok
             assert outcome.error is not None and outcome.error.code == 15
 
-        assert plugin.idle_hook(1) == 1
+        assert plugin.idle_hook() == 1
         call_state = interp.start(function_index, [])
         status = interp.run_native_dispatch(call_state)
         assert status == 2
@@ -3291,7 +3289,7 @@ def test_jitr_runtime_api_continues_into_following_jit_operations():
     try:
         assert interp.call(function_index, []).unwrap() == [29]
         assert interp.call(function_index, []).unwrap() == [29]
-        assert plugin.idle_hook(1) == 1
+        assert plugin.idle_hook() == 1
         assert interp.call(function_index, []).unwrap() == [29]
     finally:
         plugin.close()
@@ -4050,7 +4048,7 @@ def test_native_product_plugin_close_clears_borrowed_block_references():
         )
         try:
             assert interpreter.call(0, [100]).unwrap() == [5050]
-            plugin.idle_hook(16)
+            plugin.idle_hook()
             assert any(block.jit_cache_reference != 0xFF for block in module.blocks)
             assert interpreter.call(0, [50]).unwrap() == [1275]
         finally:

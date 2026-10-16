@@ -86,12 +86,11 @@ class RuntimeStatsEngine(RuntimeEngine):
         )
         super()._activate_interpreter(interp)
 
-    def idle_hook(self, budget: int = 4) -> int:
+    def idle_hook(self) -> int:
         """Service the manager retained by this QA-only driver."""
         if self.jit_runtime is not None:
-            assert budget >= 0
-            return self.jit_runtime.idle_hook(budget)
-        return super().idle_hook(budget)
+            return self.jit_runtime.idle_hook()
+        return super().idle_hook()
 
     def _run_bound(
         self, interp: NativeInterpreter, call_state: InterpreterCall

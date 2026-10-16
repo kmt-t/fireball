@@ -37,7 +37,7 @@ RUNTIME_FLUSH = _library.fb_jit_runtime_flush
 RUNTIME_FLUSH.argtypes = (ctypes.c_void_p,)
 RUNTIME_FLUSH.restype = ctypes.c_int
 RUNTIME_COMPILE = _library.fb_jit_runtime_compile
-RUNTIME_COMPILE.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+RUNTIME_COMPILE.argtypes = (ctypes.c_void_p,)
 RUNTIME_COMPILE.restype = ctypes.c_int
 
 # The Interpreter owns dispatch and invokes any trace returned by this plugin.

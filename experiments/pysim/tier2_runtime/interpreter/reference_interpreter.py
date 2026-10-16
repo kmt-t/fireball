@@ -495,8 +495,7 @@ class ReferenceInterpreter:
     def detach_debugger(self) -> None:
         self.debugger = None
 
-    def idle_hook(self, budget: int = 4) -> int:
-        assert budget >= 0
+    def idle_hook(self) -> int:
         return 0
 
     def start(self, func_index: int, args: Sequence[WasmNumber]) -> ReferenceCallState:

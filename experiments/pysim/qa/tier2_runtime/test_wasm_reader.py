@@ -479,7 +479,7 @@ def test_load_31_more_than_64_exports_are_retained() -> None:
         assert module.export_func_index(name) == 0
 
 
-def test_load_32_unsigned_leb128_byte_budget() -> None:
+def test_load_32_unsigned_leb128_max_byte_length() -> None:
 
     for bits, limit in ((32, 5), (64, 10)):
         with pytest.raises(InvalidWasm, match=f"maximum {limit} bytes"):

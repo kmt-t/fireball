@@ -171,7 +171,7 @@ def main() -> None:
             runtime_engine, interpreter, function_index, [100]
         ).unwrap()
         assert int(warmup_result[0]) == 4_950
-        runtime_engine.idle_hook(budget=10)
+        runtime_engine.idle_hook()
         if measured_stats is not None:
             measured_stats.reset_stats()
 
@@ -223,7 +223,7 @@ def main() -> None:
             )
             == 4_950
         )
-        diagnostic.idle_hook(budget=10)
+        diagnostic.idle_hook()
         diagnostic.reset_stats()
         assert (
             int(

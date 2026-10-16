@@ -1932,11 +1932,11 @@ class NativeInterpreter(_NativeInterpreterBase):
         if self._execution_plugin is not None:
             self._native_dispatcher = self._execution_plugin.native_entry
 
-    def idle_hook(self, budget: int = 4) -> int:
-        """Give the attached JIT cache a bounded compile slice."""
+    def idle_hook(self) -> int:
+        """Compile every queued candidate in the attached JIT cache."""
         if self._execution_plugin is None or self.debugger is not None:
             return 0
-        return self._execution_plugin.idle_hook(budget)
+        return self._execution_plugin.idle_hook()
 
     def call(
         self,

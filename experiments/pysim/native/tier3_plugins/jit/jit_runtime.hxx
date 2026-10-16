@@ -159,8 +159,8 @@ private:
   int compile_one_candidate(block_index_t block_index, wasm_pc_t pc);
 
 public:
-  /** @brief 処理予算内の候補を消費し、コンパイル成功件数を返す。 */
-  int compile_queued_candidates(std::uint32_t budget);
+  /** @brief 待ち列の全候補を処理し、コンパイル成功件数を返す。 */
+  int compile_queued_candidates();
   /** @brief 検証済みのブロック識別子とPCを固定履歴リングへ記録する。 */
   void record_block_visit(block_index_t block_index, wasm_pc_t pc);
   /** @brief 検証済みのブロック識別子とPCを固定履歴リングへ記録する。 */
@@ -215,9 +215,9 @@ public:
   void set_card_state(std::uint32_t card, std::uint32_t state);
   /** @brief 常駐トレースのカードをコンパイル済みにする。 */
   void mark_trace_card_compiled(wasm_pc_t pc);
-  /** @brief 計測ポリシーに従って予算付きのカード減衰を実行する。 */
+  /** @brief 計測ポリシーに従ってカード減衰を進める。 */
   int age_hotspot_cards();
-  /** @brief dirty領域を予算内で走査し、履歴候補だけを減衰する。 */
+  /** @brief dirty領域を一段走査し、履歴候補だけを減衰する。 */
   int decay_dirty_cards();
   /** @brief 一バンクを破棄し、カードと参照索引を更新する。 */
   void retire_cache_bank(std::uint32_t id);
@@ -260,8 +260,8 @@ template <jit_measurement_policy Measurement> struct jit_provider_adapter {
   /** @brief 候補設定を検証し、ブロック単位で候補マスクを構築する。 */
   static int fb_jit_runtime_bind_profile(runtime_type *runtime,
                                          typename runtime_type::profile_type p);
-  /** @brief コンパイルキューを指定予算で処理する。 */
-  static int fb_jit_runtime_compile(runtime_type *runtime, std::uint32_t budget);
+  /** @brief コンパイルキューの全候補を処理する。 */
+  static int fb_jit_runtime_compile(runtime_type *runtime);
   /** @brief 実行境界の履歴を処理し、必要なら候補をコンパイルする。 */
   static int finish_boundary(runtime_type *runtime, int yielded);
   /** @brief 配置されたランタイムの寿命を終了する。 */

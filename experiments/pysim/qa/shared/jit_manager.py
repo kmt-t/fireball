@@ -532,10 +532,9 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         assert result == 1
         self._check()
 
-    def idle_hook(self, budget: int = 4) -> int:
-        assert 0 <= budget <= 0x7FFF_FFFF
+    def idle_hook(self) -> int:
         self._begin()
-        result = int(native_abi.RUNTIME_COMPILE(self._native.pointer, budget))
+        result = int(native_abi.RUNTIME_COMPILE(self._native.pointer))
         assert result >= 0
         self._check()
         return result

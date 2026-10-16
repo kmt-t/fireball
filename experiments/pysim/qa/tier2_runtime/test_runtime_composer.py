@@ -266,8 +266,7 @@ def test_runtime_engine_run_services_native_yields() -> None:
             assert execution.module is self.module
             return 0
 
-        def idle_hook(self, budget: int = 4) -> int:
-            assert budget >= 0
+        def idle_hook(self) -> int:
             self.hook_calls += 1
             return 0
 
@@ -334,7 +333,7 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         ctypes.POINTER(NativeJitTrace),
     )
     JitObserve = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_uint32)
-    JitFinish = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_uint32)
+    JitFinish = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32)
     callbacks = [0, 0, 0]
 
     def lookup(owner, block_index, pc, trace):
@@ -347,7 +346,7 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         callbacks[1] += 1
         return 1
 
-    def finish_boundary(owner, status, budget):
+    def finish_boundary(owner, status):
         assert owner == 123
         callbacks[2] += 1
         return 1
@@ -396,7 +395,7 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         def native_entry(self):
             return native_abi.RUN_DISPATCH_JIT
 
-        def idle_hook(self, budget=4):
+        def idle_hook(self):
             return 0
 
     module = parse_standalone(

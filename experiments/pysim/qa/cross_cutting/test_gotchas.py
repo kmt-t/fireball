@@ -220,7 +220,7 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     assert_result_1 = engine.jit_runtime.cache.insert(resident)
     assert assert_result_1
 
-    compiled = engine.idle_hook(budget=4)
+    compiled = engine.idle_hook()
 
     assert compiled == 0, "a pc already resident in the cache must not be recompiled"
     assert engine.jit_runtime.bitmap.get_state(pc) == CardState.COMPILED
@@ -269,12 +269,15 @@ def test_jitr_gotcha_03_lifo_reverse_compilation_order():
         engine.jit_runtime.record_block_head(pc)
     engine.jit_runtime.on_yield()
     assert engine.jit_runtime.has_pending_compilation()
-    count = engine.idle_hook(budget=2)
-    assert count == 2
-    assert engine.jit_runtime.compilation_pcs == (pcs[2], pcs[1]), "LIFO compilation order required"
+    count = engine.idle_hook()
+    assert count == 3
+    assert engine.jit_runtime.compilation_pcs == (pcs[2], pcs[1], pcs[0]), (
+        "the entire queue must be compiled in LIFO order"
+    )
     assert engine.jit_runtime.cache.find_trace(pcs[2]) is not None
     assert engine.jit_runtime.cache.find_trace(pcs[1]) is not None
-    assert engine.jit_runtime.cache.find_trace(pcs[0]) is None
+    assert engine.jit_runtime.cache.find_trace(pcs[0]) is not None
+    assert not engine.jit_runtime.has_pending_compilation()
 
 
 # ==============================================================================

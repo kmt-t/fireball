@@ -769,10 +769,7 @@ RUNTIME_ANALYZE.restype = ctypes.c_int
 
 
 RUNTIME_COMPILE = _NATIVE_LIBRARY.fb_qa_runtime_compile
-RUNTIME_COMPILE.argtypes = (
-    ctypes.c_void_p,
-    ctypes.c_uint32,
-)
+RUNTIME_COMPILE.argtypes = (ctypes.c_void_p,)
 RUNTIME_COMPILE.restype = ctypes.c_int
 
 RUNTIME_FILTERED_LOOKUP = _NATIVE_LIBRARY.fb_jit_runtime_filtered_lookup

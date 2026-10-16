@@ -155,15 +155,14 @@ class RuntimeEngine:
             return int(VirqDispatchResult.REJECT)
         return int(results[0]) & 0xFFFF_FFFF
 
-    def idle_hook(self, budget: int = 4) -> int:
+    def idle_hook(self) -> int:
         """
         Ask the active Interpreter to service its optional execution plugin.
         """
 
         if self._virq_interp is None:
             return 0
-        assert budget >= 0
-        return self._virq_interp.idle_hook(budget)
+        return self._virq_interp.idle_hook()
 
     def run(
         self,

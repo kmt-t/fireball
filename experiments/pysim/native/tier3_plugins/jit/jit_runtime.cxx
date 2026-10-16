@@ -276,13 +276,10 @@ int jit_runtime<Measurement>::compile_one_candidate(block_index_t block_index, w
 }
 
 template <jit_measurement_policy Measurement>
-int jit_runtime<Measurement>::compile_queued_candidates(std::uint32_t budget) {
+int jit_runtime<Measurement>::compile_queued_candidates() {
   assert(hotspots.compile_queue.capacity != 0);
   std::uint32_t compiled = 0;
-  // The budget bounds processed candidates, including unsupported/skipped
-  // ones.
-  for (std::uint32_t processed = 0; processed < budget && hotspots.compile_queue.count != 0;
-       ++processed) {
+  while (hotspots.compile_queue.count != 0) {
     const auto item = queue_operation(&hotspots.compile_queue, 1, 0);
     assert(item >= 0);
     block_index_t block_index = jit_invalid_block_index;
@@ -396,7 +393,7 @@ void jit_runtime<Measurement>::analyze_observation_history(bool yielded) {
       [[maybe_unused]] const auto queued = queue_operation(&hotspots.compile_queue, 0, item);
       assert(queued == 1);
       if (hotspots.compile_queue.count == hotspots.compile_queue.capacity) {
-        compile_queued_candidates(hotspots.compile_queue.count);
+        compile_queued_candidates();
       }
     }
   }
@@ -1490,9 +1487,8 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_bind_profile(
 }
 
 template <jit_measurement_policy Measurement>
-int jit_provider_adapter<Measurement>::fb_jit_runtime_compile(runtime_type *runtime,
-                                                              std::uint32_t budget) {
-  return runtime->compile_queued_candidates(budget);
+int jit_provider_adapter<Measurement>::fb_jit_runtime_compile(runtime_type *runtime) {
+  return runtime->compile_queued_candidates();
 }
 
 template <jit_measurement_policy Measurement>
@@ -1678,10 +1674,9 @@ extern "C" int fb_jit_runtime_flush(const fb_native_jit_provider *provider) {
   return provider_adapter::fb_jit_runtime_flush(runtime);
 }
 
-extern "C" int fb_jit_runtime_compile(const fb_native_jit_provider *provider,
-                                      std::uint32_t budget) {
+extern "C" int fb_jit_runtime_compile(const fb_native_jit_provider *provider) {
   auto *runtime = runtime_from_provider(provider);
-  return provider_adapter::fb_jit_runtime_compile(runtime, budget);
+  return provider_adapter::fb_jit_runtime_compile(runtime);
 }
 
 extern "C" void fb_jit_runtime_close(const fb_native_jit_provider *provider) {

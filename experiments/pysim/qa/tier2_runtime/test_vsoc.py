@@ -795,14 +795,14 @@ def test_runtime_yield_services_jit_while_only_guest_task_is_ready(
         bump_allocator=engine.bump_allocator,
         yield_threshold=1,
     )
-    idle_budgets: list[int] = []
+    idle_calls: list[int] = []
     runtime_type = type(engine)
     original_idle_hook = runtime_type.idle_hook
 
-    def observe_idle_hook(runtime: RuntimeEngine, budget: int = 4) -> int:
+    def observe_idle_hook(runtime: RuntimeEngine) -> int:
         if runtime is engine:
-            idle_budgets.append(budget)
-        return original_idle_hook(runtime, budget)
+            idle_calls.append(1)
+        return original_idle_hook(runtime)
 
     monkeypatch.setattr(runtime_type, "idle_hook", observe_idle_hook)
     try:
@@ -811,14 +811,17 @@ def test_runtime_yield_services_jit_while_only_guest_task_is_ready(
             system.run_guest(interpreter, module.export_func_index("count"), (100,)),
         ).unwrap()
 
-        system.scheduler.run_until_idle_within(12)
-
         task = system.scheduler.get_task(guest_id)
-        assert task is not None and task.state == TaskState.READY
+        assert task is not None
+        while not engine.jit_runtime.compilation_pcs and task.state == TaskState.READY:
+            system.scheduler.step()
+            task = system.scheduler.get_task(guest_id)
+            assert task is not None
+        assert task.state == TaskState.READY, "JIT must compile before the guest task ends"
         assert engine.jit_runtime.compilation_pcs, (
             "JIT compilation must progress before the task ends"
         )
-        assert idle_budgets, "runtime must service the plugin at cooperative yield boundaries"
+        assert idle_calls, "runtime must service the plugin at cooperative yield boundaries"
     finally:
         system.shutdown()
 

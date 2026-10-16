@@ -323,7 +323,7 @@ class System:
     def _on_idle(self) -> None:
         """COOS idle hook: flush logs and let the active Interpreter service its plugin."""
         self.logger.flush()
-        self.runtime_engine.idle_hook(budget=4)
+        self.runtime_engine.idle_hook()
 
     def start_runtime_task(
         self, name: str = "runtime_host", role: Role = Role.RUNTIME

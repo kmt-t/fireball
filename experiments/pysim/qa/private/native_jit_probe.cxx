@@ -64,9 +64,8 @@ fb_qa_runtime_dispatch(int (*dispatch)(const fb_native_dispatch_extension_call *
 extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_flush(qa_jit_runtime *runtime) {
   return provider_adapter::fb_jit_runtime_flush(runtime);
 }
-extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_compile(qa_jit_runtime *runtime,
-                                                         std::uint32_t budget) {
-  return provider_adapter::fb_jit_runtime_compile(runtime, budget);
+extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_compile(qa_jit_runtime *runtime) {
+  return provider_adapter::fb_jit_runtime_compile(runtime);
 }
 extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_runtime_close(qa_jit_runtime *runtime) {
   provider_adapter::fb_jit_runtime_close(runtime);

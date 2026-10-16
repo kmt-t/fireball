@@ -152,7 +152,7 @@ class JITCompilerBenchmark:
 
             # Warm up and compile the hot traces before measuring native execution.
             run_runtime_call(runtime_engine, interp_jit, fn_idx, [100]).unwrap()
-            runtime_engine.idle_hook(budget=10)
+            runtime_engine.idle_hook()
 
             t0 = time.perf_counter()
             res_jit = run_runtime_call(runtime_engine, interp_jit, fn_idx, [LOOP_COUNT]).unwrap()
@@ -182,7 +182,7 @@ class JITCompilerBenchmark:
             bump_allocator=diagnostic_engine.bump_allocator,
         )
         diagnostic_engine.call(diagnostic_interpreter, diagnostic_function_index, [100]).unwrap()
-        diagnostic_engine.idle_hook(budget=10)
+        diagnostic_engine.idle_hook()
         diagnostic_engine.reset_stats()
         diagnostic_result = diagnostic_engine.call(
             diagnostic_interpreter, diagnostic_function_index, [LOOP_COUNT]

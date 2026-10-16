@@ -94,8 +94,7 @@ def measure(
     try:
         for frame_index in range(warmup + repeats):
             if frame_index == warmup and plugin is not None:
-                while runtime.idle_hook(256) != 0:
-                    pass
+                runtime.idle_hook()
             started = time.perf_counter_ns()
             run_runtime_call(runtime, interpreter, function_index, [width, height]).unwrap()
             elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000

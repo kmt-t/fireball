@@ -119,8 +119,8 @@ Core Spec SuiteはMVP互換の固定選択セットであり、WebAssembly Core�
 | 目的 | Windows | Linux / WSL | 区分 |
 | :--- | :--- | :--- | :--- |
 | 用語候補の静的確認 | <code>powershell tools/llm-word.ps1 -quick</code> | <code>./tools/llm-word.sh --quick</code> | LLM 判定なし（未作成の埋め込みを Ollama のローカルモデルで生成） |
-| 用語揺れの意味判定 | <code>powershell tools/llm-word.ps1</code> | <code>./tools/llm-word.sh</code> | ローカル Ollama の Clef Flash を既定で使用 |
-| キーワードのリスク評価 | <code>powershell tools/risk.ps1</code> | <code>./tools/risk.sh</code> | ローカル Ollama の Clef Flash を既定で使用 |
+| 用語揺れの意味判定 | <code>powershell tools/llm-word.ps1</code> | <code>./tools/llm-word.sh</code> | ホスト Ollama の Nimble を既定で使用 |
+| キーワードのリスク評価 | <code>powershell tools/risk.ps1</code> | <code>./tools/risk.sh</code> | ホスト Ollama の Nimble を既定で使用 |
 | 文書単体のレビュー | <code>powershell tools/llm-single-review.ps1 -file &lt;path&gt;</code> | <code>./tools/llm-single-review.sh --file &lt;path&gt;</code> | 設定済みの既定バックエンドを使用 |
 | キーワード定義・参照ペアのレビュー | <code>powershell tools/llm-keyword-review.ps1 -keyword &lt;name&gt;</code> | <code>./tools/llm-keyword-review.sh --keyword &lt;name&gt;</code> | 定義セクションと参照セクションを1組ずつ評価 |
 | {VERIFY_LLM} 義務の履行 | <code>powershell tools/llm-judge.ps1</code> | <code>./tools/llm-judge.sh</code> | 設定済みの既定バックエンドを使用し、判定を記録 |
@@ -137,7 +137,7 @@ LLM監査はユーザーから明示的な指示がある場合だけ実行す�
 ollama pull qwen3-embedding
 ```
 
-文書レビュー、リスク評価、用語判定は Jev または Clef Flash の System One チェックシートで実行する。既定値は Clef Flash である。Clef Flash の `confidence` は選択確率の集中度であり、正答確率ではない。Jev の `confidence` はAPIが返す値である。
+文書レビュー、リスク評価、用語判定は Jev または Nimble の System One チェックシートで実行する。既定値は Nimble である。Nimble の値はバックエンドスコアとして扱い、判定の正答確率とはみなさない。Jev の確信度は API が返す値である。
 
 確信度検索は既定で設定中のバックエンドだけを対象とする。別のバックエンドは `--backend` で指定する。両モデルとも説明文や引用箇所を生成しないため、判定箇所を文書で確認する。System One のリクエスト本文は64 KiBまでである。
 

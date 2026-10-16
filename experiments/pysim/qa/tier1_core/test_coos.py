@@ -382,46 +382,45 @@ def test_coos_10_idle_detection_when_all_blocked():
     assert task.state == TaskState.SUSPENDED_CSP, "the sole task must be blocked, not terminated"
 
 
-@pytest.mark.parametrize("budget", (1, 1000), ids=("one-step", "small-budget"))
-def test_coos_10_budget_exhaustion_with_ready_task_is_not_idle(budget: int) -> None:
-    """TEST-COOS-10: 予算終了時にREADYが残ればidle hookを呼ばない。"""
+@pytest.mark.parametrize("yield_once", (False, True), ids=("completes", "yields"))
+def test_coos_10_ready_task_runs_before_idle_hook(yield_once: bool) -> None:
+    """TEST-COOS-10: READYタスクを実行してからアイドルフックを呼ぶ。"""
     sched = Scheduler()
-    idle_calls: list[int] = []
-    sched.set_idle_hook(lambda: idle_calls.append(1))
+    events: list[str] = []
+    sched.set_idle_hook(lambda: events.append("idle"))
 
     def worker() -> Generator[tuple[ChannelAction, None], None, None]:
-        while True:
+        events.append("ready-task")
+        if yield_once:
             yield (ChannelAction.YIELD, None)
 
     task = sched.get_task(sched.spawn("worker", worker()).unwrap())
     assert task is not None
-    sched.run_until_idle_within(budget)
-    assert task.state == TaskState.READY
-    assert tuple(sched._ready) == (task,)
-    assert idle_calls == []
+    sched.run_until_idle()
+    assert task.state == TaskState.TERMINATED
+    assert tuple(sched._ready) == ()
+    assert events == ["ready-task", "idle"]
 
 
-def test_coos_10_pending_event_at_budget_end_is_not_idle() -> None:
-    """TEST-COOS-10: 最後のtaskが通知した未処理イベントをidleと扱わない。"""
+def test_coos_10_pending_event_is_drained_before_idle_hook() -> None:
+    """TEST-COOS-10: 最後のtaskが通知したイベントを処理してからidle hookを呼ぶ。"""
     sched = Scheduler()
-    idle_calls: list[int] = []
-    sched.set_idle_hook(lambda: idle_calls.append(1))
+    idle_event_counts: list[int] = []
+    sched.set_idle_hook(lambda: idle_event_counts.append(len(sched.interrupt_event_queue)))
     event = InterruptEvent(16, 2, 3, 4, 5)
 
     def notifier() -> Generator[tuple[ChannelAction, None], None, None]:
         assert sched.notify_interrupt(event)
+        assert len(sched.interrupt_event_queue) == 1
         yield from ()
 
     task = sched.get_task(sched.spawn("notifier", notifier()).unwrap())
     assert task is not None
-    sched.run_until_idle_within(1)
+    sched.run_until_idle()
     assert task.state == TaskState.TERMINATED
     assert not sched._ready
-    assert len(sched.interrupt_event_queue) == 1
-    assert idle_calls == []
-    sched.run_until_idle()
     assert len(sched.interrupt_event_queue) == 0
-    assert idle_calls == [1]
+    assert idle_event_counts == [0]
 
 
 def test_coos_11_no_double_ownership_sanity():

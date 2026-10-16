@@ -1161,23 +1161,12 @@ class Scheduler:
         return task
 
     def run_until_idle(self) -> None:
-        """Runs cooperative tasks until idle with the default step limit.
-
-        The limit scales with the READY count at the call. Idle hooks fire only with no READY task or event.
-        """
-        self.run_until_idle_within(max(1000, len(self._ready) * 64 + 16))
-
-    def run_until_idle_within(self, budget: int) -> None:
-        """Runs cooperative tasks for at most ``budget`` steps; idle hooks fire only with no READY task or event.
-
-        Exhausting the budget with a READY task left does not count as idle (TEST-COOS-10).
-        """
+        """Runs cooperative tasks until no READY task or pending event remains."""
         previous_task = self.current_task
         self.drain_interrupts()
         self._begin_reschedule_round()
-        step_budget = budget
         idle_hooks_called = False
-        while step_budget > 0:
+        while True:
             self.drain_interrupts()
             self._wake_expired_timed_tasks()
             if not self._ready:
@@ -1193,7 +1182,6 @@ class Scheduler:
                     break
                 continue
             idle_hooks_called = False
-            step_budget -= 1
             if self._ready_coro_count == 0:
                 break
             task = self._ready.dequeue()
@@ -1244,15 +1232,11 @@ class Scheduler:
             self._run_idle_hooks()
         self.current_task = previous_task
 
-    def run_to_completion(self, max_sweeps: int = 1000) -> None:
-        for _ in range(max_sweeps):
+    def run_to_completion(self) -> None:
+        while True:
             self.run_until_idle()
             has_irq_waiters = any(
                 t.waiting_irq is not None and t.state == TaskState.BLOCKED for t in self._all
             )
             if not self._ready and not has_irq_waiters:
                 return
-        assert False, (
-            f"scheduler did not reach idle within {max_sweeps} sweeps "
-            "(a task is stuck BLOCKED on an event nobody notifies)"
-        )

@@ -22,7 +22,7 @@
 | TEST-SCHED-08 | READYキューpush/popのO(1) | 多数のREADYタスクと侵入型ringがある | enqueue/dequeueを実行し、操作対象を確認する | 隣接リンクとhead/sizeだけを操作する。割り込み待機者検索の計算量は別途評価する | `ADR_EventDrivenWakeQueue`、`` |
 | TEST-SCHED-09 | 最大タスク数の上限 | `FB_CONF_MAX_TASKS`（既定16）に達するまでspawn | 上限+1個目をspawn | 拒否される（アサーション相当のエラー） | scheduler_concept.py `assert len(self.tasks) < self.max_tasks` |
 | TEST-SCHED-10 | 重複task_idの拒否 | 既存のtask_idを再度spawn | 同一IDでspawn | 拒否される | scheduler_concept.py `assert task_id not in self.tasks` |
-| TEST-SCHED-11 | run_until_idle/run_to_completionの停止性 | 相互にnotifyし合わないBLOCKEDタスクが残る | run_to_completionを実行 | 無限ループにならず、上限到達で明示的なエラーを返す | 実装固有の安全策 |
+| TEST-SCHED-11 | 割り込み未通知タスクのアイドル待機 | 割り込み通知を待つタスクがあり、通知元がない | `run_until_idle`を実行する | タスクはBLOCKEDのままREADYキューは空となり、idle hookを呼ぶ | `os_scheduler.md`「アイドル検出」 |
 | TEST-SCHED-12 | 原因レコードの順序と未登録ドロップ | FIFOに複数イベント、待機先が一部未登録 | `notify_interrupt`とドレインを実行 | 登録済みの待機先だけが受付順に起床し、未登録イベントはドロップされる | `{GLOBAL_InterruptWakeup}` |
 | TEST-SCHED-13 | READY循環リストの両端操作と定員境界 | 容量4のREADYキューを用意する | 先頭取り出し、末尾追加、先頭追加、任意タスクの除去を行う | FIFO順と循環する前後リンクを保つ。満杯時は追加を拒否し、既存タスクの順序を変えない。各リンク操作はキュー長に依存しない | `{ADR_IntrusiveTcbList}` |
 | TEST-SCHED-14 | 割り込み再スケジュール世代の一巡 | READYタスクA・Bが存在し、割り込み通知を1回以上受け付ける | FIFOをドレインし、A・Bを順にディスパッチする | `reschedule_generation`は保留バーストごとに1回だけ進み、各対象タスクの`last_seen_generation`が一度ずつ更新される。全対象の観測後に`reschedule_pending`が解除される | `{ADR_InterruptRescheduleGeneration}` |
@@ -55,7 +55,7 @@
 | TEST-SCHED-05 | `` | 終了状態、READYからの除去、再実行なし |
 | TEST-SCHED-08、13 | `` | 列長0/1/4/16/64で先頭・末尾追加、取り出し、既知タスク除去のリンク操作数とFIFO保存 |
 | TEST-SCHED-09、10 | ``、`` | 拒否と既存タスク・READY順の保存 |
-| TEST-SCHED-11 | `` | 保留待機タスクに対する指定上限での明示的失敗 |
+| TEST-SCHED-11 | `` | 保留待機タスクのBLOCKED状態、空のREADYキュー、アイドルフック呼出し |
 | TEST-SCHED-12 | `` | 受付順の起床、原因値、未登録イベントのドロップ |
 | TEST-SCHED-13 | ``、`` | メンバー重複なし、FIFO順、前後リンク、定員超過後の順序保存 |
 | TEST-SCHED-14、15 | `` | バースト1世代、各対象の一回観測、新規タスクの除外、保留解除 |

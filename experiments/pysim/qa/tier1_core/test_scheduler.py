@@ -659,20 +659,22 @@ def test_sched_04_06_07_interrupt_defers_targeted_wakeup_until_drain() -> None:
     assert b.state == TaskState.BLOCKED
 
 
-def test_sched_11_unnotified_waiter_reaches_explicit_sweep_limit() -> None:
-    """TEST-SCHED-11: A permanently BLOCKED IRQ waiter reports noncompletion within the budget."""
+def test_sched_11_unnotified_waiter_remains_blocked_at_idle() -> None:
+    """TEST-SCHED-11: An unnotified IRQ waiter remains blocked while the scheduler is idle."""
     scheduler = Scheduler()
+    idle_calls: list[int] = []
+    scheduler.set_idle_hook(lambda: idle_calls.append(1))
 
     def waiter():
         scheduler.wait_for_interrupt(7)
         yield (ChannelAction.BLOCK, None)
 
     task = scheduler.get_task(scheduler.spawn("waiter", waiter()).unwrap())
-    with expect_assertion("within 2 sweeps"):
-        scheduler.run_to_completion(max_sweeps=2)
+    scheduler.run_until_idle()
     assert task.state == TaskState.BLOCKED
     assert task.waiting_irq == 7
     assert list(scheduler._ready) == []
+    assert idle_calls == [1]
 
 
 def test_sched_12_interrupt_fifo_orders_registered_targets_and_drops_unknown() -> None:

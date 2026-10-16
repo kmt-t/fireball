@@ -77,7 +77,6 @@ from tier3_plugins.jit.jit_manager import JITRuntimeManager
 SUITE_WASM_PATH = Path(__file__).resolve().parent / "guest" / "suite.wasm"
 AO_WASM_PATH = _BENCH_DIR / "aobench" / "aobench.wasm"
 MASK32 = 0xFFFFFFFF
-OS_MIX_MAX_SWEEPS = 10_000_000
 OS_MIX_WAVE = 8  # concurrent guest tasks per wave; the scheduler allows 16 TCBs in total
 
 # Work units per kernel at --scale 1, chosen so each kernel costs ~5 s on the Tier 2
@@ -282,8 +281,8 @@ def phase_os_mix(scale: float, kernels: list[str] | None, oracle: bool) -> Phase
             for i, (name, units) in enumerate(members)
         ]
         t0 = time.perf_counter()
-        # One sweep runs ~1000 scheduler steps; guests take 10^5..10^6 block steps in total.
-        sysv.scheduler.run_to_completion(max_sweeps=OS_MIX_MAX_SWEEPS)
+        # Guests yield repeatedly; completion is driven by the cooperative scheduler.
+        sysv.scheduler.run_to_completion()
         seconds += time.perf_counter() - t0
         sysv.logger.flush()
         for task_id, (name, units) in zip(task_ids, members, strict=True):
@@ -432,8 +431,8 @@ def phase_ipc(scale: float, kernels: list[str] | None, oracle: bool) -> PhaseRes
     sched.spawn("coos_receiver", consumer(), role=Role.CORE_SERVICE).unwrap()
     sched.spawn("client_app", producer(), role=Role.RUNTIME).unwrap()
     t0 = time.perf_counter()
-    # One sweep runs ~1000 scheduler steps, so a large message count needs many sweeps.
-    sched.run_to_completion(max_sweeps=OS_MIX_MAX_SWEEPS)
+    # The cooperative scheduler drives each producer/consumer handoff to completion.
+    sched.run_to_completion()
     seconds = time.perf_counter() - t0
     logger.flush()
     sink.close()

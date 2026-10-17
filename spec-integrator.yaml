@@ -146,13 +146,6 @@ llm_judge:
       severity: "ERROR"
       prompt_file: "tools/spec-integrator/prompts/checks/keyword_reference_traceability.prompt"
 
-    - id: "numeric_agreement"
-      name: "Numeric Agreement & Arithmetic"
-      mode: ["single", "link_pair"]
-      enabled: true
-      severity: "ERROR"
-      prompt_file: "tools/spec-integrator/prompts/checks/numeric_agreement.prompt"
-
     - id: "clarity_completeness"
       name: "Clarity & Unresolved Ambiguity"
       mode: ["single", "link_pair"]

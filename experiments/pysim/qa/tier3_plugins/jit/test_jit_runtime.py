@@ -77,6 +77,7 @@ from scheduler import Scheduler
 from system_containers import ReadOnlyRadixBinaryTreeStorage, StaticVector
 from tier2_runtime.abi.interpreter_abi import (
     EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD,
+    EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY,
 )
 from tier2_runtime.interpreter.control_flow import OpcodeAttribute, opcode_has_attribute
 from tier2_runtime.interpreter.errors import NATIVE_DISPATCH_RUNTIME_API_BOUNDARY, TrapCode
@@ -2544,7 +2545,7 @@ def test_jitr_native_step_consumes_pending_head_before_memory_fallback(collect_s
     call._frame.set_runtime_boundary(base + len(module.code_for(0)) - 1, None)
     call.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
     assert interpreter._try_native_step_to_boundary(call)
-    assert call.context.runtime_flags == 0
+    assert call.context.runtime_flags == EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
     assert call._ip > 0
     result = dispatch_for_test(
         interpreter,
@@ -2590,7 +2591,7 @@ def test_jitr_memory_helper_trap_clears_block_continuation():
         native_dispatcher=select_native_jit_dispatch_entry(True),
     )
     assert result[0] == NATIVE_DISPATCH_RUNTIME_API_BOUNDARY
-    assert call.context.runtime_flags == 0
+    assert call.context.runtime_flags == EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
     interpreter.resolve_native_api_boundary(call)
     assert call.finished and call.trap is not None
     assert call.results is None

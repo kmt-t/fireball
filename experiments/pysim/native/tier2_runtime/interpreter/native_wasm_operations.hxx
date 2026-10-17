@@ -15,7 +15,9 @@ constexpr std::uint32_t kBlockBoundary = 3;
 constexpr std::uint32_t kCallBoundary = 4;
 constexpr std::uint32_t kRuntimeApiBoundary = 8;
 constexpr std::uint32_t kStopAtBlockBoundaryFlag = 1u << 0;
-constexpr std::uint32_t kStopAfterControlFlag = 1u << 1;
+constexpr std::uint32_t kSingleControlStepFlag = 1u << 2;
+constexpr std::uint32_t kJitDispatchFlag = 1u << 3;
+constexpr std::uint32_t kRelCursorReadyFlag = 1u << 4;
 constexpr std::uint32_t kPendingBlockHeadFlag = 1u << 5;
 constexpr std::uint32_t kCpsExitShift = 8;
 constexpr std::uint32_t kCpsExitMask = fb_native_cps_exit_mask;
@@ -63,16 +65,19 @@ bool cps_exit_pending(const execution_context &current);
 void clear_cps_exit(execution_context &current);
 /** @brief `runtime_api_boundary`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。
  */
-[[gnu::always_inline]] bool runtime_api_boundary(execution_context &current, code_ip_t ip);
-/** @brief `block_boundary`に対応する実行状態または値を求める。 */
-bool block_boundary(execution_context &current, code_ip_t ip);
-bool block_boundary(execution_context &current, code_ip_t ip, block_index_t block_index);
+[[gnu::always_inline]] bool runtime_api_boundary(execution_context &current, code_ip_t ip,
+                                                 const std::uint8_t *rel);
+bool block_boundary(execution_context &current, code_ip_t ip, block_index_t block_index,
+                    const std::uint8_t *&rel);
+bool continue_to_block(execution_context &current, code_ip_t ip, block_index_t block_index,
+                       const std::uint8_t *&rel);
 /** @brief WASM関数の完了を記録する。 */
 bool complete(execution_context &current);
 /** @brief WASMのtrap理由を記録し、通常継続を停止する。 */
 bool trap(execution_context &current, std::uint32_t code);
-/** @brief `call_boundary`に対応する実行状態または値を求める。 */
-bool call_boundary(execution_context &current, code_ip_t ip);
+/** @brief 呼び出し先の入口を確定してCPSを停止する。 */
+bool call_boundary(execution_context &current, code_ip_t ip, block_index_t block_index,
+                   const std::uint8_t *&rel);
 /** @brief `debug_stop`に対応する実行状態または値を求める。 */
 bool debug_stop(execution_context &current);
 /** @brief Interpreter注釈プールの固定幅値を読み出す。 */
@@ -146,8 +151,6 @@ bool finish_current_function(execution_context &current, std::uint32_t *&local_b
                              const std::uint8_t *&instruction_ip);
 /** @brief `is_requested_block_boundary`に対応する実行状態または値を求める。 */
 bool is_requested_block_boundary(const execution_context &current, code_ip_t ip);
-/** @brief `should_stop_after_control`に対応する実行状態または値を求める。 */
-bool should_stop_after_control(const execution_context &current);
 /** @brief `record_loop_backedge`に対応する実行状態または値を求める。 */
 bool record_loop_backedge(execution_context &current, code_ip_t source_ip, code_ip_t target_ip);
 
@@ -159,8 +162,7 @@ struct local_value_span {
 local_value_span local_span(const fireball_call_frame_native &frame, local_count_t index);
 /** @brief WASMの分岐を適用し、次の命令位置を返す。 */
 void branch(execution_context &current, std::uint32_t *&sp, block_index_t target_block_index,
-            operand_words_t target_stack_base_words, operand_words_t result_words,
-            code_ip_t &next_ip);
+            operand_words_t target_stack_base_words, operand_words_t result_words);
 /** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
 bool pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &value);
 /** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
@@ -570,7 +572,8 @@ template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
 runtime_memory_load_decoded(execution_context *context, std::uint32_t *&sp,
                             [[maybe_unused]] std::uint32_t *&local_base,
                             const std::uint8_t *&instruction_ip, code_ip_t source_ip,
-                            code_ip_t next_pc, std::uint32_t offset);
+                            code_ip_t next_pc, std::uint32_t offset,
+                            const std::uint8_t *rel);
 
 template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
 /** @brief `runtime_memory_load`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。
@@ -588,7 +591,8 @@ template <std::uint32_t Width, std::uint32_t ValueWords>
 runtime_memory_store_decoded(execution_context *context, std::uint32_t *&sp,
                              [[maybe_unused]] std::uint32_t *&local_base,
                              const std::uint8_t *&instruction_ip, code_ip_t source_ip,
-                             code_ip_t next_pc, std::uint32_t offset);
+                             code_ip_t next_pc, std::uint32_t offset,
+                             const std::uint8_t *rel);
 
 template <std::uint32_t Width, std::uint32_t ValueWords>
 /** @brief `runtime_memory_store`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。
@@ -618,7 +622,8 @@ runtime_fc_saturating_conversion(execution_context *context, const std::uint8_t 
 [[gnu::always_inline]] bool runtime_fc_memory_copy_decoded(execution_context *context,
                                                            std::uint32_t *&sp,
                                                            const std::uint8_t *&instruction_ip,
-                                                           code_ip_t source_ip, code_ip_t next_pc);
+                                                           code_ip_t source_ip, code_ip_t next_pc,
+                                                           const std::uint8_t *rel);
 
 /** @brief
  * `runtime_fc_memory_copy`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
@@ -634,7 +639,8 @@ runtime_fc_saturating_conversion(execution_context *context, const std::uint8_t 
 [[gnu::always_inline]] bool runtime_fc_memory_fill_decoded(execution_context *context,
                                                            std::uint32_t *&sp,
                                                            const std::uint8_t *&instruction_ip,
-                                                           code_ip_t source_ip, code_ip_t next_pc);
+                                                           code_ip_t source_ip, code_ip_t next_pc,
+                                                           const std::uint8_t *rel);
 
 /** @brief
  * `runtime_fc_memory_fill`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */

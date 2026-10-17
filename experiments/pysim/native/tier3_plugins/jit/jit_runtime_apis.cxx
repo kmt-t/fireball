@@ -145,7 +145,8 @@ inline bool jit_runtime_memory_load(execution_context *context, std::uint32_t *&
   const auto instruction_width = load_jit_value<std::uint8_t>(rel);
   const auto offset = load_jit_value<std::uint32_t>(rel + sizeof(instruction_width));
   const auto completed = runtime_memory_load_decoded<Width, ResultWords, Signed>(
-      context, sp, local_base, instruction_ip, source_ip, source_ip + instruction_width, offset);
+      context, sp, local_base, instruction_ip, source_ip, source_ip + instruction_width, offset,
+      nullptr);
   if (!cps_exit_pending(*context)) {
     context->ip = instruction_offset(*context, instruction_ip);
   }
@@ -162,7 +163,8 @@ inline bool jit_runtime_memory_store(execution_context *context, std::uint32_t *
   const auto instruction_width = load_jit_value<std::uint8_t>(rel);
   const auto offset = load_jit_value<std::uint32_t>(rel + sizeof(instruction_width));
   const auto completed = runtime_memory_store_decoded<Width, ValueWords>(
-      context, sp, local_base, instruction_ip, source_ip, source_ip + instruction_width, offset);
+      context, sp, local_base, instruction_ip, source_ip, source_ip + instruction_width, offset,
+      nullptr);
   if (!cps_exit_pending(*context)) {
     context->ip = instruction_offset(*context, instruction_ip);
   }
@@ -185,7 +187,7 @@ inline bool jit_runtime_fc_memory_copy(execution_context *context, std::uint32_t
   const auto *instruction_ip = context->code + source_ip;
   const auto instruction_width = load_jit_value<std::uint8_t>(rel);
   const auto completed = runtime_fc_memory_copy_decoded(context, sp, instruction_ip, source_ip,
-                                                        source_ip + instruction_width);
+                                                        source_ip + instruction_width, nullptr);
   publish_interpreter_rel_after_runtime_boundary(context, rel);
   return completed;
 }
@@ -198,7 +200,7 @@ inline bool jit_runtime_fc_memory_fill(execution_context *context, std::uint32_t
   const auto *instruction_ip = context->code + source_ip;
   const auto instruction_width = load_jit_value<std::uint8_t>(rel);
   const auto completed = runtime_fc_memory_fill_decoded(context, sp, instruction_ip, source_ip,
-                                                        source_ip + instruction_width);
+                                                        source_ip + instruction_width, nullptr);
   publish_interpreter_rel_after_runtime_boundary(context, rel);
   return completed;
 }

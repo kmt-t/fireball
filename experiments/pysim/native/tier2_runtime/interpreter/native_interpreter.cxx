@@ -595,7 +595,7 @@ dispatch_next(execution_context *context, const std::uint8_t *ip, std::uint32_t 
     if ((current.runtime_flags & kStopAtBlockBoundaryFlag) != 0 &&
         is_requested_block_boundary(current, ip_offset)) {
       current.stack_pointer = sp;
-      block_boundary(current, ip_offset);
+      block_boundary(current, ip_offset, current.current_block_index, rel);
       return;
     }
   }
@@ -622,18 +622,6 @@ namespace fireball::interpreter {
 
 constexpr std::uint32_t kNoPc = 0xFFFF'FFFFu;
 constexpr block_index_t kNoBlockIndex = FIREBALL_INVALID_BLOCK_INDEX;
-
-#if FB_CONF_JIT_BLOCK_COUNTERS
-constexpr bool kCollectJitBlockCounters = true;
-#else
-constexpr bool kCollectJitBlockCounters = false;
-#endif
-
-template <bool CollectStats, bool WithJit, bool WithExtension, bool ReturnAtBlockBoundary,
-          typename Debugger>
-inline constexpr bool kDispatchAtControlBoundary =
-    CollectStats || WithJit || WithExtension || !std::is_void_v<Debugger> ||
-    ReturnAtBlockBoundary || kCollectJitBlockCounters;
 
 struct native_dispatch_stats {
   std::uint32_t trace_count = 0;
@@ -717,11 +705,10 @@ prepare_native_dispatch(native_dispatch_state<CollectStats, WithJit, WithExtensi
   assert(frame.local_base >= context.local_stack_base);
   assert(frame.local_base + function.local_slot_count <= context.local_stack_limit);
   assert(context.ip <= context.code_size);
-  if ((context.runtime_flags & kPendingBlockHeadFlag) != 0 && context.ip < context.code_size) {
+  if ((context.runtime_flags & kPendingBlockHeadFlag) != 0) {
+    assert(context.ip < context.code_size);
     assert(function.module_view != nullptr && function.module_view->blocks != nullptr);
     assert(context.current_block_index < function.module_view->block_count);
-    assert(function.module_view->blocks[context.current_block_index].head_pc ==
-           function.code_pc_offset + context.ip);
   }
   context.code = function.code;
   context.code_size = function.code_size;
@@ -748,16 +735,13 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
   const auto *module = frame.function_view->module_view;
   assert(module != nullptr && block_index < module->block_count);
   [[maybe_unused]] const auto &source_block = module->blocks[block_index];
-  assert(source_block.head_pc == pc);
   if (trace.frame_depth != source_block.frame_depth) {
     return 0;
   }
   assert(source_block.next_pc == trace_exit->next_pc);
   assert(source_block.next_block_index == trace_exit->block_index);
-  if (trace_exit->block_index != kNoBlockIndex) {
-    assert(trace_exit->block_index < module->block_count);
-    assert(module->blocks[trace_exit->block_index].head_pc == trace_exit->next_pc);
-  }
+  assert(trace_exit->block_index == kNoBlockIndex ||
+         trace_exit->block_index < module->block_count);
   // The function entry reserved its loader-proven peak, including this trace.
   assert(trace.stack_words <=
          static_cast<std::uint32_t>(context.stack_limit - context.stack_pointer));
@@ -777,17 +761,19 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
   }
   if (!completed) {
     assert(context.trap_code != 0 || cps_exit_pending(context));
-    const auto runtime_api_boundary = cps_exit_pending(context) &&
-                                      cps_exit_kind(context) == kRuntimeApiBoundary;
-    if (!runtime_api_boundary) {
+    const auto exit_kind = cps_exit_kind(context);
+    if (exit_kind != kRuntimeApiBoundary && exit_kind != kBlockBoundary &&
+        exit_kind != kCallBoundary) {
       context.rel = previous_rel;
     }
-    if (runtime_api_boundary) {
+    if (exit_kind == kRuntimeApiBoundary) {
       if (context.ip == trace_exit->body_end_ip) {
         context.rel =
             interpreter_rel_after_jit_trace(frame, block_index, trace_exit->interpreter_rel_bytes);
         context.current_block_index = trace_exit->block_index;
       }
+    } else if (exit_kind == kBlockBoundary || exit_kind == kCallBoundary) {
+      assert((context.runtime_flags & kRelCursorReadyFlag) != 0);
     }
     return trace.body_count;
   }
@@ -861,8 +847,7 @@ inline bool handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, Wit
       __builtin_unreachable();
     }
   case kCallBoundary: {
-    // The Runtime API installed the callee frame. Resolve its entry BasicBlock
-    // here so block metadata and the matching rel cursor are set together.
+    // The call terminator installed the callee frame and its entry cursor.
     context.runtime_flags |= kPendingBlockHeadFlag;
     if constexpr (CollectStats) {
       ++state.metrics.stats.control_handler_count;
@@ -892,6 +877,9 @@ inline bool handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, Wit
   case kComplete:
     context.runtime_flags &= ~kPendingBlockHeadFlag;
     context.ip = kNoPc;
+    if constexpr (CollectStats) {
+      ++state.metrics.stats.control_handler_count;
+    }
     state.status = kComplete;
     return false;
   case kBlockBoundary: {
@@ -960,19 +948,12 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
   }
 
   const auto previous_runtime_flags = context.runtime_flags;
-  if (context.ip == 0) {
-    context.runtime_flags |= kPendingBlockHeadFlag;
+  context.runtime_flags &= ~kJitDispatchFlag;
+  if constexpr (WithJit) {
+    context.runtime_flags |= kJitDispatchFlag;
   }
   context.runtime_flags &= ~kStopAtBlockBoundaryFlag;
-  if constexpr (kDispatchAtControlBoundary<CollectStats, WithJit, WithExtension,
-                                           ReturnAtBlockBoundary, Debugger>) {
-    // Stats, JIT lookup, QA measurements, debugging, and block counters consume
-    // each boundary.
-    context.runtime_flags |= kStopAfterControlFlag;
-  } else {
-    // Production dispatch stays in CPS until an exit or the loop threshold.
-    context.runtime_flags &= ~kStopAfterControlFlag;
-  }
+  assert((context.runtime_flags & kRelCursorReadyFlag) != 0);
   while (true) {
     auto &frame = active_frame(context);
     std::uint32_t executed_bodies = 0;
@@ -1006,17 +987,14 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
       // interpreter continuation. Resume at the next dispatch iteration.
     } else if (executed_bodies != 0 && context.trap_code != 0) {
       record_cps_exit(context, kTrap);
-    } else if (context.ip >= context.code_size) {
-      complete(context);
     } else {
+      assert(context.ip < context.code_size);
       clear_cps_exit(context);
       const auto interpreter_ip = context.ip;
       if (executed_bodies == 0 && (context.runtime_flags & kPendingBlockHeadFlag) != 0) {
         block_index = context.current_block_index;
         assert(frame.function_view->module_view != nullptr &&
                block_index < frame.function_view->module_view->block_count);
-        assert(frame.function_view->module_view->blocks[block_index].head_pc ==
-               frame.function_view->code_pc_offset + interpreter_ip);
       }
 #if FB_CONF_JIT_BLOCK_COUNTERS
       if (executed_bodies == 0 && (context.runtime_flags & kPendingBlockHeadFlag) != 0) {
@@ -1033,10 +1011,6 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
       }
       const std::uint8_t *rel = dispatch_rel;
       if (executed_bodies == 0) {
-        if ((context.runtime_flags & kPendingBlockHeadFlag) != 0) {
-          assert(block_index != kNoBlockIndex);
-          context.rel = interpreter_rel_for_block_index(frame, block_index);
-        }
         rel = context.rel;
       }
       // Every terminal handler writes a fresh CPS exit kind.
@@ -1072,8 +1046,10 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
     }
   }
 
-  context.runtime_flags = (previous_runtime_flags & ~kPendingBlockHeadFlag) |
-                          (context.runtime_flags & kPendingBlockHeadFlag);
+  constexpr auto kDispatchStateFlags =
+      kPendingBlockHeadFlag | kRelCursorReadyFlag | kJitDispatchFlag;
+  context.runtime_flags = (previous_runtime_flags & ~kDispatchStateFlags) |
+                          (context.runtime_flags & (kPendingBlockHeadFlag | kRelCursorReadyFlag));
   result->status = state.status;
   // Internal block boundaries stay in this loop; publish the stack only at the
   // Runtime handoff.
@@ -1149,10 +1125,12 @@ int run_native_step_abi(const fb_native_step_call *call, fb_native_result *outpu
            raw_code[call->ip] == kOpcodeFcPrefix);
     execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
     const auto previous_flags = execution_context->runtime_flags;
-    execution_context->runtime_flags |= kStopAfterControlFlag;
+    execution_context->runtime_flags |= kSingleControlStepFlag;
     (void)dispatch_next<block_step_aspect>(execution_context, raw_code + call->ip, sp, call->rel);
-    execution_context->runtime_flags =
-        previous_flags | (execution_context->runtime_flags & kCpsExitMask);
+    constexpr auto kStepStateFlags =
+        kPendingBlockHeadFlag | kRelCursorReadyFlag | kCpsExitMask;
+    execution_context->runtime_flags = (previous_flags & ~kStepStateFlags) |
+                                       (execution_context->runtime_flags & kStepStateFlags);
   } else {
     execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
     (void)dispatch_next<block_step_aspect>(execution_context, raw_code + call->ip, sp, call->rel);

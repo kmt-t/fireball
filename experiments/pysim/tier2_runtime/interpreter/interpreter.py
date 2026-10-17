@@ -20,6 +20,7 @@ from system_containers import StaticVector
 from tier2_runtime.abi import native_abi as _native_abi
 from tier2_runtime.abi.interpreter_abi import (
     EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD,
+    EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY,
     EXECUTION_CONTEXT_FLAG_STOP_AT_BLOCK_BOUNDARY,
     NATIVE_VALUE_STACK_CAPACITY,
     CallFrameNative,
@@ -1143,7 +1144,9 @@ class _NativeInterpreterBase:
         call_state.finished = True
         call_state.results = None
         call_state.trap = trap
-        call_state.context.runtime_flags &= ~EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+        call_state.context.runtime_flags &= ~(
+            EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD | EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
+        )
         call_state.context.release_workspace()
 
     def run_iter(self, func_index: int, args: Sequence[WasmNumber]) -> Iterator[InterpreterCall]:
@@ -1199,7 +1202,10 @@ class _NativeInterpreterBase:
                 trap=built.error,
             )
         frame, locals_arr = built.unwrap()
-        return InterpreterCall(func_index, context, cont=(0, frame, locals_arr))
+        call_state = InterpreterCall(func_index, context, cont=(0, frame, locals_arr))
+        context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+        self._set_native_block_cursor(call_state)
+        return call_state
 
     def _new_context(self) -> ExecutionContext:
         """Create the one context object used by Python and native execution."""
@@ -1321,6 +1327,7 @@ class _NativeInterpreterBase:
                 self._abort_call(call_state, trap, ip)
             else:
                 call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+                self._set_native_block_cursor(call_state)
             return True
         if opcode == CALL_INDIRECT:
             _, off = decode_unsigned_full(frame.code, ip + 1)
@@ -1340,6 +1347,7 @@ class _NativeInterpreterBase:
                 self._abort_call(call_state, trap, ip)
             else:
                 call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+                self._set_native_block_cursor(call_state)
             return True
         if I32_LOAD <= opcode <= MEMORY_GROW:
             self._resolve_native_memory_boundary(call_state, opcode, ip)
@@ -1372,9 +1380,16 @@ class _NativeInterpreterBase:
             return call_state
         next_ip = int(context.ip)
         block_changed = self._set_current_block_index_at_ip(context, frame, next_ip)
-        if block_changed:
-            context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
         call_state._ip = RETURN_SENTINEL_IP if next_ip >= len(frame.code) else next_ip
+        if call_state._ip == RETURN_SENTINEL_IP:
+            context.runtime_flags &= ~(
+                EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD | EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
+            )
+        elif block_changed:
+            context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+            self._set_native_block_cursor(call_state)
+        else:
+            context.runtime_flags |= EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
         return call_state
 
     def _set_current_block_index_at_ip(
@@ -1430,7 +1445,9 @@ class _NativeInterpreterBase:
             call_state._set_cont(None)
             call_state.finished = True
             call_state.results = results
-            call_state.context.runtime_flags &= ~EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+            call_state.context.runtime_flags &= ~(
+                EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD | EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
+            )
             call_state.context.release_workspace()
             return call_state
 
@@ -1443,22 +1460,29 @@ class _NativeInterpreterBase:
         call_state._frame = parent_frame
         call_state._locals = parent_locals
         call_state.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+        self._set_native_block_cursor(call_state)
         return call_state
 
-    def _native_rel_cursor(self, call_state: InterpreterCall) -> int:
-        """Select a block's loader-provided pool start at native block entry."""
+    def _set_native_block_cursor(self, call_state: InterpreterCall) -> None:
+        """Store the annotation cursor when execution enters a block head."""
         frame = call_state._frame
         assert frame is not None and call_state._ip != RETURN_SENTINEL_IP
         context = call_state.context
-        if context.runtime_flags & EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD:
-            pc = frame.code_pc_offset + call_state._ip
-            block_index = int(context.current_block_index)
-            assert block_index < len(self.module.blocks)
-            block = self.module.blocks[block_index]
-            assert block.func_index == frame.func_index and block.head_pc == pc
-            annotations = frame._native_interpreter_annotations
-            assert annotations is not None and annotations.native_address != 0
-            return annotations.native_address + block.interpreter_annotation_byte_offset
+        assert context.runtime_flags & EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+        pc = frame.code_pc_offset + call_state._ip
+        block_index = int(context.current_block_index)
+        assert block_index < len(self.module.blocks)
+        block = self.module.blocks[block_index]
+        assert block.func_index == frame.func_index and block.head_pc == pc
+        annotations = frame._native_interpreter_annotations
+        assert annotations is not None and annotations.native_address != 0
+        context.rel = annotations.native_address + block.interpreter_annotation_byte_offset
+        context.runtime_flags |= EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
+
+    def _native_rel_cursor(self, call_state: InterpreterCall) -> int:
+        """Return the annotation cursor prepared at the current execution boundary."""
+        context = call_state.context
+        assert context.runtime_flags & EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
         rel = int(context.rel or 0)
         assert rel != 0
         return rel
@@ -1545,6 +1569,7 @@ class _NativeInterpreterBase:
         context.local_stack_limit = context.local_stack.address + context.local_stack.capacity * 4
         context.local_base = context.local_stack.value_ptr(frame.frame_offset).value
         context.loop_jump_threshold = self.yield_threshold
+        assert context.runtime_flags & EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
         with _native_linear_memory_scope(context, frame.env.memory):
             (
                 native_status,
@@ -1614,8 +1639,18 @@ class _NativeInterpreterBase:
                 )
         finally:
             context.runtime_flags = (
-                previous_flags & ~EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
-            ) | (int(context.runtime_flags) & EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD)
+                previous_flags
+                & ~(
+                    EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+                    | EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
+                )
+            ) | (
+                int(context.runtime_flags)
+                & (
+                    EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+                    | EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
+                )
+            )
 
         frame.values.set_size(native_size)
         context.ip = native_ip

@@ -587,6 +587,7 @@ class InterpreterExecutionControl:
             call.context.current_block_index = block_index
             call._ip = pc - function_pc_offset
             call.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+            self.interpreter._set_native_block_cursor(call)
         self._control.breakpoint_count = len(debugger._breakpoints)
         self._control.single_step = int(single_step)
         self._control.executed = 0

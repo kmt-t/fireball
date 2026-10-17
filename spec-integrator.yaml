@@ -485,25 +485,25 @@ source_verification:
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
         function: step_native_boundary
-        line: 1262
+        line: 1268
         ccn: 17
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
         function: _try_native_step_to_boundary
-        line: 1576
+        line: 1601
         ccn: 19
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
         function: _step
-        line: 1645
+        line: 1680
         ccn: 21
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
         function: _enter_or_resolve_call
-        line: 1742
+        line: 1777
         ccn: 22
         plan_req: REQ-042
       - group: python_pysim

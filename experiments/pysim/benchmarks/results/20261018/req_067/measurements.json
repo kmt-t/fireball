@@ -1,0 +1,4767 @@
+{
+  "builds": {
+    "compiler": "Ubuntu clang version 21.1.8 (6ubuntu1)",
+    "interpreter_build_flags": "clang++ -std=c++23 -O3 -flto=thin -fuse-ld=lld -fvisibility=hidden -fno-exceptions -fno-rtti -fomit-frame-pointer -Wall -Wextra -Wpedantic -shared -fPIC -DNDEBUG",
+    "main": {
+      "commit": "26af9db0f4c7be7ba0975f325362bc92d101d9c4",
+      "interpreter_build_script_sha256": "cbc4029561dccd6d85871609d511ad1e1186732ec87b5362574328532e95db6c",
+      "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "interpreter_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "printk_build_script_sha256": "6981fe9317ec3e307bca93f0e95db638d79c6d53858d2133ea6a8bce42537025",
+      "printk_command": "bash /tmp/REQ-067-main/experiments/pysim/native/tier1_core/printk/build_native.sh",
+      "printk_library_sha256": "cf80471d13971db80a4326e1c3bc69f4115faea3305eb469e90f3a5928137224",
+      "release_command": "bash /tmp/REQ-067-main/experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --release",
+      "worktree": "/tmp/REQ-067-main"
+    },
+    "release_warning": "REQ-066 build emitted 2 unused-variable warnings in native_wasm_operations.cxx; main emitted none.",
+    "req066": {
+      "code_commit": "b7d70312a093dee0df4cfe59e6ad4d9143a78bc1",
+      "commit": "7d6209df8d84f311ef4295c7004ad67cb09c246f",
+      "interpreter_build_script_sha256": "cbc4029561dccd6d85871609d511ad1e1186732ec87b5362574328532e95db6c",
+      "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "interpreter_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "printk_build_script_sha256": "6981fe9317ec3e307bca93f0e95db638d79c6d53858d2133ea6a8bce42537025",
+      "printk_command": "bash /tmp/REQ-067-req066/experiments/pysim/native/tier1_core/printk/build_native.sh",
+      "printk_library_sha256": "cf80471d13971db80a4326e1c3bc69f4115faea3305eb469e90f3a5928137224",
+      "release_command": "bash /tmp/REQ-067-req066/experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --release",
+      "worktree": "/tmp/REQ-067-req066"
+    }
+  },
+  "execution_sequence": [
+    {
+      "order_index": 1,
+      "round": 1,
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 2,
+      "round": 1,
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 1,
+      "round": 2,
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 2,
+      "round": 2,
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 1,
+      "round": 3,
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 2,
+      "round": 3,
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 1,
+      "round": 4,
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 2,
+      "round": 4,
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 1,
+      "round": 5,
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 2,
+      "round": 5,
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 1,
+      "round": 6,
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 2,
+      "round": 6,
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 1,
+      "round": 7,
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 2,
+      "round": 7,
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "order_index": 1,
+      "round": 1,
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 2,
+      "round": 1,
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 1,
+      "round": 2,
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 2,
+      "round": 2,
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 1,
+      "round": 3,
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 2,
+      "round": 3,
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 1,
+      "round": 4,
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 2,
+      "round": 4,
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 1,
+      "round": 5,
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 2,
+      "round": 5,
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 1,
+      "round": 6,
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 2,
+      "round": 6,
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 1,
+      "round": 7,
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 2,
+      "round": 7,
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "order_index": 1,
+      "round": 1,
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "order_index": 2,
+      "round": 1,
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "order_index": 1,
+      "round": 2,
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "order_index": 2,
+      "round": 2,
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "order_index": 1,
+      "round": 3,
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "order_index": 2,
+      "round": 3,
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "order_index": 1,
+      "round": 4,
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "order_index": 2,
+      "round": 4,
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "order_index": 1,
+      "round": 5,
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "order_index": 2,
+      "round": 5,
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "order_index": 1,
+      "round": 6,
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "order_index": 2,
+      "round": 6,
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "order_index": 1,
+      "round": 7,
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "order_index": 2,
+      "round": 7,
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "order_index": 1,
+      "round": 1,
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "order_index": 2,
+      "round": 1,
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "order_index": 1,
+      "round": 2,
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "order_index": 2,
+      "round": 2,
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "order_index": 1,
+      "round": 3,
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "order_index": 2,
+      "round": 3,
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "order_index": 1,
+      "round": 4,
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "order_index": 2,
+      "round": 4,
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "order_index": 1,
+      "round": 5,
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "order_index": 2,
+      "round": 5,
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "order_index": 1,
+      "round": 6,
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "order_index": 2,
+      "round": 6,
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "order_index": 1,
+      "round": 7,
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "order_index": 2,
+      "round": 7,
+      "version": "main",
+      "workload": "indirect"
+    }
+  ],
+  "exit_counts": {
+    "counts": {
+      "W-1": {
+        "main": {
+          "kBlockBoundary": 20003,
+          "kCallBoundary": 0,
+          "kComplete": 1,
+          "kRuntimeApiBoundary": 0,
+          "kTrap": 0,
+          "total_control_handlers": 20004
+        },
+        "req066": {
+          "kBlockBoundary": 20001,
+          "kCallBoundary": 0,
+          "kComplete": 1,
+          "kRuntimeApiBoundary": 0,
+          "kTrap": 0,
+          "total_control_handlers": 20002
+        }
+      },
+      "W-2": {
+        "main": null,
+        "reason": "AO-Bench\u306b\u306fWASI host\u547c\u51fa\u3057\u3092\u542b\u307f\u3001\u65e2\u5b58QA probe\u306e\u96c6\u8a08\u30ab\u30a6\u30f3\u30bf\u3067\u306fkRuntimeApiBoundary\u7b49\u3092\u5206\u96e2\u3067\u304d\u306a\u3044\u3002exit-kind\u8a08\u6e2c\u3092\u8ffd\u52a0\u3059\u308b\u3068\u30b3\u30fc\u30c9\u3092\u5909\u66f4\u3059\u308b\u4f9d\u983c\u306b\u53cd\u3059\u308b\u305f\u3081\u3001\u7a2e\u5225\u5225\u56de\u6570\u3092\u8ffd\u52a0\u8a08\u6e2c\u3057\u306a\u304b\u3063\u305f\u3002",
+        "req066": null
+      },
+      "direct": {
+        "main": {
+          "kBlockBoundary": 30003,
+          "kCallBoundary": 10000,
+          "kComplete": 1,
+          "kRuntimeApiBoundary": 0,
+          "kTrap": 0,
+          "total_control_handlers": 40004
+        },
+        "req066": {
+          "kBlockBoundary": 30001,
+          "kCallBoundary": 10000,
+          "kComplete": 1,
+          "kRuntimeApiBoundary": 0,
+          "kTrap": 0,
+          "total_control_handlers": 40002
+        }
+      },
+      "indirect": {
+        "main": {
+          "kBlockBoundary": 30003,
+          "kCallBoundary": 10000,
+          "kComplete": 1,
+          "kRuntimeApiBoundary": 0,
+          "kTrap": 0,
+          "total_control_handlers": 40004
+        },
+        "req066": {
+          "kBlockBoundary": 30001,
+          "kCallBoundary": 10000,
+          "kComplete": 1,
+          "kRuntimeApiBoundary": 0,
+          "kTrap": 0,
+          "total_control_handlers": 40002
+        }
+      }
+    },
+    "interpretation": "guest call\u3054\u3068\u306ekCallBoundary\u306f\u524d\u5f8c\u3068\u30821\u56de\u3001nested return\u3054\u3068\u306ekBlockBoundary\u3082\u524d\u5f8c\u3068\u30821\u56de\u3067\u3042\u308a\u3001direct/indirect\u306e\u8ffd\u52a0\u51fa\u53e3\u306f\u3069\u3061\u3089\u30822\u56de/guest call\u3002REQ-066\u3067\u6e1b\u3063\u305f\u306e\u306fWAT\u5185\u306e\u901a\u5e38\u30d6\u30ed\u30c3\u30af\u5883\u754c\u306e\u4e00\u90e8\uff08\u5408\u8a082\u56de/10000 iterations\uff09\u3002",
+    "iterations": 10000,
+    "measurement_build_note": "\u65e2\u5b58QA probe\u306fCPS exit\u7a2e\u5225\u3054\u3068\u306e\u30ab\u30a6\u30f3\u30bf\u3092\u6301\u305f\u305a\u3001\u5408\u8a08control_handler_count\u3068interpreted_blocks\u3060\u3051\u3092\u8fd4\u3059\u3002\u4e0b\u306eW-1/direct/indirect\u5185\u8a33\u306f\u3001QA\u96c6\u8a08\u5024\u3068\u56fa\u5b9aWAT\u306e\u78ba\u5b9a\u7d4c\u8def\uff08kBlockBoundary\u3001kCallBoundary\u3001kComplete\uff09\u3092\u5bfe\u5fdc\u3055\u305b\u305f\u5185\u8a33\u3067\u3042\u308a\u3001exit-kind\u5225\u306e\u72ec\u7acb\u30ab\u30a6\u30f3\u30bf\u3067\u76f4\u63a5\u63a1\u53d6\u3057\u305f\u5024\u3067\u306f\u306a\u3044\u3002AO-Bench\u306e\u7a2e\u5225\u5225\u56de\u6570\u306f\u672a\u8a08\u6e2c\u3002",
+    "qa_probe_builds": {
+      "main": {
+        "qa_probe_sha256": "e0640779303115d49894654354266c4402d250ad07c89319470c3af23fdb522f",
+        "source_commit": "26af9db0f4c7be7ba0975f325362bc92d101d9c4"
+      },
+      "req066": {
+        "qa_probe_sha256": "1c471d11c4a867d665f8b41cac77d0825786286181d54504c99b2f58b9707ccd",
+        "result_commit": "7d6209df8d84f311ef4295c7004ad67cb09c246f",
+        "source_commit": "b7d70312a093dee0df4cfe59e6ad4d9143a78bc1"
+      }
+    }
+  },
+  "host": {
+    "cpu_affinity_probe_command": [
+      "taskset",
+      "-c",
+      "2",
+      "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+      "-c",
+      "import os; print(sorted(os.sched_getaffinity(0)))"
+    ],
+    "cpu_affinity_probe_result": "[2]",
+    "cpu_governor": "powersave",
+    "cpu_model": "AMD Ryzen 5 5500GT with Radeon Graphics",
+    "cpu_scaling_max_freq_khz": 4459702,
+    "cpu_scaling_min_freq_khz": 2364180,
+    "kernel": "Linux pc1 7.0.0-38-generic #38-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep 4 09:10:14 UTC 2026 x86_64 GNU/Linux",
+    "machine": "x86_64",
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "processor": "",
+    "python": "3.13.15"
+  },
+  "measurement_date": "2026-10-18",
+  "method": {
+    "alternating": true,
+    "aobench_command_template": [
+      "taskset",
+      "-c",
+      "2",
+      "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+      "/tmp/REQ-039/aobench_driver.py",
+      "--root",
+      "<worktree>",
+      "--warmup",
+      "3",
+      "--repeats",
+      "7",
+      "--yield-threshold",
+      "4096"
+    ],
+    "aobench_driver_sha256": "822df58b0d93cc3a7e56cd5b1d88690b5b5479a28eea31252886a9020a232abf",
+    "aobench_wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+    "call_benchmark_script_sha256": "beab52671124ea2799b4ae4dc8c292d4c14a41286eb1c8748a62c85b74d55b3d",
+    "call_dispatch_command_template": [
+      "taskset",
+      "-c",
+      "2",
+      "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+      "<worktree>/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+      "--iterations",
+      "10000",
+      "--variant",
+      "native",
+      "--workload",
+      "baseline|direct|indirect",
+      "--repeats",
+      "7"
+    ],
+    "call_result_hash_method": "SHA-256 of the UTF-8 decimal WASM result (50005000), after the benchmark asserts each timed call returns the expected sum.",
+    "cpu": 2,
+    "output_hash_equal_aobench_wasm": true,
+    "output_hash_equal_call_scripts": true,
+    "processes_per_version_per_workload": 7,
+    "samples_per_process": 7,
+    "schedule": "For each workload, 3 paired processes; order alternates by round and workload index.",
+    "timing_script_sha256": "6b36a5ba15be46660af707d8d3c630f1b46e921320bb9f62ec20786edaaa8832"
+  },
+  "outputs": {
+    "aobench_frame": {
+      "bytes": 528,
+      "height": 16,
+      "matched_between_versions": true,
+      "sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "width": 32
+    },
+    "call_dispatch_result": {
+      "matched_between_versions": true,
+      "sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "sha256_method": "SHA-256 of UTF-8 decimal integer string",
+      "value": 50005000,
+      "workloads": [
+        "W-1",
+        "direct",
+        "indirect"
+      ]
+    }
+  },
+  "records": [
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 4.131615,
+      "process_median_ms": 2.37234,
+      "process_min_ms": 2.180371,
+      "process_wall_ms": 161.668506,
+      "round": 1,
+      "samples_ms": [
+        2.585568,
+        2.460966,
+        2.37234,
+        2.180371,
+        2.295125,
+        4.131615,
+        2.218753
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 4.131615,
+            "median_ms": 2.37234,
+            "min_ms": 2.180371,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 237.234,
+            "samples_ms": [
+              2.585568,
+              2.460966,
+              2.37234,
+              2.180371,
+              2.295125,
+              4.131615,
+              2.218753
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 3.011374,
+      "process_median_ms": 2.3668,
+      "process_min_ms": 2.137261,
+      "process_wall_ms": 170.634448,
+      "round": 1,
+      "samples_ms": [
+        2.3668,
+        2.550944,
+        2.137261,
+        2.493276,
+        2.358995,
+        2.220066,
+        3.011374
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 3.011374,
+            "median_ms": 2.3668,
+            "min_ms": 2.137261,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 236.68,
+            "samples_ms": [
+              2.3668,
+              2.550944,
+              2.137261,
+              2.493276,
+              2.358995,
+              2.220066,
+              3.011374
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.574267,
+      "process_median_ms": 2.268055,
+      "process_min_ms": 2.215166,
+      "process_wall_ms": 158.084303,
+      "round": 2,
+      "samples_ms": [
+        2.574267,
+        2.239542,
+        2.299333,
+        2.215166,
+        2.306537,
+        2.268055,
+        2.226818
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.574267,
+            "median_ms": 2.268055,
+            "min_ms": 2.215166,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 226.8055,
+            "samples_ms": [
+              2.574267,
+              2.239542,
+              2.299333,
+              2.215166,
+              2.306537,
+              2.268055,
+              2.226818
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.888434,
+      "process_median_ms": 2.412364,
+      "process_min_ms": 2.078341,
+      "process_wall_ms": 160.488162,
+      "round": 2,
+      "samples_ms": [
+        2.455044,
+        2.888434,
+        2.887342,
+        2.412364,
+        2.187444,
+        2.094692,
+        2.078341
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.888434,
+            "median_ms": 2.412364,
+            "min_ms": 2.078341,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 241.2364,
+            "samples_ms": [
+              2.455044,
+              2.888434,
+              2.887342,
+              2.412364,
+              2.187444,
+              2.094692,
+              2.078341
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.404661,
+      "process_median_ms": 2.263176,
+      "process_min_ms": 2.143262,
+      "process_wall_ms": 159.295225,
+      "round": 3,
+      "samples_ms": [
+        2.263176,
+        2.191381,
+        2.375326,
+        2.173379,
+        2.143262,
+        2.404661,
+        2.284196
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.404661,
+            "median_ms": 2.263176,
+            "min_ms": 2.143262,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 226.3176,
+            "samples_ms": [
+              2.263176,
+              2.191381,
+              2.375326,
+              2.173379,
+              2.143262,
+              2.404661,
+              2.284196
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 6.885347,
+      "process_median_ms": 2.172427,
+      "process_min_ms": 2.059425,
+      "process_wall_ms": 170.939309,
+      "round": 3,
+      "samples_ms": [
+        6.885347,
+        2.228983,
+        2.160664,
+        2.316134,
+        2.125609,
+        2.172427,
+        2.059425
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 6.885347,
+            "median_ms": 2.172427,
+            "min_ms": 2.059425,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 217.2427,
+            "samples_ms": [
+              6.885347,
+              2.228983,
+              2.160664,
+              2.316134,
+              2.125609,
+              2.172427,
+              2.059425
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 5.287864,
+      "process_median_ms": 2.30772,
+      "process_min_ms": 2.127042,
+      "process_wall_ms": 207.423856,
+      "round": 4,
+      "samples_ms": [
+        4.376232,
+        5.287864,
+        2.165894,
+        2.127042,
+        2.191302,
+        2.578224,
+        2.30772
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 5.287864,
+            "median_ms": 2.30772,
+            "min_ms": 2.127042,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 230.772,
+            "samples_ms": [
+              4.376232,
+              5.287864,
+              2.165894,
+              2.127042,
+              2.191302,
+              2.578224,
+              2.30772
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 3.189806,
+      "process_median_ms": 2.082128,
+      "process_min_ms": 2.029249,
+      "process_wall_ms": 156.493383,
+      "round": 4,
+      "samples_ms": [
+        2.189478,
+        2.082128,
+        2.042153,
+        2.029249,
+        2.069283,
+        2.622007,
+        3.189806
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 3.189806,
+            "median_ms": 2.082128,
+            "min_ms": 2.029249,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 208.2128,
+            "samples_ms": [
+              2.189478,
+              2.082128,
+              2.042153,
+              2.029249,
+              2.069283,
+              2.622007,
+              3.189806
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.531357,
+      "process_median_ms": 2.311606,
+      "process_min_ms": 2.120209,
+      "process_wall_ms": 160.05874,
+      "round": 5,
+      "samples_ms": [
+        2.311606,
+        2.275789,
+        2.466706,
+        2.531357,
+        2.43668,
+        2.222399,
+        2.120209
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.531357,
+            "median_ms": 2.311606,
+            "min_ms": 2.120209,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 231.1606,
+            "samples_ms": [
+              2.311606,
+              2.275789,
+              2.466706,
+              2.531357,
+              2.43668,
+              2.222399,
+              2.120209
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 3.177764,
+      "process_median_ms": 2.304463,
+      "process_min_ms": 2.089231,
+      "process_wall_ms": 167.681545,
+      "round": 5,
+      "samples_ms": [
+        2.324521,
+        2.149634,
+        2.304463,
+        2.089231,
+        3.177764,
+        2.294725,
+        2.850363
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 3.177764,
+            "median_ms": 2.304463,
+            "min_ms": 2.089231,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 230.4463,
+            "samples_ms": [
+              2.324521,
+              2.149634,
+              2.304463,
+              2.089231,
+              3.177764,
+              2.294725,
+              2.850363
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.413937,
+      "process_median_ms": 2.122854,
+      "process_min_ms": 2.06723,
+      "process_wall_ms": 162.096285,
+      "round": 6,
+      "samples_ms": [
+        2.328468,
+        2.20096,
+        2.413937,
+        2.103258,
+        2.122854,
+        2.06723,
+        2.080686
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.413937,
+            "median_ms": 2.122854,
+            "min_ms": 2.06723,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 212.2854,
+            "samples_ms": [
+              2.328468,
+              2.20096,
+              2.413937,
+              2.103258,
+              2.122854,
+              2.06723,
+              2.080686
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.318199,
+      "process_median_ms": 2.138533,
+      "process_min_ms": 2.11513,
+      "process_wall_ms": 173.670378,
+      "round": 6,
+      "samples_ms": [
+        2.236376,
+        2.318199,
+        2.283935,
+        2.121812,
+        2.11513,
+        2.138533,
+        2.116472
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.318199,
+            "median_ms": 2.138533,
+            "min_ms": 2.11513,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 213.8533,
+            "samples_ms": [
+              2.236376,
+              2.318199,
+              2.283935,
+              2.121812,
+              2.11513,
+              2.138533,
+              2.116472
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 3.914059,
+      "process_median_ms": 2.310213,
+      "process_min_ms": 2.253077,
+      "process_wall_ms": 164.805835,
+      "round": 7,
+      "samples_ms": [
+        2.290998,
+        2.310213,
+        2.253077,
+        3.838828,
+        3.914059,
+        3.225413,
+        2.269648
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 3.914059,
+            "median_ms": 2.310213,
+            "min_ms": 2.253077,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 231.0213,
+            "samples_ms": [
+              2.290998,
+              2.310213,
+              2.253077,
+              3.838828,
+              3.914059,
+              3.225413,
+              2.269648
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.223813,
+      "process_median_ms": 2.1903,
+      "process_min_ms": 2.107396,
+      "process_wall_ms": 143.970399,
+      "round": 7,
+      "samples_ms": [
+        2.223813,
+        2.147871,
+        2.202342,
+        2.219535,
+        2.1903,
+        2.107396,
+        2.113326
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.223813,
+            "median_ms": 2.1903,
+            "min_ms": 2.107396,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 219.03,
+            "samples_ms": [
+              2.223813,
+              2.147871,
+              2.202342,
+              2.219535,
+              2.1903,
+              2.107396,
+              2.113326
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "W-1"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 1,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 4.508549,
+      "process_median_ms": 3.982507,
+      "process_min_ms": 3.857413,
+      "process_wall_ms": 194.076853,
+      "round": 1,
+      "samples_ms": [
+        3.924218,
+        3.982507,
+        3.928646,
+        4.508549,
+        4.351155,
+        3.857413,
+        4.154778
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 4.508549,
+        "median_ms": 3.982507,
+        "min_ms": 3.857413,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.924218,
+          3.982507,
+          3.928646,
+          4.508549,
+          4.351155,
+          3.857413,
+          4.154778
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 2,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 7.622093,
+      "process_median_ms": 6.653074,
+      "process_min_ms": 6.109118,
+      "process_wall_ms": 256.711923,
+      "round": 1,
+      "samples_ms": [
+        6.109118,
+        6.75881,
+        6.61409,
+        6.653074,
+        6.934138,
+        6.262374,
+        7.622093
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 7.622093,
+        "median_ms": 6.653074,
+        "min_ms": 6.109118,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          6.109118,
+          6.75881,
+          6.61409,
+          6.653074,
+          6.934138,
+          6.262374,
+          7.622093
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 1,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 6.767396,
+      "process_median_ms": 6.555662,
+      "process_min_ms": 6.044938,
+      "process_wall_ms": 248.058704,
+      "round": 2,
+      "samples_ms": [
+        6.613269,
+        6.713857,
+        6.133122,
+        6.044938,
+        6.092035,
+        6.767396,
+        6.555662
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 6.767396,
+        "median_ms": 6.555662,
+        "min_ms": 6.044938,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          6.613269,
+          6.713857,
+          6.133122,
+          6.044938,
+          6.092035,
+          6.767396,
+          6.555662
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 2,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 6.312257,
+      "process_median_ms": 5.566645,
+      "process_min_ms": 4.346616,
+      "process_wall_ms": 230.728162,
+      "round": 2,
+      "samples_ms": [
+        6.312257,
+        5.729098,
+        5.566645,
+        5.482558,
+        5.534505,
+        6.065366,
+        4.346616
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 6.312257,
+        "median_ms": 5.566645,
+        "min_ms": 4.346616,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          6.312257,
+          5.729098,
+          5.566645,
+          5.482558,
+          5.534505,
+          6.065366,
+          4.346616
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 1,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 5.750317,
+      "process_median_ms": 4.820992,
+      "process_min_ms": 3.930449,
+      "process_wall_ms": 192.312479,
+      "round": 3,
+      "samples_ms": [
+        3.930449,
+        4.820992,
+        4.360994,
+        4.626589,
+        5.750317,
+        5.128196,
+        4.908295
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 5.750317,
+        "median_ms": 4.820992,
+        "min_ms": 3.930449,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.930449,
+          4.820992,
+          4.360994,
+          4.626589,
+          5.750317,
+          5.128196,
+          4.908295
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 2,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 5.191725,
+      "process_median_ms": 4.437125,
+      "process_min_ms": 4.167612,
+      "process_wall_ms": 212.324427,
+      "round": 3,
+      "samples_ms": [
+        4.437125,
+        4.941568,
+        4.473063,
+        4.168614,
+        4.170387,
+        4.167612,
+        5.191725
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 5.191725,
+        "median_ms": 4.437125,
+        "min_ms": 4.167612,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.437125,
+          4.941568,
+          4.473063,
+          4.168614,
+          4.170387,
+          4.167612,
+          5.191725
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 1,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 4.553212,
+      "process_median_ms": 4.304659,
+      "process_min_ms": 4.131475,
+      "process_wall_ms": 172.728259,
+      "round": 4,
+      "samples_ms": [
+        4.180687,
+        4.239466,
+        4.553212,
+        4.513728,
+        4.502006,
+        4.304659,
+        4.131475
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 4.553212,
+        "median_ms": 4.304659,
+        "min_ms": 4.131475,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.180687,
+          4.239466,
+          4.553212,
+          4.513728,
+          4.502006,
+          4.304659,
+          4.131475
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 2,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 5.116774,
+      "process_median_ms": 4.20361,
+      "process_min_ms": 3.875216,
+      "process_wall_ms": 191.983625,
+      "round": 4,
+      "samples_ms": [
+        4.153135,
+        4.864855,
+        5.116774,
+        4.20361,
+        3.936421,
+        3.875216,
+        4.919717
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 5.116774,
+        "median_ms": 4.20361,
+        "min_ms": 3.875216,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.153135,
+          4.864855,
+          5.116774,
+          4.20361,
+          3.936421,
+          3.875216,
+          4.919717
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 1,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 5.620977,
+      "process_median_ms": 4.200343,
+      "process_min_ms": 3.725807,
+      "process_wall_ms": 167.680272,
+      "round": 5,
+      "samples_ms": [
+        3.886838,
+        3.789516,
+        3.725807,
+        4.200343,
+        5.620977,
+        4.752004,
+        4.462243
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 5.620977,
+        "median_ms": 4.200343,
+        "min_ms": 3.725807,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.886838,
+          3.789516,
+          3.725807,
+          4.200343,
+          5.620977,
+          4.752004,
+          4.462243
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 2,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 7.599551,
+      "process_median_ms": 4.499883,
+      "process_min_ms": 4.074999,
+      "process_wall_ms": 193.660456,
+      "round": 5,
+      "samples_ms": [
+        7.599551,
+        5.271333,
+        4.690058,
+        4.426435,
+        4.074999,
+        4.176449,
+        4.499883
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 7.599551,
+        "median_ms": 4.499883,
+        "min_ms": 4.074999,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          7.599551,
+          5.271333,
+          4.690058,
+          4.426435,
+          4.074999,
+          4.176449,
+          4.499883
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 1,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 6.443692,
+      "process_median_ms": 4.522816,
+      "process_min_ms": 4.105005,
+      "process_wall_ms": 179.078827,
+      "round": 6,
+      "samples_ms": [
+        4.474265,
+        4.684848,
+        4.571997,
+        4.105005,
+        6.443692,
+        4.522816,
+        4.354521
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 6.443692,
+        "median_ms": 4.522816,
+        "min_ms": 4.105005,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.474265,
+          4.684848,
+          4.571997,
+          4.105005,
+          6.443692,
+          4.522816,
+          4.354521
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 2,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 4.263411,
+      "process_median_ms": 4.188902,
+      "process_min_ms": 3.919018,
+      "process_wall_ms": 209.417349,
+      "round": 6,
+      "samples_ms": [
+        4.263411,
+        3.919018,
+        4.00536,
+        4.188902,
+        4.103021,
+        4.208659,
+        4.203039
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 4.263411,
+        "median_ms": 4.188902,
+        "min_ms": 3.919018,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.263411,
+          3.919018,
+          4.00536,
+          4.188902,
+          4.103021,
+          4.208659,
+          4.203039
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 1,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 4.029614,
+      "process_median_ms": 3.918366,
+      "process_min_ms": 3.770841,
+      "process_wall_ms": 167.118924,
+      "round": 7,
+      "samples_ms": [
+        3.770841,
+        4.029614,
+        3.948923,
+        3.944826,
+        3.809854,
+        3.800877,
+        3.918366
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 4.029614,
+        "median_ms": 3.918366,
+        "min_ms": 3.770841,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.770841,
+          4.029614,
+          3.948923,
+          3.944826,
+          3.809854,
+          3.800877,
+          3.918366
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "req066",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order_index": 2,
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "process_max_ms": 4.77675,
+      "process_median_ms": 4.409474,
+      "process_min_ms": 4.236621,
+      "process_wall_ms": 169.02292,
+      "round": 7,
+      "samples_ms": [
+        4.324235,
+        4.409474,
+        4.463315,
+        4.77675,
+        4.236621,
+        4.474175,
+        4.254795
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 4.77675,
+        "median_ms": 4.409474,
+        "min_ms": 4.236621,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.324235,
+          4.409474,
+          4.463315,
+          4.77675,
+          4.236621,
+          4.474175,
+          4.254795
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "version": "main",
+      "workload": "W-2"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.4958,
+      "process_median_ms": 2.436781,
+      "process_min_ms": 2.32957,
+      "process_wall_ms": 150.046304,
+      "round": 1,
+      "samples_ms": [
+        2.477115,
+        2.436781,
+        2.32957,
+        2.346872,
+        2.4958,
+        2.425439,
+        2.448372
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.4958,
+            "median_ms": 2.436781,
+            "min_ms": 2.32957,
+            "ns_per_guest_call": 243.6781,
+            "ns_per_loop_iteration": 243.6781,
+            "samples_ms": [
+              2.477115,
+              2.436781,
+              2.32957,
+              2.346872,
+              2.4958,
+              2.425439,
+              2.448372
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 3.270677,
+      "process_median_ms": 2.55474,
+      "process_min_ms": 2.362191,
+      "process_wall_ms": 159.685563,
+      "round": 1,
+      "samples_ms": [
+        2.673132,
+        2.362191,
+        2.436309,
+        2.55474,
+        3.270677,
+        2.695784,
+        2.45792
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.270677,
+            "median_ms": 2.55474,
+            "min_ms": 2.362191,
+            "ns_per_guest_call": 255.474,
+            "ns_per_loop_iteration": 255.474,
+            "samples_ms": [
+              2.673132,
+              2.362191,
+              2.436309,
+              2.55474,
+              3.270677,
+              2.695784,
+              2.45792
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 3.104146,
+      "process_median_ms": 2.544682,
+      "process_min_ms": 2.475553,
+      "process_wall_ms": 180.035564,
+      "round": 2,
+      "samples_ms": [
+        3.104146,
+        2.544682,
+        2.5383,
+        2.475553,
+        2.512933,
+        2.621475,
+        2.643998
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.104146,
+            "median_ms": 2.544682,
+            "min_ms": 2.475553,
+            "ns_per_guest_call": 254.4682,
+            "ns_per_loop_iteration": 254.4682,
+            "samples_ms": [
+              3.104146,
+              2.544682,
+              2.5383,
+              2.475553,
+              2.512933,
+              2.621475,
+              2.643998
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.737863,
+      "process_median_ms": 2.535104,
+      "process_min_ms": 2.425509,
+      "process_wall_ms": 150.26365,
+      "round": 2,
+      "samples_ms": [
+        2.550533,
+        2.42584,
+        2.440016,
+        2.737863,
+        2.735628,
+        2.425509,
+        2.535104
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.737863,
+            "median_ms": 2.535104,
+            "min_ms": 2.425509,
+            "ns_per_guest_call": 253.5104,
+            "ns_per_loop_iteration": 253.5104,
+            "samples_ms": [
+              2.550533,
+              2.42584,
+              2.440016,
+              2.737863,
+              2.735628,
+              2.425509,
+              2.535104
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.614132,
+      "process_median_ms": 2.397126,
+      "process_min_ms": 2.34537,
+      "process_wall_ms": 156.806017,
+      "round": 3,
+      "samples_ms": [
+        2.614132,
+        2.468219,
+        2.397126,
+        2.368363,
+        2.577403,
+        2.381257,
+        2.34537
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.614132,
+            "median_ms": 2.397126,
+            "min_ms": 2.34537,
+            "ns_per_guest_call": 239.7126,
+            "ns_per_loop_iteration": 239.7126,
+            "samples_ms": [
+              2.614132,
+              2.468219,
+              2.397126,
+              2.368363,
+              2.577403,
+              2.381257,
+              2.34537
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 3.779578,
+      "process_median_ms": 2.766036,
+      "process_min_ms": 2.542517,
+      "process_wall_ms": 167.60374,
+      "round": 3,
+      "samples_ms": [
+        2.766036,
+        2.766496,
+        3.344595,
+        2.542517,
+        3.779578,
+        2.702116,
+        2.650409
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.779578,
+            "median_ms": 2.766036,
+            "min_ms": 2.542517,
+            "ns_per_guest_call": 276.6036,
+            "ns_per_loop_iteration": 276.6036,
+            "samples_ms": [
+              2.766036,
+              2.766496,
+              3.344595,
+              2.542517,
+              3.779578,
+              2.702116,
+              2.650409
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.41518,
+      "process_median_ms": 2.364055,
+      "process_min_ms": 2.260311,
+      "process_wall_ms": 164.617834,
+      "round": 4,
+      "samples_ms": [
+        2.41518,
+        2.364055,
+        2.389522,
+        2.260311,
+        2.393158,
+        2.348245,
+        2.307499
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.41518,
+            "median_ms": 2.364055,
+            "min_ms": 2.260311,
+            "ns_per_guest_call": 236.4055,
+            "ns_per_loop_iteration": 236.4055,
+            "samples_ms": [
+              2.41518,
+              2.364055,
+              2.389522,
+              2.260311,
+              2.393158,
+              2.348245,
+              2.307499
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.925042,
+      "process_median_ms": 2.400833,
+      "process_min_ms": 2.290617,
+      "process_wall_ms": 160.902957,
+      "round": 4,
+      "samples_ms": [
+        2.489449,
+        2.925042,
+        2.366459,
+        2.347975,
+        2.290617,
+        2.400833,
+        2.426551
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.925042,
+            "median_ms": 2.400833,
+            "min_ms": 2.290617,
+            "ns_per_guest_call": 240.0833,
+            "ns_per_loop_iteration": 240.0833,
+            "samples_ms": [
+              2.489449,
+              2.925042,
+              2.366459,
+              2.347975,
+              2.290617,
+              2.400833,
+              2.426551
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.387318,
+      "process_median_ms": 2.312578,
+      "process_min_ms": 2.236998,
+      "process_wall_ms": 142.442405,
+      "round": 5,
+      "samples_ms": [
+        2.349738,
+        2.29214,
+        2.236998,
+        2.387318,
+        2.279306,
+        2.312578,
+        2.348896
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.387318,
+            "median_ms": 2.312578,
+            "min_ms": 2.236998,
+            "ns_per_guest_call": 231.2578,
+            "ns_per_loop_iteration": 231.2578,
+            "samples_ms": [
+              2.349738,
+              2.29214,
+              2.236998,
+              2.387318,
+              2.279306,
+              2.312578,
+              2.348896
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 4.289981,
+      "process_median_ms": 2.441529,
+      "process_min_ms": 2.301598,
+      "process_wall_ms": 156.580305,
+      "round": 5,
+      "samples_ms": [
+        4.289981,
+        3.237696,
+        2.323498,
+        2.392688,
+        2.301598,
+        2.519766,
+        2.441529
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 4.289981,
+            "median_ms": 2.441529,
+            "min_ms": 2.301598,
+            "ns_per_guest_call": 244.1529,
+            "ns_per_loop_iteration": 244.1529,
+            "samples_ms": [
+              4.289981,
+              3.237696,
+              2.323498,
+              2.392688,
+              2.301598,
+              2.519766,
+              2.441529
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 4.326289,
+      "process_median_ms": 2.40997,
+      "process_min_ms": 2.267675,
+      "process_wall_ms": 146.506033,
+      "round": 6,
+      "samples_ms": [
+        2.45815,
+        2.40997,
+        2.373692,
+        2.267675,
+        4.326289,
+        3.399678,
+        2.367511
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 4.326289,
+            "median_ms": 2.40997,
+            "min_ms": 2.267675,
+            "ns_per_guest_call": 240.997,
+            "ns_per_loop_iteration": 240.997,
+            "samples_ms": [
+              2.45815,
+              2.40997,
+              2.373692,
+              2.267675,
+              4.326289,
+              3.399678,
+              2.367511
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.53316,
+      "process_median_ms": 2.469852,
+      "process_min_ms": 2.425379,
+      "process_wall_ms": 158.958867,
+      "round": 6,
+      "samples_ms": [
+        2.434887,
+        2.53316,
+        2.527901,
+        2.469852,
+        2.51132,
+        2.425379,
+        2.448912
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.53316,
+            "median_ms": 2.469852,
+            "min_ms": 2.425379,
+            "ns_per_guest_call": 246.9852,
+            "ns_per_loop_iteration": 246.9852,
+            "samples_ms": [
+              2.434887,
+              2.53316,
+              2.527901,
+              2.469852,
+              2.51132,
+              2.425379,
+              2.448912
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 3.356658,
+      "process_median_ms": 2.41554,
+      "process_min_ms": 2.264508,
+      "process_wall_ms": 157.435201,
+      "round": 7,
+      "samples_ms": [
+        2.41554,
+        2.732302,
+        3.356658,
+        2.438353,
+        2.359426,
+        2.269217,
+        2.264508
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.356658,
+            "median_ms": 2.41554,
+            "min_ms": 2.264508,
+            "ns_per_guest_call": 241.554,
+            "ns_per_loop_iteration": 241.554,
+            "samples_ms": [
+              2.41554,
+              2.732302,
+              3.356658,
+              2.438353,
+              2.359426,
+              2.269217,
+              2.264508
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.582112,
+      "process_median_ms": 2.338667,
+      "process_min_ms": 2.266372,
+      "process_wall_ms": 145.122901,
+      "round": 7,
+      "samples_ms": [
+        2.409479,
+        2.338667,
+        2.338416,
+        2.292431,
+        2.266372,
+        2.582112,
+        2.373682
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.582112,
+            "median_ms": 2.338667,
+            "min_ms": 2.266372,
+            "ns_per_guest_call": 233.8667,
+            "ns_per_loop_iteration": 233.8667,
+            "samples_ms": [
+              2.409479,
+              2.338667,
+              2.338416,
+              2.292431,
+              2.266372,
+              2.582112,
+              2.373682
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 3.243798,
+      "process_median_ms": 2.724037,
+      "process_min_ms": 2.390514,
+      "process_wall_ms": 163.623537,
+      "round": 1,
+      "samples_ms": [
+        3.243798,
+        2.531046,
+        2.456156,
+        2.724037,
+        2.390514,
+        2.970106,
+        2.82206
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.243798,
+            "median_ms": 2.724037,
+            "min_ms": 2.390514,
+            "ns_per_guest_call": 272.4037,
+            "ns_per_loop_iteration": 272.4037,
+            "samples_ms": [
+              3.243798,
+              2.531046,
+              2.456156,
+              2.724037,
+              2.390514,
+              2.970106,
+              2.82206
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.655208,
+      "process_median_ms": 2.567044,
+      "process_min_ms": 2.430177,
+      "process_wall_ms": 151.20634,
+      "round": 1,
+      "samples_ms": [
+        2.432412,
+        2.635771,
+        2.534091,
+        2.568807,
+        2.655208,
+        2.567044,
+        2.430177
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.655208,
+            "median_ms": 2.567044,
+            "min_ms": 2.430177,
+            "ns_per_guest_call": 256.7044,
+            "ns_per_loop_iteration": 256.7044,
+            "samples_ms": [
+              2.432412,
+              2.635771,
+              2.534091,
+              2.568807,
+              2.655208,
+              2.567044,
+              2.430177
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.60804,
+      "process_median_ms": 2.412044,
+      "process_min_ms": 2.211089,
+      "process_wall_ms": 145.746044,
+      "round": 2,
+      "samples_ms": [
+        2.525796,
+        2.286118,
+        2.27064,
+        2.211089,
+        2.60804,
+        2.494127,
+        2.412044
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.60804,
+            "median_ms": 2.412044,
+            "min_ms": 2.211089,
+            "ns_per_guest_call": 241.2044,
+            "ns_per_loop_iteration": 241.2044,
+            "samples_ms": [
+              2.525796,
+              2.286118,
+              2.27064,
+              2.211089,
+              2.60804,
+              2.494127,
+              2.412044
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.755756,
+      "process_median_ms": 2.378471,
+      "process_min_ms": 2.241856,
+      "process_wall_ms": 136.234202,
+      "round": 2,
+      "samples_ms": [
+        2.378471,
+        2.349848,
+        2.282011,
+        2.241856,
+        2.379804,
+        2.755756,
+        2.578936
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.755756,
+            "median_ms": 2.378471,
+            "min_ms": 2.241856,
+            "ns_per_guest_call": 237.8471,
+            "ns_per_loop_iteration": 237.8471,
+            "samples_ms": [
+              2.378471,
+              2.349848,
+              2.282011,
+              2.241856,
+              2.379804,
+              2.755756,
+              2.578936
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 4.049011,
+      "process_median_ms": 2.54345,
+      "process_min_ms": 2.401605,
+      "process_wall_ms": 163.995441,
+      "round": 3,
+      "samples_ms": [
+        4.049011,
+        2.509627,
+        2.54345,
+        2.465594,
+        2.401605,
+        3.144833,
+        2.723315
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 4.049011,
+            "median_ms": 2.54345,
+            "min_ms": 2.401605,
+            "ns_per_guest_call": 254.345,
+            "ns_per_loop_iteration": 254.345,
+            "samples_ms": [
+              4.049011,
+              2.509627,
+              2.54345,
+              2.465594,
+              2.401605,
+              3.144833,
+              2.723315
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.700383,
+      "process_median_ms": 2.378502,
+      "process_min_ms": 2.323108,
+      "process_wall_ms": 168.404254,
+      "round": 3,
+      "samples_ms": [
+        2.700383,
+        2.324701,
+        2.395373,
+        2.323108,
+        2.520907,
+        2.356059,
+        2.378502
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.700383,
+            "median_ms": 2.378502,
+            "min_ms": 2.323108,
+            "ns_per_guest_call": 237.8502,
+            "ns_per_loop_iteration": 237.8502,
+            "samples_ms": [
+              2.700383,
+              2.324701,
+              2.395373,
+              2.323108,
+              2.520907,
+              2.356059,
+              2.378502
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 3.086393,
+      "process_median_ms": 2.4903,
+      "process_min_ms": 2.343205,
+      "process_wall_ms": 145.039064,
+      "round": 4,
+      "samples_ms": [
+        3.086393,
+        2.460164,
+        2.476865,
+        2.544872,
+        2.4903,
+        2.606868,
+        2.343205
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.086393,
+            "median_ms": 2.4903,
+            "min_ms": 2.343205,
+            "ns_per_guest_call": 249.03,
+            "ns_per_loop_iteration": 249.03,
+            "samples_ms": [
+              3.086393,
+              2.460164,
+              2.476865,
+              2.544872,
+              2.4903,
+              2.606868,
+              2.343205
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 3.549819,
+      "process_median_ms": 2.592731,
+      "process_min_ms": 2.397967,
+      "process_wall_ms": 184.172659,
+      "round": 4,
+      "samples_ms": [
+        3.549819,
+        2.859048,
+        2.592731,
+        2.50098,
+        2.397967,
+        3.082166,
+        2.449053
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.549819,
+            "median_ms": 2.592731,
+            "min_ms": 2.397967,
+            "ns_per_guest_call": 259.2731,
+            "ns_per_loop_iteration": 259.2731,
+            "samples_ms": [
+              3.549819,
+              2.859048,
+              2.592731,
+              2.50098,
+              2.397967,
+              3.082166,
+              2.449053
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 4.32181,
+      "process_median_ms": 4.220301,
+      "process_min_ms": 4.172411,
+      "process_wall_ms": 200.280317,
+      "round": 5,
+      "samples_ms": [
+        4.32181,
+        4.232884,
+        4.172411,
+        4.184534,
+        4.213609,
+        4.220301,
+        4.26838
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 4.32181,
+            "median_ms": 4.220301,
+            "min_ms": 4.172411,
+            "ns_per_guest_call": 422.0301,
+            "ns_per_loop_iteration": 422.0301,
+            "samples_ms": [
+              4.32181,
+              4.232884,
+              4.172411,
+              4.184534,
+              4.213609,
+              4.220301,
+              4.26838
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.855793,
+      "process_median_ms": 2.746058,
+      "process_min_ms": 2.727313,
+      "process_wall_ms": 174.40012,
+      "round": 5,
+      "samples_ms": [
+        2.855793,
+        2.746058,
+        2.727313,
+        2.744185,
+        2.793175,
+        2.728064,
+        2.80633
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.855793,
+            "median_ms": 2.746058,
+            "min_ms": 2.727313,
+            "ns_per_guest_call": 274.6058,
+            "ns_per_loop_iteration": 274.6058,
+            "samples_ms": [
+              2.855793,
+              2.746058,
+              2.727313,
+              2.744185,
+              2.793175,
+              2.728064,
+              2.80633
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 4.54697,
+      "process_median_ms": 3.7645,
+      "process_min_ms": 2.611186,
+      "process_wall_ms": 173.734397,
+      "round": 6,
+      "samples_ms": [
+        2.611186,
+        2.749795,
+        2.701765,
+        3.7645,
+        4.262379,
+        4.54697,
+        4.523988
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 4.54697,
+            "median_ms": 3.7645,
+            "min_ms": 2.611186,
+            "ns_per_guest_call": 376.45,
+            "ns_per_loop_iteration": 376.45,
+            "samples_ms": [
+              2.611186,
+              2.749795,
+              2.701765,
+              3.7645,
+              4.262379,
+              4.54697,
+              4.523988
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 7.755732,
+      "process_median_ms": 2.573064,
+      "process_min_ms": 2.356982,
+      "process_wall_ms": 202.995306,
+      "round": 6,
+      "samples_ms": [
+        3.841714,
+        2.463861,
+        7.755732,
+        2.573064,
+        2.421341,
+        2.949228,
+        2.356982
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 7.755732,
+            "median_ms": 2.573064,
+            "min_ms": 2.356982,
+            "ns_per_guest_call": 257.3064,
+            "ns_per_loop_iteration": 257.3064,
+            "samples_ms": [
+              3.841714,
+              2.463861,
+              7.755732,
+              2.573064,
+              2.421341,
+              2.949228,
+              2.356982
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 1,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 2.626715,
+      "process_median_ms": 2.494528,
+      "process_min_ms": 2.430619,
+      "process_wall_ms": 165.658918,
+      "round": 7,
+      "samples_ms": [
+        2.626715,
+        2.503044,
+        2.494528,
+        2.459552,
+        2.430619,
+        2.497674,
+        2.481744
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.626715,
+            "median_ms": 2.494528,
+            "min_ms": 2.430619,
+            "ns_per_guest_call": 249.4528,
+            "ns_per_loop_iteration": 249.4528,
+            "samples_ms": [
+              2.626715,
+              2.503044,
+              2.494528,
+              2.459552,
+              2.430619,
+              2.497674,
+              2.481744
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "command": [
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order_index": 2,
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "process_max_ms": 3.087626,
+      "process_median_ms": 2.850082,
+      "process_min_ms": 2.803464,
+      "process_wall_ms": 154.812203,
+      "round": 7,
+      "samples_ms": [
+        2.987689,
+        3.087626,
+        2.812171,
+        2.850082,
+        3.016433,
+        2.820456,
+        2.803464
+      ],
+      "stderr": "",
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.087626,
+            "median_ms": 2.850082,
+            "min_ms": 2.803464,
+            "ns_per_guest_call": 285.0082,
+            "ns_per_loop_iteration": 285.0082,
+            "samples_ms": [
+              2.987689,
+              3.087626,
+              2.812171,
+              2.850082,
+              3.016433,
+              2.820456,
+              2.803464
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "version": "main",
+      "workload": "indirect"
+    }
+  ],
+  "request": "REQ-067",
+  "summary": {
+    "W-1": {
+      "all_paired_output_hashes_match": true,
+      "median_paired_delta_ms": -0.015679,
+      "median_paired_delta_percent": -0.7331661470737161,
+      "paired_runs": [
+        {
+          "delta_ms": -0.005539999999999878,
+          "delta_percent": -0.23352470556496918,
+          "main_process_median_ms": 2.37234,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.3668,
+          "round": 1
+        },
+        {
+          "delta_ms": -0.14430900000000024,
+          "delta_percent": -5.982057434118571,
+          "main_process_median_ms": 2.412364,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.268055,
+          "round": 2
+        },
+        {
+          "delta_ms": -0.09074900000000019,
+          "delta_percent": -4.009807456424075,
+          "main_process_median_ms": 2.263176,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.172427,
+          "round": 3
+        },
+        {
+          "delta_ms": 0.22559200000000024,
+          "delta_percent": 10.834684515073057,
+          "main_process_median_ms": 2.082128,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.30772,
+          "round": 4
+        },
+        {
+          "delta_ms": -0.007142999999999677,
+          "delta_percent": -0.30900594651509516,
+          "main_process_median_ms": 2.311606,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.304463,
+          "round": 5
+        },
+        {
+          "delta_ms": -0.015679,
+          "delta_percent": -0.7331661470737161,
+          "main_process_median_ms": 2.138533,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.122854,
+          "round": 6
+        },
+        {
+          "delta_ms": -0.11991299999999994,
+          "delta_percent": -5.190560350928674,
+          "main_process_median_ms": 2.310213,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.1903,
+          "round": 7
+        }
+      ],
+      "versions": {
+        "main": {
+          "max_sample_ms": 4.131615,
+          "median_of_all_samples_ms": 2.283935,
+          "min_sample_ms": 2.029249,
+          "process_median_max_ms": 2.412364,
+          "process_median_min_ms": 2.082128,
+          "process_medians_ms": [
+            2.37234,
+            2.412364,
+            2.263176,
+            2.082128,
+            2.311606,
+            2.138533,
+            2.310213
+          ],
+          "sample_count": 49
+        },
+        "req066": {
+          "max_sample_ms": 6.885347,
+          "median_of_all_samples_ms": 2.226818,
+          "min_sample_ms": 2.059425,
+          "process_median_max_ms": 2.3668,
+          "process_median_min_ms": 2.122854,
+          "process_medians_ms": [
+            2.3668,
+            2.268055,
+            2.172427,
+            2.30772,
+            2.304463,
+            2.122854,
+            2.1903
+          ],
+          "sample_count": 49
+        }
+      }
+    },
+    "W-2": {
+      "all_paired_output_hashes_match": true,
+      "median_paired_delta_ms": -0.33391400000000004,
+      "median_paired_delta_percent": -7.382878277604044,
+      "paired_runs": [
+        {
+          "delta_ms": -2.670567,
+          "delta_percent": -40.14034715381191,
+          "main_process_median_ms": 6.653074,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 3.982507,
+          "round": 1
+        },
+        {
+          "delta_ms": -0.9890169999999996,
+          "delta_percent": -15.086455036882619,
+          "main_process_median_ms": 6.555662,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 5.566645,
+          "round": 2
+        },
+        {
+          "delta_ms": 0.3838670000000004,
+          "delta_percent": 8.651255035636819,
+          "main_process_median_ms": 4.437125,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 4.820992,
+          "round": 3
+        },
+        {
+          "delta_ms": -0.10104899999999972,
+          "delta_percent": -2.34743332747146,
+          "main_process_median_ms": 4.304659,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 4.20361,
+          "round": 4
+        },
+        {
+          "delta_ms": -0.2995399999999995,
+          "delta_percent": -6.656617516499863,
+          "main_process_median_ms": 4.499883,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 4.200343,
+          "round": 5
+        },
+        {
+          "delta_ms": -0.33391400000000004,
+          "delta_percent": -7.382878277604044,
+          "main_process_median_ms": 4.522816,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 4.188902,
+          "round": 6
+        },
+        {
+          "delta_ms": -0.49110800000000054,
+          "delta_percent": -11.137564253695576,
+          "main_process_median_ms": 4.409474,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 3.918366,
+          "round": 7
+        }
+      ],
+      "versions": {
+        "main": {
+          "max_sample_ms": 7.622093,
+          "median_of_all_samples_ms": 4.522816,
+          "min_sample_ms": 4.074999,
+          "process_median_max_ms": 6.653074,
+          "process_median_min_ms": 4.304659,
+          "process_medians_ms": [
+            6.653074,
+            6.555662,
+            4.437125,
+            4.304659,
+            4.499883,
+            4.522816,
+            4.409474
+          ],
+          "sample_count": 49
+        },
+        "req066": {
+          "max_sample_ms": 6.312257,
+          "median_of_all_samples_ms": 4.203039,
+          "min_sample_ms": 3.725807,
+          "process_median_max_ms": 5.566645,
+          "process_median_min_ms": 3.918366,
+          "process_medians_ms": [
+            3.982507,
+            5.566645,
+            4.820992,
+            4.20361,
+            4.200343,
+            4.188902,
+            3.918366
+          ],
+          "sample_count": 49
+        }
+      }
+    },
+    "direct": {
+      "all_paired_output_hashes_match": true,
+      "median_paired_delta_ms": 0.009577999999999864,
+      "median_paired_delta_percent": 0.3778148746560239,
+      "paired_runs": [
+        {
+          "delta_ms": 0.11795899999999993,
+          "delta_percent": 4.840771493211737,
+          "main_process_median_ms": 2.436781,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.55474,
+          "round": 1
+        },
+        {
+          "delta_ms": 0.009577999999999864,
+          "delta_percent": 0.3778148746560239,
+          "main_process_median_ms": 2.535104,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.544682,
+          "round": 2
+        },
+        {
+          "delta_ms": 0.36891000000000007,
+          "delta_percent": 15.389679140771072,
+          "main_process_median_ms": 2.397126,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.766036,
+          "round": 3
+        },
+        {
+          "delta_ms": -0.03677799999999998,
+          "delta_percent": -1.531884974923281,
+          "main_process_median_ms": 2.400833,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.364055,
+          "round": 4
+        },
+        {
+          "delta_ms": 0.12895100000000026,
+          "delta_percent": 5.576071380078873,
+          "main_process_median_ms": 2.312578,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.441529,
+          "round": 5
+        },
+        {
+          "delta_ms": -0.05988199999999999,
+          "delta_percent": -2.424517744383059,
+          "main_process_median_ms": 2.469852,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.40997,
+          "round": 6
+        },
+        {
+          "delta_ms": -0.07687299999999997,
+          "delta_percent": -3.182435397468064,
+          "main_process_median_ms": 2.41554,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.338667,
+          "round": 7
+        }
+      ],
+      "versions": {
+        "main": {
+          "max_sample_ms": 3.356658,
+          "median_of_all_samples_ms": 2.42584,
+          "min_sample_ms": 2.236998,
+          "process_median_max_ms": 2.535104,
+          "process_median_min_ms": 2.312578,
+          "process_medians_ms": [
+            2.436781,
+            2.535104,
+            2.397126,
+            2.400833,
+            2.312578,
+            2.469852,
+            2.41554
+          ],
+          "sample_count": 49
+        },
+        "req066": {
+          "max_sample_ms": 4.326289,
+          "median_of_all_samples_ms": 2.45815,
+          "min_sample_ms": 2.260311,
+          "process_median_max_ms": 2.766036,
+          "process_median_min_ms": 2.338667,
+          "process_medians_ms": [
+            2.55474,
+            2.544682,
+            2.766036,
+            2.364055,
+            2.441529,
+            2.40997,
+            2.338667
+          ],
+          "sample_count": 49
+        }
+      }
+    },
+    "indirect": {
+      "all_paired_output_hashes_match": true,
+      "median_paired_delta_ms": 0.10243100000000016,
+      "median_paired_delta_percent": 4.113199212946239,
+      "paired_runs": [
+        {
+          "delta_ms": 0.15699299999999994,
+          "delta_percent": 6.115711300624382,
+          "main_process_median_ms": 2.567044,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.724037,
+          "round": 1
+        },
+        {
+          "delta_ms": -0.033573000000000075,
+          "delta_percent": -1.3918900318568017,
+          "main_process_median_ms": 2.412044,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.378471,
+          "round": 2
+        },
+        {
+          "delta_ms": 0.16494799999999987,
+          "delta_percent": 6.934953176411018,
+          "main_process_median_ms": 2.378502,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.54345,
+          "round": 3
+        },
+        {
+          "delta_ms": 0.10243100000000016,
+          "delta_percent": 4.113199212946239,
+          "main_process_median_ms": 2.4903,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.592731,
+          "round": 4
+        },
+        {
+          "delta_ms": 1.474243,
+          "delta_percent": 53.68579250693175,
+          "main_process_median_ms": 2.746058,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 4.220301,
+          "round": 5
+        },
+        {
+          "delta_ms": -1.191436,
+          "delta_percent": -31.64924956833577,
+          "main_process_median_ms": 3.7645,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.573064,
+          "round": 6
+        },
+        {
+          "delta_ms": -0.35555400000000015,
+          "delta_percent": -12.475220011213716,
+          "main_process_median_ms": 2.850082,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "outputs_match": true,
+          "req066_process_median_ms": 2.494528,
+          "round": 7
+        }
+      ],
+      "versions": {
+        "main": {
+          "max_sample_ms": 4.54697,
+          "median_of_all_samples_ms": 2.611186,
+          "min_sample_ms": 2.211089,
+          "process_median_max_ms": 3.7645,
+          "process_median_min_ms": 2.378502,
+          "process_medians_ms": [
+            2.567044,
+            2.412044,
+            2.378502,
+            2.4903,
+            2.746058,
+            3.7645,
+            2.850082
+          ],
+          "sample_count": 49
+        },
+        "req066": {
+          "max_sample_ms": 7.755732,
+          "median_of_all_samples_ms": 2.573064,
+          "min_sample_ms": 2.241856,
+          "process_median_max_ms": 4.220301,
+          "process_median_min_ms": 2.378471,
+          "process_medians_ms": [
+            2.724037,
+            2.378471,
+            2.54345,
+            2.592731,
+            4.220301,
+            2.573064,
+            2.494528
+          ],
+          "sample_count": 49
+        }
+      }
+    }
+  }
+}

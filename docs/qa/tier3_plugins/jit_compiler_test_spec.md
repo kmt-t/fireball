@@ -64,7 +64,7 @@
 | TEST-JITC-40 | 生成コードの位置独立性 (PIC) | 同一トレースバイナリを別のバッファ/オフセットにコピー | 実行 | 再コンパイルや外部シンボルrelocationなしで完全に同一の結果を出力する。生成objectの外部relocationはcompose時に除去する接続slotだけを指す | `{PositionIndependentCode}` |
 | TEST-JITC-41 | ゲストメモリ境界チェックと副作用抑止 | メモリアクセス命令を含むx64トレース | 境界内外のアクセスを実行 | 範囲外アクセスはメモリ副作用前に検出され、WASM trapとなる。ARMv8-Mの命令列とアドレス検査方式はTBD | MemoryBoundaryCheck, FastAddressCheck |
 | TEST-JITC-42 | キャッシュ溢れの3面ローテーション処理 | キャッシュ容量超過 | コンパイル試行 | Oldestバンクを破棄して再利用し、被チェイン元の解除を行う。解除対象の探索に加えて破棄バンク全体の消去を行うため、処理量は`O(k + n)`である | 「Cache Capacity Check」, `` |
-| TEST-JITC-43 | ホストコール (WASI / fireball_call) のJIT境界 | 0〜6引数のimport／host call | トレースの後続PCからInterpreter dispatcherを実行する | traceはhost callを実行せず、C++ Interpreter handlerがhost-call Runtime APIを実行する。共有実行状態を維持し、API境界の完了理由だけをRuntimeEngineへ返す。host call後はInterpreter dispatcherが次のBasicBlockを実行する | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md), `TEST-INTP-05` |
+| TEST-JITC-43 | ホストコール (WASI / fireball_call) のJIT境界 | 0〜6引数のimport／host callを最後のoperationとするtrace | traceの終端stencilからTier 2 CPS handlerへのtail-callを実行し、host境界とcaller再開を確認する | traceは共通コード領域の借用function pointer tableからhost call handlerへ直接tail-callし、host-call Runtime APIを一度実行する。共有実行状態を保ち、既存API境界だけRuntimeEngineへ返す。host call後はcaller CPSを再開し、後続traceへchainしない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md), `TEST-INTP-05` |
 | TEST-JITC-44 | 境界委譲後のコンテキスト保持 | 複雑命令またはimport／host call | 境界復帰後に実行を継続 | 共有実行コンテキスト、共有オペランド領域、ローカル値領域を正本として状態が保持され、JIT専用戻り値バッファや専用オペランド領域が生成されない | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 | TEST-JITC-45 | 複数型Runtime APIのワード配置 | `i64/f32/f64` 定数と算術命令 | JITトレースを実行 | `i64/f64` は2ワード、`f32` は1ワードで演算結果が共有オペランド領域へ保存される | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 

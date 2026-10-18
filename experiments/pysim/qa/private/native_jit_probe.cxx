@@ -1,5 +1,6 @@
 // QA owns inspection and explicit cache manipulation.
 #include "../../native/tier3_plugins/jit/jit_runtime.hxx"
+#include "../../native/tier3_plugins/jit/jit_runtime_apis.hxx"
 #include "jit_measurements.hxx"
 #include "jit_native_probe.hxx"
 
@@ -14,6 +15,8 @@ using configured_jit_provider_adapter = jit_provider_adapter<jit_measurements>;
 using provider_adapter = fireball::configured_jit_provider_adapter;
 
 using qa_jit_runtime = provider_adapter::runtime_type;
+alignas(std::uintptr_t) static std::array<std::uint8_t, 258 * sizeof(std::uintptr_t)>
+    qa_function_table_storage{};
 static bool qa_runtime_observe([[maybe_unused]] const fb_native_dispatch_call *input,
                                [[maybe_unused]] std::uint32_t pc) {
   return false;
@@ -414,7 +417,8 @@ static int qa_lookup_trace(std::uintptr_t owner, [[maybe_unused]] block_index_t 
       reinterpret_cast<const std::uint8_t *>(header) + header->const_rel_offset);
   *output = {start->entry_address,    rel,
              header->frame_depth,     static_cast<jit_stack_words_t>(start->chain_stack_words),
-             static_cast<jit_body_count_t>(start->chain_body_count), 0,
+             static_cast<jit_body_count_t>(start->chain_body_count),
+             static_cast<std::uint8_t>(header->exit_kind),
              reinterpret_cast<std::uintptr_t>(start)};
   return 1;
 }
@@ -528,7 +532,8 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_block_counters_enabled() {
 
 extern "C" FB_PYSIM_ABI_EXPORT qa_jit_runtime *
 fb_jit_runtime_init(std::uint8_t *storage, std::size_t bytes, std::uint32_t bank_bytes,
-                    std::uint32_t entry_capacity, const std::uint32_t *offsets) {
+                    std::uint32_t entry_capacity, const std::uint32_t *offsets,
+                    const fireball_native_cps_handler *call_handlers) {
   if (storage == nullptr || bytes < sizeof(qa_jit_runtime) || offsets == nullptr ||
       reinterpret_cast<std::uintptr_t>(storage) % alignof(qa_jit_runtime) != 0 ||
       bank_bytes < fireball::jit_trace_header_bytes || entry_capacity == 0 ||
@@ -545,7 +550,10 @@ fb_jit_runtime_init(std::uint8_t *storage, std::size_t bytes, std::uint32_t bank
                      provider_adapter::observe_runtime_block,
                      provider_adapter::finish_runtime_boundary};
   if (!fb_jit_memory_init(&cache->cache.code_memory, FB_CONF_JIT_CACHE_REGION_BYTES) ||
-      !fireball::initialize_common_code(&cache->cache.code_memory) ||
+      !fireball::initialize_common_code(
+          &cache->cache.code_memory,
+          fireball::jit_api::initialize_runtime_function_table(qa_function_table_storage.data(),
+                                                               call_handlers)) ||
       !fb_jit_memory_commit(&cache->cache.code_memory)) {
     cache->~qa_jit_runtime();
     return nullptr;

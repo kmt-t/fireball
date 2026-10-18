@@ -285,7 +285,8 @@ template <jit_measurement_policy Measurement> struct jit_provider_adapter {
   /** @brief 借用領域にランタイムを構築し、コード領域と候補設定を初期化する。 */
   static runtime_type *fb_jit_plugin_init(std::uint8_t *region, [[maybe_unused]] std::size_t bytes,
                                           const fireball_wasm_module_execution_view_native *view,
-                                          std::uint32_t module_id);
+                                          std::uint32_t module_id,
+                                          const fireball_native_cps_handler *call_handlers);
   static const fb_native_jit_provider *fb_jit_plugin_provider(runtime_type *runtime);
 };
 } // namespace fireball

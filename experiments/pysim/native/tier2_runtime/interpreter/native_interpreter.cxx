@@ -161,6 +161,26 @@ static_assert(std::is_same_v<decltype(&h_runtime_api<void, &runtime_nop>), nativ
 template <typename Debugger, auto RuntimeApi>
 inline constexpr native_opcode_handler runtime_api_handler = &h_runtime_api<Debugger, RuntimeApi>;
 
+template <bool Indirect>
+inline FIREBALL_CPS_CALL void h_jit_call(execution_context *context,
+                                         const std::uint8_t *instruction_ip,
+                                         std::uint32_t *sp, const std::uint8_t *rel) {
+  auto *annotation = rel;
+  const auto annotation_offset = read_u32(annotation);
+  const auto &frame = active_frame(*context);
+  const auto &function = *frame.function_view;
+  assert(annotation_offset <= function.interpreter_annotation_byte_count);
+  assert(function.interpreter_annotation_pool != nullptr ||
+         function.interpreter_annotation_byte_count == 0);
+  assert(function.interpreter_annotation_pool != nullptr);
+  [[clang::musttail]]
+  return h_runtime_api<void, &runtime_call<Indirect>>(
+      context, instruction_ip, sp, function.interpreter_annotation_pool + annotation_offset);
+}
+
+inline constexpr std::array<fireball_native_cps_handler, 2> kJitCallHandlers{
+    &h_jit_call<false>, &h_jit_call<true>};
+
 template <typename Debugger> constexpr auto make_fc_opcode_handlers() {
   std::array<native_opcode_handler, 12> handlers{};
   handlers.fill(&h_unsupported_opcode<Debugger>);
@@ -753,6 +773,15 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
   frame.boundary_loops_to = trace_exit->loops_to;
   const auto *previous_rel = context.rel;
   context.rel = trace.rel;
+  if (trace.exit_kind == FB_NATIVE_JIT_TRACE_CALL_CPS) {
+    reinterpret_cast<fireball_native_cps_handler>(trace.entry_address)(
+        &context, context.code + context.ip, context.stack_pointer, trace.rel);
+    if constexpr (WithExtension) {
+      state.extension->trace_executed(&state.input, trace.trace_cookie);
+    }
+    assert(context.trap_code != 0 || cps_exit_pending(context));
+    return trace.body_count;
+  }
   const auto completed = reinterpret_cast<fireball_native_jit_trace_entry>(trace.entry_address)(
       &context, context.code + context.ip, context.stack_pointer, trace.rel);
   if constexpr (WithExtension) {
@@ -1219,4 +1248,9 @@ fb_native_run_dispatch_block(const fb_native_dispatch_call *call, fb_native_resu
 extern "C" FB_PYSIM_INTERPRETER_EXPORT int
 fb_native_run_debug_dispatch(const fb_native_dispatch_call *call, fb_native_result *result) {
   return run_native_dispatch_abi<false, false, false, false, debugger_aspect>(call, result);
+}
+
+extern "C" FB_PYSIM_INTERPRETER_EXPORT const void *
+fb_native_jit_call_handlers() {
+  return static_cast<const void *>(kJitCallHandlers.data());
 }

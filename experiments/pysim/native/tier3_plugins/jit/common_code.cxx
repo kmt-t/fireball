@@ -50,7 +50,8 @@ extern "C" void fb_jit_common_layout(fireball::jit_common_layout *output) {
   assert(output != nullptr);
   *output = {region_bytes, common_bytes, chain_offset, chain_size, header_bytes};
 }
-int fireball::initialize_common_code(fireball::executable_memory *memory) {
+int fireball::initialize_common_code(fireball::executable_memory *memory,
+                                     const void *function_table) {
   using namespace fireball;
   assert(fb_jit_memory_valid_protection(memory) && memory->patching &&
          memory->bytes == region_bytes);
@@ -59,9 +60,9 @@ int fireball::initialize_common_code(fireball::executable_memory *memory) {
               fireball::pysim::jit::generated::common_code_bytes);
   // The catalog remains in read-only storage for the plugin's lifetime.
   // Only its borrowed address belongs to this runtime's writable code area.
-  const auto *api_table = jit_api::runtime_api_table_data();
-  static_assert(sizeof(api_table) <= common_bytes - api_table_pointer_offset);
-  std::memcpy(output + api_table_pointer_offset, &api_table, sizeof(api_table));
+  assert(function_table != nullptr);
+  static_assert(sizeof(function_table) <= common_bytes - api_table_pointer_offset);
+  std::memcpy(output + api_table_pointer_offset, &function_table, sizeof(function_table));
   return 1;
 }
 extern "C" int fb_jit_common_install(fireball::executable_memory *memory, code_offset_t offset,
@@ -174,7 +175,7 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
   }
   const auto trace_body_end_ip =
       r->body_end_ip == kNoTraceExitIp ? body_end_ip : r->body_end_ip;
-  if (trace_body_end_ip > body_end_ip) {
+  if (trace_body_end_ip > body_end_ip && r->exit_kind != jit_trace_exit_kind::call_cps) {
     return 0;
   }
   const jit_trace_boundary_metadata boundary_metadata{trace_body_end_ip,
@@ -221,7 +222,7 @@ extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block *block, std::
 
 extern "C" int fb_jit_region_init(fireball::executable_memory *memory) {
   fb_jit_memory_init(memory, fireball::region_bytes);
-  fireball::initialize_common_code(memory);
+  fireball::initialize_common_code(memory, fireball::jit_api::runtime_api_table_data());
   return 1;
 }
 

@@ -28,6 +28,7 @@ RUNTIME_INIT.argtypes = (
     ctypes.c_size_t,
     ctypes.c_void_p,
     ctypes.c_uint32,
+    ctypes.c_void_p,
 )
 RUNTIME_INIT.restype = ctypes.c_void_p
 RUNTIME_CLOSE = _library.fb_jit_runtime_close

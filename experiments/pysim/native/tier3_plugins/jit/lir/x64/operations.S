@@ -369,6 +369,26 @@ FB_RUNTIME_API_STENCIL fb_stencil_runtime_api_immediate_three, 24
 
 FB_LOCAL_SET_CONST_I32
 
+/* Tail-call one Interpreter CPS call handler through the borrowed function table. */
+FB_STENCIL_BEGIN fb_stencil_cps_call
+  movzx eax, byte ptr [FB_REL_REG]
+  mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET]
+  movsxd r10, dword ptr [r11]
+  lea r11, [r11 + r10]
+  movsxd r10, dword ptr [r11 + FB_TRACE_COMMON_RELATIVE_OFFSET]
+  lea r11, [r11 + r10 + FB_TRACE_RUNTIME_API_TABLE_POINTER_OFFSET]
+  mov r11, qword ptr [r11]
+  mov rax, qword ptr [r11 + rax * 8]
+  mov r10d, dword ptr [FB_REL_REG + 3]
+  lea FB_IP_REG, [FB_IP_REG + r10]
+  lea FB_REL_REG, [FB_REL_REG + 7]
+  mov qword ptr [FB_CTX_REG + FB_CONTEXT_SP_OFFSET], FB_SP_REG
+  /* Discard the call-to-body return slot and the wrapper's alignment slot. */
+  add rsp, 16
+  pop r12
+  jmp rax
+FB_STENCIL_END fb_stencil_cps_call
+
 .macro FB_FUSED_BINARY name, operation
   FB_STENCIL_BEGIN fb_stencil_i32_\name\()_local
     mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_LOCAL_BASE_OFFSET]

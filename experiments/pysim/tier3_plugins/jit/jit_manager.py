@@ -5,7 +5,7 @@ from __future__ import annotations
 import ctypes
 from collections.abc import Callable
 
-from tier2_runtime.abi.native_abi import BufferLease
+from tier2_runtime.abi.native_abi import JIT_CALL_HANDLER_TABLE, BufferLease
 from tier2_runtime.interpreter.interpreter import NativeModuleExecution
 from tier2_runtime.wasm.module import Module
 
@@ -56,7 +56,9 @@ class JITRuntimeManager:
         )
         assert region.nbytes == size, "plugin region size must match its request"
         lease = BufferLease(region)
-        pointer = native_abi.RUNTIME_INIT(lease.address, region.nbytes, view, self.module_id)
+        pointer = native_abi.RUNTIME_INIT(
+            lease.address, region.nbytes, view, self.module_id, JIT_CALL_HANDLER_TABLE
+        )
         assert pointer is not None
         self._lease = lease
         self._pointer = pointer

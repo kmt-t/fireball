@@ -20,7 +20,9 @@ FB_PYSIM_ABI_EXPORT std::size_t
 fb_jit_plugin_required_bytes(const fireball_wasm_module_execution_view_native *view);
 FB_PYSIM_ABI_EXPORT const fb_native_jit_provider *
 fb_jit_plugin_init(std::uint8_t *region, std::size_t bytes,
-                   const fireball_wasm_module_execution_view_native *view, std::uint32_t module_id);
+                   const fireball_wasm_module_execution_view_native *view,
+                   std::uint32_t module_id,
+                   const fireball_native_cps_handler *call_handlers);
 FB_PYSIM_ABI_EXPORT void fb_jit_runtime_close(const fb_native_jit_provider *provider);
 FB_PYSIM_ABI_EXPORT int fb_jit_runtime_flush(const fb_native_jit_provider *provider);
 FB_PYSIM_ABI_EXPORT int fb_jit_runtime_compile(const fb_native_jit_provider *provider);

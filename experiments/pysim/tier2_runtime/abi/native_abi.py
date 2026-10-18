@@ -68,6 +68,11 @@ RUN_DISPATCH.restype = ctypes.c_int
 RUN_DISPATCH_JIT = _LIBRARY.fb_native_run_dispatch_jit
 RUN_DISPATCH_JIT.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeResult))
 RUN_DISPATCH_JIT.restype = ctypes.c_int
+JIT_CALL_HANDLERS = _LIBRARY.fb_native_jit_call_handlers
+JIT_CALL_HANDLERS.argtypes = ()
+JIT_CALL_HANDLERS.restype = ctypes.c_void_p
+JIT_CALL_HANDLER_TABLE = JIT_CALL_HANDLERS()
+assert JIT_CALL_HANDLER_TABLE is not None
 
 
 def run_step(

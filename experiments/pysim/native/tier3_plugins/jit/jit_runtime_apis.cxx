@@ -487,11 +487,39 @@ constexpr auto make_jit_runtime_api_function_table() {
 
 inline constexpr auto kJitRuntimeApiFunctionTable = make_jit_runtime_api_function_table();
 static_assert(kJitRuntimeApiCount == kJitRuntimeApiFunctionTable.size());
+static_assert(kJitRuntimeApiCount + 2 <= 0x100,
+              "CPS call handler indices must fit the trace constant");
+static_assert(sizeof(jit_runtime_api_pointer) == sizeof(fireball_native_cps_handler));
+static_assert(sizeof(jit_runtime_api_pointer) == sizeof(std::uintptr_t));
 #undef FB_JIT_CONTROL_API
 
 /** @brief プラグインの保存領域にある読み取り専用API表の先頭を借用する。 */
 const jit_runtime_api_pointer *runtime_api_table_data() {
   return kJitRuntimeApiFunctionTable.data();
+}
+
+std::size_t runtime_function_table_bytes() {
+  return (kJitRuntimeApiCount + 2) * sizeof(std::uintptr_t);
+}
+
+const void *initialize_runtime_function_table(
+    void *storage, const fireball_native_cps_handler *handlers) {
+  assert(storage != nullptr && handlers != nullptr);
+  auto *table_bytes = static_cast<std::uint8_t *>(storage);
+  for (std::size_t index = 0; index < kJitRuntimeApiCount; ++index) {
+    std::memcpy(table_bytes + index * sizeof(std::uintptr_t),
+                &kJitRuntimeApiFunctionTable[index], sizeof(jit_runtime_api_pointer));
+  }
+  for (std::size_t index = 0; index < 2; ++index) {
+    assert(handlers[index] != nullptr);
+    std::memcpy(table_bytes + (kJitRuntimeApiCount + index) * sizeof(std::uintptr_t),
+                &handlers[index], sizeof(fireball_native_cps_handler));
+  }
+  return storage;
+}
+
+std::uint8_t jit_call_handler_slot(bool indirect) {
+  return static_cast<std::uint8_t>(kJitRuntimeApiCount + (indirect ? 1u : 0u));
 }
 } // namespace fireball::jit_api
 
@@ -518,6 +546,13 @@ extern "C" int fb_jit_runtime_api_slot(std::uint32_t opcode, std::uint32_t fc_pr
     return 0;
   }
   *slot = value;
+  return 1;
+}
+
+extern "C" int fb_jit_cps_call_handler_slot(std::uint32_t opcode, std::uint8_t *slot) {
+  assert(slot != nullptr);
+  assert(opcode == 0x10 || opcode == 0x11);
+  *slot = fireball::jit_api::jit_call_handler_slot(opcode == 0x11);
   return 1;
 }
 

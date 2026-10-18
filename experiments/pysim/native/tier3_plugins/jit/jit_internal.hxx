@@ -45,7 +45,7 @@ int compile_wasm_trace(const std::uint8_t *code, code_offset_t code_bytes,
                        fireball::jit_compile_result *result);
 std::int64_t chain_successor(std::uintptr_t address, code_offset_t bytes, code_offset_t offset,
                              code_offset_t span, wasm_pc_t next_pc);
-int initialize_common_code(executable_memory *memory);
+int initialize_common_code(executable_memory *memory, const void *function_table);
 int patch_trace_chain(executable_memory *memory, code_offset_t offset, std::uint64_t target);
 int build_trace(const std::uint8_t *body, code_offset_t body_bytes,
                 const fireball::jit_compile_result *result, wasm_pc_t head_pc,

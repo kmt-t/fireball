@@ -3,6 +3,7 @@
  * @details 検索とprovider callbackを同じ翻訳単位に置き、直接呼び出しの最適化を保つ。
  */
 #include "jit_runtime.hxx"
+#include "jit_runtime_apis.hxx"
 #include <algorithm>
 #include <bit>
 #include <cassert>
@@ -1532,7 +1533,7 @@ int jit_provider_adapter<Measurement>::lookup_runtime_trace(std::uintptr_t owner
              start_header->frame_depth,
              start_header->chain_words,
              start_header->chain_body_count,
-             0,
+             static_cast<std::uint8_t>(start_header->exit_kind),
              reinterpret_cast<std::uintptr_t>(start_header)};
   return 1;
 }
@@ -1566,7 +1567,8 @@ std::size_t jit_provider_adapter<Measurement>::workspace_size(
     const fireball_wasm_module_execution_view_native *view) {
   const auto cards = jit_card_count(fireball::module_code_bytes(view), FB_CONF_JIT_CARD_SHIFT);
   assert(cards >= 0);
-  return (cards + 3) / 4 + 2 * ((cards + 7) / 8);
+  return jit_api::runtime_function_table_bytes() + (cards + 3) / 4 +
+         2 * ((cards + 7) / 8);
 }
 
 template <jit_measurement_policy Measurement>
@@ -1595,9 +1597,11 @@ template <jit_measurement_policy Measurement>
 typename jit_provider_adapter<Measurement>::runtime_type *
 jit_provider_adapter<Measurement>::fb_jit_plugin_init(
     std::uint8_t *region, [[maybe_unused]] std::size_t bytes,
-    const fireball_wasm_module_execution_view_native *view, std::uint32_t module_id) {
+    const fireball_wasm_module_execution_view_native *view, std::uint32_t module_id,
+    const fireball_native_cps_handler *call_handlers) {
   assert(view != nullptr && region != nullptr && bytes == fb_jit_plugin_required_bytes(view) &&
          reinterpret_cast<std::uintptr_t>(region) % fb_jit_plugin_alignment() == 0);
+  assert(call_handlers != nullptr && call_handlers[0] != nullptr && call_handlers[1] != nullptr);
   auto *runtime = ::new (region) runtime_type{};
   if constexpr (!std::is_void_v<Measurement>) {
     runtime->measurements.owns_memory = false;
@@ -1612,7 +1616,10 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
                        finish_runtime_boundary};
   fireball::borrow_executable_region(&runtime->cache.code_memory, region + data_region_size(view),
                                      FB_CONF_JIT_CACHE_REGION_BYTES);
-  fireball::initialize_common_code(&runtime->cache.code_memory);
+  auto *workspace = region + sizeof(runtime_type);
+  const auto *function_table =
+      jit_api::initialize_runtime_function_table(workspace, call_handlers);
+  fireball::initialize_common_code(&runtime->cache.code_memory, function_table);
   fb_jit_memory_commit(&runtime->cache.code_memory);
   constexpr code_offset_t offsets[] = {FB_CONF_JIT_CACHE_ACTIVE_OFFSET_BYTES,
                                        FB_CONF_JIT_CACHE_WARM_OFFSET_BYTES,
@@ -1627,9 +1634,10 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
   const auto cards = static_cast<std::uint32_t>(jit_card_count(code_bytes, FB_CONF_JIT_CARD_SHIFT));
   const auto state_bytes = (cards + 3) / 4;
   const auto mask_bytes = (cards + 7) / 8;
-  auto *workspace = region + sizeof(runtime_type);
-  std::memset(workspace, 0, workspace_size(view));
-  auto *dirty = workspace + state_bytes;
+  auto *card_workspace = workspace + jit_api::runtime_function_table_bytes();
+  const auto card_workspace_size = (state_bytes + 2 * mask_bytes);
+  std::memset(card_workspace, 0, card_workspace_size);
+  auto *dirty = card_workspace + state_bytes;
   auto *mask = dirty + mask_bytes;
   typename runtime_type::profile_type profile{};
   static_cast<jit_profile &>(profile) = {mask,
@@ -1641,7 +1649,7 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
                                          code_bytes,
                                          FB_CONF_JIT_HISTORY_CAPACITY,
                                          FB_CONF_JIT_COMPILE_QUEUE_CAPACITY};
-  fb_jit_runtime_bind_cards(runtime, workspace, state_bytes, dirty, mask_bytes, cards,
+  fb_jit_runtime_bind_cards(runtime, card_workspace, state_bytes, dirty, mask_bytes, cards,
                             FB_CONF_JIT_CARD_SHIFT, &runtime->hotspots.aging_cursor_storage,
                             FB_CONF_JIT_AGING_STEP_UNITS, FB_CONF_JIT_AGING_STEP_SCAN_BYTES);
   fb_jit_runtime_bind_profile(runtime, profile);
@@ -1696,7 +1704,9 @@ fb_jit_plugin_required_bytes(const fireball_wasm_module_execution_view_native *v
 extern "C" const fb_native_jit_provider *
 fb_jit_plugin_init(std::uint8_t *region, std::size_t bytes,
                    const fireball_wasm_module_execution_view_native *view,
-                   std::uint32_t module_id) {
-  auto *runtime = provider_adapter::fb_jit_plugin_init(region, bytes, view, module_id);
+                   std::uint32_t module_id,
+                   const fireball_native_cps_handler *call_handlers) {
+  auto *runtime =
+      provider_adapter::fb_jit_plugin_init(region, bytes, view, module_id, call_handlers);
   return provider_adapter::fb_jit_plugin_provider(runtime);
 }

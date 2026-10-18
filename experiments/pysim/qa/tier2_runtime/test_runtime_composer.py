@@ -319,9 +319,10 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         _fields_ = (
             ("entry_address", ctypes.c_size_t),
             ("rel", ctypes.c_void_p),
-            ("frame_depth", ctypes.c_uint32),
-            ("stack_words", ctypes.c_uint32),
-            ("body_count", ctypes.c_uint32),
+            ("frame_depth", ctypes.c_uint8),
+            ("stack_words", ctypes.c_uint8),
+            ("body_count", ctypes.c_uint8),
+            ("exit_kind", ctypes.c_uint8),
             ("trace_cookie", ctypes.c_size_t),
         )
 

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from bump_allocator import BumpAllocator
 from tier1_core.native_printk import NativePrintkWriter
+from tier2_runtime.abi.native_abi import JIT_CALL_HANDLER_TABLE
 from tier2_runtime.wasm.module import LocalLayout, WasmOperand
 
 _NATIVE_LIBRARY_PATH = Path(__file__).with_name(
@@ -276,6 +277,7 @@ RUNTIME_INIT.argtypes = (
     ctypes.c_uint32,
     ctypes.c_uint32,
     ctypes.POINTER(ctypes.c_uint32),
+    ctypes.c_void_p,
 )
 RUNTIME_INIT.restype = ctypes.c_void_p
 
@@ -455,6 +457,7 @@ class NativeRuntimeStorage:
             capacity,
             entries,
             native_offsets,
+            JIT_CALL_HANDLER_TABLE,
         )
         assert self.pointer is not None
         self._allocator: BumpAllocator | None = None

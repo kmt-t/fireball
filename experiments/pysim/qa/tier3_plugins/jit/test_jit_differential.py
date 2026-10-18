@@ -291,11 +291,27 @@ def test_jitr_53_loop_entered_after_hot_block_uses_static_branch_metadata():
     """TEST-JITR-53: a compiled block ending at `block` preserves static branch metadata.
 
     Only the pre-loop block is compiled, so the loop's branches run on the interpreter and
-    resolve targets through loader metadata.
+    resolve targets through loader metadata. Repeated root calls warm this entry directly; a
+    defined call now continues in CPS and does not return to the driver to observe its callee.
     """
-    wasm = wat_to_wasm(LOOP_AFTER_HOT_BLOCK_WAT)
+    wat = LOOP_AFTER_HOT_BLOCK_WAT.replace("(func $f ", '(func $f (export "f") ')
+    wasm = wat_to_wasm(wat)
+    expected = _wasmtime_result(wasm, "f", [12])
+    assert _tier2_result(wasm, "f", [12]) == expected
+
+    engine = make_runtime_engine(candidate_threshold=0, jit_compiler=TraceCompiler())
+    module = engine.load_wasm(wasm)
     first_function_block_pc = parse_standalone(wasm).blocks[0].head_pc
-    _assert_jit_ran(_check_three_ways(wasm, "main", [30], compile_only=(first_function_block_pc,)))
+    engine.jit_runtime.trackable.clear()
+    engine.jit_runtime.trackable.mark(first_function_block_pc)
+    interpreter = _guest(module)
+    func_index = module.export_func_index("f")
+    for _ in range(3):
+        result = engine.call(interpreter, func_index, [12]).unwrap()
+        assert result[0] == expected
+
+    _assert_jit_ran(engine)
+    assert engine.jit_runtime.cache.find_trace(first_function_block_pc) is not None
 
 
 def test_jitr_54_a_non_head_resume_point_never_enters_the_compile_queue():
@@ -370,12 +386,12 @@ def _operand_overflow_wat() -> str:
 """
 
 
-def test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_interpreter():
-    """TEST-JITR-61: pending values plus the trace's spills exceed the stack capacity.
+def test_jitr_61_terminal_call_preserves_stack_overflow_trap_in_cps():
+    """TEST-JITR-61: a JIT terminal call enters its callee through CPS with pending values.
 
-    `work` becomes a hot compiled block at an empty operand stack. When `pad` calls it with four
-    words left, the trace's spills would run past capacity. The engine must hand the block to the
-    interpreter, which stops on overflow, instead of the trace writing past the operand stack.
+    The caller's terminal call trace executes natively. Its CPS handler enters `work` from the
+    callee entry with the caller's pending values still on the shared operand stack. The
+    Interpreter detects capacity exhaustion before an out-of-bounds stack write.
     """
     wasm = wat_to_wasm(_operand_overflow_wat())
     interpreter_module = parse_standalone(wasm)
@@ -384,14 +400,17 @@ def test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_inter
     assert outcome.error is not None and outcome.error.code == TrapCode.OPERAND_STACK_CAPACITY
     engine = make_runtime_engine(candidate_threshold=0, jit_compiler=TraceCompiler())
     module = engine.load_wasm(wasm)
-    work_pc = next(block.head_pc for block in module.blocks if block.func_index == 0)
     outcome = engine.call(_guest(module), module.export_func_index("main"), [])
     assert not outcome.is_ok
     assert outcome.error is not None and outcome.error.code == TrapCode.OPERAND_STACK_CAPACITY
-    work_trace = engine.jit_runtime.cache.find_trace(work_pc)
-    assert work_trace is not None, "`work` never compiled"
-    assert work_trace.stack_words > 1
-    assert engine.stat_jit_invocations > 0, "`work` never ran compiled before the overflow"
+    main_func_index = module.export_func_index("main")
+    main_traces = [
+        trace
+        for _key, trace in resident_module_traces(engine.jit_runtime.cache, module)
+        if module.function_index_for_pc(trace.head_pc) == main_func_index
+    ]
+    assert main_traces, "the caller's terminal call trace was never compiled"
+    assert engine.stat_jit_invocations > 0, "the caller's terminal call trace never executed"
 
 
 def test_jitr_69_forward_br_returns_through_cps_preserving_static_nesting_metadata():
@@ -600,7 +619,7 @@ if __name__ == "__main__":
     test_jitr_56_jit_runs_in_a_frame_that_also_holds_a_wide_local()
     test_jitr_57_hot_block_ending_at_if_hands_the_condition_to_the_interpreter()
     test_jitr_60_frames_with_different_local_layout_sizes_run_side_by_side()
-    test_jitr_61_a_trace_that_would_overflow_the_operand_stack_runs_on_the_interpreter()
+    test_jitr_61_terminal_call_preserves_stack_overflow_trap_in_cps()
     test_jitr_58_generated_control_flow_matches_wasmtime_and_tier2()
     test_jitr_59_clang_kernel_suite_matches_wasmtime_on_the_jit()
     print("[PASS] All 9 Tier 3 JIT differential tests passed.")

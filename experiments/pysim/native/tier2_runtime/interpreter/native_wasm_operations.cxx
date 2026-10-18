@@ -1602,7 +1602,8 @@ bool runtime_call(execution_context *context, const std::uint8_t *&instruction_i
   instruction_ip = current.code;
   local_stack = callee_local_base;
   current.local_base = local_stack;
-  return call_boundary(current, 0, target.entry_block_index, rel);
+  rel = interpreter_rel_for_block_index(callee, target.entry_block_index);
+  return true;
 }
 template <auto Operation>
 bool runtime_i32_binary(execution_context *context, const std::uint8_t *&instruction_ip,
@@ -1944,10 +1945,12 @@ bool runtime_fc_memory_fill(execution_context *context, const std::uint8_t *&ins
   return continue_within_block(current, next_ip, rel);
 }
 
-template bool runtime_call<false>(execution_context *context, const std::uint8_t *&instruction_ip,
+template bool runtime_call<false>(execution_context *context,
+                                  const std::uint8_t *&instruction_ip,
                                   std::uint32_t *&sp, std::uint32_t *&local_stack,
                                   [[maybe_unused]] const std::uint8_t *&rel);
-template bool runtime_call<true>(execution_context *context, const std::uint8_t *&instruction_ip,
+template bool runtime_call<true>(execution_context *context,
+                                 const std::uint8_t *&instruction_ip,
                                  std::uint32_t *&sp, std::uint32_t *&local_stack,
                                  [[maybe_unused]] const std::uint8_t *&rel);
 template bool runtime_conversion<conversion_f32_convert_i32_s>(

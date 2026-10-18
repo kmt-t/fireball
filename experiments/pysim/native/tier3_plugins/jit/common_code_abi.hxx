@@ -10,6 +10,7 @@ extern "C" {
 int fb_jit_region_init(fireball::executable_memory *memory);
 
 int fb_jit_runtime_api_slot(std::uint32_t opcode, std::uint32_t fc_prefix, std::uint8_t *slot);
+int fb_jit_cps_call_handler_slot(std::uint32_t opcode, std::uint8_t *slot);
 
 void fb_jit_common_layout(fireball::jit_common_layout *output);
 int fb_jit_common_install(fireball::executable_memory *memory, code_offset_t offset,

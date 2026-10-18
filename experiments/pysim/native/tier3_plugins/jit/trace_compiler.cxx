@@ -9,6 +9,7 @@
 
 #include "common_code_abi.hxx"
 #include "jit_internal.hxx"
+#include "jit_runtime_apis.hxx"
 #include "stencils_x64.hxx"
 #include "trace_compiler_abi.hxx"
 
@@ -512,6 +513,14 @@ struct trace_builder {
     }
 #endif
     return true;
+  }
+
+  bool append_cps_call(std::uint8_t slot, code_ip_t source_delta,
+                       annotation_offset_t annotation_offset) {
+    const auto stencil = generated_stencil(asm_generated::cps_call);
+    return append_node(stencil) && add_value(slot, 1) && add_value(0, 1) && add_value(4, 1) &&
+           add_value(source_delta, sizeof(source_delta)) &&
+           add_value(annotation_offset, sizeof(annotation_offset));
   }
 
   bool append_linked(stencil_view stencil) {
@@ -1789,10 +1798,13 @@ bool is_trace_terminator_opcode(std::uint8_t opcode) {
 
 int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8_t *code,
                                         code_offset_t code_bytes, code_ip_t source_ip,
+                                        code_ip_t trace_start_ip,
                                         const std::uint8_t *interpreter_annotations,
                                         annotation_offset_t interpreter_annotation_byte_count,
                                         annotation_offset_t interpreter_annotation_byte_offset,
-                                        annotation_offset_t interpreter_rel_bytes) {
+                                        annotation_offset_t &interpreter_rel_bytes,
+                                        code_ip_t &terminal_end_ip) {
+  terminal_end_ip = source_ip;
   if (source_ip >= code_bytes) {
     return 1;
   }
@@ -1807,8 +1819,36 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
     return 1;
   }
   if (opcode == 0x10 || opcode == 0x11) {
-    // Calls remain unexecuted trace exits handled by Interpreter CPS.
-    return 1;
+    std::uint32_t operand = 0;
+    if (!read_unsigned_leb(code, cursor, code_bytes, operand)) {
+      return -1;
+    }
+    if (opcode == 0x11) {
+      std::uint32_t table_index = 0;
+      if (!read_unsigned_leb(code, cursor, code_bytes, table_index)) {
+        return -1;
+      }
+    }
+    const auto annotation_offset_64 =
+        static_cast<std::uint64_t>(interpreter_annotation_byte_offset) + interpreter_rel_bytes;
+    const auto annotation_after_64 = annotation_offset_64 + 5u;
+    if (annotation_after_64 > std::numeric_limits<annotation_offset_t>::max() ||
+        interpreter_annotations == nullptr ||
+        annotation_after_64 > interpreter_annotation_byte_count || source_ip < trace_start_ip) {
+      return -1;
+    }
+    std::uint8_t handler_slot = 0;
+    if (!fb_jit_cps_call_handler_slot(opcode, &handler_slot)) {
+      return 0;
+    }
+    terminal_end_ip = cursor;
+    interpreter_rel_bytes = static_cast<annotation_offset_t>(annotation_after_64 -
+                                                               interpreter_annotation_byte_offset);
+    return builder.append_cps_call(
+               handler_slot, source_ip - trace_start_ip,
+               static_cast<annotation_offset_t>(annotation_offset_64))
+               ? 1
+               : 0;
   }
 
   std::uint8_t slot = 0;
@@ -2111,21 +2151,21 @@ int fireball::compile_wasm_trace(
                             interpreter_rel_after_offsets.data())) {
     return 0;
   }
+  code_ip_t terminal_end_ip = trace_end;
   const auto terminator_status = append_trace_terminator_runtime_api(
-      builder, code, code_bytes, trace_end, interpreter_annotations,
+      builder, code, code_bytes, trace_end, code_offset, interpreter_annotations,
       interpreter_annotation_byte_count, interpreter_annotation_byte_offset,
-      interpreter_rel_bytes);
+      interpreter_rel_bytes, terminal_end_ip);
   if (terminator_status != 1) {
     return terminator_status;
   }
   const auto status = finish_trace(builder, stack, result);
   if (status == 1) {
     result->interpreter_rel_bytes = interpreter_rel_bytes;
-    if (call_exit) {
-      result->body_end_ip = trace_end;
+    if (call_exit || terminal_end_ip != trace_end) {
+      result->body_end_ip = terminal_end_ip;
     }
-    if (call_exit ||
-        (trace_end < code_bytes && (code[trace_end] == 0x10 || code[trace_end] == 0x11))) {
+    if (call_exit || terminal_end_ip != trace_end) {
       result->exit_kind = jit_trace_exit_kind::call_cps;
     }
 #if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS

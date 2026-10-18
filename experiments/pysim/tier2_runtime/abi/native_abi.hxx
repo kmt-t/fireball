@@ -36,6 +36,11 @@ struct fb_native_jit_trace_exit {
   operand_words_t result_words;
 };
 
+enum fb_native_jit_trace_exit_kind {
+  FB_NATIVE_JIT_TRACE_NORMAL = 0,
+  FB_NATIVE_JIT_TRACE_CALL_CPS = 1,
+};
+
 static_assert(sizeof(fb_native_jit_trace_exit) == 20);
 
 // Tier 2 native execution extension contract. The Interpreter owns invoking
@@ -46,7 +51,7 @@ struct fb_native_jit_trace {
   frame_depth_t frame_depth;
   jit_stack_words_t stack_words;
   jit_body_count_t body_count;
-  std::uint8_t reserved0;
+  std::uint8_t exit_kind;
   std::uintptr_t trace_cookie;
 };
 
@@ -125,6 +130,7 @@ FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_block(const fb_native_dis
 
 FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_debug_dispatch(const fb_native_dispatch_call *call,
                                                              fb_native_result *result);
+FB_PYSIM_INTERPRETER_EXPORT const void *fb_native_jit_call_handlers();
 }
 
 inline constexpr std::uint32_t fb_native_cps_exit_mask = 0xFu << 8;

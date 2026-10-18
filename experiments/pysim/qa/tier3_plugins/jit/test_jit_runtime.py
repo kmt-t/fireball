@@ -2046,14 +2046,13 @@ def test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack():
 
     caller = module.export_func_index("caller")
     assert engine.call(interp, caller, [20]).unwrap() == [2]
-    assert any(
-        module.function_index_for_pc(pc) == 0
-        for pc, _ in resident_module_traces(engine.jit_runtime.cache, module)
-    ), "the repeatedly called callee should be eligible for JIT execution"
+    assert engine.stat_trace_exits_to_interp < 20, (
+        "defined calls must continue in CPS instead of returning to the driver per call"
+    )
 
 
-def test_jitr_hotspot_collection_continues_defined_calls_in_cpp():
-    """TEST-JITR-68: collect callee visits without a Python boundary at each call."""
+def test_jitr_defined_calls_continue_in_cps_until_yield():
+    """TEST-JITR-68: defined calls continue in CPS without per-call driver returns."""
     wat = """
     (module
       (func $inc (param i32) (result i32)
@@ -2091,9 +2090,8 @@ def test_jitr_hotspot_collection_continues_defined_calls_in_cpp():
     function_index = module.export_func_index("sum_inc")
     interpreter = Interpreter(module)
     assert engine.call(interpreter, function_index, [8]).unwrap() == [36]
-    assert manager.cache.find_trace(callee_pc) is not None
     assert engine.stat_trace_exits_to_interp < 8, (
-        "defined guest calls must not return to Python once per invocation"
+        "defined guest calls must not return to the driver once per invocation"
     )
     engine.reset_stats()
     assert engine.call(interpreter, function_index, [8]).unwrap() == [36]
@@ -2147,8 +2145,6 @@ def test_jitr_native_history_overwrite_does_not_yield():
     assert manager.exec_counter > manager.history_capacity
     assert manager.history_overwritten_count == manager.exec_counter - manager.history_capacity
     assert manager.last_history_analysis_approximate
-    callee_pc = next(block.head_pc for block in module.blocks if block.func_index == 0)
-    assert manager.card_state(callee_pc) == CardState.EXECUTED
     assert not manager.has_pending_compilation()
 
 
@@ -2427,34 +2423,41 @@ def test_jit_structural_delimiters_are_loader_metadata_and_emit_no_operations():
 
 
 @pytest.mark.parametrize(
-    ("code_bytes", "call_ip", "call_opcode"),
+    ("code_bytes", "call_ip", "call_opcode", "byte_length"),
     (
-        (b"\x41\x07\x10\x00", 2, 0x10),
-        (b"\x41\x00\x11\x00\x00", 2, 0x11),
+        (b"\x41\x07\x10\x00\x41\x09", 2, 0x10, 6),
+        (b"\x41\x00\x11\x00\x00\x41\x09", 2, 0x11, 7),
+        (b"\x41\x07\x10\x00\x41\x09", 2, 0x10, 2),
+        (b"\x41\x00\x11\x00\x00\x41\x09", 2, 0x11, 2),
     ),
 )
-def test_jit_compile_call_blocks_and_exit_before_call(code_bytes, call_ip, call_opcode):
-    """Call-ending traces keep the prefix and hand the opcode to Interpreter CPS."""
+def test_jit_compile_call_blocks_and_tail_call_cps_handler(
+    code_bytes, call_ip, call_opcode, byte_length
+):
+    """Call-ending traces include the call operation and tail-call its CPS handler."""
     empty_view = native_abi.NativeByteView(0, 0)
     code_storage = ctypes.create_string_buffer(code_bytes)
+    annotation_storage = ctypes.create_string_buffer(bytes(10))
     block = native_abi.WasmBlock(
         head_pc=0x200,
         code=native_abi.NativeByteView(ctypes.addressof(code_storage), len(code_bytes)),
         offset=0,
-        byte_length=len(code_bytes),
+        byte_length=byte_length,
         next_pc=0x208,
         loops_to=None,
         locals=native_abi.NativeLocalLayout(empty_view, empty_view, 0, 0),
+        interpreter_annotations=native_abi.NativeByteView(ctypes.addressof(annotation_storage), 10),
     )
 
     native_abi.CONST_POOL_DIAGNOSTICS_RESET()
     trace = TraceCompiler.compile_wasm(block)
     assert trace is not None and trace.code_blob is not None
     header = native_abi.NativeTraceHeader.from_buffer_copy(trace.code_blob)
+    assert header.exit_kind == 1
     exit_offset = header.const_rel_offset - ctypes.sizeof(native_abi.NativeTraceExit)
     trace_exit = native_abi.NativeTraceExit.from_buffer_copy(trace.code_blob, exit_offset)
-    assert trace_exit.body_end_ip == call_ip
-    assert trace_exit.interpreter_rel_bytes == 5
+    assert trace_exit.body_end_ip == call_ip + (2 if call_opcode == 0x10 else 3)
+    assert trace_exit.interpreter_rel_bytes == 10
     assert trace.result_words == 1
 
     if native_abi.BLOCK_COUNTERS_ENABLED():
@@ -2873,7 +2876,7 @@ def test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized():
     compiled_heads = {pc for pc, _ in resident_module_traces(engine.jit_runtime.cache, module)}
 
     assert actual == [[12]] * 6
-    assert module.function_pc_offset(1) in compiled_heads
+    assert module.function_pc_offset(4) in compiled_heads
     assert engine.stat_jit_invocations > 0
 
 
@@ -2905,7 +2908,7 @@ def test_jitr_runtime_engine_preserves_typed_top_level_results():
     assert engine.stat_jit_invocations > 0
 
 
-def _find_call_exit_block(module: Module, function_index: int, opcode: int, encoding: bytes):
+def _find_call_block(module: Module, function_index: int, opcode: int, encoding: bytes):
     """Find the one fixture block whose call opcode is in-span or at its boundary."""
     code = bytes(module.code_for(function_index))
     function_pc = module.function_pc_offset(function_index)
@@ -2924,8 +2927,8 @@ def _find_call_exit_block(module: Module, function_index: int, opcode: int, enco
     return matches[0]
 
 
-def _install_call_exit_traces(engine: RuntimeEngine, module: Module, call_block):
-    """Install a call trace and successor so accidental native chaining is observable."""
+def _install_call_traces(engine: RuntimeEngine, module: Module, call_block):
+    """Install a terminal call trace and successor to detect accidental native chaining."""
     manager = engine.jit_runtime
     assert manager is not None
     source_trace = compile_runtime_block(manager, call_block)
@@ -2971,8 +2974,8 @@ def _assert_completed_call_state_matches(reference, actual) -> None:
     )
 
 
-def test_jitr_host_import_call_trace_exits_before_cps_and_resumes_once():
-    """TEST-JITR-47: a direct-call trace exits before CPS and preserves caller state."""
+def test_jitr_host_import_call_trace_tail_calls_cps_handler_and_resumes_once():
+    """TEST-JITR-47: the terminal call reaches CPS directly and preserves caller state."""
     module = parse_standalone(
         wat_to_wasm(
             """(module
@@ -3001,9 +3004,9 @@ def test_jitr_host_import_call_trace_exits_before_cps_and_resumes_once():
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
-    call_block, call_ip = _find_call_exit_block(module, 1, 0x10, b"\x10\x00")
-    source_trace, trace_exit = _install_call_exit_traces(engine, module, call_block)
-    assert trace_exit.body_end_ip == call_ip
+    call_block, call_ip = _find_call_block(module, 1, 0x10, b"\x10\x00")
+    source_trace, trace_exit = _install_call_traces(engine, module, call_block)
+    assert trace_exit.body_end_ip == call_ip + 2
     assert source_trace.result_words == 1
 
     jit_memory = bytearray(65536)
@@ -3017,7 +3020,7 @@ def test_jitr_host_import_call_trace_exits_before_cps_and_resumes_once():
 
 
 def test_jitr_defined_call_after_import_keeps_call_annotation_and_stack_prefix():
-    """TEST-JITR-92: a native call exit keeps its unified function index and prefix values."""
+    """TEST-JITR-92: a CPS call after import keeps its index and stack prefix."""
     module = parse_standalone(
         wat_to_wasm(
             """(module
@@ -3064,9 +3067,9 @@ def test_jitr_defined_call_after_import_keeps_call_annotation_and_stack_prefix()
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
-    call_block, call_ip = _find_call_exit_block(module, caller, 0x10, b"\x10\x01")
-    source_trace, trace_exit = _install_call_exit_traces(engine, module, call_block)
-    assert trace_exit.body_end_ip == call_ip
+    call_block, call_ip = _find_call_block(module, caller, 0x10, b"\x10\x01")
+    source_trace, trace_exit = _install_call_traces(engine, module, call_block)
+    assert trace_exit.body_end_ip == call_ip + 2
     assert source_trace.chain_next is None
 
     jit_memory = bytearray(65536)
@@ -3137,9 +3140,9 @@ def test_jitr_call_indirect_trace_uses_interpreter_table_checks(
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
-    call_block, call_ip = _find_call_exit_block(module, caller, 0x11, b"\x11\x00\x00")
-    source_trace, trace_exit = _install_call_exit_traces(engine, module, call_block)
-    assert trace_exit.body_end_ip == call_ip
+    call_block, call_ip = _find_call_block(module, caller, 0x11, b"\x11\x00\x00")
+    source_trace, trace_exit = _install_call_traces(engine, module, call_block)
+    assert trace_exit.body_end_ip == call_ip + 3
     assert source_trace.result_words == 2
 
     jit_memory = bytearray(65536)
@@ -3162,8 +3165,8 @@ def test_jitr_call_indirect_trace_uses_interpreter_table_checks(
     assert engine.stat_jit_invocations > 0
 
 
-def test_jitr_recursive_direct_call_reuses_cps_frames_after_jit_exit():
-    """TEST-JITR-90: recursive calls return each callee frame to the caller continuation."""
+def test_jitr_recursive_direct_call_reuses_cps_frames():
+    """TEST-JITR-90: recursive calls return each frame to the CPS caller continuation."""
     module = parse_standalone(
         wat_to_wasm(
             """(module
@@ -3206,7 +3209,7 @@ def test_jitr_recursive_direct_call_reuses_cps_frames_after_jit_exit():
             call_blocks.append(block)
     assert len(call_blocks) == 1
     call_block = call_blocks[0]
-    source_trace, _ = _install_call_exit_traces(engine, module, call_block)
+    source_trace, _ = _install_call_traces(engine, module, call_block)
     interpreter = Interpreter(module)
     actual_state = _run_with_runtime_engine(engine, interpreter, function_index, [6])
     assert actual_state.results == reference_state.results == [21]
@@ -3243,9 +3246,9 @@ def test_jitr_direct_call_callee_trap_stops_caller_continuation():
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
-    call_block, call_ip = _find_call_exit_block(module, function_index, 0x10, b"\x10\x00")
-    source_trace, trace_exit = _install_call_exit_traces(engine, module, call_block)
-    assert trace_exit.body_end_ip == call_ip
+    call_block, call_ip = _find_call_block(module, function_index, 0x10, b"\x10\x00")
+    source_trace, trace_exit = _install_call_traces(engine, module, call_block)
+    assert trace_exit.body_end_ip == call_ip + 2
 
     jit_memory = bytearray(65536)
     interpreter = Interpreter(module, memory=jit_memory)
@@ -3824,14 +3827,15 @@ def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, 
     assert_result_25 = manager.cache.insert(trace)
     assert assert_result_25
     snapshot = manager.native_dispatch_state()
-    assert snapshot.entries[0].exec_count == trace.exec_count_address
+    assert (snapshot.entries[0].exec_count or 0) == trace.exec_count_address
+    counters_enabled = trace.exec_count_address != 0
     assert trace.exec_count == 0
     assert manager.lookup(trace.head_pc) is trace
     assert trace.exec_count == 0
     interpreter = Interpreter(module)
     function = module.export_func_index("sum")
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [5]) == [15]
-    assert trace.exec_count == 5
+    assert trace.exec_count == (5 if counters_enabled else 0)
     manager.cache.rotate()
     manager.cache.rotate()
     address = trace.raw_addr
@@ -3839,28 +3843,29 @@ def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, 
     assert manager.lookup(trace.head_pc) is trace
     assert trace.raw_addr == address
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [2]) == [3]
-    assert trace.exec_count == 7
+    assert trace.exec_count == (7 if counters_enabled else 0)
     assert manager.cache.find_trace(trace.head_pc) is trace
     assert trace.raw_addr == address
     assert manager.native_dispatch_state() is not snapshot
-    assert trace.exec_count_address == snapshot.entries[0].exec_count
-    trace.exec_count = 0xFFFF_FFFE
+    assert trace.exec_count_address == (snapshot.entries[0].exec_count or 0)
+    if counters_enabled:
+        trace.exec_count = 0xFFFF_FFFE
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [4]) == [10]
-    assert trace.exec_count == 0xFFFF_FFFF
+    assert trace.exec_count == (0xFFFF_FFFF if counters_enabled else 0)
     engine.reset_stats()
     manager.reset_stats()
     assert trace.exec_count == 0
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [3]) == [6]
-    assert trace.exec_count == 3
+    assert trace.exec_count == (3 if counters_enabled else 0)
     manager.flush_all()
-    assert [count for pc, count in retired if pc == trace.head_pc] == [3]
+    assert [count for pc, count in retired if pc == trace.head_pc] == [3 if counters_enabled else 0]
     replacement = compile_runtime_block(manager, block)
     assert replacement is not None
     assert_result_26 = manager.cache.insert(replacement)
     assert assert_result_26
-    assert replacement.exec_count == 3
+    assert replacement.exec_count == (3 if counters_enabled else 0)
     assert _qa_trace_counted_call(engine, manager, interpreter, function, [2]) == [3]
-    assert replacement.exec_count == trace.exec_count == 5
+    assert replacement.exec_count == trace.exec_count == (5 if counters_enabled else 0)
 
 
 def test_jitr_branch_terminator_returns_through_interpreter_cps():
@@ -3889,7 +3894,10 @@ def test_jitr_branch_terminator_returns_through_interpreter_cps():
     assert source.chain_next is None
     assert _qa_trace_counted_call(engine, manager, Interpreter(module), 0, [10]) == [30]
     assert _qa_trace_counted_call(engine, manager, Interpreter(module), 0, [-5]) == [0]
-    assert source.exec_count == 2
+    if native_abi.BLOCK_COUNTERS_ENABLED():
+        assert source.exec_count == 2
+    else:
+        assert source.exec_count == 0
     assert engine.stat_jit_invocations >= 1
     assert engine.stat_native_control_handlers > 0
     assert engine.stat_trace_exits_to_interp > 0
@@ -3991,13 +3999,15 @@ if __name__ == "__main__":
     test_jitr_mixed_typed_stack_uses_runtime_apis_inside_jit_trace()
     test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized()
     test_jitr_runtime_engine_preserves_typed_top_level_results()
-    test_jitr_host_import_call_trace_exits_before_cps_and_resumes_once()
+    test_jitr_host_import_call_trace_tail_calls_cps_handler_and_resumes_once()
     test_jitr_defined_call_after_import_keeps_call_annotation_and_stack_prefix()
     for code_bytes, call_ip, call_opcode in (
         (b"\x41\x07\x10\x00", 2, 0x10),
         (b"\x41\x00\x11\x00\x00", 2, 0x11),
     ):
-        test_jit_compile_call_blocks_and_exit_before_call(code_bytes, call_ip, call_opcode)
+        test_jit_compile_call_blocks_and_tail_call_cps_handler(
+            code_bytes, call_ip, call_opcode, len(code_bytes)
+        )
     for actual_type, target_body, table_index, expected_result, expected_trap in (
         ("(param i32) (result i32)", "i32.const 42", 0, [43], None),
         ("(param i64) (result i64)", "i64.const 42", 0, None, TrapCode.INDIRECT_CALL_TYPE_MISMATCH),
@@ -4006,7 +4016,7 @@ if __name__ == "__main__":
         test_jitr_call_indirect_trace_uses_interpreter_table_checks(
             actual_type, target_body, table_index, expected_result, expected_trap
         )
-    test_jitr_recursive_direct_call_reuses_cps_frames_after_jit_exit()
+    test_jitr_recursive_direct_call_reuses_cps_frames()
     test_jitr_direct_call_callee_trap_stops_caller_continuation()
     test_jitr_runtime_engine_surfaces_guest_trap_at_sync_boundary()
     test_jitr_aging_decays_only_executed_cards()

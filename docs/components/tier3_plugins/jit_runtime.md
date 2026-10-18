@@ -18,7 +18,7 @@ JIT拡張はInterpreterのネイティブ実行拡張として接続する。Int
 
 JIT traceの選択は`execution_context.current_block_index`からBasicBlock metadataを直接参照して行う。現在のindexとPCはInterpreterからJIT providerへ渡し、BasicBlockの`head_pc`がPCと一致することを検証する。対象カードが`COMPILED`でなければ、JITエントリ検索を呼ばずInterpreterを実行する。`COMPILED`ならBasicBlock内の8bitキャッシュ参照を使う。未設定なら当該ブロックはcache missとする。カード状態は複数BasicBlockで共有されうるため、カードが`COMPILED`でも未常駐のブロックがある。LoaderのRadix表はロード時の構築とその他の利用に残るが、通常dispatchのブロック解決には使わない。JIT常駐索引はPC順を維持し、JITのキーは引き続き`(module_id, pc)`である。
 
-InterpreterはLoader注釈プールの辺indexと`current_block_index`を使い、分岐、継続、call/return先のBasicBlockを得る。JIT境界metadataの`block_index`には次BasicBlock indexを入れる。chain link、候補受入れ、JIT trace exitはindexとPCの両方を照合する。通常の製品経路では`find_cached_trace_by_pc`を呼ばない。
+InterpreterはLoader注釈プールの辺indexと`current_block_index`を使い、分岐と継続のBasicBlockを解決する。JIT境界metadataの`block_index`には次BasicBlock indexを入れる。chain link、候補受入れ、JIT trace exitはindexとPCの両方を照合する。関数呼出しと復帰の扱いは[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とし、JIT Runtimeは再定義しない。通常の製品経路では`find_cached_trace_by_pc`を呼ばない。
 
 3面コードキャッシュはデータ用バンプアロケータとは別に管理する。x64参照構成は領域の確保または借用時にRWXを設定し、昇格やリンク更新のたびに権限を切り替えない。書込みAPIはパッチ区間外の変更を拒否する。ARMv8-Mの物理配置と保護方式はTBDである。
 
@@ -44,7 +44,7 @@ Tier 3 の実装は次の責務に分ける。
 | :--- | :--- | :--- |
 | Tier 3 Native JitRuntime | 候補選択、履歴リングと分析、コンパイル待ち列と抑制、カード状態遷移とエイジング、BasicBlock参照とソート済み常駐索引、3面ローテーション、被チェイン元登録と解除、本体実行とチェイン終端の構成、実行可能領域の所有 | Tier 2の共有実行状態と本体実行契約、Tier 3のコンパイラと共通コード |
 | Tier 3 Native Trace Compiler | Loader所有のWASMコードを直接走査し、1回の呼出しで1 traceを生成 | Loaderの借用WASMコード、Tier 3の共通コード |
-| Tier 2 Runtime / Interpreter | 現在のBasicBlock indexと注釈済み辺の管理、関数入口・復帰indexと`rel`の解決。接続時はTier 3拡張へ実行境界を委譲する | Tier 1、Tier 2 の実行器接続契約 |
+| Tier 2 Runtime / Interpreter | 現在のBasicBlock indexと注釈済み辺を管理し、接続時はTier 3拡張へ実行境界を委譲する | Tier 1、Tier 2 の実行器接続契約 |
 
 Tier 3の`jit_runtime`はコンパイル候補の処理と常駐コード管理を結び付ける。JIT拡張は固定容量のコードキャッシュ、索引、連鎖情報、ホットスポット履歴、および候補キューを所有する。実行領域の供給と権限変更はprovider境界を通す。QA計測は製品構成から分離する。固定容量の状態は上位Runtime構成が用意した保存領域に構築し、LoaderのWASMコードと実行メタデータを登録中に借用する。
 
@@ -158,7 +158,7 @@ ROM 上に配置される 128 バイトルックアップテーブル（256 オ�
 
 
 
-1. **実行コンテキストのBasicBlock index参照 ($O(1)$)**: Loaderが関数入口、制御辺、call復帰先についてindexを前計算し、Interpreterは`current_block_index`へ現在indexを保持する。分岐と継続は注釈済みindexからBasicBlock metadataと`rel`開始位置を直接得る。境界停止のPC比較を除き、dispatch中にPCからindexを検索しない。
+1. **実行コンテキストのBasicBlock index参照 ($O(1)$)**: Loaderが関数入口と制御辺についてindexを前計算し、Interpreterは`current_block_index`へ現在indexを保持する。分岐と継続は注釈済みindexからBasicBlock metadataを参照する。関数呼出しと復帰の遷移先はInterpreter仕様に従う。dispatch中にPCからindexを検索しない。
 2. **カード状態によるJIT検索抑止 ($O(1)$)**: BasicBlock解決後にカード状態を読む。状態が`COMPILED`でなければJIT providerを呼ばず、キャッシュ参照も変更せずInterpreter命令を実行する。状態が`COMPILED`でもカード内の別ブロックだけがコンパイル済みの場合があるため、正確なPCはBasicBlock参照またはJIT索引で照合する。
 3. **BasicBlock内キャッシュ参照 ($O(1)$)**: `jit_cache_reference != 0xFF`なら、値が指す常駐エントリを使う。キャッシュ配列の並べ替え・削除・破棄時は参照をresident entryへ更新し、residentでないentryへの参照を残さない。Runtime領域の解放前にも、借用しているBasicBlockの常駐参照を無効化する。
 4. **キャッシュ更新用PC索引 ($O(n \log n)$)**: キャッシュ更新時に3バンク合計最大72件の参照を`head_pc`順に並べ、BasicBlock参照の再構築とchain metadataの後方再計算に使う。通常の実行lookupとchain successor解決では索引を検索しない。metadataを持たないQA fixtureのPC lookupだけが`lower_bound`を使う。JIT用Radix表や製品実行時のグローバルPC→trace検索経路は設けない。
@@ -340,7 +340,7 @@ flowchart TD
 ```
 
 - **分岐条件の扱い**: `br_if`と`if`の条件値は実行した経路が一度だけ消費する。JITで消費済みの条件値をInterpreter handlerへ再度渡さない。
-- **関数終了の定数時間解決 (`{GOTCHA-JITR-08}`)**: `return`で終わるブロックでは命令列を再走査しない。実行経路は戻り値と関数復帰状態を一度だけ確定する。Interpreterへ渡す場合は未実行のreturn handlerから再開する。 <!-- definition: {GOTCHA-JITR-08} -->
+- **関数終了 (`{GOTCHA-JITR-08}`)**: JIT traceは`return`を生成せず、関数復帰は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)へ委譲する。 <!-- definition: {GOTCHA-JITR-08} -->
 - **分岐境界の整合 (`{GOTCHA-JITR-06}`)**: `if`、`br`、`br_if`はtraceに含めず、Interpreter CPS handlerが条件値、stack、frame、PCを一度だけ更新する。trace完了後にopcodeを処理し、実行済み命令を再実行しない。trap/CPS exitは記録済みの終了理由から処理する。 <!-- definition: {GOTCHA-JITR-06} -->
 - **短小判定の符号 (`{GOTCHA-JITR-07}`)**: ブロックの足切り判定は自身の命令バイト数で行う。後続アドレスとの差分で代用すると、後方分岐ブロックで差分が負になり、高頻度ブロックが永久に除外されてしまう。 <!-- definition: {GOTCHA-JITR-07} -->
 - **エイジングと常駐状態の分離 (`{GOTCHA-JITR-09}`)**: エイジングスイープは `EXECUTED` のカードだけを変更する。`COMPILED` まで戻すと、常駐トレースのカードが `UNEXECUTED` になり、lookup が常駐コードを見逃す。`HOT` まで戻すと、コンパイル待ち列の要求とカード状態が食い違う。常駐性の正本はキャッシュ、待ち列の正本は待ち列であり、スイープはどちらも書き換えない。 <!-- definition: {GOTCHA-JITR-09} -->

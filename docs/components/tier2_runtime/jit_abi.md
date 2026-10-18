@@ -38,7 +38,7 @@
 | `global_index_t` | `uint16_t` | global数上限32 |
 | `local_count_t` | `uint16_t` | local数256、または最大640 frame word |
 | `operand_words_t` | `uint8_t` | operand stack上限64値。i64/f64を2 wordで数えても最大128 word |
-| `frame_depth_t` | `uint8_t` | 制御構造の入れ子上限32。CallStackの深さも32で、同じ幅に収まる |
+| `frame_depth_t` | `uint8_t` | 制御構造の入れ子上限32 |
 | `instruction_width_t` | `uint8_t` | LEB128即値を含む命令の符号化幅。255 byte超過はロード時に拒否する |
 | `jit_stack_words_t` | `uint8_t` | Interpreterの64値上限と2-word値幅から最大128 word |
 | `jit_body_count_t` | `uint8_t` | JIT trace命令上限64 |
@@ -48,22 +48,22 @@
 
 ### コンテキスト拡張
 
-実行状態、コードビュー、Runtimeへ制御を返すときのスタック位置、CallStackビュー、値スタックとローカル値領域それぞれの基点・現在位置・上限、LOOP後方分岐カウンタ、借用中のリニアメモリビュー、現在のローカルフレーム基点、Interpreter注釈プールカーソル、現在のBasicBlock indexを `execution_context` に置く。実行時制御フレーム配列と書き込み専用stack checkpointは持たない。x86-64のコンテキストは144バイトである。CallStackの現在サイズはCallStack自身から取得する。フィールド順と物理offsetは[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)の`{ExecutionContext_Layout}`を正本とし、ここでは重複定義しない。
+実行状態、コードビュー、Runtimeへ制御を返すときのスタック位置、値スタックとローカル値領域それぞれの基点・現在位置・上限、LOOP後方分岐カウンタ、借用中のリニアメモリビュー、現在のローカルフレーム基点、Interpreter注釈プールカーソル、現在のBasicBlock indexを`execution_context`に置く。CallStackを含む呼出し状態の所有と解釈は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)に従う。x86-64のコンテキストは144バイトである。フィールド順と物理offsetは同文書の`{ExecutionContext_Layout}`を正本とし、ここでは重複定義しない。
 
 `loop_jump_count`は、実際に取得したLOOP後方辺を一度だけ数える。条件不成立の`br_if`は数えない。しきい値の正本はInterpreter設定の`FB_CONF_INTERPRETER_YIELD_THRESHOLD`である。`if`、`br`、`br_if`はJIT traceから除外し、trace完了後にC++ Interpreter CPS handlerが処理する。分岐先へtrace chainしない。後方辺数がしきい値に達した境界ではyield statusを保持してC++ dispatcherへ戻る。RuntimeはそのstatusをCOOSへ渡す。
 
-値スタックとローカル値領域は、それぞれ基点・現在位置・上限をポインタで保持する。関数呼出しの状態保存には`CallFrame.operand_stack_base`と実行コンテキストの現在位置を使い、重複checkpointを持たない。リニアメモリのホスト基点とサイズは`+0x60`と`+0x68`にある。この2フィールドはゲストアドレスの`mem_base`と32bitの`mem_size`から区別する。ホスト基点は非所有の借用値である。実行呼出し中は参照先の寿命を保証し、メモリ再配置後は基点とサイズを更新する。
+値スタックとローカル値領域は、それぞれ基点・現在位置・上限をポインタで保持する。リニアメモリのホスト基点とサイズは`+0x60`と`+0x68`にある。この2フィールドはゲストアドレスの`mem_base`と32bitの`mem_size`から区別する。ホスト基点は非所有の借用値である。実行呼出し中は参照先の寿命を保証し、メモリ再配置後は基点とサイズを更新する。
 
 共通chain dispatcherへの相対値はtrace headerの`common_code_relative`に保持する。共通chain dispatcherは`lir/x64/common.S`から生成し、traceごとに複製しない。共通コード領域にはchain dispatcherに続けて、Tier 3 JITが読み取り専用領域に所有するRuntime API function pointer tableへの8バイト借用ポインタを配置する。表本体は共通コード領域やJIT cacheへ複製しない。JIT operationがRuntime APIを必要とする場合は、opcodeに対応するtable entryを呼び出す。trace終端から任意関数へ直接tail-callする契約は設けない。 `{PositionIndependentCode}`
 
-`execution_context` は144バイトである。CallStack深さ、命令位置、値スタック位置、trap状態を戻り値構造体へ複製しない。オペランドスタックをWASM値の格納先とする。標準レイアウトを維持する。
+`execution_context`は144バイトである。実行状態、命令位置、値スタック位置、trap状態を戻り値構造体へ複製しない。オペランドスタックをWASM値の格納先とする。標準レイアウトを維持する。
 
 ### x64 継続引数と assembly ABI
 <!-- traceability: {JIT_RegisterMapping} {CPS_3Args} {JIT_RuntimeAPI} -->
 
 Interpreter handlerとJIT trace entryは`ctx`、`ip`、`sp`、`rel`の順で4引数を受け取る。`ctx`、`ip`、`sp`が実行状態を表す3論理引数であり、`rel`は定数領域ポインタである。C++関数を呼ぶ側とRuntime API関数呼出しはC ABIに従う。手書きassembly stencilはABIの受け渡し位置を明示する。SysV AMD64では`ctx`, `ip`, `sp`, `rel`を`rdi`, `rsi`, `rdx`, `rcx`で受け取り、Windows x64では`rcx`, `rdx`, `r8`, `r9`で受け取る。ABI probeは本番C++関数型と構造体offsetを照合する。WASM仮想レジスタは導入しない。
 
-`local_base`は`ctx`が指す`execution_context.local_base`から取得する。trace entryは`header + const_rel_offset`のpool anchorを受け取り、先頭4-byte header相対参照を飛ばしてRuntime API recordの先頭に`rel`を設定する。chain dispatcherはchain先headerからpool anchorを計算し、同じ初期化を行う。trace exitは`ctx.rel`に保持したpool anchorを使ってheaderを解決する。`ctx.rel`はpool anchorまたは通常のポインタとして扱う。chain接続時はroot entryのprologueを再実行せず、entry stencilのcall slotからtarget traceへtail-jumpする。これにより保存済み`r12`とstack frameをchain全体で共有する。成功接続slotを次operation本体で置き換え、命令間call/jumpを使わずfall-throughする。operationごとの`ret`、スタック復元、エピローグは設けない。操作内分岐は生成metadataに基づいてtrace compile時に再配置する。未接続chain targetに到達した終端dispatcherだけがboundary metadata pointerを`ctx.rel`へ一時的に置き、`body_end_ip`を`ctx.ip`へ設定してtrace関数から`true`で戻る。分岐opcodeはJIT traceに含まれず、C++ Interpreter CPS handlerが一度実行する。その他のRuntime APIがfalseを返す場合はabort slotがtraceを終了し、C++ dispatcherがCPS stateを処理する。ARMv8-Mの論理入口と対象ABIはTBDとする。
+`local_base`は`ctx`が指す`execution_context.local_base`から取得する。trace entryは`header + const_rel_offset`のpool anchorを受け取り、先頭4-byte header相対参照を飛ばしてRuntime API recordの先頭に`rel`を設定する。chain dispatcherはchain先headerからpool anchorを計算し、同じ初期化を行う。trace exitは`ctx.rel`に保持したpool anchorを使ってheaderを解決する。`ctx.rel`はpool anchorまたは通常のポインタとして扱う。chain接続時はroot entryのprologueを再実行せず、entry stencilのcall slotからtarget traceへtail-jumpする。これにより保存済み`r12`とstack frameをchain全体で共有する。成功接続slotを次operation本体で置き換え、命令間call/jumpを使わずfall-throughする。operationごとの`ret`、スタック復元、エピローグは設けない。操作内分岐は生成metadataに基づいてtrace compile時に再配置する。未接続chain targetに到達した終端dispatcherだけがboundary metadata pointerを`ctx.rel`へ一時的に置き、`body_end_ip`を`ctx.ip`へ設定してtrace関数から`true`で戻る。分岐opcodeはJIT traceに含まれず、C++ Interpreter CPS handlerが一度実行する。`call`と`call_indirect`はtraceの最後のoperationとして、共通コード領域の借用table pointerとslot indexからTier 2 CPS handlerへtail-callする。traceに関数の絶対アドレスを埋め込まない。呼出し意味論は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とする。その他のRuntime APIがfalseを返す場合はabort slotがtraceを終了し、C++ dispatcherがCPS stateを処理する。ARMv8-Mの論理入口と対象ABIはTBDとする。
 
 Interpreter opcode handlerの型は`void (execution_context*, const uint8_t*, uint32_t*, const uint8_t*)`で統一する。4番目の`rel`はInterpreter注釈プールを指すバイトポインタである。Interpreter Runtime APIは`bool (execution_context*, const uint8_t *&, uint32_t *&, uint32_t *&, const uint8_t *&)`、JIT Runtime APIは`bool (execution_context*, uint32_t *&, uint32_t *&, const uint8_t*)`を使う。`true`は通常継続、`false`はAPIがtrapまたはCPS exitを`execution_context`へ記録して後続命令を実行してはならないことを示す。Interpreter APIは命令カーソル`ip`、スタック位置`sp`、ローカル基点、`rel`を参照で受け取り、命令カーソルと注釈カーソルを更新する。JIT APIはpool内の操作引数recordを値として受け取る。recordのimmediate payloadはRuntime APIごとの型付き値であり、終端recordに置くannotation byte offsetから関数所有のInterpreter注釈プールを参照できる。Interpreter opcode handler表はCPS handlerだけを保持し、JIT API関数ポインタを含めない。JIT APIのwrapperとopcode対応表はTier 3 JITが所有する。Interpreter handlerはRuntime APIが`true`を返した場合だけ更新済みの`ip`と`rel`を含むCPS継続へ末尾呼出しする。JIT Runtime API stencilは`true`なら後続operationへfall-throughし、`false`ならabort slotへ分岐する。Runtime APIは次のopcodeをdispatchしない。
 
@@ -105,9 +105,9 @@ Tier 2は共有実行状態とブロック開始PCを実行拡張へ渡す接続
 
 providerのlookupと観測callbackは0または1を返す。0はcache missまたは観測対象外を示す。境界処理callbackは1を返す。これ以外は内部接続契約の違反として呼出し直後でassertし、WASMのtrapや継続可能な内部エラーへ変換しない。callbackの実行はassert式の外へ置く。
 
-ネイティブdispatchには `execution_context`、値スタック基点、ローカルスタック基点、実行拡張を渡す。命令位置、コードと制御スタックの情報、スタック位置と容量、local base、関数番号、yieldしきい値は `execution_context` と現在のCallFrameから取得し、別の呼出し構造体へ複製しない。戻り値はstatusとABIエラーだけを持ち、命令位置、スタック位置、trap codeは `execution_context` を唯一の格納先とする。実行拡張は `owner`、本体実行入口、観測入口で構成する。観測入口はInterpreterが対象ブロックを実行した後に候補判定と履歴記録を一度に行う。候補マスクと履歴配列をInterpreterへ渡さず、複製もしない。
+ネイティブdispatchには`execution_context`、値スタック基点、ローカルスタック基点、実行拡張を渡す。命令位置、コードと制御状態、スタック位置と容量、local base、関数番号、yieldしきい値はInterpreterが所有する実行状態から取得する。個別の呼出し構造体へ複製しない。戻り値はstatusとABIエラーだけを持ち、命令位置、スタック位置、trap codeは`execution_context`を唯一の格納先とする。実行拡張は`owner`、本体実行入口、観測入口で構成する。観測入口はInterpreterが対象ブロックを実行した後に候補判定と履歴記録を一度に行う。候補マスクと履歴配列をInterpreterへ渡さず、複製もしない。
 
-CallFrameは関数実行view、ローカル基点、オペランドstack基点、復帰IP、JIT境界PC、u16復帰block indexを持つ40バイトの固定構造体である。関数番号は同じ関数を示すfunction viewの`function_index`から得る。コード・ローカル配置・引数・結果の静的値はfunction viewから得る。viewはLoaderが求めた`max_operand_stack_words`を32bit語単位で保持し、x64上で72バイトである。関数入口で引数を除いたSPを基準にこの最大高を検査し、関数途中のtrace入口には容量の再検査を置かない。`rel`はCallFrameに保存せず、Interpreterは基本ブロック開始時に注釈offsetから求める。関数呼出しスタックは32個の記述子とu8深さを保持する固定長配列で、全体は1,288バイトである。定数バッファ参照、関数参照、モジュール参照はWASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{META_NoStdVector}`
+CallFrameとCallStackの配置、容量、および関数呼出し時の状態管理は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とする。本仕様はInterpreterが所有する構造体のlayoutを重複定義しない。関数参照とモジュール参照はWASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{META_NoStdVector}`
 
 実行時のオペランド領域とローカル値領域は、固定容量の構造体と配列として配置する。値領域は`WASM_VALUE_SLOT_BYTES`の境界に配置した型情報を持たない32bit word配列であり、WASMのi32/f32は1 word、i64/f64は2 wordを使う。各関数のローカル値も同じ32bit wordを連続して使う。Loaderは各ローカルの先頭word offsetとWASM型を関数実行viewへ渡す。幅は保持済みWASM型から導出し、サイズ表を別に保持しない。JITは関数引数を含むローカル数が16以下の場合を対象とし、`local.get/set/tee`はoperationとWASM値型に対応するstencilへlowerする。local indexはtrace compile時にLoaderのoffset表から解決し、そのcompact word offsetを命令エンコーダがtrace codeへ直接書き込む。offset別stencil variant、local Runtime API、実行時`rel`読出しは使わない。関数引数を含むローカル数が17以上のtraceは直接local stencilの対象外である。実行時の値には型tagを付けない。制御分岐はLoaderが生成した注釈済みedgeを使い、実行時ControlFrameを保持しない。 `{META_NoStdVector}`
 

@@ -1,0 +1,6004 @@
+{
+  "builds": {
+    "main": {
+      "actual_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "actual_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "commit": "26af9db0f4c7be7ba0975f325362bc92d101d9c4",
+      "lib": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "source": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7"
+    },
+    "req066": {
+      "actual_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "actual_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "commit": "7d6209df8d84f311ef4295c7004ad67cb09c246f",
+      "lib": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "source": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7"
+    }
+  },
+  "host": {
+    "cpu_affinity": 2,
+    "cpu_model": "AMD Ryzen 5 5500GT with Radeon Graphics",
+    "governor": "powersave",
+    "kernel": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "perf_event_paranoid": "1",
+    "perf_version": "perf version 7.0.14"
+  },
+  "inputs": {
+    "aobench_driver_path": "/tmp/REQ-039/aobench_driver.py",
+    "aobench_driver_sha256": "822df58b0d93cc3a7e56cd5b1d88690b5b5479a28eea31252886a9020a232abf",
+    "aobench_wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+    "call_dispatch_script_sha256": {
+      "main": "beab52671124ea2799b4ae4dc8c292d4c14a41286eb1c8748a62c85b74d55b3d",
+      "req066": "beab52671124ea2799b4ae4dc8c292d4c14a41286eb1c8748a62c85b74d55b3d"
+    },
+    "result_aobench_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+    "result_call_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e"
+  },
+  "measurement_date": "2026-10-18 09:04:09 JST",
+  "method": {
+    "aobench_jit_enabled": false,
+    "aobench_repeats": 7,
+    "aobench_warmups": 3,
+    "call_iterations": 10000,
+    "counter_command": "perf stat -x, -e instructions:u,cycles:u -- taskset -c 2 <python> <benchmark>",
+    "pair_order": "alternates main->req066 and req066->main",
+    "processes_per_workload_version": 7,
+    "raw_perf_stderr_includes_only_command_counters": true,
+    "repeats_per_process": 7
+  },
+  "records": [
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 1,
+      "perf_cycles_user": 476904191,
+      "perf_instructions_user": 678445525,
+      "perf_stderr": "678445525,,instructions:u,130805315,100.00,,\n476904191,,cycles:u,130805315,100.00,,\n",
+      "process_elapsed_ms_including_startup": 165.974712,
+      "process_ipc": 1.4226034029547876,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.883915,
+            "median_ms": 2.375297,
+            "min_ms": 2.275911,
+            "ns_per_guest_call": 237.5297,
+            "ns_per_loop_iteration": 237.5297,
+            "samples_ms": [
+              2.303082,
+              2.450016,
+              2.359307,
+              2.375297,
+              2.275911,
+              2.912811,
+              3.883915
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 3.883915,
+        "median_ms": 2.375297,
+        "min_ms": 2.275911,
+        "ns_per_guest_call": 237.5297,
+        "ns_per_loop_iteration": 237.5297,
+        "samples_ms": [
+          2.303082,
+          2.450016,
+          2.359307,
+          2.375297,
+          2.275911,
+          2.912811,
+          3.883915
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 1,
+      "perf_cycles_user": 497047500,
+      "perf_instructions_user": 673963583,
+      "perf_stderr": "673963583,,instructions:u,135698413,100.00,,\n497047500,,cycles:u,135698413,100.00,,\n",
+      "process_elapsed_ms_including_startup": 156.388675,
+      "process_ipc": 1.3559339560102404,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.53858,
+            "median_ms": 2.300327,
+            "min_ms": 2.192987,
+            "ns_per_guest_call": 230.0327,
+            "ns_per_loop_iteration": 230.0327,
+            "samples_ms": [
+              3.53858,
+              2.355059,
+              2.583436,
+              2.300327,
+              2.233532,
+              2.263268,
+              2.192987
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 3.53858,
+        "median_ms": 2.300327,
+        "min_ms": 2.192987,
+        "ns_per_guest_call": 230.0327,
+        "ns_per_loop_iteration": 230.0327,
+        "samples_ms": [
+          3.53858,
+          2.355059,
+          2.583436,
+          2.300327,
+          2.233532,
+          2.263268,
+          2.192987
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 2,
+      "perf_cycles_user": 491888301,
+      "perf_instructions_user": 674745941,
+      "perf_stderr": "674745941,,instructions:u,135082651,100.00,,\n491888301,,cycles:u,135082651,100.00,,\n",
+      "process_elapsed_ms_including_startup": 152.238484,
+      "process_ipc": 1.3717462676551846,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.434367,
+            "median_ms": 2.328068,
+            "min_ms": 2.168951,
+            "ns_per_guest_call": 232.8068,
+            "ns_per_loop_iteration": 232.8068,
+            "samples_ms": [
+              2.434367,
+              2.320285,
+              2.426212,
+              2.328068,
+              2.402137,
+              2.186805,
+              2.168951
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.434367,
+        "median_ms": 2.328068,
+        "min_ms": 2.168951,
+        "ns_per_guest_call": 232.8068,
+        "ns_per_loop_iteration": 232.8068,
+        "samples_ms": [
+          2.434367,
+          2.320285,
+          2.426212,
+          2.328068,
+          2.402137,
+          2.186805,
+          2.168951
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 2,
+      "perf_cycles_user": 502361252,
+      "perf_instructions_user": 678390541,
+      "perf_stderr": "678390541,,instructions:u,135957399,100.00,,\n502361252,,cycles:u,135957399,100.00,,\n",
+      "process_elapsed_ms_including_startup": 151.488182,
+      "process_ipc": 1.3504037946780179,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.309204,
+            "median_ms": 2.2645,
+            "min_ms": 2.170144,
+            "ns_per_guest_call": 226.45,
+            "ns_per_loop_iteration": 226.45,
+            "samples_ms": [
+              2.282874,
+              2.30763,
+              2.309204,
+              2.203506,
+              2.170144,
+              2.255173,
+              2.2645
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.309204,
+        "median_ms": 2.2645,
+        "min_ms": 2.170144,
+        "ns_per_guest_call": 226.45,
+        "ns_per_loop_iteration": 226.45,
+        "samples_ms": [
+          2.282874,
+          2.30763,
+          2.309204,
+          2.203506,
+          2.170144,
+          2.255173,
+          2.2645
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 3,
+      "perf_cycles_user": 459132286,
+      "perf_instructions_user": 678439498,
+      "perf_stderr": "678439498,,instructions:u,126939615,100.00,,\n459132286,,cycles:u,126939615,100.00,,\n",
+      "process_elapsed_ms_including_startup": 144.708818,
+      "process_ipc": 1.4776558274971758,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.513095,
+            "median_ms": 2.301218,
+            "min_ms": 2.206562,
+            "ns_per_guest_call": 230.1218,
+            "ns_per_loop_iteration": 230.1218,
+            "samples_ms": [
+              2.330843,
+              2.233302,
+              2.206562,
+              2.513095,
+              2.272024,
+              2.301218,
+              2.358966
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.513095,
+        "median_ms": 2.301218,
+        "min_ms": 2.206562,
+        "ns_per_guest_call": 230.1218,
+        "ns_per_loop_iteration": 230.1218,
+        "samples_ms": [
+          2.330843,
+          2.233302,
+          2.206562,
+          2.513095,
+          2.272024,
+          2.301218,
+          2.358966
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 3,
+      "perf_cycles_user": 507743502,
+      "perf_instructions_user": 673246675,
+      "perf_stderr": "673246675,,instructions:u,138021026,100.00,,\n507743502,,cycles:u,138021026,100.00,,\n",
+      "process_elapsed_ms_including_startup": 162.060971,
+      "process_ipc": 1.325958229594438,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.619872,
+            "median_ms": 2.288264,
+            "min_ms": 2.16845,
+            "ns_per_guest_call": 228.8264,
+            "ns_per_loop_iteration": 228.8264,
+            "samples_ms": [
+              2.361872,
+              3.619872,
+              2.306348,
+              2.288264,
+              2.172348,
+              2.16845,
+              2.172127
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 3.619872,
+        "median_ms": 2.288264,
+        "min_ms": 2.16845,
+        "ns_per_guest_call": 228.8264,
+        "ns_per_loop_iteration": 228.8264,
+        "samples_ms": [
+          2.361872,
+          3.619872,
+          2.306348,
+          2.288264,
+          2.172348,
+          2.16845,
+          2.172127
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 4,
+      "perf_cycles_user": 462491412,
+      "perf_instructions_user": 672816242,
+      "perf_stderr": "672816242,,instructions:u,126940064,100.00,,\n462491412,,cycles:u,126940064,100.00,,\n",
+      "process_elapsed_ms_including_startup": 148.333509,
+      "process_ipc": 1.4547648335576013,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.894477,
+            "median_ms": 2.33409,
+            "min_ms": 2.234254,
+            "ns_per_guest_call": 233.409,
+            "ns_per_loop_iteration": 233.409,
+            "samples_ms": [
+              2.343698,
+              2.234254,
+              2.325263,
+              2.321377,
+              2.420601,
+              2.33409,
+              2.894477
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.894477,
+        "median_ms": 2.33409,
+        "min_ms": 2.234254,
+        "ns_per_guest_call": 233.409,
+        "ns_per_loop_iteration": 233.409,
+        "samples_ms": [
+          2.343698,
+          2.234254,
+          2.325263,
+          2.321377,
+          2.420601,
+          2.33409,
+          2.894477
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 4,
+      "perf_cycles_user": 466936271,
+      "perf_instructions_user": 678483838,
+      "perf_stderr": "678483838,,instructions:u,127776439,100.00,,\n466936271,,cycles:u,127776439,100.00,,\n",
+      "process_elapsed_ms_including_startup": 148.254322,
+      "process_ipc": 1.4530544747507952,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.383852,
+            "median_ms": 2.32331,
+            "min_ms": 2.216901,
+            "ns_per_guest_call": 232.331,
+            "ns_per_loop_iteration": 232.331,
+            "samples_ms": [
+              2.297692,
+              2.32331,
+              2.335623,
+              2.282423,
+              2.383852,
+              2.3825,
+              2.216901
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.383852,
+        "median_ms": 2.32331,
+        "min_ms": 2.216901,
+        "ns_per_guest_call": 232.331,
+        "ns_per_loop_iteration": 232.331,
+        "samples_ms": [
+          2.297692,
+          2.32331,
+          2.335623,
+          2.282423,
+          2.383852,
+          2.3825,
+          2.216901
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 5,
+      "perf_cycles_user": 459687168,
+      "perf_instructions_user": 677756065,
+      "perf_stderr": "677756065,,instructions:u,126676681,100.00,,\n459687168,,cycles:u,126676681,100.00,,\n",
+      "process_elapsed_ms_including_startup": 153.368995,
+      "process_ipc": 1.474385434661513,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.984302,
+            "median_ms": 2.239223,
+            "min_ms": 2.20004,
+            "ns_per_guest_call": 223.9223,
+            "ns_per_loop_iteration": 223.9223,
+            "samples_ms": [
+              3.984302,
+              2.215529,
+              2.20004,
+              2.239223,
+              2.247007,
+              2.336565,
+              2.234955
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 3.984302,
+        "median_ms": 2.239223,
+        "min_ms": 2.20004,
+        "ns_per_guest_call": 223.9223,
+        "ns_per_loop_iteration": 223.9223,
+        "samples_ms": [
+          3.984302,
+          2.215529,
+          2.20004,
+          2.239223,
+          2.247007,
+          2.336565,
+          2.234955
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 5,
+      "perf_cycles_user": 476886978,
+      "perf_instructions_user": 673770963,
+      "perf_stderr": "673770963,,instructions:u,130376135,100.00,,\n476886978,,cycles:u,130376135,100.00,,\n",
+      "process_elapsed_ms_including_startup": 150.233949,
+      "process_ipc": 1.4128525082100272,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.354167,
+            "median_ms": 2.251446,
+            "min_ms": 2.18918,
+            "ns_per_guest_call": 225.1446,
+            "ns_per_loop_iteration": 225.1446,
+            "samples_ms": [
+              2.354167,
+              2.251446,
+              2.332437,
+              2.32872,
+              2.236988,
+              2.18918,
+              2.208736
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.354167,
+        "median_ms": 2.251446,
+        "min_ms": 2.18918,
+        "ns_per_guest_call": 225.1446,
+        "ns_per_loop_iteration": 225.1446,
+        "samples_ms": [
+          2.354167,
+          2.251446,
+          2.332437,
+          2.32872,
+          2.236988,
+          2.18918,
+          2.208736
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 6,
+      "perf_cycles_user": 454852811,
+      "perf_instructions_user": 673418468,
+      "perf_stderr": "673418468,,instructions:u,125841455,100.00,,\n454852811,,cycles:u,125841455,100.00,,\n",
+      "process_elapsed_ms_including_startup": 144.253178,
+      "process_ipc": 1.4805195256889376,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.361742,
+            "median_ms": 2.260743,
+            "min_ms": 2.193909,
+            "ns_per_guest_call": 226.0743,
+            "ns_per_loop_iteration": 226.0743,
+            "samples_ms": [
+              2.361742,
+              2.193909,
+              2.205149,
+              2.319002,
+              2.260743,
+              2.311307,
+              2.212172
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.361742,
+        "median_ms": 2.260743,
+        "min_ms": 2.193909,
+        "ns_per_guest_call": 226.0743,
+        "ns_per_loop_iteration": 226.0743,
+        "samples_ms": [
+          2.361742,
+          2.193909,
+          2.205149,
+          2.319002,
+          2.260743,
+          2.311307,
+          2.212172
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 6,
+      "perf_cycles_user": 476842017,
+      "perf_instructions_user": 678014223,
+      "perf_stderr": "678014223,,instructions:u,131544069,100.00,,\n476842017,,cycles:u,131544069,100.00,,\n",
+      "process_elapsed_ms_including_startup": 147.216172,
+      "process_ipc": 1.4218843953090652,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.310556,
+            "median_ms": 2.226249,
+            "min_ms": 2.188759,
+            "ns_per_guest_call": 222.6249,
+            "ns_per_loop_iteration": 222.6249,
+            "samples_ms": [
+              2.226249,
+              2.224054,
+              2.310556,
+              2.286962,
+              2.188759,
+              2.206412,
+              2.271323
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.310556,
+        "median_ms": 2.226249,
+        "min_ms": 2.188759,
+        "ns_per_guest_call": 222.6249,
+        "ns_per_loop_iteration": 222.6249,
+        "samples_ms": [
+          2.226249,
+          2.224054,
+          2.310556,
+          2.286962,
+          2.188759,
+          2.206412,
+          2.271323
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 7,
+      "perf_cycles_user": 468150521,
+      "perf_instructions_user": 680328229,
+      "perf_stderr": "680328229,,instructions:u,128854787,100.00,,\n468150521,,cycles:u,128854787,100.00,,\n",
+      "process_elapsed_ms_including_startup": 144.042364,
+      "process_ipc": 1.4532254018360902,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.396907,
+            "median_ms": 2.353787,
+            "min_ms": 2.192786,
+            "ns_per_guest_call": 235.3787,
+            "ns_per_loop_iteration": 235.3787,
+            "samples_ms": [
+              2.384715,
+              2.396907,
+              2.35576,
+              2.353787,
+              2.252558,
+              2.218273,
+              2.192786
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.396907,
+        "median_ms": 2.353787,
+        "min_ms": 2.192786,
+        "ns_per_guest_call": 235.3787,
+        "ns_per_loop_iteration": 235.3787,
+        "samples_ms": [
+          2.384715,
+          2.396907,
+          2.35576,
+          2.353787,
+          2.252558,
+          2.218273,
+          2.192786
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 7,
+      "perf_cycles_user": 475108768,
+      "perf_instructions_user": 674631603,
+      "perf_stderr": "674631603,,instructions:u,131247455,100.00,,\n475108768,,cycles:u,131247455,100.00,,\n",
+      "process_elapsed_ms_including_startup": 150.228248,
+      "process_ipc": 1.4199519108853829,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.479932,
+            "median_ms": 2.245715,
+            "min_ms": 2.205389,
+            "ns_per_guest_call": 224.5715,
+            "ns_per_loop_iteration": 224.5715,
+            "samples_ms": [
+              2.373063,
+              2.235225,
+              2.231328,
+              2.288515,
+              2.479932,
+              2.245715,
+              2.205389
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.479932,
+        "median_ms": 2.245715,
+        "min_ms": 2.205389,
+        "ns_per_guest_call": 224.5715,
+        "ns_per_loop_iteration": 224.5715,
+        "samples_ms": [
+          2.373063,
+          2.235225,
+          2.231328,
+          2.288515,
+          2.479932,
+          2.245715,
+          2.205389
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 1,
+      "perf_cycles_user": 502898632,
+      "perf_instructions_user": 675658451,
+      "perf_stderr": "675658451,,instructions:u,137050504,100.00,,\n502898632,,cycles:u,137050504,100.00,,\n",
+      "process_elapsed_ms_including_startup": 166.446143,
+      "process_ipc": 1.343528114826926,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.634601,
+            "median_ms": 2.273207,
+            "min_ms": 2.159904,
+            "ns_per_guest_call": 227.3207,
+            "ns_per_loop_iteration": 227.3207,
+            "samples_ms": [
+              2.634601,
+              2.236698,
+              2.299335,
+              2.2434,
+              2.159904,
+              2.273207,
+              2.322879
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.634601,
+        "median_ms": 2.273207,
+        "min_ms": 2.159904,
+        "ns_per_guest_call": 227.3207,
+        "ns_per_loop_iteration": 227.3207,
+        "samples_ms": [
+          2.634601,
+          2.236698,
+          2.299335,
+          2.2434,
+          2.159904,
+          2.273207,
+          2.322879
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 1,
+      "perf_cycles_user": 498560680,
+      "perf_instructions_user": 669014478,
+      "perf_stderr": "669014478,,instructions:u,135680569,100.00,,\n498560680,,cycles:u,135680569,100.00,,\n",
+      "process_elapsed_ms_including_startup": 161.453116,
+      "process_ipc": 1.341891779351713,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.560453,
+            "median_ms": 2.173329,
+            "min_ms": 2.136361,
+            "ns_per_guest_call": 217.3329,
+            "ns_per_loop_iteration": 217.3329,
+            "samples_ms": [
+              2.560453,
+              2.244112,
+              2.173329,
+              2.148253,
+              2.322498,
+              2.160376,
+              2.136361
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.560453,
+        "median_ms": 2.173329,
+        "min_ms": 2.136361,
+        "ns_per_guest_call": 217.3329,
+        "ns_per_loop_iteration": 217.3329,
+        "samples_ms": [
+          2.560453,
+          2.244112,
+          2.173329,
+          2.148253,
+          2.322498,
+          2.160376,
+          2.136361
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 2,
+      "perf_cycles_user": 488273464,
+      "perf_instructions_user": 669330743,
+      "perf_stderr": "669330743,,instructions:u,133360787,100.00,,\n488273464,,cycles:u,133360787,100.00,,\n",
+      "process_elapsed_ms_including_startup": 162.585672,
+      "process_ipc": 1.3708112202468574,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.797544,
+            "median_ms": 3.127462,
+            "min_ms": 2.250043,
+            "ns_per_guest_call": 312.7462,
+            "ns_per_loop_iteration": 312.7462,
+            "samples_ms": [
+              3.797544,
+              3.186282,
+              3.127462,
+              2.484461,
+              2.250043,
+              3.770994,
+              2.349649
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 3.797544,
+        "median_ms": 3.127462,
+        "min_ms": 2.250043,
+        "ns_per_guest_call": 312.7462,
+        "ns_per_loop_iteration": 312.7462,
+        "samples_ms": [
+          3.797544,
+          3.186282,
+          3.127462,
+          2.484461,
+          2.250043,
+          3.770994,
+          2.349649
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 2,
+      "perf_cycles_user": 507519436,
+      "perf_instructions_user": 675989747,
+      "perf_stderr": "675989747,,instructions:u,138741067,100.00,,\n507519436,,cycles:u,138741067,100.00,,\n",
+      "process_elapsed_ms_including_startup": 160.612195,
+      "process_ipc": 1.3319484911312836,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.375237,
+            "median_ms": 2.198277,
+            "min_ms": 2.137272,
+            "ns_per_guest_call": 219.8277,
+            "ns_per_loop_iteration": 219.8277,
+            "samples_ms": [
+              2.375237,
+              2.213965,
+              2.158232,
+              2.137272,
+              2.305707,
+              2.198277,
+              2.168461
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.375237,
+        "median_ms": 2.198277,
+        "min_ms": 2.137272,
+        "ns_per_guest_call": 219.8277,
+        "ns_per_loop_iteration": 219.8277,
+        "samples_ms": [
+          2.375237,
+          2.213965,
+          2.158232,
+          2.137272,
+          2.305707,
+          2.198277,
+          2.168461
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 3,
+      "perf_cycles_user": 499511282,
+      "perf_instructions_user": 675624266,
+      "perf_stderr": "675624266,,instructions:u,135892071,100.00,,\n499511282,,cycles:u,135892071,100.00,,\n",
+      "process_elapsed_ms_including_startup": 162.734309,
+      "process_ipc": 1.3525705831805417,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.546467,
+            "median_ms": 2.303563,
+            "min_ms": 2.139848,
+            "ns_per_guest_call": 230.3563,
+            "ns_per_loop_iteration": 230.3563,
+            "samples_ms": [
+              2.546467,
+              2.325694,
+              2.318201,
+              2.139848,
+              2.303563,
+              2.153603,
+              2.249322
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.546467,
+        "median_ms": 2.303563,
+        "min_ms": 2.139848,
+        "ns_per_guest_call": 230.3563,
+        "ns_per_loop_iteration": 230.3563,
+        "samples_ms": [
+          2.546467,
+          2.325694,
+          2.318201,
+          2.139848,
+          2.303563,
+          2.153603,
+          2.249322
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 3,
+      "perf_cycles_user": 513773765,
+      "perf_instructions_user": 671490509,
+      "perf_stderr": "671490509,,instructions:u,139523774,100.00,,\n513773765,,cycles:u,139523774,100.00,,\n",
+      "process_elapsed_ms_including_startup": 166.097501,
+      "process_ipc": 1.3069770290820513,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.811481,
+            "median_ms": 2.172739,
+            "min_ms": 2.138294,
+            "ns_per_guest_call": 217.2739,
+            "ns_per_loop_iteration": 217.2739,
+            "samples_ms": [
+              2.811481,
+              2.444917,
+              2.338659,
+              2.172739,
+              2.138294,
+              2.153793,
+              2.16802
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.811481,
+        "median_ms": 2.172739,
+        "min_ms": 2.138294,
+        "ns_per_guest_call": 217.2739,
+        "ns_per_loop_iteration": 217.2739,
+        "samples_ms": [
+          2.811481,
+          2.444917,
+          2.338659,
+          2.172739,
+          2.138294,
+          2.153793,
+          2.16802
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 4,
+      "perf_cycles_user": 453410800,
+      "perf_instructions_user": 669000794,
+      "perf_stderr": "669000794,,instructions:u,124992517,100.00,,\n453410800,,cycles:u,124992517,100.00,,\n",
+      "process_elapsed_ms_including_startup": 142.073556,
+      "process_ipc": 1.475484911254871,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.449385,
+            "median_ms": 2.268657,
+            "min_ms": 2.165916,
+            "ns_per_guest_call": 226.8657,
+            "ns_per_loop_iteration": 226.8657,
+            "samples_ms": [
+              2.268657,
+              2.184951,
+              2.165916,
+              2.291931,
+              2.304485,
+              2.449385,
+              2.242589
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.449385,
+        "median_ms": 2.268657,
+        "min_ms": 2.165916,
+        "ns_per_guest_call": 226.8657,
+        "ns_per_loop_iteration": 226.8657,
+        "samples_ms": [
+          2.268657,
+          2.184951,
+          2.165916,
+          2.291931,
+          2.304485,
+          2.449385,
+          2.242589
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 4,
+      "perf_cycles_user": 491793185,
+      "perf_instructions_user": 676263666,
+      "perf_stderr": "676263666,,instructions:u,134528165,100.00,,\n491793185,,cycles:u,134528165,100.00,,\n",
+      "process_elapsed_ms_including_startup": 152.482409,
+      "process_ipc": 1.375097676475529,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.463942,
+            "median_ms": 2.228552,
+            "min_ms": 2.19507,
+            "ns_per_guest_call": 222.8552,
+            "ns_per_loop_iteration": 222.8552,
+            "samples_ms": [
+              2.252798,
+              2.20554,
+              2.19507,
+              2.266634,
+              2.202845,
+              2.228552,
+              2.463942
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.463942,
+        "median_ms": 2.228552,
+        "min_ms": 2.19507,
+        "ns_per_guest_call": 222.8552,
+        "ns_per_loop_iteration": 222.8552,
+        "samples_ms": [
+          2.252798,
+          2.20554,
+          2.19507,
+          2.266634,
+          2.202845,
+          2.228552,
+          2.463942
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 5,
+      "perf_cycles_user": 462257725,
+      "perf_instructions_user": 675379813,
+      "perf_stderr": "675379813,,instructions:u,127743436,100.00,,\n462257725,,cycles:u,127743436,100.00,,\n",
+      "process_elapsed_ms_including_startup": 146.967838,
+      "process_ipc": 1.4610460279490192,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.382691,
+            "median_ms": 2.237519,
+            "min_ms": 2.222311,
+            "ns_per_guest_call": 223.7519,
+            "ns_per_loop_iteration": 223.7519,
+            "samples_ms": [
+              2.382691,
+              2.237519,
+              2.299805,
+              2.237299,
+              2.227711,
+              2.374595,
+              2.222311
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.382691,
+        "median_ms": 2.237519,
+        "min_ms": 2.222311,
+        "ns_per_guest_call": 223.7519,
+        "ns_per_loop_iteration": 223.7519,
+        "samples_ms": [
+          2.382691,
+          2.237519,
+          2.299805,
+          2.237299,
+          2.227711,
+          2.374595,
+          2.222311
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 5,
+      "perf_cycles_user": 485452907,
+      "perf_instructions_user": 668788159,
+      "perf_stderr": "668788159,,instructions:u,133117683,100.00,,\n485452907,,cycles:u,133117683,100.00,,\n",
+      "process_elapsed_ms_including_startup": 149.615484,
+      "process_ipc": 1.377658160773976,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.661521,
+            "median_ms": 2.315515,
+            "min_ms": 2.183989,
+            "ns_per_guest_call": 231.5515,
+            "ns_per_loop_iteration": 231.5515,
+            "samples_ms": [
+              2.487987,
+              2.661521,
+              2.422656,
+              2.23762,
+              2.315515,
+              2.183989,
+              2.18435
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.661521,
+        "median_ms": 2.315515,
+        "min_ms": 2.183989,
+        "ns_per_guest_call": 231.5515,
+        "ns_per_loop_iteration": 231.5515,
+        "samples_ms": [
+          2.487987,
+          2.661521,
+          2.422656,
+          2.23762,
+          2.315515,
+          2.183989,
+          2.18435
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 6,
+      "perf_cycles_user": 465844756,
+      "perf_instructions_user": 668929301,
+      "perf_stderr": "668929301,,instructions:u,128180132,100.00,,\n465844756,,cycles:u,128180132,100.00,,\n",
+      "process_elapsed_ms_including_startup": 143.151099,
+      "process_ipc": 1.4359489773885101,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.596059,
+            "median_ms": 2.288405,
+            "min_ms": 2.13088,
+            "ns_per_guest_call": 228.8405,
+            "ns_per_loop_iteration": 228.8405,
+            "samples_ms": [
+              2.596059,
+              2.377611,
+              2.262406,
+              2.288405,
+              2.364136,
+              2.172288,
+              2.13088
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.596059,
+        "median_ms": 2.288405,
+        "min_ms": 2.13088,
+        "ns_per_guest_call": 228.8405,
+        "ns_per_loop_iteration": 228.8405,
+        "samples_ms": [
+          2.596059,
+          2.377611,
+          2.262406,
+          2.288405,
+          2.364136,
+          2.172288,
+          2.13088
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 6,
+      "perf_cycles_user": 476626616,
+      "perf_instructions_user": 675691225,
+      "perf_stderr": "675691225,,instructions:u,130142316,100.00,,\n476626616,,cycles:u,130142316,100.00,,\n",
+      "process_elapsed_ms_including_startup": 147.423218,
+      "process_ipc": 1.4176531530501015,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.554161,
+            "median_ms": 2.310285,
+            "min_ms": 2.18968,
+            "ns_per_guest_call": 231.0285,
+            "ns_per_loop_iteration": 231.0285,
+            "samples_ms": [
+              2.351352,
+              2.420962,
+              2.554161,
+              2.310285,
+              2.244843,
+              2.305557,
+              2.18968
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.554161,
+        "median_ms": 2.310285,
+        "min_ms": 2.18968,
+        "ns_per_guest_call": 231.0285,
+        "ns_per_loop_iteration": 231.0285,
+        "samples_ms": [
+          2.351352,
+          2.420962,
+          2.554161,
+          2.310285,
+          2.244843,
+          2.305557,
+          2.18968
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 7,
+      "perf_cycles_user": 471829707,
+      "perf_instructions_user": 675608922,
+      "perf_stderr": "675608922,,instructions:u,129811689,100.00,,\n471829707,,cycles:u,129811689,100.00,,\n",
+      "process_elapsed_ms_including_startup": 147.115694,
+      "process_ipc": 1.4318914472250472,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.506862,
+            "median_ms": 2.305667,
+            "min_ms": 2.221419,
+            "ns_per_guest_call": 230.5667,
+            "ns_per_loop_iteration": 230.5667,
+            "samples_ms": [
+              2.252278,
+              2.221419,
+              2.436411,
+              2.326877,
+              2.506862,
+              2.305667,
+              2.25903
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.506862,
+        "median_ms": 2.305667,
+        "min_ms": 2.221419,
+        "ns_per_guest_call": 230.5667,
+        "ns_per_loop_iteration": 230.5667,
+        "samples_ms": [
+          2.252278,
+          2.221419,
+          2.436411,
+          2.326877,
+          2.506862,
+          2.305667,
+          2.25903
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 7,
+      "perf_cycles_user": 459978896,
+      "perf_instructions_user": 668595495,
+      "perf_stderr": "668595495,,instructions:u,126746390,100.00,,\n459978896,,cycles:u,126746390,100.00,,\n",
+      "process_elapsed_ms_including_startup": 145.867313,
+      "process_ipc": 1.4535351530562393,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.370478,
+            "median_ms": 2.216931,
+            "min_ms": 2.150708,
+            "ns_per_guest_call": 221.6931,
+            "ns_per_loop_iteration": 221.6931,
+            "samples_ms": [
+              2.262476,
+              2.183238,
+              2.150708,
+              2.216931,
+              2.370478,
+              2.241096,
+              2.202283
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.370478,
+        "median_ms": 2.216931,
+        "min_ms": 2.150708,
+        "ns_per_guest_call": 221.6931,
+        "ns_per_loop_iteration": 221.6931,
+        "samples_ms": [
+          2.262476,
+          2.183238,
+          2.150708,
+          2.216931,
+          2.370478,
+          2.241096,
+          2.202283
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 1,
+      "perf_cycles_user": 457457295,
+      "perf_instructions_user": 651122941,
+      "perf_stderr": "651122941,,instructions:u,126022181,100.00,,\n457457295,,cycles:u,126022181,100.00,,\n",
+      "process_elapsed_ms_including_startup": 200.16622,
+      "process_ipc": 1.423352404949625,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 6.518917,
+            "median_ms": 4.139142,
+            "min_ms": 1.991439,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 413.91419999999994,
+            "samples_ms": [
+              6.299367,
+              1.991439,
+              4.362579,
+              4.127791,
+              4.139142,
+              2.350961,
+              6.518917
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 6.518917,
+        "median_ms": 4.139142,
+        "min_ms": 1.991439,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 413.91419999999994,
+        "samples_ms": [
+          6.299367,
+          1.991439,
+          4.362579,
+          4.127791,
+          4.139142,
+          2.350961,
+          6.518917
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 1,
+      "perf_cycles_user": 475999338,
+      "perf_instructions_user": 647921272,
+      "perf_stderr": "647921272,,instructions:u,130490587,100.00,,\n475999338,,cycles:u,130490587,100.00,,\n",
+      "process_elapsed_ms_including_startup": 153.431201,
+      "process_ipc": 1.3611810359282475,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.074155,
+            "median_ms": 1.954801,
+            "min_ms": 1.906582,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 195.4801,
+            "samples_ms": [
+              2.074155,
+              1.987963,
+              1.954801,
+              1.910178,
+              1.91654,
+              1.964479,
+              1.906582
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.074155,
+        "median_ms": 1.954801,
+        "min_ms": 1.906582,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 195.4801,
+        "samples_ms": [
+          2.074155,
+          1.987963,
+          1.954801,
+          1.910178,
+          1.91654,
+          1.964479,
+          1.906582
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 2,
+      "perf_cycles_user": 461287942,
+      "perf_instructions_user": 648785227,
+      "perf_stderr": "648785227,,instructions:u,126933622,100.00,,\n461287942,,cycles:u,126933622,100.00,,\n",
+      "process_elapsed_ms_including_startup": 144.316015,
+      "process_ipc": 1.4064647434465132,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.190782,
+            "median_ms": 2.02381,
+            "min_ms": 1.989397,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 202.381,
+            "samples_ms": [
+              2.190782,
+              2.068694,
+              2.02381,
+              1.989836,
+              1.989397,
+              1.997371,
+              2.040942
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.190782,
+        "median_ms": 2.02381,
+        "min_ms": 1.989397,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 202.381,
+        "samples_ms": [
+          2.190782,
+          2.068694,
+          2.02381,
+          1.989836,
+          1.989397,
+          1.997371,
+          2.040942
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 2,
+      "perf_cycles_user": 471767215,
+      "perf_instructions_user": 650830568,
+      "perf_stderr": "650830568,,instructions:u,130070602,100.00,,\n471767215,,cycles:u,130070602,100.00,,\n",
+      "process_elapsed_ms_including_startup": 147.538034,
+      "process_ipc": 1.3795587046039222,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.3233,
+            "median_ms": 2.062673,
+            "min_ms": 1.993434,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 206.26730000000003,
+            "samples_ms": [
+              2.188608,
+              2.3233,
+              2.062673,
+              2.092088,
+              2.057924,
+              2.008903,
+              1.993434
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.3233,
+        "median_ms": 2.062673,
+        "min_ms": 1.993434,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 206.26730000000003,
+        "samples_ms": [
+          2.188608,
+          2.3233,
+          2.062673,
+          2.092088,
+          2.057924,
+          2.008903,
+          1.993434
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 3,
+      "perf_cycles_user": 460411962,
+      "perf_instructions_user": 651262881,
+      "perf_stderr": "651262881,,instructions:u,126340963,100.00,,\n460411962,,cycles:u,126340963,100.00,,\n",
+      "process_elapsed_ms_including_startup": 141.022653,
+      "process_ipc": 1.4145220688249625,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.118687,
+            "median_ms": 2.038949,
+            "min_ms": 2.000857,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 203.89490000000004,
+            "samples_ms": [
+              2.078222,
+              2.038949,
+              2.04495,
+              2.000857,
+              2.017829,
+              2.118687,
+              2.025434
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.118687,
+        "median_ms": 2.038949,
+        "min_ms": 2.000857,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 203.89490000000004,
+        "samples_ms": [
+          2.078222,
+          2.038949,
+          2.04495,
+          2.000857,
+          2.017829,
+          2.118687,
+          2.025434
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 3,
+      "perf_cycles_user": 471923916,
+      "perf_instructions_user": 648462095,
+      "perf_stderr": "648462095,,instructions:u,129626613,100.00,,\n471923916,,cycles:u,129626613,100.00,,\n",
+      "process_elapsed_ms_including_startup": 144.317798,
+      "process_ipc": 1.3740818657726175,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.030653,
+            "median_ms": 1.979437,
+            "min_ms": 1.944823,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 197.9437,
+            "samples_ms": [
+              2.030653,
+              1.944823,
+              2.017859,
+              1.946616,
+              1.982413,
+              1.960523,
+              1.979437
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.030653,
+        "median_ms": 1.979437,
+        "min_ms": 1.944823,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 197.9437,
+        "samples_ms": [
+          2.030653,
+          1.944823,
+          2.017859,
+          1.946616,
+          1.982413,
+          1.960523,
+          1.979437
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 4,
+      "perf_cycles_user": 468310497,
+      "perf_instructions_user": 648124477,
+      "perf_stderr": "648124477,,instructions:u,128372815,100.00,,\n468310497,,cycles:u,128372815,100.00,,\n",
+      "process_elapsed_ms_including_startup": 164.390974,
+      "process_ipc": 1.3839631636529386,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.260893,
+            "median_ms": 2.00742,
+            "min_ms": 1.907283,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 200.74200000000002,
+            "samples_ms": [
+              2.073533,
+              2.217332,
+              1.974729,
+              1.907283,
+              2.00199,
+              2.260893,
+              2.00742
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.260893,
+        "median_ms": 2.00742,
+        "min_ms": 1.907283,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 200.74200000000002,
+        "samples_ms": [
+          2.073533,
+          2.217332,
+          1.974729,
+          1.907283,
+          2.00199,
+          2.260893,
+          2.00742
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 4,
+      "perf_cycles_user": 455012532,
+      "perf_instructions_user": 652652073,
+      "perf_stderr": "652652073,,instructions:u,125477597,100.00,,\n455012532,,cycles:u,125477597,100.00,,\n",
+      "process_elapsed_ms_including_startup": 142.195974,
+      "process_ipc": 1.4343606540489746,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 3.195388,
+            "median_ms": 2.223092,
+            "min_ms": 1.987873,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 222.3092,
+            "samples_ms": [
+              2.329471,
+              3.195388,
+              2.753163,
+              1.987873,
+              2.062232,
+              2.223092,
+              2.032216
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 3.195388,
+        "median_ms": 2.223092,
+        "min_ms": 1.987873,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 222.3092,
+        "samples_ms": [
+          2.329471,
+          3.195388,
+          2.753163,
+          1.987873,
+          2.062232,
+          2.223092,
+          2.032216
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 5,
+      "perf_cycles_user": 489013954,
+      "perf_instructions_user": 652210240,
+      "perf_stderr": "652210240,,instructions:u,133511673,100.00,,\n489013954,,cycles:u,133511673,100.00,,\n",
+      "process_elapsed_ms_including_startup": 148.128866,
+      "process_ipc": 1.3337252130846147,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.129127,
+            "median_ms": 2.044419,
+            "min_ms": 2.007781,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 204.4419,
+            "samples_ms": [
+              2.129127,
+              2.087329,
+              2.100153,
+              2.044419,
+              2.007781,
+              2.010155,
+              2.030713
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.129127,
+        "median_ms": 2.044419,
+        "min_ms": 2.007781,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 204.4419,
+        "samples_ms": [
+          2.129127,
+          2.087329,
+          2.100153,
+          2.044419,
+          2.007781,
+          2.010155,
+          2.030713
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 5,
+      "perf_cycles_user": 473802681,
+      "perf_instructions_user": 648199484,
+      "perf_stderr": "648199484,,instructions:u,129526359,100.00,,\n473802681,,cycles:u,129526359,100.00,,\n",
+      "process_elapsed_ms_including_startup": 206.251136,
+      "process_ipc": 1.3680789704100471,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 6.984447,
+            "median_ms": 1.951074,
+            "min_ms": 1.912903,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 195.1074,
+            "samples_ms": [
+              6.984447,
+              1.999596,
+              1.912903,
+              1.959861,
+              1.939763,
+              1.951074,
+              1.945103
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 6.984447,
+        "median_ms": 1.951074,
+        "min_ms": 1.912903,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 195.1074,
+        "samples_ms": [
+          6.984447,
+          1.999596,
+          1.912903,
+          1.959861,
+          1.939763,
+          1.951074,
+          1.945103
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 6,
+      "perf_cycles_user": 457211625,
+      "perf_instructions_user": 648528183,
+      "perf_stderr": "648528183,,instructions:u,126006607,100.00,,\n457211625,,cycles:u,126006607,100.00,,\n",
+      "process_elapsed_ms_including_startup": 144.434777,
+      "process_ipc": 1.4184420245220142,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.744286,
+            "median_ms": 2.064777,
+            "min_ms": 2.018981,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 206.47769999999997,
+            "samples_ms": [
+              2.744286,
+              2.501804,
+              2.018981,
+              2.064777,
+              2.034791,
+              2.033308,
+              2.113669
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.744286,
+        "median_ms": 2.064777,
+        "min_ms": 2.018981,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 206.47769999999997,
+        "samples_ms": [
+          2.744286,
+          2.501804,
+          2.018981,
+          2.064777,
+          2.034791,
+          2.033308,
+          2.113669
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 6,
+      "perf_cycles_user": 491680844,
+      "perf_instructions_user": 650558310,
+      "perf_stderr": "650558310,,instructions:u,134177871,100.00,,\n491680844,,cycles:u,134177871,100.00,,\n",
+      "process_elapsed_ms_including_startup": 149.95067,
+      "process_ipc": 1.3231312912406243,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.177768,
+            "median_ms": 2.010095,
+            "min_ms": 1.978836,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 201.00950000000003,
+            "samples_ms": [
+              2.177768,
+              2.010095,
+              2.015175,
+              1.978836,
+              2.121343,
+              1.981261,
+              1.9968
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.177768,
+        "median_ms": 2.010095,
+        "min_ms": 1.978836,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 201.00950000000003,
+        "samples_ms": [
+          2.177768,
+          2.010095,
+          2.015175,
+          1.978836,
+          2.121343,
+          1.981261,
+          1.9968
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 7,
+      "perf_cycles_user": 458638870,
+      "perf_instructions_user": 650674043,
+      "perf_stderr": "650674043,,instructions:u,126678598,100.00,,\n458638870,,cycles:u,126678598,100.00,,\n",
+      "process_elapsed_ms_including_startup": 143.589998,
+      "process_ipc": 1.4187067114481597,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.475805,
+            "median_ms": 2.122886,
+            "min_ms": 1.939182,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 212.2886,
+            "samples_ms": [
+              2.163591,
+              2.233151,
+              2.475805,
+              2.122886,
+              1.985679,
+              1.983955,
+              1.939182
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.475805,
+        "median_ms": 2.122886,
+        "min_ms": 1.939182,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 212.2886,
+        "samples_ms": [
+          2.163591,
+          2.233151,
+          2.475805,
+          2.122886,
+          1.985679,
+          1.983955,
+          1.939182
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-067-req066/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 7,
+      "perf_cycles_user": 463770828,
+      "perf_instructions_user": 649059734,
+      "perf_stderr": "649059734,,instructions:u,127973305,100.00,,\n463770828,,cycles:u,127973305,100.00,,\n",
+      "process_elapsed_ms_including_startup": 148.819116,
+      "process_ipc": 1.3995268671793215,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.15193,
+            "median_ms": 1.992803,
+            "min_ms": 1.961775,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 199.2803,
+            "samples_ms": [
+              2.15193,
+              1.977514,
+              1.992803,
+              2.042234,
+              1.975149,
+              2.149866,
+              1.961775
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.15193,
+        "median_ms": 1.992803,
+        "min_ms": 1.961775,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 199.2803,
+        "samples_ms": [
+          2.15193,
+          1.977514,
+          1.992803,
+          2.042234,
+          1.975149,
+          2.149866,
+          1.961775
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 1,
+      "perf_cycles_user": 588825299,
+      "perf_instructions_user": 980325010,
+      "perf_stderr": "980325010,,instructions:u,154540414,100.00,,\n588825299,,cycles:u,154540414,100.00,,\n",
+      "process_elapsed_ms_including_startup": 173.207021,
+      "process_ipc": 1.6648826259076888,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 7.081748,
+        "median_ms": 4.223149,
+        "min_ms": 3.866021,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.257242,
+          7.081748,
+          4.069422,
+          3.866021,
+          4.050437,
+          4.223149,
+          4.303028
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 7.081748,
+        "median_ms": 4.223149,
+        "min_ms": 3.866021,
+        "samples_ms": [
+          4.257242,
+          7.081748,
+          4.069422,
+          3.866021,
+          4.050437,
+          4.223149,
+          4.303028
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 1,
+      "perf_cycles_user": 606077722,
+      "perf_instructions_user": 938982513,
+      "perf_stderr": "938982513,,instructions:u,160014889,100.00,,\n606077722,,cycles:u,160014889,100.00,,\n",
+      "process_elapsed_ms_including_startup": 178.696184,
+      "process_ipc": 1.5492773928423655,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 4.161343,
+        "median_ms": 3.81187,
+        "min_ms": 3.650769,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.161343,
+          3.754403,
+          3.752389,
+          3.846394,
+          3.835485,
+          3.81187,
+          3.650769
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 4.161343,
+        "median_ms": 3.81187,
+        "min_ms": 3.650769,
+        "samples_ms": [
+          4.161343,
+          3.754403,
+          3.752389,
+          3.846394,
+          3.835485,
+          3.81187,
+          3.650769
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 2,
+      "perf_cycles_user": 565768529,
+      "perf_instructions_user": 938853693,
+      "perf_stderr": "938853693,,instructions:u,149576165,100.00,,\n565768529,,cycles:u,149576165,100.00,,\n",
+      "process_elapsed_ms_including_startup": 169.682558,
+      "process_ipc": 1.6594307475168877,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 6.519097,
+        "median_ms": 3.7686,
+        "min_ms": 3.595366,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.644788,
+          3.6457,
+          3.595366,
+          3.7686,
+          6.519097,
+          3.772597,
+          3.80087
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 6.519097,
+        "median_ms": 3.7686,
+        "min_ms": 3.595366,
+        "samples_ms": [
+          3.644788,
+          3.6457,
+          3.595366,
+          3.7686,
+          6.519097,
+          3.772597,
+          3.80087
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 2,
+      "perf_cycles_user": 566459356,
+      "perf_instructions_user": 979850605,
+      "perf_stderr": "979850605,,instructions:u,149715867,100.00,,\n566459356,,cycles:u,149715867,100.00,,\n",
+      "process_elapsed_ms_including_startup": 168.288724,
+      "process_ipc": 1.7297809536047277,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 4.489556,
+        "median_ms": 4.100289,
+        "min_ms": 3.892701,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.933478,
+          3.892701,
+          4.227907,
+          4.100289,
+          3.917969,
+          4.489556,
+          4.256471
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 4.489556,
+        "median_ms": 4.100289,
+        "min_ms": 3.892701,
+        "samples_ms": [
+          3.933478,
+          3.892701,
+          4.227907,
+          4.100289,
+          3.917969,
+          4.489556,
+          4.256471
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 3,
+      "perf_cycles_user": 572402744,
+      "perf_instructions_user": 980223358,
+      "perf_stderr": "980223358,,instructions:u,150720566,100.00,,\n572402744,,cycles:u,150720566,100.00,,\n",
+      "process_elapsed_ms_including_startup": 165.591436,
+      "process_ipc": 1.7124714517441237,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 4.647822,
+        "median_ms": 4.105298,
+        "min_ms": 3.972901,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.007767,
+          4.105298,
+          3.972901,
+          4.017775,
+          4.647822,
+          4.646048,
+          4.4542
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 4.647822,
+        "median_ms": 4.105298,
+        "min_ms": 3.972901,
+        "samples_ms": [
+          4.007767,
+          4.105298,
+          3.972901,
+          4.017775,
+          4.647822,
+          4.646048,
+          4.4542
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 3,
+      "perf_cycles_user": 578372611,
+      "perf_instructions_user": 938920307,
+      "perf_stderr": "938920307,,instructions:u,152428143,100.00,,\n578372611,,cycles:u,152428143,100.00,,\n",
+      "process_elapsed_ms_including_startup": 166.0914,
+      "process_ipc": 1.6233830737188901,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 4.280135,
+        "median_ms": 3.747911,
+        "min_ms": 3.684933,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.691466,
+          3.684933,
+          3.687287,
+          3.88109,
+          3.847847,
+          4.280135,
+          3.747911
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 4.280135,
+        "median_ms": 3.747911,
+        "min_ms": 3.684933,
+        "samples_ms": [
+          3.691466,
+          3.684933,
+          3.687287,
+          3.88109,
+          3.847847,
+          4.280135,
+          3.747911
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 4,
+      "perf_cycles_user": 573912743,
+      "perf_instructions_user": 938424786,
+      "perf_stderr": "938424786,,instructions:u,150902178,100.00,,\n573912743,,cycles:u,150902178,100.00,,\n",
+      "process_elapsed_ms_including_startup": 165.158568,
+      "process_ipc": 1.6351349529104287,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 4.263694,
+        "median_ms": 3.670266,
+        "min_ms": 3.523071,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.263694,
+          3.670266,
+          3.573946,
+          3.523071,
+          3.852486,
+          3.843299,
+          3.534121
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 4.263694,
+        "median_ms": 3.670266,
+        "min_ms": 3.523071,
+        "samples_ms": [
+          4.263694,
+          3.670266,
+          3.573946,
+          3.523071,
+          3.852486,
+          3.843299,
+          3.534121
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 4,
+      "perf_cycles_user": 572181777,
+      "perf_instructions_user": 980630899,
+      "perf_stderr": "980630899,,instructions:u,150668650,100.00,,\n572181777,,cycles:u,150668650,100.00,,\n",
+      "process_elapsed_ms_including_startup": 174.88673,
+      "process_ipc": 1.7138450373962189,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 7.768481,
+        "median_ms": 4.117361,
+        "min_ms": 3.911246,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.911246,
+          3.935542,
+          4.145905,
+          4.433362,
+          4.11736,
+          4.117361,
+          7.768481
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 7.768481,
+        "median_ms": 4.117361,
+        "min_ms": 3.911246,
+        "samples_ms": [
+          3.911246,
+          3.935542,
+          4.145905,
+          4.433362,
+          4.11736,
+          4.117361,
+          7.768481
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 5,
+      "perf_cycles_user": 587552481,
+      "perf_instructions_user": 981456600,
+      "perf_stderr": "981456600,,instructions:u,153931081,100.00,,\n587552481,,cycles:u,153931081,100.00,,\n",
+      "process_elapsed_ms_including_startup": 248.831153,
+      "process_ipc": 1.6704152084075703,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 10.681022,
+        "median_ms": 5.68521,
+        "min_ms": 3.837748,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.837748,
+          5.68521,
+          10.681022,
+          7.500099,
+          3.877674,
+          3.915133,
+          7.700144
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 10.681022,
+        "median_ms": 5.68521,
+        "min_ms": 3.837748,
+        "samples_ms": [
+          3.837748,
+          5.68521,
+          10.681022,
+          7.500099,
+          3.877674,
+          3.915133,
+          7.700144
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 5,
+      "perf_cycles_user": 573205661,
+      "perf_instructions_user": 938383581,
+      "perf_stderr": "938383581,,instructions:u,151314710,100.00,,\n573205661,,cycles:u,151314710,100.00,,\n",
+      "process_elapsed_ms_including_startup": 176.859985,
+      "process_ipc": 1.6370801002957993,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 3.82232,
+        "median_ms": 3.60294,
+        "min_ms": 3.539031,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.55456,
+          3.60294,
+          3.539031,
+          3.759623,
+          3.617047,
+          3.547357,
+          3.82232
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 3.82232,
+        "median_ms": 3.60294,
+        "min_ms": 3.539031,
+        "samples_ms": [
+          3.55456,
+          3.60294,
+          3.539031,
+          3.759623,
+          3.617047,
+          3.547357,
+          3.82232
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 6,
+      "perf_cycles_user": 575939051,
+      "perf_instructions_user": 938215902,
+      "perf_stderr": "938215902,,instructions:u,151545952,100.00,,\n575939051,,cycles:u,151545952,100.00,,\n",
+      "process_elapsed_ms_including_startup": 166.793581,
+      "process_ipc": 1.6290194255294559,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 5.294641,
+        "median_ms": 3.753331,
+        "min_ms": 3.560551,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.968563,
+          3.718336,
+          3.560551,
+          3.753331,
+          3.631614,
+          5.052608,
+          5.294641
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 5.294641,
+        "median_ms": 3.753331,
+        "min_ms": 3.560551,
+        "samples_ms": [
+          3.968563,
+          3.718336,
+          3.560551,
+          3.753331,
+          3.631614,
+          5.052608,
+          5.294641
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 6,
+      "perf_cycles_user": 575590121,
+      "perf_instructions_user": 979998754,
+      "perf_stderr": "979998754,,instructions:u,150884613,100.00,,\n575590121,,cycles:u,150884613,100.00,,\n",
+      "process_elapsed_ms_including_startup": 167.134228,
+      "process_ipc": 1.7025982869500986,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 4.263965,
+        "median_ms": 4.021762,
+        "min_ms": 3.867585,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.867585,
+          4.263965,
+          4.021762,
+          4.142569,
+          3.992729,
+          3.958424,
+          4.099939
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 4.263965,
+        "median_ms": 4.021762,
+        "min_ms": 3.867585,
+        "samples_ms": [
+          3.867585,
+          4.263965,
+          4.021762,
+          4.142569,
+          3.992729,
+          3.958424,
+          4.099939
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 7,
+      "perf_cycles_user": 569806838,
+      "perf_instructions_user": 980948508,
+      "perf_stderr": "980948508,,instructions:u,150200527,100.00,,\n569806838,,cycles:u,150200527,100.00,,\n",
+      "process_elapsed_ms_including_startup": 167.279369,
+      "process_ipc": 1.7215456933495066,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 4.219381,
+        "median_ms": 4.052921,
+        "min_ms": 3.869808,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.869808,
+          3.875309,
+          4.087967,
+          4.197891,
+          4.052921,
+          3.915604,
+          4.219381
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 4.219381,
+        "median_ms": 4.052921,
+        "min_ms": 3.869808,
+        "samples_ms": [
+          3.869808,
+          3.875309,
+          4.087967,
+          4.197891,
+          4.052921,
+          3.915604,
+          4.219381
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/home/t-matsu/workspace/mysrc/fireball/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-req066",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 7,
+      "perf_cycles_user": 563407478,
+      "perf_instructions_user": 938582664,
+      "perf_stderr": "938582664,,instructions:u,149057721,100.00,,\n563407478,,cycles:u,149057721,100.00,,\n",
+      "process_elapsed_ms_including_startup": 166.735724,
+      "process_ipc": 1.6659038096757388,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+        "jit_enabled": false,
+        "max_ms": 6.577266,
+        "median_ms": 3.758772,
+        "min_ms": 3.727553,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.782355,
+          3.756688,
+          3.727553,
+          3.758772,
+          6.577266,
+          3.741189,
+          4.226655
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 6.577266,
+        "median_ms": 3.758772,
+        "min_ms": 3.727553,
+        "samples_ms": [
+          3.782355,
+          3.756688,
+          3.727553,
+          3.758772,
+          6.577266,
+          3.741189,
+          4.226655
+        ]
+      },
+      "timing_scope": "benchmark-internal perf_counter measurements in the same perf-stat process; perf counters cover the full Python process including startup/import/setup/warmup",
+      "version": "req066",
+      "workload": "aobench_32x16"
+    }
+  ],
+  "request": "REQ-068",
+  "summaries": {
+    "aobench_32x16": {
+      "paired": [
+        {
+          "instruction_delta_percent": -4.21722353079618,
+          "instruction_delta_req066_minus_main": -41342497,
+          "main_cycles": 588825299,
+          "main_instructions": 980325010,
+          "main_ipc": 1.6648826259076888,
+          "main_timing_median_ms": 4.223149,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 1,
+          "req066_cycles": 606077722,
+          "req066_instructions": 938982513,
+          "req066_ipc": 1.5492773928423655,
+          "req066_timing_median_ms": 3.81187,
+          "timing_delta_percent": -9.738680780621294,
+          "timing_delta_req066_minus_main_ms": -0.4112790000000004
+        },
+        {
+          "instruction_delta_percent": -4.183996191950098,
+          "instruction_delta_req066_minus_main": -40996912,
+          "main_cycles": 566459356,
+          "main_instructions": 979850605,
+          "main_ipc": 1.7297809536047277,
+          "main_timing_median_ms": 4.100289,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 2,
+          "req066_cycles": 565768529,
+          "req066_instructions": 938853693,
+          "req066_ipc": 1.6594307475168877,
+          "req066_timing_median_ms": 3.7686,
+          "timing_delta_percent": -8.089405405326305,
+          "timing_delta_req066_minus_main_ms": -0.3316889999999999
+        },
+        {
+          "instruction_delta_percent": -4.213636684221924,
+          "instruction_delta_req066_minus_main": -41303051,
+          "main_cycles": 572402744,
+          "main_instructions": 980223358,
+          "main_ipc": 1.7124714517441237,
+          "main_timing_median_ms": 4.105298,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 3,
+          "req066_cycles": 578372611,
+          "req066_instructions": 938920307,
+          "req066_ipc": 1.6233830737188901,
+          "req066_timing_median_ms": 3.747911,
+          "timing_delta_percent": -8.705506884031319,
+          "timing_delta_req066_minus_main_ms": -0.3573870000000001
+        },
+        {
+          "instruction_delta_percent": -4.3039754349000985,
+          "instruction_delta_req066_minus_main": -42206113,
+          "main_cycles": 572181777,
+          "main_instructions": 980630899,
+          "main_ipc": 1.7138450373962189,
+          "main_timing_median_ms": 4.117361,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 4,
+          "req066_cycles": 573912743,
+          "req066_instructions": 938424786,
+          "req066_ipc": 1.6351349529104287,
+          "req066_timing_median_ms": 3.670266,
+          "timing_delta_percent": -10.858775803239018,
+          "timing_delta_req066_minus_main_ms": -0.447095
+        },
+        {
+          "instruction_delta_percent": -4.38868300442424,
+          "instruction_delta_req066_minus_main": -43073019,
+          "main_cycles": 587552481,
+          "main_instructions": 981456600,
+          "main_ipc": 1.6704152084075703,
+          "main_timing_median_ms": 5.68521,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 5,
+          "req066_cycles": 573205661,
+          "req066_instructions": 938383581,
+          "req066_ipc": 1.6370801002957993,
+          "req066_timing_median_ms": 3.60294,
+          "timing_delta_percent": -36.62608769069217,
+          "timing_delta_req066_minus_main_ms": -2.08227
+        },
+        {
+          "instruction_delta_percent": -4.263561747344833,
+          "instruction_delta_req066_minus_main": -41782852,
+          "main_cycles": 575590121,
+          "main_instructions": 979998754,
+          "main_ipc": 1.7025982869500986,
+          "main_timing_median_ms": 4.021762,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 6,
+          "req066_cycles": 575939051,
+          "req066_instructions": 938215902,
+          "req066_ipc": 1.6290194255294559,
+          "req066_timing_median_ms": 3.753331,
+          "timing_delta_percent": -6.674462586299231,
+          "timing_delta_req066_minus_main_ms": -0.26843099999999964
+        },
+        {
+          "instruction_delta_percent": -4.318865226308087,
+          "instruction_delta_req066_minus_main": -42365844,
+          "main_cycles": 569806838,
+          "main_instructions": 980948508,
+          "main_ipc": 1.7215456933495066,
+          "main_timing_median_ms": 4.052921,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 7,
+          "req066_cycles": 563407478,
+          "req066_instructions": 938582664,
+          "req066_ipc": 1.6659038096757388,
+          "req066_timing_median_ms": 3.758772,
+          "timing_delta_percent": -7.2577037647662115,
+          "timing_delta_req066_minus_main_ms": -0.29414900000000044
+        }
+      ],
+      "paired_instruction_delta_max": -40996912,
+      "paired_instruction_delta_median": -41782852,
+      "paired_instruction_delta_min": -43073019,
+      "paired_instruction_delta_percent_median": -4.263561747344833,
+      "paired_instruction_req066_higher_count": 0,
+      "paired_timing_delta_median_ms": -0.3573870000000001,
+      "versions": {
+        "main": {
+          "cycles_max": 588825299,
+          "cycles_median": 572402744,
+          "cycles_min": 566459356,
+          "instruction_max": 981456600,
+          "instruction_median": 980325010,
+          "instruction_min": 979850605,
+          "process_cycle_counts": [
+            588825299,
+            566459356,
+            572402744,
+            572181777,
+            587552481,
+            575590121,
+            569806838
+          ],
+          "process_instruction_counts": [
+            980325010,
+            979850605,
+            980223358,
+            980630899,
+            981456600,
+            979998754,
+            980948508
+          ],
+          "process_ipc_max": 1.7297809536047277,
+          "process_ipc_median": 1.7124714517441237,
+          "process_ipc_min": 1.6648826259076888,
+          "process_ipc_values": [
+            1.6648826259076888,
+            1.7297809536047277,
+            1.7124714517441237,
+            1.7138450373962189,
+            1.6704152084075703,
+            1.7025982869500986,
+            1.7215456933495066
+          ],
+          "process_timing_median_ms_max": 5.68521,
+          "process_timing_median_ms_median": 4.105298,
+          "process_timing_median_ms_min": 4.021762,
+          "process_timing_medians_ms": [
+            4.223149,
+            4.100289,
+            4.105298,
+            4.117361,
+            5.68521,
+            4.021762,
+            4.052921
+          ]
+        },
+        "req066": {
+          "cycles_max": 606077722,
+          "cycles_median": 573912743,
+          "cycles_min": 563407478,
+          "instruction_max": 938982513,
+          "instruction_median": 938582664,
+          "instruction_min": 938215902,
+          "process_cycle_counts": [
+            606077722,
+            565768529,
+            578372611,
+            573912743,
+            573205661,
+            575939051,
+            563407478
+          ],
+          "process_instruction_counts": [
+            938982513,
+            938853693,
+            938920307,
+            938424786,
+            938383581,
+            938215902,
+            938582664
+          ],
+          "process_ipc_max": 1.6659038096757388,
+          "process_ipc_median": 1.6351349529104287,
+          "process_ipc_min": 1.5492773928423655,
+          "process_ipc_values": [
+            1.5492773928423655,
+            1.6594307475168877,
+            1.6233830737188901,
+            1.6351349529104287,
+            1.6370801002957993,
+            1.6290194255294559,
+            1.6659038096757388
+          ],
+          "process_timing_median_ms_max": 3.81187,
+          "process_timing_median_ms_median": 3.753331,
+          "process_timing_median_ms_min": 3.60294,
+          "process_timing_medians_ms": [
+            3.81187,
+            3.7686,
+            3.747911,
+            3.670266,
+            3.60294,
+            3.753331,
+            3.758772
+          ]
+        }
+      }
+    },
+    "baseline": {
+      "paired": [
+        {
+          "instruction_delta_percent": -0.49171497399290687,
+          "instruction_delta_req066_minus_main": -3201669,
+          "main_cycles": 457457295,
+          "main_instructions": 651122941,
+          "main_ipc": 1.423352404949625,
+          "main_timing_median_ms": 4.139142,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 1,
+          "req066_cycles": 475999338,
+          "req066_instructions": 647921272,
+          "req066_ipc": 1.3611810359282475,
+          "req066_timing_median_ms": 1.954801,
+          "timing_delta_percent": -52.772796874328066,
+          "timing_delta_req066_minus_main_ms": -2.184341
+        },
+        {
+          "instruction_delta_percent": -0.31426627767121107,
+          "instruction_delta_req066_minus_main": -2045341,
+          "main_cycles": 471767215,
+          "main_instructions": 650830568,
+          "main_ipc": 1.3795587046039222,
+          "main_timing_median_ms": 2.062673,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 2,
+          "req066_cycles": 461287942,
+          "req066_instructions": 648785227,
+          "req066_ipc": 1.4064647434465132,
+          "req066_timing_median_ms": 2.02381,
+          "timing_delta_percent": -1.8841086299185614,
+          "timing_delta_req066_minus_main_ms": -0.03886300000000009
+        },
+        {
+          "instruction_delta_percent": -0.43005460340369067,
+          "instruction_delta_req066_minus_main": -2800786,
+          "main_cycles": 460411962,
+          "main_instructions": 651262881,
+          "main_ipc": 1.4145220688249625,
+          "main_timing_median_ms": 2.038949,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 3,
+          "req066_cycles": 471923916,
+          "req066_instructions": 648462095,
+          "req066_ipc": 1.3740818657726175,
+          "req066_timing_median_ms": 1.979437,
+          "timing_delta_percent": -2.9187586349634165,
+          "timing_delta_req066_minus_main_ms": -0.05951200000000023
+        },
+        {
+          "instruction_delta_percent": -0.6937227639817823,
+          "instruction_delta_req066_minus_main": -4527596,
+          "main_cycles": 455012532,
+          "main_instructions": 652652073,
+          "main_ipc": 1.4343606540489746,
+          "main_timing_median_ms": 2.223092,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 4,
+          "req066_cycles": 468310497,
+          "req066_instructions": 648124477,
+          "req066_ipc": 1.3839631636529386,
+          "req066_timing_median_ms": 2.00742,
+          "timing_delta_percent": -9.701442855266434,
+          "timing_delta_req066_minus_main_ms": -0.21567199999999964
+        },
+        {
+          "instruction_delta_percent": -0.614948333224575,
+          "instruction_delta_req066_minus_main": -4010756,
+          "main_cycles": 489013954,
+          "main_instructions": 652210240,
+          "main_ipc": 1.3337252130846147,
+          "main_timing_median_ms": 2.044419,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 5,
+          "req066_cycles": 473802681,
+          "req066_instructions": 648199484,
+          "req066_ipc": 1.3680789704100471,
+          "req066_timing_median_ms": 1.951074,
+          "timing_delta_percent": -4.565844868395374,
+          "timing_delta_req066_minus_main_ms": -0.09334500000000001
+        },
+        {
+          "instruction_delta_percent": -0.3120591911276946,
+          "instruction_delta_req066_minus_main": -2030127,
+          "main_cycles": 491680844,
+          "main_instructions": 650558310,
+          "main_ipc": 1.3231312912406243,
+          "main_timing_median_ms": 2.010095,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 6,
+          "req066_cycles": 457211625,
+          "req066_instructions": 648528183,
+          "req066_ipc": 1.4184420245220142,
+          "req066_timing_median_ms": 2.064777,
+          "timing_delta_percent": 2.7203689377865063,
+          "timing_delta_req066_minus_main_ms": 0.054681999999999675
+        },
+        {
+          "instruction_delta_percent": -0.24809795586082725,
+          "instruction_delta_req066_minus_main": -1614309,
+          "main_cycles": 458638870,
+          "main_instructions": 650674043,
+          "main_ipc": 1.4187067114481597,
+          "main_timing_median_ms": 2.122886,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 7,
+          "req066_cycles": 463770828,
+          "req066_instructions": 649059734,
+          "req066_ipc": 1.3995268671793215,
+          "req066_timing_median_ms": 1.992803,
+          "timing_delta_percent": -6.127648870452758,
+          "timing_delta_req066_minus_main_ms": -0.13008299999999973
+        }
+      ],
+      "paired_instruction_delta_max": -1614309,
+      "paired_instruction_delta_median": -2800786,
+      "paired_instruction_delta_min": -4527596,
+      "paired_instruction_delta_percent_median": -0.43005460340369067,
+      "paired_instruction_req066_higher_count": 0,
+      "paired_timing_delta_median_ms": -0.09334500000000001,
+      "versions": {
+        "main": {
+          "cycles_max": 491680844,
+          "cycles_median": 460411962,
+          "cycles_min": 455012532,
+          "instruction_max": 652652073,
+          "instruction_median": 651122941,
+          "instruction_min": 650558310,
+          "process_cycle_counts": [
+            457457295,
+            471767215,
+            460411962,
+            455012532,
+            489013954,
+            491680844,
+            458638870
+          ],
+          "process_instruction_counts": [
+            651122941,
+            650830568,
+            651262881,
+            652652073,
+            652210240,
+            650558310,
+            650674043
+          ],
+          "process_ipc_max": 1.4343606540489746,
+          "process_ipc_median": 1.4145220688249625,
+          "process_ipc_min": 1.3231312912406243,
+          "process_ipc_values": [
+            1.423352404949625,
+            1.3795587046039222,
+            1.4145220688249625,
+            1.4343606540489746,
+            1.3337252130846147,
+            1.3231312912406243,
+            1.4187067114481597
+          ],
+          "process_timing_median_ms_max": 4.139142,
+          "process_timing_median_ms_median": 2.062673,
+          "process_timing_median_ms_min": 2.010095,
+          "process_timing_medians_ms": [
+            4.139142,
+            2.062673,
+            2.038949,
+            2.223092,
+            2.044419,
+            2.010095,
+            2.122886
+          ]
+        },
+        "req066": {
+          "cycles_max": 475999338,
+          "cycles_median": 468310497,
+          "cycles_min": 457211625,
+          "instruction_max": 649059734,
+          "instruction_median": 648462095,
+          "instruction_min": 647921272,
+          "process_cycle_counts": [
+            475999338,
+            461287942,
+            471923916,
+            468310497,
+            473802681,
+            457211625,
+            463770828
+          ],
+          "process_instruction_counts": [
+            647921272,
+            648785227,
+            648462095,
+            648124477,
+            648199484,
+            648528183,
+            649059734
+          ],
+          "process_ipc_max": 1.4184420245220142,
+          "process_ipc_median": 1.3839631636529386,
+          "process_ipc_min": 1.3611810359282475,
+          "process_ipc_values": [
+            1.3611810359282475,
+            1.4064647434465132,
+            1.3740818657726175,
+            1.3839631636529386,
+            1.3680789704100471,
+            1.4184420245220142,
+            1.3995268671793215
+          ],
+          "process_timing_median_ms_max": 2.064777,
+          "process_timing_median_ms_median": 1.992803,
+          "process_timing_median_ms_min": 1.951074,
+          "process_timing_medians_ms": [
+            1.954801,
+            2.02381,
+            1.979437,
+            2.00742,
+            1.951074,
+            2.064777,
+            1.992803
+          ]
+        }
+      }
+    },
+    "direct": {
+      "paired": [
+        {
+          "instruction_delta_percent": -0.9833330716379953,
+          "instruction_delta_req066_minus_main": -6643973,
+          "main_cycles": 502898632,
+          "main_instructions": 675658451,
+          "main_ipc": 1.343528114826926,
+          "main_timing_median_ms": 2.273207,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 1,
+          "req066_cycles": 498560680,
+          "req066_instructions": 669014478,
+          "req066_ipc": 1.341891779351713,
+          "req066_timing_median_ms": 2.173329,
+          "timing_delta_percent": -4.393704576837936,
+          "timing_delta_req066_minus_main_ms": -0.09987800000000036
+        },
+        {
+          "instruction_delta_percent": -0.9850747040990253,
+          "instruction_delta_req066_minus_main": -6659004,
+          "main_cycles": 507519436,
+          "main_instructions": 675989747,
+          "main_ipc": 1.3319484911312836,
+          "main_timing_median_ms": 2.198277,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 2,
+          "req066_cycles": 488273464,
+          "req066_instructions": 669330743,
+          "req066_ipc": 1.3708112202468574,
+          "req066_timing_median_ms": 3.127462,
+          "timing_delta_percent": 42.268785962824516,
+          "timing_delta_req066_minus_main_ms": 0.9291849999999999
+        },
+        {
+          "instruction_delta_percent": -0.611842588851005,
+          "instruction_delta_req066_minus_main": -4133757,
+          "main_cycles": 499511282,
+          "main_instructions": 675624266,
+          "main_ipc": 1.3525705831805417,
+          "main_timing_median_ms": 2.303563,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 3,
+          "req066_cycles": 513773765,
+          "req066_instructions": 671490509,
+          "req066_ipc": 1.3069770290820513,
+          "req066_timing_median_ms": 2.172739,
+          "timing_delta_percent": -5.679202175065325,
+          "timing_delta_req066_minus_main_ms": -0.13082400000000005
+        },
+        {
+          "instruction_delta_percent": -1.0739704593267325,
+          "instruction_delta_req066_minus_main": -7262872,
+          "main_cycles": 491793185,
+          "main_instructions": 676263666,
+          "main_ipc": 1.375097676475529,
+          "main_timing_median_ms": 2.228552,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 4,
+          "req066_cycles": 453410800,
+          "req066_instructions": 669000794,
+          "req066_ipc": 1.475484911254871,
+          "req066_timing_median_ms": 2.268657,
+          "timing_delta_percent": 1.7995990221453237,
+          "timing_delta_req066_minus_main_ms": 0.04010500000000006
+        },
+        {
+          "instruction_delta_percent": -0.9759921562831788,
+          "instruction_delta_req066_minus_main": -6591654,
+          "main_cycles": 462257725,
+          "main_instructions": 675379813,
+          "main_ipc": 1.4610460279490192,
+          "main_timing_median_ms": 2.237519,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 5,
+          "req066_cycles": 485452907,
+          "req066_instructions": 668788159,
+          "req066_ipc": 1.377658160773976,
+          "req066_timing_median_ms": 2.315515,
+          "timing_delta_percent": 3.4858251483004246,
+          "timing_delta_req066_minus_main_ms": 0.07799600000000018
+        },
+        {
+          "instruction_delta_percent": -1.000741721930753,
+          "instruction_delta_req066_minus_main": -6761924,
+          "main_cycles": 476626616,
+          "main_instructions": 675691225,
+          "main_ipc": 1.4176531530501015,
+          "main_timing_median_ms": 2.310285,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 6,
+          "req066_cycles": 465844756,
+          "req066_instructions": 668929301,
+          "req066_ipc": 1.4359489773885101,
+          "req066_timing_median_ms": 2.288405,
+          "timing_delta_percent": -0.947069300973685,
+          "timing_delta_req066_minus_main_ms": -0.0218799999999999
+        },
+        {
+          "instruction_delta_percent": -1.0380897545340586,
+          "instruction_delta_req066_minus_main": -7013427,
+          "main_cycles": 471829707,
+          "main_instructions": 675608922,
+          "main_ipc": 1.4318914472250472,
+          "main_timing_median_ms": 2.305667,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 7,
+          "req066_cycles": 459978896,
+          "req066_instructions": 668595495,
+          "req066_ipc": 1.4535351530562393,
+          "req066_timing_median_ms": 2.216931,
+          "timing_delta_percent": -3.848604330113582,
+          "timing_delta_req066_minus_main_ms": -0.08873599999999993
+        }
+      ],
+      "paired_instruction_delta_max": -4133757,
+      "paired_instruction_delta_median": -6659004,
+      "paired_instruction_delta_min": -7262872,
+      "paired_instruction_delta_percent_median": -0.9850747040990253,
+      "paired_instruction_req066_higher_count": 0,
+      "paired_timing_delta_median_ms": -0.0218799999999999,
+      "versions": {
+        "main": {
+          "cycles_max": 507519436,
+          "cycles_median": 491793185,
+          "cycles_min": 462257725,
+          "instruction_max": 676263666,
+          "instruction_median": 675658451,
+          "instruction_min": 675379813,
+          "process_cycle_counts": [
+            502898632,
+            507519436,
+            499511282,
+            491793185,
+            462257725,
+            476626616,
+            471829707
+          ],
+          "process_instruction_counts": [
+            675658451,
+            675989747,
+            675624266,
+            676263666,
+            675379813,
+            675691225,
+            675608922
+          ],
+          "process_ipc_max": 1.4610460279490192,
+          "process_ipc_median": 1.375097676475529,
+          "process_ipc_min": 1.3319484911312836,
+          "process_ipc_values": [
+            1.343528114826926,
+            1.3319484911312836,
+            1.3525705831805417,
+            1.375097676475529,
+            1.4610460279490192,
+            1.4176531530501015,
+            1.4318914472250472
+          ],
+          "process_timing_median_ms_max": 2.310285,
+          "process_timing_median_ms_median": 2.273207,
+          "process_timing_median_ms_min": 2.198277,
+          "process_timing_medians_ms": [
+            2.273207,
+            2.198277,
+            2.303563,
+            2.228552,
+            2.237519,
+            2.310285,
+            2.305667
+          ]
+        },
+        "req066": {
+          "cycles_max": 513773765,
+          "cycles_median": 485452907,
+          "cycles_min": 453410800,
+          "instruction_max": 671490509,
+          "instruction_median": 669000794,
+          "instruction_min": 668595495,
+          "process_cycle_counts": [
+            498560680,
+            488273464,
+            513773765,
+            453410800,
+            485452907,
+            465844756,
+            459978896
+          ],
+          "process_instruction_counts": [
+            669014478,
+            669330743,
+            671490509,
+            669000794,
+            668788159,
+            668929301,
+            668595495
+          ],
+          "process_ipc_max": 1.475484911254871,
+          "process_ipc_median": 1.377658160773976,
+          "process_ipc_min": 1.3069770290820513,
+          "process_ipc_values": [
+            1.341891779351713,
+            1.3708112202468574,
+            1.3069770290820513,
+            1.475484911254871,
+            1.377658160773976,
+            1.4359489773885101,
+            1.4535351530562393
+          ],
+          "process_timing_median_ms_max": 3.127462,
+          "process_timing_median_ms_median": 2.268657,
+          "process_timing_median_ms_min": 2.172739,
+          "process_timing_medians_ms": [
+            2.173329,
+            3.127462,
+            2.172739,
+            2.268657,
+            2.315515,
+            2.288405,
+            2.216931
+          ]
+        }
+      }
+    },
+    "indirect": {
+      "paired": [
+        {
+          "instruction_delta_percent": -0.6606192884830363,
+          "instruction_delta_req066_minus_main": -4481942,
+          "main_cycles": 476904191,
+          "main_instructions": 678445525,
+          "main_ipc": 1.4226034029547876,
+          "main_timing_median_ms": 2.375297,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 1,
+          "req066_cycles": 497047500,
+          "req066_instructions": 673963583,
+          "req066_ipc": 1.3559339560102404,
+          "req066_timing_median_ms": 2.300327,
+          "timing_delta_percent": -3.156236883219253,
+          "timing_delta_req066_minus_main_ms": -0.07497000000000043
+        },
+        {
+          "instruction_delta_percent": -0.5372421606332509,
+          "instruction_delta_req066_minus_main": -3644600,
+          "main_cycles": 502361252,
+          "main_instructions": 678390541,
+          "main_ipc": 1.3504037946780179,
+          "main_timing_median_ms": 2.2645,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 2,
+          "req066_cycles": 491888301,
+          "req066_instructions": 674745941,
+          "req066_ipc": 1.3717462676551846,
+          "req066_timing_median_ms": 2.328068,
+          "timing_delta_percent": 2.8071538971075323,
+          "timing_delta_req066_minus_main_ms": 0.06356800000000007
+        },
+        {
+          "instruction_delta_percent": -0.765406939794652,
+          "instruction_delta_req066_minus_main": -5192823,
+          "main_cycles": 459132286,
+          "main_instructions": 678439498,
+          "main_ipc": 1.4776558274971758,
+          "main_timing_median_ms": 2.301218,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 3,
+          "req066_cycles": 507743502,
+          "req066_instructions": 673246675,
+          "req066_ipc": 1.325958229594438,
+          "req066_timing_median_ms": 2.288264,
+          "timing_delta_percent": -0.5629192888287912,
+          "timing_delta_req066_minus_main_ms": -0.012954000000000132
+        },
+        {
+          "instruction_delta_percent": -0.835332499106633,
+          "instruction_delta_req066_minus_main": -5667596,
+          "main_cycles": 466936271,
+          "main_instructions": 678483838,
+          "main_ipc": 1.4530544747507952,
+          "main_timing_median_ms": 2.32331,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 4,
+          "req066_cycles": 462491412,
+          "req066_instructions": 672816242,
+          "req066_ipc": 1.4547648335576013,
+          "req066_timing_median_ms": 2.33409,
+          "timing_delta_percent": 0.46399318214099755,
+          "timing_delta_req066_minus_main_ms": 0.010780000000000012
+        },
+        {
+          "instruction_delta_percent": -0.5879847050870729,
+          "instruction_delta_req066_minus_main": -3985102,
+          "main_cycles": 459687168,
+          "main_instructions": 677756065,
+          "main_ipc": 1.474385434661513,
+          "main_timing_median_ms": 2.239223,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 5,
+          "req066_cycles": 476886978,
+          "req066_instructions": 673770963,
+          "req066_ipc": 1.4128525082100272,
+          "req066_timing_median_ms": 2.251446,
+          "timing_delta_percent": 0.5458589876935033,
+          "timing_delta_req066_minus_main_ms": 0.012223000000000095
+        },
+        {
+          "instruction_delta_percent": -0.6778257511568455,
+          "instruction_delta_req066_minus_main": -4595755,
+          "main_cycles": 476842017,
+          "main_instructions": 678014223,
+          "main_ipc": 1.4218843953090652,
+          "main_timing_median_ms": 2.226249,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 6,
+          "req066_cycles": 454852811,
+          "req066_instructions": 673418468,
+          "req066_ipc": 1.4805195256889376,
+          "req066_timing_median_ms": 2.260743,
+          "timing_delta_percent": 1.5494223691958995,
+          "timing_delta_req066_minus_main_ms": 0.034494000000000025
+        },
+        {
+          "instruction_delta_percent": -0.837334944688882,
+          "instruction_delta_req066_minus_main": -5696626,
+          "main_cycles": 468150521,
+          "main_instructions": 680328229,
+          "main_ipc": 1.4532254018360902,
+          "main_timing_median_ms": 2.353787,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 7,
+          "req066_cycles": 475108768,
+          "req066_instructions": 674631603,
+          "req066_ipc": 1.4199519108853829,
+          "req066_timing_median_ms": 2.245715,
+          "timing_delta_percent": -4.591409503068882,
+          "timing_delta_req066_minus_main_ms": -0.10807199999999995
+        }
+      ],
+      "paired_instruction_delta_max": -3644600,
+      "paired_instruction_delta_median": -4595755,
+      "paired_instruction_delta_min": -5696626,
+      "paired_instruction_delta_percent_median": -0.6778257511568455,
+      "paired_instruction_req066_higher_count": 0,
+      "paired_timing_delta_median_ms": 0.010780000000000012,
+      "versions": {
+        "main": {
+          "cycles_max": 502361252,
+          "cycles_median": 468150521,
+          "cycles_min": 459132286,
+          "instruction_max": 680328229,
+          "instruction_median": 678439498,
+          "instruction_min": 677756065,
+          "process_cycle_counts": [
+            476904191,
+            502361252,
+            459132286,
+            466936271,
+            459687168,
+            476842017,
+            468150521
+          ],
+          "process_instruction_counts": [
+            678445525,
+            678390541,
+            678439498,
+            678483838,
+            677756065,
+            678014223,
+            680328229
+          ],
+          "process_ipc_max": 1.4776558274971758,
+          "process_ipc_median": 1.4530544747507952,
+          "process_ipc_min": 1.3504037946780179,
+          "process_ipc_values": [
+            1.4226034029547876,
+            1.3504037946780179,
+            1.4776558274971758,
+            1.4530544747507952,
+            1.474385434661513,
+            1.4218843953090652,
+            1.4532254018360902
+          ],
+          "process_timing_median_ms_max": 2.375297,
+          "process_timing_median_ms_median": 2.301218,
+          "process_timing_median_ms_min": 2.226249,
+          "process_timing_medians_ms": [
+            2.375297,
+            2.2645,
+            2.301218,
+            2.32331,
+            2.239223,
+            2.226249,
+            2.353787
+          ]
+        },
+        "req066": {
+          "cycles_max": 507743502,
+          "cycles_median": 476886978,
+          "cycles_min": 454852811,
+          "instruction_max": 674745941,
+          "instruction_median": 673770963,
+          "instruction_min": 672816242,
+          "process_cycle_counts": [
+            497047500,
+            491888301,
+            507743502,
+            462491412,
+            476886978,
+            454852811,
+            475108768
+          ],
+          "process_instruction_counts": [
+            673963583,
+            674745941,
+            673246675,
+            672816242,
+            673770963,
+            673418468,
+            674631603
+          ],
+          "process_ipc_max": 1.4805195256889376,
+          "process_ipc_median": 1.4128525082100272,
+          "process_ipc_min": 1.325958229594438,
+          "process_ipc_values": [
+            1.3559339560102404,
+            1.3717462676551846,
+            1.325958229594438,
+            1.4547648335576013,
+            1.4128525082100272,
+            1.4805195256889376,
+            1.4199519108853829
+          ],
+          "process_timing_median_ms_max": 2.33409,
+          "process_timing_median_ms_median": 2.288264,
+          "process_timing_median_ms_min": 2.245715,
+          "process_timing_medians_ms": [
+            2.300327,
+            2.328068,
+            2.288264,
+            2.33409,
+            2.251446,
+            2.260743,
+            2.245715
+          ]
+        }
+      }
+    }
+  }
+}

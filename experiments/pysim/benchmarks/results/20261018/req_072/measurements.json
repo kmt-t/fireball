@@ -1,0 +1,6051 @@
+{
+  "builds": {
+    "compiler": "Ubuntu clang version 21.1.8 (6ubuntu1)",
+    "interpreter_build_flags": "clang++ -std=c++23 -O3 -flto=thin -fuse-ld=lld -fvisibility=hidden -fno-exceptions -fno-rtti -fomit-frame-pointer -Wall -Wextra -Wpedantic -shared -fPIC -DNDEBUG",
+    "main": {
+      "commit": "26af9db0f4c7be7ba0975f325362bc92d101d9c4",
+      "interpreter_build_script_sha256": "cbc4029561dccd6d85871609d511ad1e1186732ec87b5362574328532e95db6c",
+      "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "interpreter_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "interpreter_text_sha256": "ead900b2ee659bbd99ab5c754446185bf1c83125910a60b56b3526c839c2e738",
+      "native_wasm_operations_sha256": "5bcddba0bcca251e5364b19a5f5e745f24a7d9315bfe4450dbe5c565379b7a46",
+      "release_command": "bash /tmp/REQ-067-main/experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --release",
+      "worktree": "/tmp/REQ-067-main"
+    },
+    "req066": {
+      "commit": "fffd6c1335cfde89f381c6099512f8237f01071a",
+      "interpreter_build_script_sha256": "cbc4029561dccd6d85871609d511ad1e1186732ec87b5362574328532e95db6c",
+      "interpreter_library_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "interpreter_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "interpreter_text_sha256": "6a3daf9256034ba05cd7165793b59888fcabc726a0b0a3fb93565702c157a9fb",
+      "native_wasm_operations_sha256": "892217fff3fe0a39ba411a6b4ab82924a3e8baf7df6f1dc69be0abb57cd5371a",
+      "release_command": "bash /tmp/REQ-070-boundary/experiments/pysim/native/tier2_runtime/interpreter/build_native.sh --release",
+      "worktree": "/tmp/REQ-070-boundary"
+    }
+  },
+  "host": {
+    "allowed_cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "cpu_affinity": [
+      2
+    ],
+    "cpu_model": "AMD Ryzen 5 5500GT with Radeon Graphics",
+    "governor": "powersave",
+    "kernel": "7.0.0-38-generic",
+    "perf_event_paranoid": 1,
+    "perf_version": "7.0.14",
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "Python 3.13.15"
+  },
+  "inputs": {
+    "aobench_driver_path": "/tmp/REQ-039/aobench_driver.py",
+    "aobench_driver_sha256": "822df58b0d93cc3a7e56cd5b1d88690b5b5479a28eea31252886a9020a232abf",
+    "aobench_wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+    "call_dispatch_script_sha256": {
+      "main": "beab52671124ea2799b4ae4dc8c292d4c14a41286eb1c8748a62c85b74d55b3d",
+      "req066": "beab52671124ea2799b4ae4dc8c292d4c14a41286eb1c8748a62c85b74d55b3d"
+    },
+    "result_aobench_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+    "result_call_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e"
+  },
+  "measurement_date": "2026-10-18T06:12:56.400186+00:00",
+  "method": {
+    "aobench_jit_enabled": false,
+    "aobench_repeats": 7,
+    "aobench_warmups": 3,
+    "bytecode_cache_note": "An initial batch was discarded because the first process per worktree included one-time Python bytecode compilation; final 56-process batch followed that cache population and all hashes matched.",
+    "call_iterations": 10000,
+    "counter_command": "perf stat -x, -e instructions:u,cycles:u -- taskset -c 2 <python> <benchmark>",
+    "pair_order": "alternates main->req066 and req066->main",
+    "processes_per_workload_version": 7,
+    "raw_perf_stderr_includes_only_command_counters": true,
+    "repeats_per_process": 7
+  },
+  "records": [
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 1,
+      "perf_cycles_user": 520021465,
+      "perf_instructions_user": 678302432,
+      "perf_stderr": "678302432,,instructions:u,148992463,100.00,,\n520021465,,cycles:u,148992463,100.00,,\n",
+      "process_elapsed_ms_including_startup": 184.8006920045009,
+      "process_ipc": 1.304373910796163,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 6.019637,
+            "median_ms": 2.368035,
+            "min_ms": 2.276303,
+            "ns_per_guest_call": 236.8035,
+            "ns_per_loop_iteration": 236.8035,
+            "samples_ms": [
+              2.368035,
+              2.369858,
+              2.302823,
+              2.276303,
+              2.30661,
+              2.399122,
+              6.019637
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 6.019637,
+        "median_ms": 2.368035,
+        "min_ms": 2.276303,
+        "ns_per_guest_call": 236.8035,
+        "ns_per_loop_iteration": 236.8035,
+        "samples_ms": [
+          2.368035,
+          2.369858,
+          2.302823,
+          2.276303,
+          2.30661,
+          2.399122,
+          6.019637
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 1,
+      "perf_cycles_user": 535678310,
+      "perf_instructions_user": 673161776,
+      "perf_stderr": "673161776,,instructions:u,154037245,100.00,,\n535678310,,cycles:u,154037245,100.00,,\n",
+      "process_elapsed_ms_including_startup": 173.884646006627,
+      "process_ipc": 1.2566530386492594,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.362502,
+            "median_ms": 2.362424,
+            "min_ms": 2.286853,
+            "ns_per_guest_call": 236.2424,
+            "ns_per_loop_iteration": 236.2424,
+            "samples_ms": [
+              2.362424,
+              2.347125,
+              2.328361,
+              3.01867,
+              3.362502,
+              2.403541,
+              2.286853
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 3.362502,
+        "median_ms": 2.362424,
+        "min_ms": 2.286853,
+        "ns_per_guest_call": 236.2424,
+        "ns_per_loop_iteration": 236.2424,
+        "samples_ms": [
+          2.362424,
+          2.347125,
+          2.328361,
+          3.01867,
+          3.362502,
+          2.403541,
+          2.286853
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 2,
+      "perf_cycles_user": 531894686,
+      "perf_instructions_user": 672603229,
+      "perf_stderr": "672603229,,instructions:u,153631143,100.00,,\n531894686,,cycles:u,153631143,100.00,,\n",
+      "process_elapsed_ms_including_startup": 175.9046910010511,
+      "process_ipc": 1.2645421108794457,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.538784,
+            "median_ms": 2.396237,
+            "min_ms": 2.257348,
+            "ns_per_guest_call": 239.6237,
+            "ns_per_loop_iteration": 239.6237,
+            "samples_ms": [
+              2.538784,
+              2.364659,
+              2.257348,
+              2.396237,
+              2.37619,
+              2.493579,
+              2.401457
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.538784,
+        "median_ms": 2.396237,
+        "min_ms": 2.257348,
+        "ns_per_guest_call": 239.6237,
+        "ns_per_loop_iteration": 239.6237,
+        "samples_ms": [
+          2.538784,
+          2.364659,
+          2.257348,
+          2.396237,
+          2.37619,
+          2.493579,
+          2.401457
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 2,
+      "perf_cycles_user": 522250784,
+      "perf_instructions_user": 678441340,
+      "perf_stderr": "678441340,,instructions:u,151320718,100.00,,\n522250784,,cycles:u,151320718,100.00,,\n",
+      "process_elapsed_ms_including_startup": 180.18765399756376,
+      "process_ipc": 1.2990719416516952,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.743546,
+            "median_ms": 2.4032,
+            "min_ms": 2.238452,
+            "ns_per_guest_call": 240.32,
+            "ns_per_loop_iteration": 240.32,
+            "samples_ms": [
+              2.304355,
+              2.238452,
+              2.576855,
+              2.72411,
+              2.743546,
+              2.4032,
+              2.363746
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.743546,
+        "median_ms": 2.4032,
+        "min_ms": 2.238452,
+        "ns_per_guest_call": 240.32,
+        "ns_per_loop_iteration": 240.32,
+        "samples_ms": [
+          2.304355,
+          2.238452,
+          2.576855,
+          2.72411,
+          2.743546,
+          2.4032,
+          2.363746
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 3,
+      "perf_cycles_user": 589103296,
+      "perf_instructions_user": 677561078,
+      "perf_stderr": "677561078,,instructions:u,167732549,100.00,,\n589103296,,cycles:u,167732549,100.00,,\n",
+      "process_elapsed_ms_including_startup": 196.96037299581803,
+      "process_ipc": 1.150156657755315,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.432784,
+            "median_ms": 2.492768,
+            "min_ms": 2.277204,
+            "ns_per_guest_call": 249.2768,
+            "ns_per_loop_iteration": 249.2768,
+            "samples_ms": [
+              3.295948,
+              3.432784,
+              2.993693,
+              2.492768,
+              2.468973,
+              2.34959,
+              2.277204
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 3.432784,
+        "median_ms": 2.492768,
+        "min_ms": 2.277204,
+        "ns_per_guest_call": 249.2768,
+        "ns_per_loop_iteration": 249.2768,
+        "samples_ms": [
+          3.295948,
+          3.432784,
+          2.993693,
+          2.492768,
+          2.468973,
+          2.34959,
+          2.277204
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 3,
+      "perf_cycles_user": 518502387,
+      "perf_instructions_user": 672519146,
+      "perf_stderr": "672519146,,instructions:u,149827705,100.00,,\n518502387,,cycles:u,149827705,100.00,,\n",
+      "process_elapsed_ms_including_startup": 171.67289400822483,
+      "process_ipc": 1.297041562124959,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.628532,
+            "median_ms": 2.484733,
+            "min_ms": 2.327609,
+            "ns_per_guest_call": 248.4733,
+            "ns_per_loop_iteration": 248.4733,
+            "samples_ms": [
+              2.508817,
+              2.404572,
+              2.327609,
+              2.484733,
+              2.628532,
+              2.625917,
+              2.374697
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.628532,
+        "median_ms": 2.484733,
+        "min_ms": 2.327609,
+        "ns_per_guest_call": 248.4733,
+        "ns_per_loop_iteration": 248.4733,
+        "samples_ms": [
+          2.508817,
+          2.404572,
+          2.327609,
+          2.484733,
+          2.628532,
+          2.625917,
+          2.374697
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 4,
+      "perf_cycles_user": 521148009,
+      "perf_instructions_user": 674708112,
+      "perf_stderr": "674708112,,instructions:u,151093394,100.00,,\n521148009,,cycles:u,151093394,100.00,,\n",
+      "process_elapsed_ms_including_startup": 169.97242599609308,
+      "process_ipc": 1.294657372470169,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.900509,
+            "median_ms": 2.510992,
+            "min_ms": 2.270433,
+            "ns_per_guest_call": 251.0992,
+            "ns_per_loop_iteration": 251.0992,
+            "samples_ms": [
+              2.380128,
+              2.61183,
+              2.497858,
+              2.808508,
+              2.900509,
+              2.510992,
+              2.270433
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.900509,
+        "median_ms": 2.510992,
+        "min_ms": 2.270433,
+        "ns_per_guest_call": 251.0992,
+        "ns_per_loop_iteration": 251.0992,
+        "samples_ms": [
+          2.380128,
+          2.61183,
+          2.497858,
+          2.808508,
+          2.900509,
+          2.510992,
+          2.270433
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 4,
+      "perf_cycles_user": 485305901,
+      "perf_instructions_user": 677901662,
+      "perf_stderr": "677901662,,instructions:u,141160430,100.00,,\n485305901,,cycles:u,141160430,100.00,,\n",
+      "process_elapsed_ms_including_startup": 164.19320800923742,
+      "process_ipc": 1.396854356403138,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.666332,
+            "median_ms": 2.406627,
+            "min_ms": 2.282134,
+            "ns_per_guest_call": 240.6627,
+            "ns_per_loop_iteration": 240.6627,
+            "samples_ms": [
+              2.295239,
+              2.541379,
+              2.666332,
+              2.518826,
+              2.282134,
+              2.406627,
+              2.315887
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.666332,
+        "median_ms": 2.406627,
+        "min_ms": 2.282134,
+        "ns_per_guest_call": 240.6627,
+        "ns_per_loop_iteration": 240.6627,
+        "samples_ms": [
+          2.295239,
+          2.541379,
+          2.666332,
+          2.518826,
+          2.282134,
+          2.406627,
+          2.315887
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 5,
+      "perf_cycles_user": 488174463,
+      "perf_instructions_user": 677293295,
+      "perf_stderr": "677293295,,instructions:u,140619909,100.00,,\n488174463,,cycles:u,140619909,100.00,,\n",
+      "process_elapsed_ms_including_startup": 159.46746899862774,
+      "process_ipc": 1.3874000922493974,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.651434,
+            "median_ms": 2.464675,
+            "min_ms": 2.254883,
+            "ns_per_guest_call": 246.4675,
+            "ns_per_loop_iteration": 246.4675,
+            "samples_ms": [
+              2.466248,
+              2.291873,
+              2.470095,
+              2.254883,
+              2.651434,
+              2.464675,
+              2.288135
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.651434,
+        "median_ms": 2.464675,
+        "min_ms": 2.254883,
+        "ns_per_guest_call": 246.4675,
+        "ns_per_loop_iteration": 246.4675,
+        "samples_ms": [
+          2.466248,
+          2.291873,
+          2.470095,
+          2.254883,
+          2.651434,
+          2.464675,
+          2.288135
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 5,
+      "perf_cycles_user": 520043224,
+      "perf_instructions_user": 673658951,
+      "perf_stderr": "673658951,,instructions:u,148172497,100.00,,\n520043224,,cycles:u,148172497,100.00,,\n",
+      "process_elapsed_ms_including_startup": 168.36545401019976,
+      "process_ipc": 1.295390305864268,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.735802,
+            "median_ms": 2.399223,
+            "min_ms": 2.220619,
+            "ns_per_guest_call": 239.9223,
+            "ns_per_loop_iteration": 239.9223,
+            "samples_ms": [
+              2.705936,
+              2.735802,
+              2.399223,
+              2.30658,
+              2.471568,
+              2.397028,
+              2.220619
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.735802,
+        "median_ms": 2.399223,
+        "min_ms": 2.220619,
+        "ns_per_guest_call": 239.9223,
+        "ns_per_loop_iteration": 239.9223,
+        "samples_ms": [
+          2.705936,
+          2.735802,
+          2.399223,
+          2.30658,
+          2.471568,
+          2.397028,
+          2.220619
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 6,
+      "perf_cycles_user": 528418651,
+      "perf_instructions_user": 672655710,
+      "perf_stderr": "672655710,,instructions:u,151916477,100.00,,\n528418651,,cycles:u,151916477,100.00,,\n",
+      "process_elapsed_ms_including_startup": 173.54470099962782,
+      "process_ipc": 1.2729598183694693,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.888326,
+            "median_ms": 2.321047,
+            "min_ms": 2.275792,
+            "ns_per_guest_call": 232.1047,
+            "ns_per_loop_iteration": 232.1047,
+            "samples_ms": [
+              2.345402,
+              2.321047,
+              2.285741,
+              2.888326,
+              2.345001,
+              2.300197,
+              2.275792
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.888326,
+        "median_ms": 2.321047,
+        "min_ms": 2.275792,
+        "ns_per_guest_call": 232.1047,
+        "ns_per_loop_iteration": 232.1047,
+        "samples_ms": [
+          2.345402,
+          2.321047,
+          2.285741,
+          2.888326,
+          2.345001,
+          2.300197,
+          2.275792
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 6,
+      "perf_cycles_user": 505790887,
+      "perf_instructions_user": 678501868,
+      "perf_stderr": "678501868,,instructions:u,145484999,100.00,,\n505790887,,cycles:u,145484999,100.00,,\n",
+      "process_elapsed_ms_including_startup": 168.13487399485894,
+      "process_ipc": 1.3414671664497586,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.454667,
+            "median_ms": 2.409672,
+            "min_ms": 2.316768,
+            "ns_per_guest_call": 240.9672,
+            "ns_per_loop_iteration": 240.9672,
+            "samples_ms": [
+              2.431613,
+              2.316768,
+              2.377442,
+              2.351764,
+              2.409672,
+              2.432465,
+              2.454667
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.454667,
+        "median_ms": 2.409672,
+        "min_ms": 2.316768,
+        "ns_per_guest_call": 240.9672,
+        "ns_per_loop_iteration": 240.9672,
+        "samples_ms": [
+          2.431613,
+          2.316768,
+          2.377442,
+          2.351764,
+          2.409672,
+          2.432465,
+          2.454667
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 7,
+      "perf_cycles_user": 485140577,
+      "perf_instructions_user": 678279992,
+      "perf_stderr": "678279992,,instructions:u,139253787,100.00,,\n485140577,,cycles:u,139253787,100.00,,\n",
+      "process_elapsed_ms_including_startup": 157.3502919927705,
+      "process_ipc": 1.3981102059001755,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.841136,
+            "median_ms": 2.367614,
+            "min_ms": 2.241347,
+            "ns_per_guest_call": 236.7614,
+            "ns_per_loop_iteration": 236.7614,
+            "samples_ms": [
+              2.367614,
+              2.273428,
+              2.241347,
+              2.423538,
+              2.722206,
+              2.313543,
+              3.841136
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 3.841136,
+        "median_ms": 2.367614,
+        "min_ms": 2.241347,
+        "ns_per_guest_call": 236.7614,
+        "ns_per_loop_iteration": 236.7614,
+        "samples_ms": [
+          2.367614,
+          2.273428,
+          2.241347,
+          2.423538,
+          2.722206,
+          2.313543,
+          3.841136
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "main",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "indirect",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 7,
+      "perf_cycles_user": 472314119,
+      "perf_instructions_user": 672384988,
+      "perf_stderr": "672384988,,instructions:u,136196184,100.00,,\n472314119,,cycles:u,136196184,100.00,,\n",
+      "process_elapsed_ms_including_startup": 166.09473100106698,
+      "process_ipc": 1.4235970532144944,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.495222,
+            "median_ms": 2.340954,
+            "min_ms": 2.251738,
+            "ns_per_guest_call": 234.0954,
+            "ns_per_loop_iteration": 234.0954,
+            "samples_ms": [
+              2.449327,
+              2.328751,
+              2.251738,
+              2.495222,
+              2.340954,
+              2.4939,
+              2.321788
+            ],
+            "variant": "native",
+            "workload": "indirect"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.495222,
+        "median_ms": 2.340954,
+        "min_ms": 2.251738,
+        "ns_per_guest_call": 234.0954,
+        "ns_per_loop_iteration": 234.0954,
+        "samples_ms": [
+          2.449327,
+          2.328751,
+          2.251738,
+          2.495222,
+          2.340954,
+          2.4939,
+          2.321788
+        ],
+        "variant": "native",
+        "workload": "indirect"
+      },
+      "version": "req066",
+      "workload": "indirect"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 1,
+      "perf_cycles_user": 469733883,
+      "perf_instructions_user": 675198257,
+      "perf_stderr": "675198257,,instructions:u,136163681,100.00,,\n469733883,,cycles:u,136163681,100.00,,\n",
+      "process_elapsed_ms_including_startup": 155.68201600399334,
+      "process_ipc": 1.4374059045683107,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.732446,
+            "median_ms": 2.208667,
+            "min_ms": 2.180103,
+            "ns_per_guest_call": 220.8667,
+            "ns_per_loop_iteration": 220.8667,
+            "samples_ms": [
+              2.732446,
+              2.314144,
+              2.198868,
+              2.22663,
+              2.180103,
+              2.203638,
+              2.208667
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.732446,
+        "median_ms": 2.208667,
+        "min_ms": 2.180103,
+        "ns_per_guest_call": 220.8667,
+        "ns_per_loop_iteration": 220.8667,
+        "samples_ms": [
+          2.732446,
+          2.314144,
+          2.198868,
+          2.22663,
+          2.180103,
+          2.203638,
+          2.208667
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 1,
+      "perf_cycles_user": 510728383,
+      "perf_instructions_user": 669274363,
+      "perf_stderr": "669274363,,instructions:u,146071878,100.00,,\n510728383,,cycles:u,146071878,100.00,,\n",
+      "process_elapsed_ms_including_startup": 166.10061199753545,
+      "process_ipc": 1.3104311122650099,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.586042,
+            "median_ms": 2.250895,
+            "min_ms": 2.192166,
+            "ns_per_guest_call": 225.0895,
+            "ns_per_loop_iteration": 225.0895,
+            "samples_ms": [
+              2.51524,
+              2.550335,
+              2.250895,
+              2.22064,
+              2.586042,
+              2.192166,
+              2.220639
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.586042,
+        "median_ms": 2.250895,
+        "min_ms": 2.192166,
+        "ns_per_guest_call": 225.0895,
+        "ns_per_loop_iteration": 225.0895,
+        "samples_ms": [
+          2.51524,
+          2.550335,
+          2.250895,
+          2.22064,
+          2.586042,
+          2.192166,
+          2.220639
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 2,
+      "perf_cycles_user": 496351496,
+      "perf_instructions_user": 668248662,
+      "perf_stderr": "668248662,,instructions:u,142010807,100.00,,\n496351496,,cycles:u,142010807,100.00,,\n",
+      "process_elapsed_ms_including_startup": 161.19482599606272,
+      "process_ipc": 1.3463214423352923,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.688211,
+            "median_ms": 2.379977,
+            "min_ms": 2.18354,
+            "ns_per_guest_call": 237.9977,
+            "ns_per_loop_iteration": 237.9977,
+            "samples_ms": [
+              2.353287,
+              3.688211,
+              2.276564,
+              2.18354,
+              2.479363,
+              2.379977,
+              2.503227
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 3.688211,
+        "median_ms": 2.379977,
+        "min_ms": 2.18354,
+        "ns_per_guest_call": 237.9977,
+        "ns_per_loop_iteration": 237.9977,
+        "samples_ms": [
+          2.353287,
+          3.688211,
+          2.276564,
+          2.18354,
+          2.479363,
+          2.379977,
+          2.503227
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 2,
+      "perf_cycles_user": 468055329,
+      "perf_instructions_user": 674733404,
+      "perf_stderr": "674733404,,instructions:u,135192322,100.00,,\n468055329,,cycles:u,135192322,100.00,,\n",
+      "process_elapsed_ms_including_startup": 154.38735600037035,
+      "process_ipc": 1.4415676143279206,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 5.828841,
+            "median_ms": 2.428899,
+            "min_ms": 2.270151,
+            "ns_per_guest_call": 242.8899,
+            "ns_per_loop_iteration": 242.8899,
+            "samples_ms": [
+              2.530257,
+              2.428899,
+              2.408991,
+              2.270151,
+              2.4404,
+              5.828841,
+              2.36006
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 5.828841,
+        "median_ms": 2.428899,
+        "min_ms": 2.270151,
+        "ns_per_guest_call": 242.8899,
+        "ns_per_loop_iteration": 242.8899,
+        "samples_ms": [
+          2.530257,
+          2.428899,
+          2.408991,
+          2.270151,
+          2.4404,
+          5.828841,
+          2.36006
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 3,
+      "perf_cycles_user": 494488758,
+      "perf_instructions_user": 676952765,
+      "perf_stderr": "676952765,,instructions:u,141854933,100.00,,\n494488758,,cycles:u,141854933,100.00,,\n",
+      "process_elapsed_ms_including_startup": 163.0027240025811,
+      "process_ipc": 1.3689952583310296,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.926338,
+            "median_ms": 2.543111,
+            "min_ms": 2.392601,
+            "ns_per_guest_call": 254.3111,
+            "ns_per_loop_iteration": 254.3111,
+            "samples_ms": [
+              2.508878,
+              2.392601,
+              2.543111,
+              2.926338,
+              2.439648,
+              2.885852,
+              2.595309
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.926338,
+        "median_ms": 2.543111,
+        "min_ms": 2.392601,
+        "ns_per_guest_call": 254.3111,
+        "ns_per_loop_iteration": 254.3111,
+        "samples_ms": [
+          2.508878,
+          2.392601,
+          2.543111,
+          2.926338,
+          2.439648,
+          2.885852,
+          2.595309
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 3,
+      "perf_cycles_user": 490778596,
+      "perf_instructions_user": 668637297,
+      "perf_stderr": "668637297,,instructions:u,141239519,100.00,,\n490778596,,cycles:u,141239519,100.00,,\n",
+      "process_elapsed_ms_including_startup": 164.08188099740073,
+      "process_ipc": 1.3624010958293706,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.538022,
+            "median_ms": 2.287905,
+            "min_ms": 2.189411,
+            "ns_per_guest_call": 228.7905,
+            "ns_per_loop_iteration": 228.7905,
+            "samples_ms": [
+              2.295329,
+              2.191014,
+              2.189411,
+              2.538022,
+              2.287905,
+              2.310948,
+              2.202966
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.538022,
+        "median_ms": 2.287905,
+        "min_ms": 2.189411,
+        "ns_per_guest_call": 228.7905,
+        "ns_per_loop_iteration": 228.7905,
+        "samples_ms": [
+          2.295329,
+          2.191014,
+          2.189411,
+          2.538022,
+          2.287905,
+          2.310948,
+          2.202966
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 4,
+      "perf_cycles_user": 539151145,
+      "perf_instructions_user": 668945790,
+      "perf_stderr": "668945790,,instructions:u,152656055,100.00,,\n539151145,,cycles:u,152656055,100.00,,\n",
+      "process_elapsed_ms_including_startup": 178.25081400224008,
+      "process_ipc": 1.2407388840841653,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.629022,
+            "median_ms": 2.331256,
+            "min_ms": 2.223565,
+            "ns_per_guest_call": 233.1256,
+            "ns_per_loop_iteration": 233.1256,
+            "samples_ms": [
+              2.2639,
+              2.223565,
+              2.512074,
+              2.629022,
+              2.331256,
+              2.319835,
+              2.435511
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.629022,
+        "median_ms": 2.331256,
+        "min_ms": 2.223565,
+        "ns_per_guest_call": 233.1256,
+        "ns_per_loop_iteration": 233.1256,
+        "samples_ms": [
+          2.2639,
+          2.223565,
+          2.512074,
+          2.629022,
+          2.331256,
+          2.319835,
+          2.435511
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 4,
+      "perf_cycles_user": 499813734,
+      "perf_instructions_user": 675238572,
+      "perf_stderr": "675238572,,instructions:u,143664954,100.00,,\n499813734,,cycles:u,143664954,100.00,,\n",
+      "process_elapsed_ms_including_startup": 161.8469139939407,
+      "process_ipc": 1.3509804274405952,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.707098,
+            "median_ms": 2.355812,
+            "min_ms": 2.303484,
+            "ns_per_guest_call": 235.5812,
+            "ns_per_loop_iteration": 235.5812,
+            "samples_ms": [
+              2.355812,
+              2.707098,
+              2.41912,
+              2.328912,
+              2.303484,
+              2.37104,
+              2.314154
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.707098,
+        "median_ms": 2.355812,
+        "min_ms": 2.303484,
+        "ns_per_guest_call": 235.5812,
+        "ns_per_loop_iteration": 235.5812,
+        "samples_ms": [
+          2.355812,
+          2.707098,
+          2.41912,
+          2.328912,
+          2.303484,
+          2.37104,
+          2.314154
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 5,
+      "perf_cycles_user": 511546995,
+      "perf_instructions_user": 674466632,
+      "perf_stderr": "674466632,,instructions:u,145519403,100.00,,\n511546995,,cycles:u,145519403,100.00,,\n",
+      "process_elapsed_ms_including_startup": 164.13470900442917,
+      "process_ipc": 1.3184842030007429,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.754327,
+            "median_ms": 2.275793,
+            "min_ms": 2.198878,
+            "ns_per_guest_call": 227.5793,
+            "ns_per_loop_iteration": 227.5793,
+            "samples_ms": [
+              2.275793,
+              2.260203,
+              2.296351,
+              2.754327,
+              2.331736,
+              2.201513,
+              2.198878
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.754327,
+        "median_ms": 2.275793,
+        "min_ms": 2.198878,
+        "ns_per_guest_call": 227.5793,
+        "ns_per_loop_iteration": 227.5793,
+        "samples_ms": [
+          2.275793,
+          2.260203,
+          2.296351,
+          2.754327,
+          2.331736,
+          2.201513,
+          2.198878
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 5,
+      "perf_cycles_user": 485507462,
+      "perf_instructions_user": 668825569,
+      "perf_stderr": "668825569,,instructions:u,140299414,100.00,,\n485507462,,cycles:u,140299414,100.00,,\n",
+      "process_elapsed_ms_including_startup": 165.05747300107032,
+      "process_ipc": 1.3775804109062282,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 2.907883,
+            "median_ms": 2.379696,
+            "min_ms": 2.240776,
+            "ns_per_guest_call": 237.9696,
+            "ns_per_loop_iteration": 237.9696,
+            "samples_ms": [
+              2.379696,
+              2.907883,
+              2.363025,
+              2.245927,
+              2.240776,
+              2.392721,
+              2.592694
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 2.907883,
+        "median_ms": 2.379696,
+        "min_ms": 2.240776,
+        "ns_per_guest_call": 237.9696,
+        "ns_per_loop_iteration": 237.9696,
+        "samples_ms": [
+          2.379696,
+          2.907883,
+          2.363025,
+          2.245927,
+          2.240776,
+          2.392721,
+          2.592694
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 6,
+      "perf_cycles_user": 534607273,
+      "perf_instructions_user": 668109037,
+      "perf_stderr": "668109037,,instructions:u,154125167,100.00,,\n534607273,,cycles:u,154125167,100.00,,\n",
+      "process_elapsed_ms_including_startup": 171.913833997678,
+      "process_ipc": 1.2497193187268891,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.125149,
+            "median_ms": 2.31727,
+            "min_ms": 2.239875,
+            "ns_per_guest_call": 231.727,
+            "ns_per_loop_iteration": 231.727,
+            "samples_ms": [
+              2.646315,
+              2.31727,
+              2.344431,
+              3.125149,
+              2.295258,
+              2.25342,
+              2.239875
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 3.125149,
+        "median_ms": 2.31727,
+        "min_ms": 2.239875,
+        "ns_per_guest_call": 231.727,
+        "ns_per_loop_iteration": 231.727,
+        "samples_ms": [
+          2.646315,
+          2.31727,
+          2.344431,
+          3.125149,
+          2.295258,
+          2.25342,
+          2.239875
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 6,
+      "perf_cycles_user": 514983252,
+      "perf_instructions_user": 674643135,
+      "perf_stderr": "674643135,,instructions:u,148806595,100.00,,\n514983252,,cycles:u,148806595,100.00,,\n",
+      "process_elapsed_ms_including_startup": 175.29966999427415,
+      "process_ipc": 1.3100292725636056,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.103459,
+            "median_ms": 2.396187,
+            "min_ms": 2.308253,
+            "ns_per_guest_call": 239.6187,
+            "ns_per_loop_iteration": 239.6187,
+            "samples_ms": [
+              2.396187,
+              2.308253,
+              2.319083,
+              2.408189,
+              3.103459,
+              2.378764,
+              2.579951
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 3.103459,
+        "median_ms": 2.396187,
+        "min_ms": 2.308253,
+        "ns_per_guest_call": 239.6187,
+        "ns_per_loop_iteration": 239.6187,
+        "samples_ms": [
+          2.396187,
+          2.308253,
+          2.319083,
+          2.408189,
+          3.103459,
+          2.378764,
+          2.579951
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 7,
+      "perf_cycles_user": 552910109,
+      "perf_instructions_user": 675605808,
+      "perf_stderr": "675605808,,instructions:u,158809721,100.00,,\n552910109,,cycles:u,158809721,100.00,,\n",
+      "process_elapsed_ms_including_startup": 192.16189700819086,
+      "process_ipc": 1.2219089450578304,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.448934,
+            "median_ms": 2.326406,
+            "min_ms": 2.214177,
+            "ns_per_guest_call": 232.6406,
+            "ns_per_loop_iteration": 232.6406,
+            "samples_ms": [
+              3.448934,
+              3.418888,
+              2.29108,
+              2.214177,
+              2.568238,
+              2.326406,
+              2.237171
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 3.448934,
+        "median_ms": 2.326406,
+        "min_ms": 2.214177,
+        "ns_per_guest_call": 232.6406,
+        "ns_per_loop_iteration": 232.6406,
+        "samples_ms": [
+          3.448934,
+          3.418888,
+          2.29108,
+          2.214177,
+          2.568238,
+          2.326406,
+          2.237171
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "main",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "direct",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 7,
+      "perf_cycles_user": 532353841,
+      "perf_instructions_user": 668713946,
+      "perf_stderr": "668713946,,instructions:u,153988341,100.00,,\n532353841,,cycles:u,153988341,100.00,,\n",
+      "process_elapsed_ms_including_startup": 176.80875000951346,
+      "process_ipc": 1.256145620634303,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 10000,
+            "max_ms": 3.973555,
+            "median_ms": 2.578487,
+            "min_ms": 2.24295,
+            "ns_per_guest_call": 257.8487,
+            "ns_per_loop_iteration": 257.8487,
+            "samples_ms": [
+              2.591242,
+              2.322609,
+              2.578487,
+              2.941296,
+              2.437705,
+              3.973555,
+              2.24295
+            ],
+            "variant": "native",
+            "workload": "direct"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 10000,
+        "max_ms": 3.973555,
+        "median_ms": 2.578487,
+        "min_ms": 2.24295,
+        "ns_per_guest_call": 257.8487,
+        "ns_per_loop_iteration": 257.8487,
+        "samples_ms": [
+          2.591242,
+          2.322609,
+          2.578487,
+          2.941296,
+          2.437705,
+          3.973555,
+          2.24295
+        ],
+        "variant": "native",
+        "workload": "direct"
+      },
+      "version": "req066",
+      "workload": "direct"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 1,
+      "perf_cycles_user": 571799592,
+      "perf_instructions_user": 649392309,
+      "perf_stderr": "649392309,,instructions:u,162761259,100.00,,\n571799592,,cycles:u,162761259,100.00,,\n",
+      "process_elapsed_ms_including_startup": 192.5635570078157,
+      "process_ipc": 1.1356991471935154,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.967785,
+            "median_ms": 2.061081,
+            "min_ms": 1.980049,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 206.10810000000004,
+            "samples_ms": [
+              2.967785,
+              2.061081,
+              1.980049,
+              2.390606,
+              2.89546,
+              2.04422,
+              1.994547
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.967785,
+        "median_ms": 2.061081,
+        "min_ms": 1.980049,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 206.10810000000004,
+        "samples_ms": [
+          2.967785,
+          2.061081,
+          1.980049,
+          2.390606,
+          2.89546,
+          2.04422,
+          1.994547
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 1,
+      "perf_cycles_user": 503682178,
+      "perf_instructions_user": 647466127,
+      "perf_stderr": "647466127,,instructions:u,146117009,100.00,,\n503682178,,cycles:u,146117009,100.00,,\n",
+      "process_elapsed_ms_including_startup": 173.4166819951497,
+      "process_ipc": 1.2854656274933753,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.972263,
+            "median_ms": 2.196874,
+            "min_ms": 2.042717,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 219.6874,
+            "samples_ms": [
+              2.146611,
+              2.042717,
+              2.498107,
+              2.54725,
+              2.196874,
+              2.972263,
+              2.191565
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.972263,
+        "median_ms": 2.196874,
+        "min_ms": 2.042717,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 219.6874,
+        "samples_ms": [
+          2.146611,
+          2.042717,
+          2.498107,
+          2.54725,
+          2.196874,
+          2.972263,
+          2.191565
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 2,
+      "perf_cycles_user": 560283246,
+      "perf_instructions_user": 647339249,
+      "perf_stderr": "647339249,,instructions:u,160217737,100.00,,\n560283246,,cycles:u,160217737,100.00,,\n",
+      "process_elapsed_ms_including_startup": 186.67652799922507,
+      "process_ipc": 1.1553785582944238,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 3.448173,
+            "median_ms": 2.07651,
+            "min_ms": 1.933523,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 207.65099999999998,
+            "samples_ms": [
+              3.05615,
+              2.030133,
+              2.07651,
+              3.448173,
+              2.269671,
+              1.975421,
+              1.933523
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 3.448173,
+        "median_ms": 2.07651,
+        "min_ms": 1.933523,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 207.65099999999998,
+        "samples_ms": [
+          3.05615,
+          2.030133,
+          2.07651,
+          3.448173,
+          2.269671,
+          1.975421,
+          1.933523
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 2,
+      "perf_cycles_user": 491664972,
+      "perf_instructions_user": 650809165,
+      "perf_stderr": "650809165,,instructions:u,140795549,100.00,,\n491664972,,cycles:u,140795549,100.00,,\n",
+      "process_elapsed_ms_including_startup": 171.11349799961317,
+      "process_ipc": 1.3236842200749661,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 3.340733,
+            "median_ms": 2.171097,
+            "min_ms": 1.993736,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 217.1097,
+            "samples_ms": [
+              2.171097,
+              2.032758,
+              1.993736,
+              2.827934,
+              2.170927,
+              3.340733,
+              2.374477
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 3.340733,
+        "median_ms": 2.171097,
+        "min_ms": 1.993736,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 217.1097,
+        "samples_ms": [
+          2.171097,
+          2.032758,
+          1.993736,
+          2.827934,
+          2.170927,
+          3.340733,
+          2.374477
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 3,
+      "perf_cycles_user": 482955200,
+      "perf_instructions_user": 651675187,
+      "perf_stderr": "651675187,,instructions:u,138202532,100.00,,\n482955200,,cycles:u,138202532,100.00,,\n",
+      "process_elapsed_ms_including_startup": 156.93547698901966,
+      "process_ipc": 1.349349146670333,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.575342,
+            "median_ms": 2.102989,
+            "min_ms": 2.019133,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 210.2989,
+            "samples_ms": [
+              2.214969,
+              2.102989,
+              2.575342,
+              2.019133,
+              2.038369,
+              2.027548,
+              2.153573
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.575342,
+        "median_ms": 2.102989,
+        "min_ms": 2.019133,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 210.2989,
+        "samples_ms": [
+          2.214969,
+          2.102989,
+          2.575342,
+          2.019133,
+          2.038369,
+          2.027548,
+          2.153573
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 3,
+      "perf_cycles_user": 513344959,
+      "perf_instructions_user": 647738074,
+      "perf_stderr": "647738074,,instructions:u,146483311,100.00,,\n513344959,,cycles:u,146483311,100.00,,\n",
+      "process_elapsed_ms_including_startup": 171.58092200406827,
+      "process_ipc": 1.261798840416781,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.8581,
+            "median_ms": 2.338269,
+            "min_ms": 1.967326,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 233.8269,
+            "samples_ms": [
+              2.8581,
+              2.338269,
+              2.713741,
+              2.671822,
+              2.099432,
+              1.967326,
+              2.000237
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.8581,
+        "median_ms": 2.338269,
+        "min_ms": 1.967326,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 233.8269,
+        "samples_ms": [
+          2.8581,
+          2.338269,
+          2.713741,
+          2.671822,
+          2.099432,
+          1.967326,
+          2.000237
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 4,
+      "perf_cycles_user": 539575596,
+      "perf_instructions_user": 647137002,
+      "perf_stderr": "647137002,,instructions:u,155003521,100.00,,\n539575596,,cycles:u,155003521,100.00,,\n",
+      "process_elapsed_ms_including_startup": 187.929207997513,
+      "process_ipc": 1.1993444603450893,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.741903,
+            "median_ms": 1.993796,
+            "min_ms": 1.954071,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 199.3796,
+            "samples_ms": [
+              2.741903,
+              2.090295,
+              1.993796,
+              2.218044,
+              1.967577,
+              1.954071,
+              1.973818
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.741903,
+        "median_ms": 1.993796,
+        "min_ms": 1.954071,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 199.3796,
+        "samples_ms": [
+          2.741903,
+          2.090295,
+          1.993796,
+          2.218044,
+          1.967577,
+          1.954071,
+          1.973818
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 4,
+      "perf_cycles_user": 485271223,
+      "perf_instructions_user": 651014395,
+      "perf_stderr": "651014395,,instructions:u,139546347,100.00,,\n485271223,,cycles:u,139546347,100.00,,\n",
+      "process_elapsed_ms_including_startup": 218.95961700647604,
+      "process_ipc": 1.3415474978618298,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 6.488223,
+            "median_ms": 2.452512,
+            "min_ms": 2.00164,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 245.2512,
+            "samples_ms": [
+              2.07683,
+              6.488223,
+              2.452512,
+              2.062925,
+              2.00164,
+              3.771497,
+              3.805761
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 6.488223,
+        "median_ms": 2.452512,
+        "min_ms": 2.00164,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 245.2512,
+        "samples_ms": [
+          2.07683,
+          6.488223,
+          2.452512,
+          2.062925,
+          2.00164,
+          3.771497,
+          3.805761
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 5,
+      "perf_cycles_user": 506737292,
+      "perf_instructions_user": 650546873,
+      "perf_stderr": "650546873,,instructions:u,145839191,100.00,,\n506737292,,cycles:u,145839191,100.00,,\n",
+      "process_elapsed_ms_including_startup": 162.44931000983343,
+      "process_ipc": 1.2837951405400019,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.637318,
+            "median_ms": 2.00161,
+            "min_ms": 1.969881,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 200.161,
+            "samples_ms": [
+              2.1673,
+              2.030794,
+              1.98578,
+              1.969881,
+              1.982485,
+              2.00161,
+              2.637318
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.637318,
+        "median_ms": 2.00161,
+        "min_ms": 1.969881,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 200.161,
+        "samples_ms": [
+          2.1673,
+          2.030794,
+          1.98578,
+          1.969881,
+          1.982485,
+          2.00161,
+          2.637318
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 5,
+      "perf_cycles_user": 521893452,
+      "perf_instructions_user": 647067265,
+      "perf_stderr": "647067265,,instructions:u,150715358,100.00,,\n521893452,,cycles:u,150715358,100.00,,\n",
+      "process_elapsed_ms_including_startup": 173.3192299871007,
+      "process_ipc": 1.2398455326854723,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.487268,
+            "median_ms": 2.004796,
+            "min_ms": 1.956717,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 200.47959999999998,
+            "samples_ms": [
+              2.004796,
+              2.064718,
+              2.122186,
+              1.972666,
+              1.956717,
+              2.487268,
+              1.95885
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.487268,
+        "median_ms": 2.004796,
+        "min_ms": 1.956717,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 200.47959999999998,
+        "samples_ms": [
+          2.004796,
+          2.064718,
+          2.122186,
+          1.972666,
+          1.956717,
+          2.487268,
+          1.95885
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 6,
+      "perf_cycles_user": 486565723,
+      "perf_instructions_user": 648370563,
+      "perf_stderr": "648370563,,instructions:u,139583364,100.00,,\n486565723,,cycles:u,139583364,100.00,,\n",
+      "process_elapsed_ms_including_startup": 157.11931099940557,
+      "process_ipc": 1.3325446745454366,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.419521,
+            "median_ms": 2.0335,
+            "min_ms": 1.973377,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 203.35,
+            "samples_ms": [
+              2.047666,
+              1.973377,
+              2.0335,
+              2.007591,
+              2.064688,
+              1.994016,
+              2.419521
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.419521,
+        "median_ms": 2.0335,
+        "min_ms": 1.973377,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 203.35,
+        "samples_ms": [
+          2.047666,
+          1.973377,
+          2.0335,
+          2.007591,
+          2.064688,
+          1.994016,
+          2.419521
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 6,
+      "perf_cycles_user": 490526193,
+      "perf_instructions_user": 651069789,
+      "perf_stderr": "651069789,,instructions:u,140570590,100.00,,\n490526193,,cycles:u,140570590,100.00,,\n",
+      "process_elapsed_ms_including_startup": 159.72955799952615,
+      "process_ipc": 1.3272885287085985,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 3.622499,
+            "median_ms": 2.102358,
+            "min_ms": 1.967997,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 210.2358,
+            "samples_ms": [
+              3.622499,
+              2.264611,
+              2.660821,
+              2.102358,
+              1.990469,
+              1.976853,
+              1.967997
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 3.622499,
+        "median_ms": 2.102358,
+        "min_ms": 1.967997,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 210.2358,
+        "samples_ms": [
+          3.622499,
+          2.264611,
+          2.660821,
+          2.102358,
+          1.990469,
+          1.976853,
+          1.967997
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-067-main/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 7,
+      "perf_cycles_user": 457606978,
+      "perf_instructions_user": 651329984,
+      "perf_stderr": "651329984,,instructions:u,132347793,100.00,,\n457606978,,cycles:u,132347793,100.00,,\n",
+      "process_elapsed_ms_including_startup": 147.86395800183527,
+      "process_ipc": 1.423339274341223,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.236599,
+            "median_ms": 2.118688,
+            "min_ms": 2.057535,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 211.8688,
+            "samples_ms": [
+              2.179272,
+              2.058607,
+              2.057535,
+              2.118688,
+              2.236599,
+              2.146701,
+              2.071731
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.236599,
+        "median_ms": 2.118688,
+        "min_ms": 2.057535,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 211.8688,
+        "samples_ms": [
+          2.179272,
+          2.058607,
+          2.057535,
+          2.118688,
+          2.236599,
+          2.146701,
+          2.071731
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "main",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-070-boundary/experiments/pysim/benchmarks/interpreter/bench_call_dispatch.py",
+        "--iterations",
+        "10000",
+        "--variant",
+        "native",
+        "--workload",
+        "baseline",
+        "--repeats",
+        "7"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "06352ea15d65c7112ff2ad0282d4ff5e14111d532acb521a19e9922c870d8e2e",
+      "pair": 7,
+      "perf_cycles_user": 496364947,
+      "perf_instructions_user": 649814623,
+      "perf_stderr": "649814623,,instructions:u,142450786,100.00,,\n496364947,,cycles:u,142450786,100.00,,\n",
+      "process_elapsed_ms_including_startup": 161.88799099472817,
+      "process_ipc": 1.3091468826061161,
+      "returncode": 0,
+      "stdout_json": {
+        "expected_sum": 50005000,
+        "host": {
+          "machine": "x86_64",
+          "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+          "processor": "",
+          "python": "3.13.15"
+        },
+        "iterations": 10000,
+        "repeats": 7,
+        "results": [
+          {
+            "calls": 0,
+            "max_ms": 2.51029,
+            "median_ms": 2.058827,
+            "min_ms": 1.96948,
+            "ns_per_guest_call": null,
+            "ns_per_loop_iteration": 205.8827,
+            "samples_ms": [
+              2.088503,
+              2.508217,
+              2.058827,
+              1.96948,
+              1.99069,
+              1.994286,
+              2.51029
+            ],
+            "variant": "native",
+            "workload": "baseline"
+          }
+        ]
+      },
+      "timing": {
+        "calls": 0,
+        "max_ms": 2.51029,
+        "median_ms": 2.058827,
+        "min_ms": 1.96948,
+        "ns_per_guest_call": null,
+        "ns_per_loop_iteration": 205.8827,
+        "samples_ms": [
+          2.088503,
+          2.508217,
+          2.058827,
+          1.96948,
+          1.99069,
+          1.994286,
+          2.51029
+        ],
+        "variant": "native",
+        "workload": "baseline"
+      },
+      "version": "req066",
+      "workload": "baseline"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 1,
+      "perf_cycles_user": 615098177,
+      "perf_instructions_user": 981106778,
+      "perf_stderr": "981106778,,instructions:u,168596268,100.00,,\n615098177,,cycles:u,168596268,100.00,,\n",
+      "process_elapsed_ms_including_startup": 186.6753259964753,
+      "process_ipc": 1.5950409457968528,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 4.749584,
+        "median_ms": 4.389462,
+        "min_ms": 4.075715,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.267273,
+          4.483437,
+          4.389462,
+          4.653074,
+          4.749584,
+          4.075715,
+          4.247336
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 4.749584,
+        "median_ms": 4.389462,
+        "min_ms": 4.075715,
+        "samples_ms": [
+          4.267273,
+          4.483437,
+          4.389462,
+          4.653074,
+          4.749584,
+          4.075715,
+          4.247336
+        ]
+      },
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-070-boundary",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 1,
+      "perf_cycles_user": 578676081,
+      "perf_instructions_user": 938413819,
+      "perf_stderr": "938413819,,instructions:u,159585046,100.00,,\n578676081,,cycles:u,159585046,100.00,,\n",
+      "process_elapsed_ms_including_startup": 177.7610889985226,
+      "process_ipc": 1.6216564841911965,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+        "jit_enabled": false,
+        "max_ms": 5.757608,
+        "median_ms": 3.789611,
+        "min_ms": 3.623911,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.985076,
+          5.757608,
+          3.789611,
+          3.688562,
+          4.05174,
+          3.68191,
+          3.623911
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 5.757608,
+        "median_ms": 3.789611,
+        "min_ms": 3.623911,
+        "samples_ms": [
+          3.985076,
+          5.757608,
+          3.789611,
+          3.688562,
+          4.05174,
+          3.68191,
+          3.623911
+        ]
+      },
+      "version": "req066",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-070-boundary",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 2,
+      "perf_cycles_user": 591340737,
+      "perf_instructions_user": 938883940,
+      "perf_stderr": "938883940,,instructions:u,161750346,100.00,,\n591340737,,cycles:u,161750346,100.00,,\n",
+      "process_elapsed_ms_including_startup": 178.45048700110056,
+      "process_ipc": 1.5877207187909328,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+        "jit_enabled": false,
+        "max_ms": 4.612248,
+        "median_ms": 4.128083,
+        "min_ms": 3.785102,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.785102,
+          4.131991,
+          3.963886,
+          3.973855,
+          4.157378,
+          4.128083,
+          4.612248
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 4.612248,
+        "median_ms": 4.128083,
+        "min_ms": 3.785102,
+        "samples_ms": [
+          3.785102,
+          4.131991,
+          3.963886,
+          3.973855,
+          4.157378,
+          4.128083,
+          4.612248
+        ]
+      },
+      "version": "req066",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 2,
+      "perf_cycles_user": 644955227,
+      "perf_instructions_user": 980193997,
+      "perf_stderr": "980193997,,instructions:u,177220148,100.00,,\n644955227,,cycles:u,177220148,100.00,,\n",
+      "process_elapsed_ms_including_startup": 202.34136600629427,
+      "process_ipc": 1.5197861122226397,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 5.90339,
+        "median_ms": 4.519685,
+        "min_ms": 4.08879,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.319391,
+          4.519685,
+          5.90339,
+          5.080052,
+          4.263235,
+          4.711243,
+          4.08879
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 5.90339,
+        "median_ms": 4.519685,
+        "min_ms": 4.08879,
+        "samples_ms": [
+          4.319391,
+          4.519685,
+          5.90339,
+          5.080052,
+          4.263235,
+          4.711243,
+          4.08879
+        ]
+      },
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 3,
+      "perf_cycles_user": 624455093,
+      "perf_instructions_user": 980458492,
+      "perf_stderr": "980458492,,instructions:u,171565273,100.00,,\n624455093,,cycles:u,171565273,100.00,,\n",
+      "process_elapsed_ms_including_startup": 189.4947830005549,
+      "process_ipc": 1.5701024829338688,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 5.040107,
+        "median_ms": 4.554359,
+        "min_ms": 4.191913,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          5.040107,
+          4.447691,
+          4.554359,
+          4.437421,
+          4.718947,
+          4.191913,
+          4.750757
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 5.040107,
+        "median_ms": 4.554359,
+        "min_ms": 4.191913,
+        "samples_ms": [
+          5.040107,
+          4.447691,
+          4.554359,
+          4.437421,
+          4.718947,
+          4.191913,
+          4.750757
+        ]
+      },
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-070-boundary",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 3,
+      "perf_cycles_user": 692658212,
+      "perf_instructions_user": 938382579,
+      "perf_stderr": "938382579,,instructions:u,190343933,100.00,,\n692658212,,cycles:u,190343933,100.00,,\n",
+      "process_elapsed_ms_including_startup": 211.09483198961243,
+      "process_ipc": 1.3547555818193346,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+        "jit_enabled": false,
+        "max_ms": 6.742528,
+        "median_ms": 4.169992,
+        "min_ms": 3.685145,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.169992,
+          4.371138,
+          6.742528,
+          3.685145,
+          4.318649,
+          3.926536,
+          3.929973
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 6.742528,
+        "median_ms": 4.169992,
+        "min_ms": 3.685145,
+        "samples_ms": [
+          4.169992,
+          4.371138,
+          6.742528,
+          3.685145,
+          4.318649,
+          3.926536,
+          3.929973
+        ]
+      },
+      "version": "req066",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-070-boundary",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 4,
+      "perf_cycles_user": 651812192,
+      "perf_instructions_user": 938649225,
+      "perf_stderr": "938649225,,instructions:u,179740109,100.00,,\n651812192,,cycles:u,179740109,100.00,,\n",
+      "process_elapsed_ms_including_startup": 208.3944670011988,
+      "process_ipc": 1.4400608588186703,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+        "jit_enabled": false,
+        "max_ms": 4.797594,
+        "median_ms": 4.197693,
+        "min_ms": 3.744988,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.077449,
+          3.899406,
+          4.344938,
+          3.744988,
+          4.797594,
+          4.197693,
+          4.41057
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 4.797594,
+        "median_ms": 4.197693,
+        "min_ms": 3.744988,
+        "samples_ms": [
+          4.077449,
+          3.899406,
+          4.344938,
+          3.744988,
+          4.797594,
+          4.197693,
+          4.41057
+        ]
+      },
+      "version": "req066",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 4,
+      "perf_cycles_user": 620674094,
+      "perf_instructions_user": 981551346,
+      "perf_stderr": "981551346,,instructions:u,171611957,100.00,,\n620674094,,cycles:u,171611957,100.00,,\n",
+      "process_elapsed_ms_including_startup": 195.81063398800325,
+      "process_ipc": 1.5814279272948035,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 6.354342,
+        "median_ms": 4.670346,
+        "min_ms": 4.12619,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.726832,
+          5.160042,
+          4.336262,
+          4.40482,
+          4.670346,
+          4.12619,
+          6.354342
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 6.354342,
+        "median_ms": 4.670346,
+        "min_ms": 4.12619,
+        "samples_ms": [
+          4.726832,
+          5.160042,
+          4.336262,
+          4.40482,
+          4.670346,
+          4.12619,
+          6.354342
+        ]
+      },
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 5,
+      "perf_cycles_user": 594266893,
+      "perf_instructions_user": 980590581,
+      "perf_stderr": "980590581,,instructions:u,162528263,100.00,,\n594266893,,cycles:u,162528263,100.00,,\n",
+      "process_elapsed_ms_including_startup": 215.8568099985132,
+      "process_ipc": 1.6500844865338982,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 6.051737,
+        "median_ms": 4.306086,
+        "min_ms": 3.964919,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.197743,
+          4.64559,
+          4.377148,
+          6.051737,
+          4.306086,
+          3.964919,
+          4.075645
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 6.051737,
+        "median_ms": 4.306086,
+        "min_ms": 3.964919,
+        "samples_ms": [
+          4.197743,
+          4.64559,
+          4.377148,
+          6.051737,
+          4.306086,
+          3.964919,
+          4.075645
+        ]
+      },
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-070-boundary",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 5,
+      "perf_cycles_user": 581532814,
+      "perf_instructions_user": 937646035,
+      "perf_stderr": "937646035,,instructions:u,159145894,100.00,,\n581532814,,cycles:u,159145894,100.00,,\n",
+      "process_elapsed_ms_including_startup": 176.60808500659186,
+      "process_ipc": 1.6123699513197203,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+        "jit_enabled": false,
+        "max_ms": 4.170592,
+        "median_ms": 3.820789,
+        "min_ms": 3.616408,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.871254,
+          4.170592,
+          3.616408,
+          3.820789,
+          3.83206,
+          3.766458,
+          3.718177
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 4.170592,
+        "median_ms": 3.820789,
+        "min_ms": 3.616408,
+        "samples_ms": [
+          3.871254,
+          4.170592,
+          3.616408,
+          3.820789,
+          3.83206,
+          3.766458,
+          3.718177
+        ]
+      },
+      "version": "req066",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-070-boundary",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 6,
+      "perf_cycles_user": 633441136,
+      "perf_instructions_user": 939361637,
+      "perf_stderr": "939361637,,instructions:u,173559072,100.00,,\n633441136,,cycles:u,173559072,100.00,,\n",
+      "process_elapsed_ms_including_startup": 227.50295999867376,
+      "process_ipc": 1.4829501647647967,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+        "jit_enabled": false,
+        "max_ms": 5.71565,
+        "median_ms": 4.189898,
+        "min_ms": 3.77851,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          3.822382,
+          3.77851,
+          3.957715,
+          5.71565,
+          4.221398,
+          4.482135,
+          4.189898
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 5.71565,
+        "median_ms": 4.189898,
+        "min_ms": 3.77851,
+        "samples_ms": [
+          3.822382,
+          3.77851,
+          3.957715,
+          5.71565,
+          4.221398,
+          4.482135,
+          4.189898
+        ]
+      },
+      "version": "req066",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "req066",
+        "main"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 6,
+      "perf_cycles_user": 636044503,
+      "perf_instructions_user": 981117702,
+      "perf_stderr": "981117702,,instructions:u,174570729,100.00,,\n636044503,,cycles:u,174570729,100.00,,\n",
+      "process_elapsed_ms_including_startup": 193.72541800839826,
+      "process_ipc": 1.5425299603603366,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 6.464118,
+        "median_ms": 4.444705,
+        "min_ms": 4.015653,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.444705,
+          4.829925,
+          4.015653,
+          4.097917,
+          6.464118,
+          4.326414,
+          4.464922
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 6.464118,
+        "median_ms": 4.444705,
+        "min_ms": 4.015653,
+        "samples_ms": [
+          4.444705,
+          4.829925,
+          4.015653,
+          4.097917,
+          6.464118,
+          4.326414,
+          4.464922
+        ]
+      },
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "build_source_sha256": "39175fff1941dd70dbe1c75638dbf5e5218a316465b240f0a5389f6303fb68b7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-067-main/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-067-main",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 7,
+      "perf_cycles_user": 616471269,
+      "perf_instructions_user": 980458758,
+      "perf_stderr": "980458758,,instructions:u,168661723,100.00,,\n616471269,,cycles:u,168661723,100.00,,\n",
+      "process_elapsed_ms_including_startup": 223.53039799781982,
+      "process_ipc": 1.5904370686900577,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+        "jit_enabled": false,
+        "max_ms": 4.517671,
+        "median_ms": 4.349416,
+        "min_ms": 3.979596,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.499828,
+          4.349416,
+          3.979596,
+          4.517671,
+          4.252646,
+          4.431249,
+          4.193295
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 4.517671,
+        "median_ms": 4.349416,
+        "min_ms": 3.979596,
+        "samples_ms": [
+          4.499828,
+          4.349416,
+          3.979596,
+          4.517671,
+          4.252646,
+          4.431249,
+          4.193295
+        ]
+      },
+      "version": "main",
+      "workload": "aobench_32x16"
+    },
+    {
+      "build_lib_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "build_source_sha256": "1d2b642c0b3f2867d9ffcd4943bf8db7485b0bcbe3a888b0876c10a1323090a7",
+      "command": [
+        "perf",
+        "stat",
+        "-x,",
+        "-e",
+        "instructions:u,cycles:u",
+        "--",
+        "taskset",
+        "-c",
+        "2",
+        "/tmp/REQ-070-boundary/.venv/bin/python",
+        "/tmp/REQ-039/aobench_driver.py",
+        "--root",
+        "/tmp/REQ-070-boundary",
+        "--warmup",
+        "3",
+        "--repeats",
+        "7",
+        "--yield-threshold",
+        "4096"
+      ],
+      "order": [
+        "main",
+        "req066"
+      ],
+      "output_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+      "pair": 7,
+      "perf_cycles_user": 636352438,
+      "perf_instructions_user": 938212553,
+      "perf_stderr": "938212553,,instructions:u,173892160,100.00,,\n636352438,,cycles:u,173892160,100.00,,\n",
+      "process_elapsed_ms_including_startup": 192.15613599226344,
+      "process_ipc": 1.4743599568011712,
+      "returncode": 0,
+      "stdout_json": {
+        "engine": "interpreter",
+        "frame_bytes": 528,
+        "frame_sha256": "5cd38f158314486141e032776845b8eabba32e3be1699b3b382ba92c80bba47e",
+        "height": 16,
+        "interpreter_library_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+        "jit_enabled": false,
+        "max_ms": 4.551615,
+        "median_ms": 4.152609,
+        "min_ms": 3.627618,
+        "mode": "aobench",
+        "repeats": 7,
+        "samples_ms": [
+          4.152609,
+          4.551615,
+          4.320142,
+          3.758743,
+          3.627618,
+          4.161716,
+          4.038917
+        ],
+        "warmup": 3,
+        "wasm_sha256": "9f5dc300e96641bf040551f9f56cb6e5bda084e98bde83a3fb1cff9a719d49e9",
+        "width": 32,
+        "yield_threshold": 4096
+      },
+      "timing": {
+        "max_ms": 4.551615,
+        "median_ms": 4.152609,
+        "min_ms": 3.627618,
+        "samples_ms": [
+          4.152609,
+          4.551615,
+          4.320142,
+          3.758743,
+          3.627618,
+          4.161716,
+          4.038917
+        ]
+      },
+      "version": "req066",
+      "workload": "aobench_32x16"
+    }
+  ],
+  "reference_req068": {
+    "artifact_sha256": {
+      "main_matches_req068": true,
+      "main_previous_sha256": "870389a0badf909e7ce00ab71052d48d43a03fe3fdb9be1029d7467316028da4",
+      "req066_binary_differences": "20 bytes in .note.gnu.build-id and 15-byte LLVM LTO internal symbol suffix in .strtab; .text section hashes are identical",
+      "req066_binary_different_byte_count_from_req068": 35,
+      "req066_current_sha256": "04ab4f9f696851a0621af0e09c6d97017926a90a804f59e416ccdccc566343bf",
+      "req066_current_text_sha256": "6a3daf9256034ba05cd7165793b59888fcabc726a0b0a3fb93565702c157a9fb",
+      "req066_full_sha_matches_previous": false,
+      "req066_previous_sha256": "cee6d3188ff5f843e5f013f8f329fd53c9cda0c8d795256b9e4d8c0d54c4631d",
+      "req066_previous_text_sha256": "6a3daf9256034ba05cd7165793b59888fcabc726a0b0a3fb93565702c157a9fb",
+      "req066_text_sha_matches_previous": true
+    },
+    "compared_branch_commit": "fffd6c1335cfde89f381c6099512f8237f01071a",
+    "median_differences_vs_req068": {
+      "aobench_32x16": {
+        "main": {
+          "cycles_median_delta": 48271350,
+          "instructions_median_delta": 265571,
+          "process_ipc_median_delta": -0.13104352444932021,
+          "timing_median_ms_delta": 0.33940699999999957
+        },
+        "req066": {
+          "cycles_median_delta": 59528393,
+          "instructions_median_delta": -168845,
+          "process_ipc_median_delta": -0.15218478814563197,
+          "timing_median_ms_delta": 0.3992779999999998
+        }
+      },
+      "baseline": {
+        "main": {
+          "cycles_median_delta": 30114231,
+          "instructions_median_delta": -108546,
+          "process_ipc_median_delta": -0.08723354011636397,
+          "timing_median_ms_delta": 0.040315999999999796
+        },
+        "req066": {
+          "cycles_median_delta": 45034462,
+          "instructions_median_delta": -995968,
+          "process_ipc_median_delta": -0.12216432323615756,
+          "timing_median_ms_delta": 0.06602399999999986
+        }
+      },
+      "direct": {
+        "main": {
+          "cycles_median_delta": 8020549,
+          "instructions_median_delta": -460194,
+          "process_ipc_median_delta": -0.02411724903493373,
+          "timing_median_ms_delta": 0.0826049999999996
+        },
+        "req066": {
+          "cycles_median_delta": 25275476,
+          "instructions_median_delta": -286848,
+          "process_ipc_median_delta": -0.0672270485089661,
+          "timing_median_ms_delta": 0.06259900000000007
+        }
+      },
+      "indirect": {
+        "main": {
+          "cycles_median_delta": 37640366,
+          "instructions_median_delta": -159506,
+          "process_ipc_median_delta": -0.11158730830103658,
+          "timing_median_ms_delta": 0.10540899999999986
+        },
+        "req066": {
+          "cycles_median_delta": 44261031,
+          "instructions_median_delta": -1115253,
+          "process_ipc_median_delta": -0.11819513573985807,
+          "timing_median_ms_delta": 0.10797300000000032
+        }
+      }
+    },
+    "path": "experiments/pysim/benchmarks/results/20261018/req_068/measurements.json",
+    "reference_branch_commit": "7d6209df8d84f311ef4295c7004ad67cb09c246f",
+    "sha256": "64a0dbf412099f812b0cbc546504f01b9064e0afd5d87edfbf0cf68c2cd8f24f"
+  },
+  "request": "REQ-072",
+  "summaries": {
+    "aobench_32x16": {
+      "paired": [
+        {
+          "instruction_delta_percent": -4.351509943395784,
+          "instruction_delta_req066_minus_main": -42692959,
+          "main_cycles": 615098177,
+          "main_instructions": 981106778,
+          "main_ipc": 1.5950409457968528,
+          "main_timing_median_ms": 4.389462,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 1,
+          "req066_cycles": 578676081,
+          "req066_instructions": 938413819,
+          "req066_ipc": 1.6216564841911965,
+          "req066_timing_median_ms": 3.789611,
+          "timing_delta_percent": -13.66570664013039,
+          "timing_delta_req066_minus_main_ms": -0.5998510000000001
+        },
+        {
+          "instruction_delta_percent": -4.214477657120359,
+          "instruction_delta_req066_minus_main": -41310057,
+          "main_cycles": 644955227,
+          "main_instructions": 980193997,
+          "main_ipc": 1.5197861122226397,
+          "main_timing_median_ms": 4.519685,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 2,
+          "req066_cycles": 591340737,
+          "req066_instructions": 938883940,
+          "req066_ipc": 1.5877207187909328,
+          "req066_timing_median_ms": 4.128083,
+          "timing_delta_percent": -8.664364883835926,
+          "timing_delta_req066_minus_main_ms": -0.3916019999999998
+        },
+        {
+          "instruction_delta_percent": -4.2914527584100925,
+          "instruction_delta_req066_minus_main": -42075913,
+          "main_cycles": 624455093,
+          "main_instructions": 980458492,
+          "main_ipc": 1.5701024829338688,
+          "main_timing_median_ms": 4.554359,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 3,
+          "req066_cycles": 692658212,
+          "req066_instructions": 938382579,
+          "req066_ipc": 1.3547555818193346,
+          "req066_timing_median_ms": 4.169992,
+          "timing_delta_percent": -8.439541107760723,
+          "timing_delta_req066_minus_main_ms": -0.3843670000000001
+        },
+        {
+          "instruction_delta_percent": -4.370848369250772,
+          "instruction_delta_req066_minus_main": -42902121,
+          "main_cycles": 620674094,
+          "main_instructions": 981551346,
+          "main_ipc": 1.5814279272948035,
+          "main_timing_median_ms": 4.670346,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 4,
+          "req066_cycles": 651812192,
+          "req066_instructions": 938649225,
+          "req066_ipc": 1.4400608588186703,
+          "req066_timing_median_ms": 4.197693,
+          "timing_delta_percent": -10.120299438200087,
+          "timing_delta_req066_minus_main_ms": -0.4726530000000002
+        },
+        {
+          "instruction_delta_percent": -4.37945732215839,
+          "instruction_delta_req066_minus_main": -42944546,
+          "main_cycles": 594266893,
+          "main_instructions": 980590581,
+          "main_ipc": 1.6500844865338982,
+          "main_timing_median_ms": 4.306086,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 5,
+          "req066_cycles": 581532814,
+          "req066_instructions": 937646035,
+          "req066_ipc": 1.6123699513197203,
+          "req066_timing_median_ms": 3.820789,
+          "timing_delta_percent": -11.27002572637889,
+          "timing_delta_req066_minus_main_ms": -0.48529699999999965
+        },
+        {
+          "instruction_delta_percent": -4.255968974454403,
+          "instruction_delta_req066_minus_main": -41756065,
+          "main_cycles": 636044503,
+          "main_instructions": 981117702,
+          "main_ipc": 1.5425299603603366,
+          "main_timing_median_ms": 4.444705,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 6,
+          "req066_cycles": 633441136,
+          "req066_instructions": 939361637,
+          "req066_ipc": 1.4829501647647967,
+          "req066_timing_median_ms": 4.189898,
+          "timing_delta_percent": -5.732821413344633,
+          "timing_delta_req066_minus_main_ms": -0.25480699999999956
+        },
+        {
+          "instruction_delta_percent": -4.308820198228062,
+          "instruction_delta_req066_minus_main": -42246205,
+          "main_cycles": 616471269,
+          "main_instructions": 980458758,
+          "main_ipc": 1.5904370686900577,
+          "main_timing_median_ms": 4.349416,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 7,
+          "req066_cycles": 636352438,
+          "req066_instructions": 938212553,
+          "req066_ipc": 1.4743599568011712,
+          "req066_timing_median_ms": 4.152609,
+          "timing_delta_percent": -4.524906332252416,
+          "timing_delta_req066_minus_main_ms": -0.19680699999999973
+        }
+      ],
+      "paired_instruction_delta_max": -41310057,
+      "paired_instruction_delta_median": -42246205,
+      "paired_instruction_delta_min": -42944546,
+      "paired_instruction_delta_percent_median": -4.308820198228062,
+      "paired_instruction_req066_higher_count": 0,
+      "paired_timing_delta_median_ms": -0.3916019999999998,
+      "versions": {
+        "main": {
+          "cycles_max": 644955227,
+          "cycles_median": 620674094,
+          "cycles_min": 594266893,
+          "instruction_max": 981551346,
+          "instruction_median": 980590581,
+          "instruction_min": 980193997,
+          "process_cycle_counts": [
+            615098177,
+            644955227,
+            624455093,
+            620674094,
+            594266893,
+            636044503,
+            616471269
+          ],
+          "process_instruction_counts": [
+            981106778,
+            980193997,
+            980458492,
+            981551346,
+            980590581,
+            981117702,
+            980458758
+          ],
+          "process_ipc_max": 1.6500844865338982,
+          "process_ipc_median": 1.5814279272948035,
+          "process_ipc_min": 1.5197861122226397,
+          "process_ipc_values": [
+            1.5950409457968528,
+            1.5197861122226397,
+            1.5701024829338688,
+            1.5814279272948035,
+            1.6500844865338982,
+            1.5425299603603366,
+            1.5904370686900577
+          ],
+          "process_timing_median_ms_max": 4.670346,
+          "process_timing_median_ms_median": 4.444705,
+          "process_timing_median_ms_min": 4.306086,
+          "process_timing_medians_ms": [
+            4.389462,
+            4.519685,
+            4.554359,
+            4.670346,
+            4.306086,
+            4.444705,
+            4.349416
+          ]
+        },
+        "req066": {
+          "cycles_max": 692658212,
+          "cycles_median": 633441136,
+          "cycles_min": 578676081,
+          "instruction_max": 939361637,
+          "instruction_median": 938413819,
+          "instruction_min": 937646035,
+          "process_cycle_counts": [
+            578676081,
+            591340737,
+            692658212,
+            651812192,
+            581532814,
+            633441136,
+            636352438
+          ],
+          "process_instruction_counts": [
+            938413819,
+            938883940,
+            938382579,
+            938649225,
+            937646035,
+            939361637,
+            938212553
+          ],
+          "process_ipc_max": 1.6216564841911965,
+          "process_ipc_median": 1.4829501647647967,
+          "process_ipc_min": 1.3547555818193346,
+          "process_ipc_values": [
+            1.6216564841911965,
+            1.5877207187909328,
+            1.3547555818193346,
+            1.4400608588186703,
+            1.6123699513197203,
+            1.4829501647647967,
+            1.4743599568011712
+          ],
+          "process_timing_median_ms_max": 4.197693,
+          "process_timing_median_ms_median": 4.152609,
+          "process_timing_median_ms_min": 3.789611,
+          "process_timing_medians_ms": [
+            3.789611,
+            4.128083,
+            4.169992,
+            4.197693,
+            3.820789,
+            4.189898,
+            4.152609
+          ]
+        }
+      }
+    },
+    "baseline": {
+      "paired": [
+        {
+          "instruction_delta_percent": -0.2966129985379916,
+          "instruction_delta_req066_minus_main": -1926182,
+          "main_cycles": 571799592,
+          "main_instructions": 649392309,
+          "main_ipc": 1.1356991471935154,
+          "main_timing_median_ms": 2.061081,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 1,
+          "req066_cycles": 503682178,
+          "req066_instructions": 647466127,
+          "req066_ipc": 1.2854656274933753,
+          "req066_timing_median_ms": 2.196874,
+          "timing_delta_percent": 6.588435874184471,
+          "timing_delta_req066_minus_main_ms": 0.13579300000000005
+        },
+        {
+          "instruction_delta_percent": -0.5331695044583461,
+          "instruction_delta_req066_minus_main": -3469916,
+          "main_cycles": 491664972,
+          "main_instructions": 650809165,
+          "main_ipc": 1.3236842200749661,
+          "main_timing_median_ms": 2.171097,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 2,
+          "req066_cycles": 560283246,
+          "req066_instructions": 647339249,
+          "req066_ipc": 1.1553785582944238,
+          "req066_timing_median_ms": 2.07651,
+          "timing_delta_percent": -4.356645511462648,
+          "timing_delta_req066_minus_main_ms": -0.0945870000000002
+        },
+        {
+          "instruction_delta_percent": -0.604152663556914,
+          "instruction_delta_req066_minus_main": -3937113,
+          "main_cycles": 482955200,
+          "main_instructions": 651675187,
+          "main_ipc": 1.349349146670333,
+          "main_timing_median_ms": 2.102989,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 3,
+          "req066_cycles": 513344959,
+          "req066_instructions": 647738074,
+          "req066_ipc": 1.261798840416781,
+          "req066_timing_median_ms": 2.338269,
+          "timing_delta_percent": 11.187885433542444,
+          "timing_delta_req066_minus_main_ms": 0.23527999999999993
+        },
+        {
+          "instruction_delta_percent": -0.5955925137415741,
+          "instruction_delta_req066_minus_main": -3877393,
+          "main_cycles": 485271223,
+          "main_instructions": 651014395,
+          "main_ipc": 1.3415474978618298,
+          "main_timing_median_ms": 2.452512,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 4,
+          "req066_cycles": 539575596,
+          "req066_instructions": 647137002,
+          "req066_ipc": 1.1993444603450893,
+          "req066_timing_median_ms": 1.993796,
+          "timing_delta_percent": -18.70392479221305,
+          "timing_delta_req066_minus_main_ms": -0.4587160000000001
+        },
+        {
+          "instruction_delta_percent": -0.5348742949072633,
+          "instruction_delta_req066_minus_main": -3479608,
+          "main_cycles": 506737292,
+          "main_instructions": 650546873,
+          "main_ipc": 1.2837951405400019,
+          "main_timing_median_ms": 2.00161,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 5,
+          "req066_cycles": 521893452,
+          "req066_instructions": 647067265,
+          "req066_ipc": 1.2398455326854723,
+          "req066_timing_median_ms": 2.004796,
+          "timing_delta_percent": 0.15917186664734445,
+          "timing_delta_req066_minus_main_ms": 0.003185999999999911
+        },
+        {
+          "instruction_delta_percent": -0.4145832053036637,
+          "instruction_delta_req066_minus_main": -2699226,
+          "main_cycles": 490526193,
+          "main_instructions": 651069789,
+          "main_ipc": 1.3272885287085985,
+          "main_timing_median_ms": 2.102358,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 6,
+          "req066_cycles": 486565723,
+          "req066_instructions": 648370563,
+          "req066_ipc": 1.3325446745454366,
+          "req066_timing_median_ms": 2.0335,
+          "timing_delta_percent": -3.275274715343442,
+          "timing_delta_req066_minus_main_ms": -0.06885800000000009
+        },
+        {
+          "instruction_delta_percent": -0.23265641644404936,
+          "instruction_delta_req066_minus_main": -1515361,
+          "main_cycles": 457606978,
+          "main_instructions": 651329984,
+          "main_ipc": 1.423339274341223,
+          "main_timing_median_ms": 2.118688,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 7,
+          "req066_cycles": 496364947,
+          "req066_instructions": 649814623,
+          "req066_ipc": 1.3091468826061161,
+          "req066_timing_median_ms": 2.058827,
+          "timing_delta_percent": -2.8253806129076184,
+          "timing_delta_req066_minus_main_ms": -0.059861000000000164
+        }
+      ],
+      "paired_instruction_delta_max": -1515361,
+      "paired_instruction_delta_median": -3469916,
+      "paired_instruction_delta_min": -3937113,
+      "paired_instruction_delta_percent_median": -0.5331695044583461,
+      "paired_instruction_req066_higher_count": 0,
+      "paired_timing_delta_median_ms": -0.059861000000000164,
+      "versions": {
+        "main": {
+          "cycles_max": 571799592,
+          "cycles_median": 490526193,
+          "cycles_min": 457606978,
+          "instruction_max": 651675187,
+          "instruction_median": 651014395,
+          "instruction_min": 649392309,
+          "process_cycle_counts": [
+            571799592,
+            491664972,
+            482955200,
+            485271223,
+            506737292,
+            490526193,
+            457606978
+          ],
+          "process_instruction_counts": [
+            649392309,
+            650809165,
+            651675187,
+            651014395,
+            650546873,
+            651069789,
+            651329984
+          ],
+          "process_ipc_max": 1.423339274341223,
+          "process_ipc_median": 1.3272885287085985,
+          "process_ipc_min": 1.1356991471935154,
+          "process_ipc_values": [
+            1.1356991471935154,
+            1.3236842200749661,
+            1.349349146670333,
+            1.3415474978618298,
+            1.2837951405400019,
+            1.3272885287085985,
+            1.423339274341223
+          ],
+          "process_timing_median_ms_max": 2.452512,
+          "process_timing_median_ms_median": 2.102989,
+          "process_timing_median_ms_min": 2.00161,
+          "process_timing_medians_ms": [
+            2.061081,
+            2.171097,
+            2.102989,
+            2.452512,
+            2.00161,
+            2.102358,
+            2.118688
+          ]
+        },
+        "req066": {
+          "cycles_max": 560283246,
+          "cycles_median": 513344959,
+          "cycles_min": 486565723,
+          "instruction_max": 649814623,
+          "instruction_median": 647466127,
+          "instruction_min": 647067265,
+          "process_cycle_counts": [
+            503682178,
+            560283246,
+            513344959,
+            539575596,
+            521893452,
+            486565723,
+            496364947
+          ],
+          "process_instruction_counts": [
+            647466127,
+            647339249,
+            647738074,
+            647137002,
+            647067265,
+            648370563,
+            649814623
+          ],
+          "process_ipc_max": 1.3325446745454366,
+          "process_ipc_median": 1.261798840416781,
+          "process_ipc_min": 1.1553785582944238,
+          "process_ipc_values": [
+            1.2854656274933753,
+            1.1553785582944238,
+            1.261798840416781,
+            1.1993444603450893,
+            1.2398455326854723,
+            1.3325446745454366,
+            1.3091468826061161
+          ],
+          "process_timing_median_ms_max": 2.338269,
+          "process_timing_median_ms_median": 2.058827,
+          "process_timing_median_ms_min": 1.993796,
+          "process_timing_medians_ms": [
+            2.196874,
+            2.07651,
+            2.338269,
+            1.993796,
+            2.004796,
+            2.0335,
+            2.058827
+          ]
+        }
+      }
+    },
+    "direct": {
+      "paired": [
+        {
+          "instruction_delta_percent": -0.8773562340520082,
+          "instruction_delta_req066_minus_main": -5923894,
+          "main_cycles": 469733883,
+          "main_instructions": 675198257,
+          "main_ipc": 1.4374059045683107,
+          "main_timing_median_ms": 2.208667,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 1,
+          "req066_cycles": 510728383,
+          "req066_instructions": 669274363,
+          "req066_ipc": 1.3104311122650099,
+          "req066_timing_median_ms": 2.250895,
+          "timing_delta_percent": 1.9119224400962076,
+          "timing_delta_req066_minus_main_ms": 0.04222799999999971
+        },
+        {
+          "instruction_delta_percent": -0.961082104658924,
+          "instruction_delta_req066_minus_main": -6484742,
+          "main_cycles": 468055329,
+          "main_instructions": 674733404,
+          "main_ipc": 1.4415676143279206,
+          "main_timing_median_ms": 2.428899,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 2,
+          "req066_cycles": 496351496,
+          "req066_instructions": 668248662,
+          "req066_ipc": 1.3463214423352923,
+          "req066_timing_median_ms": 2.379977,
+          "timing_delta_percent": -2.0141636189895147,
+          "timing_delta_req066_minus_main_ms": -0.04892200000000013
+        },
+        {
+          "instruction_delta_percent": -1.2283675361012818,
+          "instruction_delta_req066_minus_main": -8315468,
+          "main_cycles": 494488758,
+          "main_instructions": 676952765,
+          "main_ipc": 1.3689952583310296,
+          "main_timing_median_ms": 2.543111,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 3,
+          "req066_cycles": 490778596,
+          "req066_instructions": 668637297,
+          "req066_ipc": 1.3624010958293706,
+          "req066_timing_median_ms": 2.287905,
+          "timing_delta_percent": -10.03518918364162,
+          "timing_delta_req066_minus_main_ms": -0.25520600000000027
+        },
+        {
+          "instruction_delta_percent": -0.9319346170289573,
+          "instruction_delta_req066_minus_main": -6292782,
+          "main_cycles": 499813734,
+          "main_instructions": 675238572,
+          "main_ipc": 1.3509804274405952,
+          "main_timing_median_ms": 2.355812,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 4,
+          "req066_cycles": 539151145,
+          "req066_instructions": 668945790,
+          "req066_ipc": 1.2407388840841653,
+          "req066_timing_median_ms": 2.331256,
+          "timing_delta_percent": -1.0423582187373008,
+          "timing_delta_req066_minus_main_ms": -0.024555999999999578
+        },
+        {
+          "instruction_delta_percent": -0.836373918643317,
+          "instruction_delta_req066_minus_main": -5641063,
+          "main_cycles": 511546995,
+          "main_instructions": 674466632,
+          "main_ipc": 1.3184842030007429,
+          "main_timing_median_ms": 2.275793,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 5,
+          "req066_cycles": 485507462,
+          "req066_instructions": 668825569,
+          "req066_ipc": 1.3775804109062282,
+          "req066_timing_median_ms": 2.379696,
+          "timing_delta_percent": 4.5655734067202,
+          "timing_delta_req066_minus_main_ms": 0.10390299999999986
+        },
+        {
+          "instruction_delta_percent": -0.9685265677534834,
+          "instruction_delta_req066_minus_main": -6534098,
+          "main_cycles": 514983252,
+          "main_instructions": 674643135,
+          "main_ipc": 1.3100292725636056,
+          "main_timing_median_ms": 2.396187,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 6,
+          "req066_cycles": 534607273,
+          "req066_instructions": 668109037,
+          "req066_ipc": 1.2497193187268891,
+          "req066_timing_median_ms": 2.31727,
+          "timing_delta_percent": -3.2934407873842773,
+          "timing_delta_req066_minus_main_ms": -0.07891699999999968
+        },
+        {
+          "instruction_delta_percent": -1.0201010586930892,
+          "instruction_delta_req066_minus_main": -6891862,
+          "main_cycles": 552910109,
+          "main_instructions": 675605808,
+          "main_ipc": 1.2219089450578304,
+          "main_timing_median_ms": 2.326406,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 7,
+          "req066_cycles": 532353841,
+          "req066_instructions": 668713946,
+          "req066_ipc": 1.256145620634303,
+          "req066_timing_median_ms": 2.578487,
+          "timing_delta_percent": 10.835640898450228,
+          "timing_delta_req066_minus_main_ms": 0.252081
+        }
+      ],
+      "paired_instruction_delta_max": -5641063,
+      "paired_instruction_delta_median": -6484742,
+      "paired_instruction_delta_min": -8315468,
+      "paired_instruction_delta_percent_median": -0.961082104658924,
+      "paired_instruction_req066_higher_count": 0,
+      "paired_timing_delta_median_ms": -0.024555999999999578,
+      "versions": {
+        "main": {
+          "cycles_max": 552910109,
+          "cycles_median": 499813734,
+          "cycles_min": 468055329,
+          "instruction_max": 676952765,
+          "instruction_median": 675198257,
+          "instruction_min": 674466632,
+          "process_cycle_counts": [
+            469733883,
+            468055329,
+            494488758,
+            499813734,
+            511546995,
+            514983252,
+            552910109
+          ],
+          "process_instruction_counts": [
+            675198257,
+            674733404,
+            676952765,
+            675238572,
+            674466632,
+            674643135,
+            675605808
+          ],
+          "process_ipc_max": 1.4415676143279206,
+          "process_ipc_median": 1.3509804274405952,
+          "process_ipc_min": 1.2219089450578304,
+          "process_ipc_values": [
+            1.4374059045683107,
+            1.4415676143279206,
+            1.3689952583310296,
+            1.3509804274405952,
+            1.3184842030007429,
+            1.3100292725636056,
+            1.2219089450578304
+          ],
+          "process_timing_median_ms_max": 2.543111,
+          "process_timing_median_ms_median": 2.355812,
+          "process_timing_median_ms_min": 2.208667,
+          "process_timing_medians_ms": [
+            2.208667,
+            2.428899,
+            2.543111,
+            2.355812,
+            2.275793,
+            2.396187,
+            2.326406
+          ]
+        },
+        "req066": {
+          "cycles_max": 539151145,
+          "cycles_median": 510728383,
+          "cycles_min": 485507462,
+          "instruction_max": 669274363,
+          "instruction_median": 668713946,
+          "instruction_min": 668109037,
+          "process_cycle_counts": [
+            510728383,
+            496351496,
+            490778596,
+            539151145,
+            485507462,
+            534607273,
+            532353841
+          ],
+          "process_instruction_counts": [
+            669274363,
+            668248662,
+            668637297,
+            668945790,
+            668825569,
+            668109037,
+            668713946
+          ],
+          "process_ipc_max": 1.3775804109062282,
+          "process_ipc_median": 1.3104311122650099,
+          "process_ipc_min": 1.2407388840841653,
+          "process_ipc_values": [
+            1.3104311122650099,
+            1.3463214423352923,
+            1.3624010958293706,
+            1.2407388840841653,
+            1.3775804109062282,
+            1.2497193187268891,
+            1.256145620634303
+          ],
+          "process_timing_median_ms_max": 2.578487,
+          "process_timing_median_ms_median": 2.331256,
+          "process_timing_median_ms_min": 2.250895,
+          "process_timing_medians_ms": [
+            2.250895,
+            2.379977,
+            2.287905,
+            2.331256,
+            2.379696,
+            2.31727,
+            2.578487
+          ]
+        }
+      }
+    },
+    "indirect": {
+      "paired": [
+        {
+          "instruction_delta_percent": -0.7578707900018262,
+          "instruction_delta_req066_minus_main": -5140656,
+          "main_cycles": 520021465,
+          "main_instructions": 678302432,
+          "main_ipc": 1.304373910796163,
+          "main_timing_median_ms": 2.368035,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 1,
+          "req066_cycles": 535678310,
+          "req066_instructions": 673161776,
+          "req066_ipc": 1.2566530386492594,
+          "req066_timing_median_ms": 2.362424,
+          "timing_delta_percent": -0.2369475113332376,
+          "timing_delta_req066_minus_main_ms": -0.005611000000000033
+        },
+        {
+          "instruction_delta_percent": -0.8605181694853677,
+          "instruction_delta_req066_minus_main": -5838111,
+          "main_cycles": 522250784,
+          "main_instructions": 678441340,
+          "main_ipc": 1.2990719416516952,
+          "main_timing_median_ms": 2.4032,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 2,
+          "req066_cycles": 531894686,
+          "req066_instructions": 672603229,
+          "req066_ipc": 1.2645421108794457,
+          "req066_timing_median_ms": 2.396237,
+          "timing_delta_percent": -0.2897386817576494,
+          "timing_delta_req066_minus_main_ms": -0.0069629999999998304
+        },
+        {
+          "instruction_delta_percent": -0.7441295203795635,
+          "instruction_delta_req066_minus_main": -5041932,
+          "main_cycles": 589103296,
+          "main_instructions": 677561078,
+          "main_ipc": 1.150156657755315,
+          "main_timing_median_ms": 2.492768,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 3,
+          "req066_cycles": 518502387,
+          "req066_instructions": 672519146,
+          "req066_ipc": 1.297041562124959,
+          "req066_timing_median_ms": 2.484733,
+          "timing_delta_percent": -0.32233244329195554,
+          "timing_delta_req066_minus_main_ms": -0.008035000000000014
+        },
+        {
+          "instruction_delta_percent": -0.4710934017447504,
+          "instruction_delta_req066_minus_main": -3193550,
+          "main_cycles": 485305901,
+          "main_instructions": 677901662,
+          "main_ipc": 1.396854356403138,
+          "main_timing_median_ms": 2.406627,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 4,
+          "req066_cycles": 521148009,
+          "req066_instructions": 674708112,
+          "req066_ipc": 1.294657372470169,
+          "req066_timing_median_ms": 2.510992,
+          "timing_delta_percent": 4.336567320153894,
+          "timing_delta_req066_minus_main_ms": 0.10436500000000004
+        },
+        {
+          "instruction_delta_percent": -0.536598254674882,
+          "instruction_delta_req066_minus_main": -3634344,
+          "main_cycles": 488174463,
+          "main_instructions": 677293295,
+          "main_ipc": 1.3874000922493974,
+          "main_timing_median_ms": 2.464675,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 5,
+          "req066_cycles": 520043224,
+          "req066_instructions": 673658951,
+          "req066_ipc": 1.295390305864268,
+          "req066_timing_median_ms": 2.399223,
+          "timing_delta_percent": -2.6556036799983795,
+          "timing_delta_req066_minus_main_ms": -0.06545200000000007
+        },
+        {
+          "instruction_delta_percent": -0.861627399381014,
+          "instruction_delta_req066_minus_main": -5846158,
+          "main_cycles": 505790887,
+          "main_instructions": 678501868,
+          "main_ipc": 1.3414671664497586,
+          "main_timing_median_ms": 2.409672,
+          "order": [
+            "req066",
+            "main"
+          ],
+          "output_hash_match": true,
+          "pair": 6,
+          "req066_cycles": 528418651,
+          "req066_instructions": 672655710,
+          "req066_ipc": 1.2729598183694693,
+          "req066_timing_median_ms": 2.321047,
+          "timing_delta_percent": -3.677886450936059,
+          "timing_delta_req066_minus_main_ms": -0.08862499999999995
+        },
+        {
+          "instruction_delta_percent": -0.86911070200048,
+          "instruction_delta_req066_minus_main": -5895004,
+          "main_cycles": 485140577,
+          "main_instructions": 678279992,
+          "main_ipc": 1.3981102059001755,
+          "main_timing_median_ms": 2.367614,
+          "order": [
+            "main",
+            "req066"
+          ],
+          "output_hash_match": true,
+          "pair": 7,
+          "req066_cycles": 472314119,
+          "req066_instructions": 672384988,
+          "req066_ipc": 1.4235970532144944,
+          "req066_timing_median_ms": 2.340954,
+          "timing_delta_percent": -1.1260281447904992,
+          "timing_delta_req066_minus_main_ms": -0.026660000000000128
+        }
+      ],
+      "paired_instruction_delta_max": -3193550,
+      "paired_instruction_delta_median": -5140656,
+      "paired_instruction_delta_min": -5895004,
+      "paired_instruction_delta_percent_median": -0.7578707900018262,
+      "paired_instruction_req066_higher_count": 0,
+      "paired_timing_delta_median_ms": -0.008035000000000014,
+      "versions": {
+        "main": {
+          "cycles_max": 589103296,
+          "cycles_median": 505790887,
+          "cycles_min": 485140577,
+          "instruction_max": 678501868,
+          "instruction_median": 678279992,
+          "instruction_min": 677293295,
+          "process_cycle_counts": [
+            520021465,
+            522250784,
+            589103296,
+            485305901,
+            488174463,
+            505790887,
+            485140577
+          ],
+          "process_instruction_counts": [
+            678302432,
+            678441340,
+            677561078,
+            677901662,
+            677293295,
+            678501868,
+            678279992
+          ],
+          "process_ipc_max": 1.3981102059001755,
+          "process_ipc_median": 1.3414671664497586,
+          "process_ipc_min": 1.150156657755315,
+          "process_ipc_values": [
+            1.304373910796163,
+            1.2990719416516952,
+            1.150156657755315,
+            1.396854356403138,
+            1.3874000922493974,
+            1.3414671664497586,
+            1.3981102059001755
+          ],
+          "process_timing_median_ms_max": 2.492768,
+          "process_timing_median_ms_median": 2.406627,
+          "process_timing_median_ms_min": 2.367614,
+          "process_timing_medians_ms": [
+            2.368035,
+            2.4032,
+            2.492768,
+            2.406627,
+            2.464675,
+            2.409672,
+            2.367614
+          ]
+        },
+        "req066": {
+          "cycles_max": 535678310,
+          "cycles_median": 521148009,
+          "cycles_min": 472314119,
+          "instruction_max": 674708112,
+          "instruction_median": 672655710,
+          "instruction_min": 672384988,
+          "process_cycle_counts": [
+            535678310,
+            531894686,
+            518502387,
+            521148009,
+            520043224,
+            528418651,
+            472314119
+          ],
+          "process_instruction_counts": [
+            673161776,
+            672603229,
+            672519146,
+            674708112,
+            673658951,
+            672655710,
+            672384988
+          ],
+          "process_ipc_max": 1.4235970532144944,
+          "process_ipc_median": 1.294657372470169,
+          "process_ipc_min": 1.2566530386492594,
+          "process_ipc_values": [
+            1.2566530386492594,
+            1.2645421108794457,
+            1.297041562124959,
+            1.294657372470169,
+            1.295390305864268,
+            1.2729598183694693,
+            1.4235970532144944
+          ],
+          "process_timing_median_ms_max": 2.510992,
+          "process_timing_median_ms_median": 2.396237,
+          "process_timing_median_ms_min": 2.321047,
+          "process_timing_medians_ms": [
+            2.362424,
+            2.396237,
+            2.484733,
+            2.510992,
+            2.399223,
+            2.321047,
+            2.340954
+          ]
+        }
+      }
+    }
+  }
+}

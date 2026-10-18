@@ -428,7 +428,7 @@ def test_jitr_69_forward_br_returns_through_cps_preserving_static_nesting_metada
         for block in module.blocks
         if block.func_index == function_index and block.head_pc == branch_source.next_pc
     )
-    assert branch_source.frame_depth == branch_target.frame_depth + 1
+    assert branch_source.frame_depth == branch_target.frame_depth
     source_trace = engine.jit_runtime.cache.find_trace(branch_source.head_pc)
     target_trace = engine.jit_runtime.cache.find_trace(branch_target.head_pc)
     assert source_trace is not None and target_trace is not None

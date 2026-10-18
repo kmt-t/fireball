@@ -1966,7 +1966,9 @@ int fireball::compile_wasm_trace(
       if (!read_signed_leb(code, cursor, end, block_type, 33u)) {
         return -1;
       }
-      interpreter_rel_bytes += sizeof(std::uint16_t);
+      if (opcode == 0x03) {
+        interpreter_rel_bytes += sizeof(std::uint16_t);
+      }
       continue;
     }
     if (opcode == 0x05 || opcode == 0x0B) {
@@ -2000,7 +2002,7 @@ int fireball::compile_wasm_trace(
                  (subopcode >= 0x0F && subopcode <= 0x11)) {
         immediate_count = 1;
       }
-      interpreter_rel_bytes += 4; // width byte, subopcode, and successor block index
+      interpreter_rel_bytes += 2; // width byte and subopcode
       if (subopcode == 0x0A) {
         std::uint32_t destination_memory = 0;
         std::uint32_t source_memory = 0;

@@ -94,6 +94,7 @@ from tier2_runtime.wasm.module import I32, LocalLayout, Module, WasmOperand
 from tier2_runtime.wasm.opcodes import (
     BR_IF,
     BR_TABLE,
+    FC_PREFIX,
     I32_ADD,
     I32_CONST,
     IF,
@@ -1576,18 +1577,15 @@ def test_jitr_cross_frame_loop_branch_returns_through_interpreter_cps():
     )
     target_block = engine.get_block(branch_block.loops_to)
     assert target_block is not None
-    assert target_block.frame_depth < branch_block.frame_depth
-    target_trace = compile_runtime_block(engine.jit_runtime, target_block)
-    assert target_trace is not None
-    inserted_target = engine.jit_runtime.cache.insert(target_trace)
-    assert inserted_target
+    assert target_block is branch_block
+    assert target_block.frame_depth == branch_block.frame_depth
     trace = compile_runtime_block(engine.jit_runtime, branch_block)
     assert trace is not None
     assert trace.next_pc is None
     assert_result_18 = engine.jit_runtime.cache.insert(trace)
     assert assert_result_18
     assert trace.chain_next is None
-    assert trace.header._native.frame_depth > target_trace.header._native.frame_depth
+    assert trace.header._native.frame_depth == target_block.frame_depth
 
     result = engine.call(Interpreter(module), function_index, [3]).unwrap()
 
@@ -2310,21 +2308,35 @@ def test_jit_structural_delimiters_are_loader_metadata_and_emit_no_operations():
     from tier2_runtime.interpreter.control_flow import iter_scan_instrs
 
     instructions = tuple(iter_scan_instrs(code))
-    delimiter_pcs = {
-        function.code_pc_offset + instruction.offset
-        for instruction in instructions
-        if instruction.opcode in delimiter_opcodes
-    }
     assert delimiter_opcodes.issubset({instruction.opcode for instruction in instructions})
     function_blocks = [block for block in module.blocks if block.func_index == function_index]
     assert function_blocks
-    for delimiter_pc in delimiter_pcs:
-        assert all(
-            not block.head_pc <= delimiter_pc < block.head_pc + block.byte_span
+    control_map = function.control_map
+    assert control_map is not None
+    loop_end_offsets = {
+        match[0]
+        for instruction in instructions
+        if instruction.opcode == 0x03
+        and (match := control_map.block(instruction.offset)) is not None
+        and match[0] is not None
+    }
+    for instruction in instructions:
+        if instruction.opcode not in delimiter_opcodes:
+            continue
+        delimiter_pc = function.code_pc_offset + instruction.offset
+        should_be_in_body = instruction.opcode == 0x02 or (
+            instruction.opcode == 0x0B and instruction.offset in loop_end_offsets
+        )
+        contained_in_body = any(
+            block.byte_span > 0 and block.head_pc <= delimiter_pc < block.head_pc + block.byte_span
             for block in function_blocks
         )
+        assert contained_in_body == should_be_in_body
         block_at_delimiter = module.get_block(delimiter_pc)
-        assert block_at_delimiter is None or block_at_delimiter.byte_span == 0
+        if should_be_in_body and instruction.opcode == 0x02:
+            assert block_at_delimiter is not None and block_at_delimiter.byte_span > 0
+        elif not should_be_in_body:
+            assert block_at_delimiter is None or block_at_delimiter.byte_span == 0
 
     empty_view = native_abi.NativeByteView(0, 0)
     empty_locals = native_abi.NativeLocalLayout(empty_view, empty_view, 0, 0)
@@ -2351,7 +2363,7 @@ def test_jit_structural_delimiters_are_loader_metadata_and_emit_no_operations():
         assert trace is not None
         return trace
 
-    annotation_bytes = b"\x00" * (2 * len(delimiter_opcodes))
+    annotation_bytes = b"\x00" * 6
     plain = compile_raw(b"\x41\x07\x02\x40", 2)
     with_delimiters = compile_raw(b"\x41\x07\x02\x40\x03\x40\x05\x0b", 8, annotation_bytes)
     assert plain.code_blob is not None and with_delimiters.code_blob is not None
@@ -2460,7 +2472,7 @@ def test_jit_compile_call_blocks_and_exit_before_call(code_bytes, call_ip, call_
         "(block memory.size drop) i32.const 42",
         "memory.size drop call $host i32.const 42",
         "memory.size drop i32.const 0 call_indirect (type $host_type) i32.const 42",
-        "memory.size drop i32.const 0 i32.const 0 i32.const 0 memory.fill i32.const 42",
+        "memory.size drop i32.const 0 i32.const 42 i32.const 1 memory.fill i32.const 42",
     ),
 )
 def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, collect_stats):
@@ -2489,7 +2501,16 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
     snapshot = manager.native_dispatch_state()
     interpreter = Interpreter(module, host_functions=host_functions)
     call = interpreter.start(function_index, [])
+    memory_fill_memory: bytearray | None = None
+    if "memory.fill" in body:
+        frame = call._frame
+        assert frame is not None and frame.env.memory is not None
+        memory_fill_memory = frame.env.memory
+        call.context._linear_memory_owner = memory_fill_memory
+        call.context._linear_memory_size = len(memory_fill_memory)
+        call.context._linear_memory_address = 0
     recorded = []
+    fc_handoffs = 0
     while True:
         result = dispatch_for_test(
             interpreter,
@@ -2506,7 +2527,18 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
         if result[0] == 1:
             break
         assert result[0] == NATIVE_DISPATCH_RUNTIME_API_BOUNDARY
-        interpreter.resolve_native_api_boundary(call)
+        boundary_ip = int(call.context.ip)
+        code = module.code_for(function_index)
+        if boundary_ip < len(code) and code[boundary_ip] == FC_PREFIX:
+            before_block_index = int(call.context.current_block_index)
+            assert not (call.context.runtime_flags & EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD)
+            fc_handoffs += 1
+            interpreter.resolve_native_api_boundary(call)
+            assert int(call.context.current_block_index) == before_block_index
+            assert not (call.context.runtime_flags & EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD)
+            assert call.context.runtime_flags & EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
+        else:
+            interpreter.resolve_native_api_boundary(call)
         assert len(recorded) <= len(module.blocks)
     interpreter.step_native(call)
     assert call.finished and call.results == [42]
@@ -2522,6 +2554,9 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
     )
     assert tuple(recorded) == expected_heads
     assert manager.exec_counter == len(expected_heads)
+    assert fc_handoffs == int("memory.fill" in body)
+    if memory_fill_memory is not None:
+        assert memory_fill_memory[0] == 42
 
 
 @pytest.mark.parametrize("collect_stats", (False, True))

@@ -449,32 +449,32 @@ source_verification:
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: build_control_map
-        line: 598
+        line: 596
         ccn: 42
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: iter_scan_instrs
-        line: 764
+        line: 762
         ccn: 17
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: _count_interpreter_annotation_pool_bytes
-        line: 862
-        ccn: 27
+        line: 860
+        ccn: 26
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: build_interpreter_annotation_pool
-        line: 910
-        ccn: 50
+        line: 908
+        ccn: 44
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: extract_basic_blocks
-        line: 1209
-        ccn: 39
+        line: 1243
+        ccn: 37
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/handlers.py

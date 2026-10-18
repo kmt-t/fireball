@@ -60,11 +60,18 @@ def test_loader_annotation_pool_resolves_branch_target_block_index() -> None:
     function = module.functions[0]
     function_index = len(module.imports)
     code = module.code_for(function_index)
+    from tier2_runtime.interpreter.control_flow import iter_scan_instrs
+
+    branch_pc = function.code_pc_offset + next(
+        instruction.offset
+        for instruction in iter_scan_instrs(memoryview(code))
+        if instruction.opcode == 0x0C
+    )
     branch = next(
         block
         for block in module.blocks
         if block.func_index == function_index
-        and code[block.head_pc - function.code_pc_offset] == 0x0C
+        and block.head_pc <= branch_pc <= block.head_pc + block.byte_span
     )
     annotations = function.interpreter_annotation_pool
     assert annotations is not None
@@ -502,7 +509,7 @@ def test_load_48_module_builds_basic_block_index() -> None:
 
 
 def test_load_59_indexes_more_than_ten_thousand_basic_blocks() -> None:
-    repetitions = 3_334
+    repetitions = 5_000
     block_sequence = b"\x02\x40\x0c\x00\x0b" * repetitions
     wasm_bytes = _single_void_function_module(block_sequence + b"\x0b")
     module = parse(memoryview(wasm_bytes), BumpAllocator(capacity=1024 * 1024))
@@ -515,7 +522,7 @@ def test_load_59_indexes_more_than_ten_thousand_basic_blocks() -> None:
 
 def test_loader_rejects_basic_block_count_above_u16_capacity() -> None:
     pattern = b"\x02\x40\x0c\x00\x0b"
-    binary = _single_void_function_module(pattern * 21_845 + b"\x0b")
+    binary = _single_void_function_module(pattern * 32_768 + b"\x0b")
 
     with pytest.raises(InvalidWasm, match="basic block count exceeds u16 capacity"):
         parse_standalone(memoryview(binary))
@@ -523,7 +530,7 @@ def test_loader_rejects_basic_block_count_above_u16_capacity() -> None:
 
 def test_loader_accepts_basic_block_count_at_u16_capacity() -> None:
     pattern = b"\x02\x40\x0c\x00\x0b"
-    large_body = b"\x00" + pattern * 21_844 + b"\x0b"
+    large_body = b"\x00" + pattern * 32_766 + b"\x0b"
     empty_body = b"\x00\x0b"
     type_payload = b"\x01\x60\x00\x00"
     function_payload = b"\x03\x00\x00\x00"
@@ -561,6 +568,87 @@ def test_load_57_includes_runtime_api_operations_in_trace_span() -> None:
     assert code[-1] == 0x0B  # END is loader metadata, outside the executable body span.
     assert entry.byte_span == len(code) - 1
     assert entry.interpreter_annotation_byte_offset == 0
+
+
+def test_load_63_splits_at_control_transfers_and_branch_destinations() -> None:
+    from tier2_runtime.interpreter.control_flow import iter_scan_instrs
+    from tier2_runtime.wasm.opcodes import BLOCK, FC_PREFIX, IF, LOOP
+
+    wasm_bytes = wat_to_wasm(
+        """(module
+          (memory 1)
+          (func (export "run") (result i32)
+            (block (nop))
+            (loop
+              (i32.const 0)
+              (br_if 0)
+              (nop))
+            (i32.const 0)
+            (if (then (nop)) (else (nop)))
+            (i32.const 0)
+            (i32.const 0)
+            (i32.const 0)
+            (memory.fill)
+            (i32.const 42)))"""
+    )
+    module = parse_standalone(memoryview(wasm_bytes))
+    function = module.functions[0]
+    function_index = len(module.imports)
+    code = module.code_for(function_index)
+    instructions = tuple(iter_scan_instrs(memoryview(code)))
+    entry = module.get_block(function.code_pc_offset)
+    assert entry is not None
+
+    block_opener = next(instruction for instruction in instructions if instruction.opcode == BLOCK)
+    block_match = function.control_map.block(block_opener.offset)
+    assert block_match is not None
+    block_end = block_match[0]
+    assert block_end is not None
+    assert entry.head_pc == function.code_pc_offset + block_opener.offset
+    assert entry.byte_span == block_end - block_opener.offset
+
+    loop_opener = next(instruction for instruction in instructions if instruction.opcode == LOOP)
+    loop_match = function.control_map.block(loop_opener.offset)
+    assert loop_match is not None
+    loop_end = loop_match[0]
+    assert loop_end is not None
+    loop_entry = module.get_block(function.code_pc_offset + loop_opener.offset)
+    loop_body = module.get_block(function.code_pc_offset + loop_opener.end_offset)
+    assert loop_entry is not None and loop_entry.byte_span == 0
+    assert loop_body is not None and loop_body.frame_depth == 1
+    loop_end_block = next(
+        block
+        for block in module.blocks
+        if block.func_index == function_index
+        and block.head_pc <= function.code_pc_offset + loop_end < block.head_pc + block.byte_span
+    )
+    assert loop_end_block.frame_depth == 1
+
+    if_opener = next(instruction for instruction in instructions if instruction.opcode == IF)
+    if_match = function.control_map.block(if_opener.offset)
+    assert if_match is not None
+    if_match_end, else_offset, _ = if_match
+    assert module.get_block(function.code_pc_offset + if_opener.end_offset) is not None
+    assert else_offset is not None
+    else_block = module.get_block(function.code_pc_offset + else_offset + 1)
+    assert else_block is not None
+    assert module.get_block(function.code_pc_offset + if_match_end + 1) is not None
+
+    fc_instruction = next(
+        instruction for instruction in instructions if instruction.opcode == FC_PREFIX
+    )
+    fc_block = next(
+        block
+        for block in module.blocks
+        if block.func_index == function_index
+        and block.head_pc
+        <= function.code_pc_offset + fc_instruction.offset
+        < block.head_pc + block.byte_span
+    )
+    assert fc_block.head_pc != function.code_pc_offset + fc_instruction.offset
+    assert (
+        fc_block.head_pc + fc_block.byte_span > function.code_pc_offset + fc_instruction.end_offset
+    )
 
 
 def test_load_51_keeps_unreachable_polymorphism_inside_its_control_frame() -> None:

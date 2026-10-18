@@ -306,6 +306,19 @@ bool continue_to_block(execution_context &current, code_ip_t ip, block_index_t b
   return true;
 }
 
+bool continue_within_block(execution_context &current, code_ip_t ip,
+                           const std::uint8_t *&rel) {
+  if ((current.runtime_flags & kSingleControlStepFlag) == 0) {
+    return true;
+  }
+  current.ip = ip;
+  current.rel = rel;
+  current.runtime_flags |= kRelCursorReadyFlag;
+  current.trap_code = 0;
+  record_cps_exit(current, kBlockBoundary);
+  return false;
+}
+
 bool complete(execution_context &current) {
   current.ip = kSentinel;
   current.current_block_index = kInvalidBlockIndex;
@@ -1026,7 +1039,11 @@ bool runtime_else(execution_context *context, const std::uint8_t *&instruction_i
 
 bool runtime_block(execution_context *context, const std::uint8_t *&instruction_ip,
                    [[maybe_unused]] std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
-                   [[maybe_unused]] const std::uint8_t *&rel) {
+                   const std::uint8_t *&rel) {
+  if (*instruction_ip == 0x02u) {
+    advance_instruction_ip(instruction_ip, rel);
+    return continue_within_block(*context, instruction_offset(*context, instruction_ip), rel);
+  }
   auto &current = *context;
   const auto target_block_index = static_cast<block_index_t>(read_u16(rel));
   const auto next_ip = code_ip_for_block_index(current, target_block_index);
@@ -1324,6 +1341,9 @@ bool runtime_end(execution_context *context, const std::uint8_t *&instruction_ip
   if (next_block_index == kInvalidBlockIndex) {
     return finish_function_boundary(current, local_base, instruction_ip, rel);
   }
+  if (next_block_index == current.current_block_index) {
+    return continue_within_block(current, instruction_offset(current, instruction_ip), rel);
+  }
   const auto next_ip = code_ip_for_block_index(current, next_block_index);
   instruction_ip = current.code + next_ip;
   return continue_to_block(current, next_ip, next_block_index, rel);
@@ -1448,10 +1468,9 @@ bool runtime_fc_saturating_conversion(execution_context *context,
   const auto encoded_width = consume_instruction_width(instruction_ip, rel);
   (void)read_u8(rel);
   const auto next_ip = instruction_offset(current, instruction_ip) + encoded_width;
-  const auto next_block_index = static_cast<block_index_t>(read_u16(rel));
   (void)runtime_fc_saturating_conversion_decoded<Operation>(context, sp);
   instruction_ip = current.code + next_ip;
-  return continue_to_block(current, next_ip, next_block_index, rel);
+  return continue_within_block(current, next_ip, rel);
 }
 
 bool runtime_memory_manager_api_boundary(execution_context *context,
@@ -1879,11 +1898,10 @@ bool runtime_fc_memory_copy(execution_context *context, const std::uint8_t *&ins
   assert(subopcode == 0x0A);
   const auto source_ip = instruction_offset(current, instruction_ip);
   const auto next_ip = source_ip + encoded_width;
-  const auto next_block_index = static_cast<block_index_t>(read_u16(rel));
   if (!runtime_fc_memory_copy_decoded(context, sp, instruction_ip, source_ip, next_ip, rel)) {
     return false;
   }
-  return continue_to_block(current, next_ip, next_block_index, rel);
+  return continue_within_block(current, next_ip, rel);
 }
 
 bool runtime_fc_memory_fill_decoded(execution_context *context, std::uint32_t *&sp,
@@ -1919,11 +1937,10 @@ bool runtime_fc_memory_fill(execution_context *context, const std::uint8_t *&ins
   assert(subopcode == 0x0B);
   const auto source_ip = instruction_offset(current, instruction_ip);
   const auto next_ip = source_ip + encoded_width;
-  const auto next_block_index = static_cast<block_index_t>(read_u16(rel));
   if (!runtime_fc_memory_fill_decoded(context, sp, instruction_ip, source_ip, next_ip, rel)) {
     return false;
   }
-  return continue_to_block(current, next_ip, next_block_index, rel);
+  return continue_within_block(current, next_ip, rel);
 }
 
 template bool runtime_call<false>(execution_context *context, const std::uint8_t *&instruction_ip,

@@ -76,6 +76,7 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 
 | TEST-LOAD-56 | メモリ命令の整列指定上限 | `i32.load`の整列指定がアクセス幅を超える | `parse(module)` | 4バイト指定を許可し、8バイト指定を拒否する | [WebAssembly Core・memarg検証](https://webassembly.github.io/spec/core/valid/instructions.html#valid-memarg)、pysim `` |
 | TEST-LOAD-57 | Runtime API命令を含むtrace範囲 | `i32.const`の後ろに`i32.popcnt`を置く関数 | パース後に関数先頭PCの`BasicBlock`をRadix検索し、関数コードと範囲を比較する | `byte_span`が`i32.const`と末尾の`i32.popcnt`を含み、終端`end`を含まない。ブロックのInterpreter定数pool開始offsetが設定される | `{Loader_BasicBlockIndex}`、pysim `` |
+| TEST-LOAD-63 | BasicBlockの分割位置と構造命令の所属 | `block`、`loop`、`if`/`else`、`0xFC`、分岐を含む関数 | Loaderの`BasicBlock` head、span、入れ子深さ、構造命令後の分岐先を確認する | `block`・`loop end`・`0xFC`では分割せず、分岐命令・`if`・`else`・`loop`入口・`block`/`if end`の規則に従ってheadを作る。`loop end`を含むblockは入れ子深さを保つ | `{Loader_BasicBlockIndex}`、pysim `test_wasm_reader.py::test_load_63_splits_at_control_transfers_and_branch_destinations` |
 | TEST-LOAD-58 | BasicBlock単位の導出値注釈プール構築 | 複数ブロックにLEB128即値、`br_table`、固定幅`f32.const`/`f64.const`を含む関数 | Loaderの各ブロック別pool範囲、連結順、BasicBlockの開始byte offsetを検査する | 各BasicBlockのコード範囲を個別にパースし、実行時の導出値だけを8bit-packed関数poolへブロック順に追加する。LEB128復号値は保存しない。localはu16フレーム語offsetとu8幅、indexはu16、定数はi32=u32/i64=u64、メモリ実効offsetはu32とする。可変LEB128命令だけu8幅recordを持ち、固定幅命令はopcodeから長さを求める。`br_table`はu16 label countとu16 target列を格納し、label countのu16超過は`ERR_WASM_UNSUPPORTED_FEATURE`で拒否する。fixed-width float payloadとtable indexはpoolへ入れず、PC/注釈offset表も生成しない | `{Loader_BasicBlockIndex}`, `interpreter.md`「Interpreter注釈プール」 |
 
 ### 実装上の注意点に対応する検証
@@ -107,7 +108,7 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | TEST-LOAD-20〜24 | ``〜`` | QA専用ハーネスによる未解決状態、関数リンク、シグネチャ拒否、部分リンク防止、登録上限 |
 | TEST-LOAD-30〜32 | ``〜`` | 関数上限、64件超のexport保持、u32/u64 LEB128のバイト上限 |
 | TEST-LOAD-46 | `` | 既知のハッシュ衝突名をパーサのエクスポート検索で区別 |
-| TEST-LOAD-48、57、58 | ``、``、`` | 大規模BasicBlock Radix索引、インタープリタ専用ブロックのrel開始位置、BasicBlock単位のLEB128プール |
+| TEST-LOAD-48、57、58、63 | ``、``、``、`test_wasm_reader.py::test_load_63_splits_at_control_transfers_and_branch_destinations` | 大規模BasicBlock索引、Runtime API命令を含むtrace範囲、BasicBlock単位のLEB128プール、分割位置・構造命令所属 |
 | TEST-LOAD-51〜53、55〜56 | 対応する`*` | 到達不能時の型検証、Custom名境界、LEB128/件数、メモリページ・整列上限 |
 
 | TEST-LOAD-59〜60 | 対応する`*` | assert無効時の検証trapと内部assertの原因維持・watermark復元 |

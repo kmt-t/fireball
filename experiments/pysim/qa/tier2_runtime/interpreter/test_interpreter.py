@@ -122,11 +122,13 @@ def test_control_opcodes_use_static_metadata_without_control_frames():
         OpcodeAttribute,
         opcode_has_attribute,
     )
-    from tier2_runtime.wasm.opcodes import BR_IF, CALL, I32_ADD, LOOP
+    from tier2_runtime.wasm.opcodes import BLOCK, BR_IF, CALL, FC_PREFIX, I32_ADD, LOOP
 
     assert opcode_has_attribute(CALL, OpcodeAttribute.CALL)
     assert opcode_has_attribute(BR_IF, OpcodeAttribute.BRANCH)
+    assert not opcode_has_attribute(BLOCK, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
     assert opcode_has_attribute(LOOP, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
+    assert not opcode_has_attribute(FC_PREFIX, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
     assert not opcode_has_attribute(I32_ADD, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
     attributes = memoryview(OPCODE_ATTRIBUTES.buffer)
     assert attributes.readonly
@@ -158,40 +160,21 @@ def test_loader_builds_control_map_before_interpreter_creation():
     assert function.interpreter_annotation_pool is not None
     loaded_annotation_pool = function.interpreter_annotation_pool
     assert module.blocks
-    assert tuple(loaded_annotation_pool) == (
-        2,
-        1,
-        0,
-        0,
-        0,
-        1,
-        1,
-        0,
-        3,
-        0,
-        0,
-        0,
-        3,
-        0,
-        255,
-        255,
-    )
+    assert tuple(loaded_annotation_pool) == (2, 1, 0, 0, 0, 1, 2, 0, 0, 0, 2, 0, 255, 255)
     assert function.entry_block_index == 0
-    assert tuple(block.next_block_index for block in module.blocks) == (1, 3, 3, None)
+    assert tuple(block.next_block_index for block in module.blocks) == (2, 2, None)
     assert tuple(block.interpreter_annotation_byte_offset for block in module.blocks) == (
         0,
-        8,
+        10,
         12,
-        14,
     )
     Interpreter(module)
     assert function.control_map is loaded_control_map
     assert function.interpreter_annotation_pool is loaded_annotation_pool
     assert tuple(block.interpreter_annotation_byte_offset for block in module.blocks) == (
         0,
-        8,
+        10,
         12,
-        14,
     )
 
     from qa.shared.helpers import make_native_interpreter

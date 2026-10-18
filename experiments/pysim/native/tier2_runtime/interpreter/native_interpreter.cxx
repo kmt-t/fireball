@@ -98,28 +98,27 @@ inline FIREBALL_CPS_CALL void h_unreachable(execution_context *context,
   return;
 }
 
-constexpr std::uint8_t kOpcodeControlTerminator = 1u << 0;
+constexpr std::uint8_t kOpcodeControlInstruction = 1u << 0;
 
 inline constexpr auto make_opcode_attributes() {
   std::array<std::uint8_t, 256> attributes{};
   for (const auto opcode :
        {0x02u, 0x03u, 0x04u, 0x05u, 0x0Bu, 0x0Cu, 0x0Du, 0x0Eu, 0x0Fu, 0x10u, 0x11u}) {
-    attributes[opcode] |= kOpcodeControlTerminator;
+    attributes[opcode] |= kOpcodeControlInstruction;
   }
   return attributes;
 }
 
 constexpr auto kOpcodeAttributes = make_opcode_attributes();
 
-inline bool opcode_is_control_terminator(std::uint8_t opcode) {
-  return (kOpcodeAttributes[opcode] & kOpcodeControlTerminator) != 0;
+inline bool opcode_is_control_instruction(std::uint8_t opcode) {
+  return (kOpcodeAttributes[opcode] & kOpcodeControlInstruction) != 0;
 }
 
 inline bool opcode_is_block_body(std::uint8_t opcode) {
-  // A JIT body may start with a direct stencil or a Runtime API lowering.
-  // Control opcodes and the separately dispatched 0xFC prefix remain
-  // boundaries.
-  return opcode != 0xFCu && !opcode_is_control_terminator(opcode);
+  // BLOCK and 0xFC are part of a body when a block begins at either opcode.
+  // Their annotations and operations are consumed by the JIT trace compiler.
+  return opcode == 0x02u || opcode == 0xFCu || !opcode_is_control_instruction(opcode);
 }
 
 template <typename Debugger>
@@ -1121,7 +1120,7 @@ int run_native_step_abi(const fb_native_step_call *call, fb_native_result *outpu
   auto *sp = execution_context->stack_pointer;
   clear_cps_exit(*execution_context);
   if (direct_control) {
-    assert(opcode_is_control_terminator(raw_code[call->ip]) ||
+    assert(opcode_is_control_instruction(raw_code[call->ip]) ||
            raw_code[call->ip] == kOpcodeFcPrefix);
     execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
     const auto previous_flags = execution_context->runtime_flags;

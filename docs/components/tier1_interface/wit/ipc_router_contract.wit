@@ -15,7 +15,7 @@ interface types {
         debugger,
     }
 
-    /// Key-Value ペア（IPC 通信の最小単位、最大8ペア）
+    /// Key-Value ペア（IPC 通信の最小単位、`FB_CONF_ROUTER_MAX_KV_PAIRS` ペア）
     record kv-pair {
         /// 型スコープ (8-bit: 上位3ビット種別 + 下位5ビット型)
         type-scope: u8,

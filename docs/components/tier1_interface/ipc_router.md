@@ -19,7 +19,7 @@ IPCルータは、URIベースのサービスディスカバリとロールベ�
 
 ### 3.1 データ構造
 <!-- traceability: {IPCRegistry} {META_FlatMapIndexed} {RoleBasedAccessControl} -->
-- **レジストリエントリ**: 登録されたサービスのURI、ロール、チャンネルIDを保持する。内部的には、ROM 上の `constexpr` ソート済み配列（`FB_CONF_ROUTER_MAX_SERVICES` 件）に対する `fireball::flat_map_view<std::string_view, registry_entry>` を用い、高速なディスパッチを実現する。
+- **レジストリエントリ**: 登録されたサービスのURI、ロール、チャンネルIDを保持する。内部的には、ROM 上の `constexpr` ソート済み配列（`FB_CONF_IPC_MAX_SERVICES` 件）に対する `fireball::flat_map_view<std::string_view, registry_entry>` を用い、高速なディスパッチを実現する。
 - **ロールマトリックス**: コンパイル時に定義された、ロール間の通信許可を判定するマトリックス。
 
 ### 3.2 内部ブロック図
@@ -55,7 +55,7 @@ MH --> OM
 
 #### Key-Valueペア（kv_pair）
 <!-- traceability: {DictionaryBasedIPC} -->
-IPC通信の最小単位。1つのメッセージで8個のペアを送信できる。
+IPC通信の最小単位。1つのメッセージで `FB_CONF_ROUTER_MAX_KV_PAIRS` 個のペアを送信できる。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -88,7 +88,7 @@ Key-Valueペアを複数集約した要求・応答の基本単位である。�
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | メッセージ本体ブロック | メッセージ自身を格納する共有メモリブロック。内部は `uint64_t` 配列 | `fireball::shared_block` | 1個（固定長） |
-| KVマップ (Key-Valueペア配列) | 共有メモリ上に配置されるKey-Valueペアの `uint64_t` 配列。自前で所有しアクセス時に所有権検証 | ソート済み固定長 `uint64_t` 配列 + `fireball::flat_map_view` | 最大8個固定（1エントリ `uint64_t` 1要素） |
+| KVマップ (Key-Valueペア配列) | 共有メモリ上に配置されるKey-Valueペアの `uint64_t` 配列。自前で所有しアクセス時に所有権検証 | ソート済み固定長 `uint64_t` 配列 + `fireball::flat_map_view` | `FB_CONF_ROUTER_MAX_KV_PAIRS` 個固定（1エントリ `uint64_t` 1要素） |
 | `sender_id` | Scheduler が現在実行中の送信元 TCB から設定する認証済みタスクID | `u32` | 送信時に設定。ゲスト入力による指定・変更は禁止 |
 | `response_code` | 受信側が設定する状態または errno。操作データは応答KVへ格納する。`0xffffffff` は応答待ち | `u32` | 応答前は pending、応答時は状態値 |
 | リソース共有メモリ | エントリ値（`ScopeKind.RESOURCE`）に埋め込まれるタスク間バルク転送用RAII共有メモリ。チャネルが所有権を自動Grant | `fireball::shared_block` (オプション) | 任意個数（エントリの値） |
@@ -501,7 +501,7 @@ sequenceDiagram
 | 機能概要 | 事前認可された `Channel` オブジェクト上で要求を送信し、受信側の応答まで送信側をブロックする。応答は受信側が同じメッセージへ応答コードを設定し、エコーまたは追加KV付きで返す。呼び出し元 TCB ロールがチャネルの送信元エッジと一致することを検証する。 |
 | シグネチャ | `route_message(channel: 通信チャネルオブジェクト, msg: ipc-message) -> result<ipc-message, operation-result>` |
 | 引数 | `channel`: 認可済み通信チャネルオブジェクト<br>`msg`: 送信メッセージ (`ipc-message`) |
-| 戻り値 | 成功時は応答コードと応答データを含む同一 `ipc-message` を返す。メッセージのKey-Valueペア数が8個の静的制限を超えている場合は `ERR_MSG_TOO_LARGE`、ロール不一致の場合は `ERR_PERMISSION_DENIED` を返す。 |
+| 戻り値 | 成功時は応答コードと応答データを含む同一 `ipc-message` を返す。メッセージのKey-Valueペア数が `FB_CONF_ROUTER_MAX_KV_PAIRS` の静的制限を超えている場合は `ERR_MSG_TOO_LARGE`、ロール不一致の場合は `ERR_PERMISSION_DENIED` を返す。 |
 | エラー時の挙動 | `ERR_MSG_TOO_LARGE`/`ERR_PERMISSION_DENIED` はいずれも Revoke より前段の静的チェックであり、これらで失敗した場合メッセージの所有権は送信側から一度も動いていない（Rollback のような事後的な回復処理を必要としない）。Revoke 後は失敗経路が存在せず、相手の到達を待つのみである。 |
 
 #### メッセージ応答（reply_message）
@@ -537,7 +537,7 @@ URI や送信元ロールの引数指定を必要としない。
 ### 5.2 URI/IPCインターフェース
 <!-- traceability: {TypeSafeMessaging} -->
 - **URI形式**: `fireball://<subsystem_id>/<stream>/<instance_id>`
-- **メッセージ形式**: `fireball::flat_map_view` を用いた、最大8要素の型安全なKey-Value構造。定数や識別キーの型安全なパッキングをサポートし、動的なアロケーションを行うことなく動作する。
+- **メッセージ形式**: `fireball::flat_map_view` を用いた、`FB_CONF_ROUTER_MAX_KV_PAIRS` 要素の型安全なKey-Value構造。定数や識別キーの型安全なパッキングをサポートし、動的なアロケーションを行うことなく動作する。
 
 ### 5.3 サービスファサード
 <!-- traceability: {ServiceFacade} {IoC} {TypeSafeMessaging} -->

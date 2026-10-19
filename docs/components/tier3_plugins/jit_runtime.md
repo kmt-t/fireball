@@ -67,7 +67,7 @@ JIT拡張はInterpreterへ接続する選択可能コンポーネントである
 ### 3.1 データ構造
 <!-- traceability: {JIT_ReverseCompilationOrder} {WasmCodeSectionPC} {ADR_JitCompileScheduling} -->
 - **WASMプログラムカウンタ (`UnifiedPC` / `wasm_pc_t`)**: 32ビットのモジュール内Code section payload相対オフセットであり、命令先頭バイトを指す。関数インデックスを上位ビットへ格納しない。Code section payload内の関数数、body size、locals宣言も座標に含む。異なるモジュール間のキーは`(module_id, pc)`とする。
-- **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付けを保持する固定状態である。最大72件の`head_pc`昇順索引はキャッシュ更新とchain metadataの再計算に使う。通常のtrace lookupとchain successor解決はBasicBlock index参照を使う。PCのlower_bound lookupはmetadataを持たないQA fixtureに限る。
+- **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付けを保持する固定状態である。`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下の`head_pc`昇順索引はキャッシュ更新とchain metadataの再計算に使う。通常のtrace lookupとchain successor解決はBasicBlock index参照を使う。PCのlower_bound lookupはmetadataを持たないQA fixtureに限る。
 - **カードマーキング表 (Card Marking Table)**: モジュールのCode section payload相対PC全体を 4 バイト単位のカードで分割管理する、単一の 2 ビット状態表である。カード番号は`pc >> card_shift`で求め、全関数が同じPC座標・カード領域を共有する。関数境界をまたぐカードも同じ状態を参照する。密ビュー `fireball::bit_view<2>` として参照する。
   - `0: UNEXECUTED` (未実行)
   - `1: EXECUTED` (実行済み)
@@ -76,20 +76,20 @@ JIT拡張はInterpreterへ接続する選択可能コンポーネントである
 - **コンパイル対象可否マスク (Trackable Mask)**: Tier 3 JIT拡張がコード領域全体に対して一枚だけ持つ、カードごとの 1 ビット状態表である。Loader のブロック記述子は正確な head PC とコード範囲を保持する。静的適格性は JIT が評価する。実行時は制御処理で確定したブロック開始PCを保持し、コード領域マスクでカード単位の抑止を確認する。通常命令を実行したブロックだけを履歴へ記録する。`next_pc` を持ち、かつバイト長が `min_trace_bytes` 以上のブロックを対象とする。コンパイル失敗時はそのカードを解除し、同じカードに属する候補も外す。 `{TrackableBlockMask}` <!-- definition: {TrackableBlockMask} -->
 - **カード更新表 (Card Update Bitmap)**: コード領域全体の各カードに対応する 1 ビットdirty表である。カードが `UNEXECUTED` から `EXECUTED` へ遷移した時だけ、そのカードのビットを立てる。密ビュー `fireball::bit_view<1>` として参照する。8カードを1バイトにまとめる。
 - **エイジングカーソル**: カード更新表のバイト位置を保持する整数である。モジュール登録時に 0 で初期化し、表の末尾に達したら先頭へ戻る。
-- **JITエントリ表と全バンク索引**: 各バンクは`head_pc`順の固定容量エントリ配列を持つ。別の固定容量参照配列を3バンク共通で一つ持ち、常駐エントリを`head_pc`順に索引する。参照はバンク番号とエントリ位置を示す。Interpreterが現在のBasicBlock indexをJITへ渡し、その`jit_cache_reference`が有効なら索引探索を省いてエントリへ進む。未設定時はcache missとする。連結候補とtrace exitではLoaderの辺indexを使い、PCも照合する。同じPCを複数バンクへ挿入する契約違反は挿入入口でassertする。バンク配列のシフト、挿入、削除、破棄後は全BasicBlock参照を常駐エントリに合わせて更新し、退役エントリへの参照を残さない。現行設定では最大72件であり、参照は8ビットで表現する。JITの検索キーは`(module_id, pc)`であり、indexはLoader metadataとの照合と直接参照に使う。JIT用Radix索引と製品実行時のPC→trace検索経路は設けない。QAのmetadataなしfixtureだけはPC検索経路を使う。
+- **JITエントリ表と全バンク索引**: 各バンクは`head_pc`順の固定容量エントリ配列を持つ。別の固定容量参照配列を `FB_CONF_JIT_NUM_BUFFERS` 面共通で一つ持ち、常駐エントリを`head_pc`順に索引する。参照はバンク番号とエントリ位置を示す。Interpreterが現在のBasicBlock indexをJITへ渡し、その`jit_cache_reference`が有効なら索引探索を省いてエントリへ進む。未設定時はcache missとする。連結候補とtrace exitではLoaderの辺indexを使い、PCも照合する。同じPCを複数バンクへ挿入する契約違反は挿入入口でassertする。バンク配列のシフト、挿入、削除、破棄後は全BasicBlock参照を常駐エントリに合わせて更新し、退役エントリへの参照を残さない。現行設定では最大 `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件であり、参照は8ビットで表現する。JITの検索キーは`(module_id, pc)`であり、indexはLoader metadataとの照合と直接参照に使う。JIT用Radix索引と製品実行時のPC→trace検索経路は設けない。QAのmetadataなしfixtureだけはPC検索経路を使う。
 - **ネイティブ実行拡張の接続**: JIT拡張への本体実行と観測入口を初期化時に固定する。JIT providerは2-bit card-state表の読み取り専用ビューをdispatch期間中貸し出す。C++ Interpreter dispatcherは`execution_context.current_block_index`とPCからLoaderのBasicBlockを直接参照し、indexの`head_pc`がPCと一致することをassertする。BasicBlockから注釈開始位置を得て`rel`を初期化してからカード状態を確認し、`COMPILED`以外ではJIT entry lookupを呼ばずInterpreter実行を続ける。`COMPILED`ならblock indexとPCをJIT拡張へ渡し、BasicBlockの有効な`jit_cache_reference`を直接使う。参照が未設定ならcache missとしてInterpreterを続ける。カード単位状態と正確なPC照合は区別する。観測入口はInterpreter実行後に候補判定と履歴記録をまとめて行う。コンパイル候補の状態更新はJIT拡張が担当する。
-  x64参照構成の記述枠は `JIT_CACHE_BANK_ENTRY_CAPACITY` により各バンク24件を上限とする。3面の合計上限は72件である。これはRAM予算の設定値であり、64バイトの既定コンストラクタ値や生成コードの平均サイズから導出しない。
+  x64参照構成の記述枠は `FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY` により各バンクを上限とする。全バンクの上限は `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` である。これはRAM予算の設定値であり、既定コンストラクタ値や生成コードの平均サイズから導出しない。
   JIT entryは全バンクの固定容量上限に従う。同一PCの常駐traceを重複生成しない。WarmまたはOldestに存在するPCを新規insertすると契約違反とする。Oldestのlookup hitは所在とコードアドレスを変えず実行する。Tier 2はキャッシュの世代を扱わない。
   コード領域または固定長JIT entry表が満杯になれば、既存の3面ローテーションを行う。生成コードの長さは可変である。短いtraceでもentry表の上限を超えて挿入しない。
   ホットスポット候補の判定はJIT拡張が所有するTrackable Maskで行う。候補PC配列は確保しない。インタープリタ実行後に呼ぶ観測入口が候補性を判定し、適格な開始PCをJIT拡張の固定容量リングへ直接書き込む。
   同一カードの構造命令位置もbitが立つ。dispatcherは制御命令だけの区間で本体検索とブロック観測を呼び出さない。関数入口または制御処理の完了を、新しいブロック候補の開始トリガーとする。そこで確定したPCを保持し、通常命令のあるブロックだけを通知する。履歴の複製・転送やLoader索引の再検索を行わない。メモリ操作のruntime委譲後は同じブロックの継続として扱う。次の制御境界まで本体検索と重複した観測を行わない。外部呼出し・prefix委譲の完了は次ブロックの開始トリガーとする。単なるRuntime復帰や通常命令の出現を、新しい先頭の判定に使わない。trap・関数完了では開始待ち状態を解除する。
   通常命令の観測は候補ブロック入口の専用dispatchに限定する。最初のbody命令を観測した後は、観測処理を持たない通常dispatchへ直接末尾呼出しで移る。候補外と観測無効の経路には通常命令ごとの観測判定を追加しない。
   JIT entry表と履歴はJIT拡張の領域内に固定長で確保する。キャッシュ更新時にも同じ領域を再利用する。
-- **x64参照コード領域 (8KB)**: x64参照構成では4KBページ2枚分の領域を使う。先頭2KBはassembly生成chain dispatcherとRuntime API表の参照用の非エビクション領域とする。残る2KBずつを`Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)`に割り当てる。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はTBDである。
+- **x64参照コード領域**: JIT領域は `FB_CONF_JIT_CACHE_SIZE`、ページは `FB_CONF_JIT_CACHE_PAGE_SIZE` 単位で構成する。`FB_CONF_JIT_COMMON_CODE_SIZE` をassembly生成chain dispatcherとRuntime API表の参照用の非エビクション領域とし、残りは `FB_CONF_JIT_BANK_SIZE` のバンクを `FB_CONF_JIT_NUM_BUFFERS` 面割り当てる。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はTBDである。
   共通コード領域のchain dispatcherは`0x000`から配置する。固定slotは256バイトである。Tier 3 JITが所有するJIT Runtime API function pointer tableへの借用ポインタをこの固定slotの直後に置き、操作stencilからopcode対応APIを呼び出す。Interpreter opcode handler表からRuntime API関数ポインタを取得しない。`chain_target_addr`が0の場合に限り、終端dispatcherは現在trace末尾のmetadata pointerを`execution_context.rel`へ一時保存し、`body_end_ip`を`execution_context.ip`へ設定して`true`を返す。`false`はtrap/CPS exitまたはyield境界を示す。接続済みの場合はtarget headerから`const_rel_offset`を取得し、target traceへtail-jumpする。操作間の継続deltaはtrace末尾poolに保持しない。`if`、`br`、`br_if`はtraceに含めず、完了したtraceの後にC++ Interpreter dispatcherがCPS handlerで処理する。分岐先へnative chainしない。chain dispatcherはopcodeを判定しない。`native/tier3_plugins/jit/lir/x64/common.S`を対象x64 ABIでアセンブルし、raw binaryとして共通領域へ一度だけ配置する。読み取り専用のRuntime API表はキャッシュへ複製しない。表への8バイトの借用アドレスだけをdispatcher固定slotの後ろへ初期化する。未使用の共通領域を初期化時にゼロ埋めしない。ARMv8-Mの配置方式と命令列はTBDである。
 - **オンデマンドコンパイルキュー (On-demand Compile Queue)**: Tier 3 JIT拡張内で`HOT`に達した基本ブロックindexを保持する固定容量LIFOキューである。Runtimeのidle hookは全タスクidle時と協調境界で拡張を呼び出す。拡張は待ち列が空になるまで候補を処理し、候補数による打ち切りを行わない。コンパイル失敗と既存trace等によるスキップも待ち列から取り除く。固定キューが満杯になると、その場で待ち列全体を処理する。固定容量は一度に処理する候補数を制限するが、実時間の上限は保証しない。先行ブロックより後続を先に常駐させ、直線後続chainを接続する。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
-- **被チェイン逆引きテーブル (Inbound Chain Index Table)**: 常駐traceの後続PCをキーとする64バケットの固定長ハッシュ表である。各バケットの先頭参照64バイトと、最大72エントリの次参照72バイトで構成する。退役するtargetのPCから候補sourceを取り出し、後続PCと現在のtarget addressを照合してリンクを更新または解除する。エントリ索引を再構築するときに逆引き表も再構築する。
-- **chainメタデータ**: `chain_next_pc`は接続先PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpする常駐targetを保持する。直線後続だけを接続し、分岐opcodeからのchain targetは登録しない。循環chainの`chain_body_count`と`chain_words`は、最大72件の常駐traceを有界に巡回し、rootから最初の再訪までのtraceを一度ずつ数えて求める。退役時は被chain逆引き表でリンクを解除する。接続条件は [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) §7.4に示す。
+- **被チェイン逆引きテーブル (Inbound Chain Index Table)**: 常駐traceの後続PCをキーとする `FB_CONF_JIT_INBOUND_BUCKET_COUNT` バケットの固定長ハッシュ表である。各バケットの先頭参照配列は `FB_CONF_JIT_INBOUND_BUCKET_COUNT` byte、最大常駐trace参照の次配列は `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` byteで構成する。退役するtargetのPCから候補sourceを取り出し、後続PCと現在のtarget addressを照合してリンクを更新または解除する。エントリ索引を再構築するときに逆引き表も再構築する。
+- **chainメタデータ**: `chain_next_pc`は接続先PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpする常駐targetを保持する。直線後続だけを接続し、分岐opcodeからのchain targetは登録しない。循環chainの`chain_body_count`と`chain_words`は、`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下の常駐traceを有界に巡回し、rootから最初の再訪までのtraceを一度ずつ数えて求める。退役時は被chain逆引き表でリンクを解除する。接続条件は [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) §7.4に示す。
 - **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである。Interpreterが解決した基本ブロックindexと`UnifiedPC`を各8バイトレコードに保持する。Runtimeは単一moduleに束縛されるため、レコードへ`module_id`を複製しない。容量は`JIT_HISTORY_CAPACITY`以下で指定する。待ち列容量は`JIT_COMPILE_QUEUE_CAPACITY`以下で指定する。Interpreter実行区間の終了時だけ履歴順に分析し、JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}`
 
 トレース実行回数と退役記録はQA専用の計測構成で採取する。計測の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は計数状態、時計、計測用の後続走査、および退役通知を持たない。履歴分析はネイティブ実行境界で完了する。
@@ -110,12 +110,12 @@ flowchart TD
 #### JITエントリインデックス（JitEntryIndex）構造体
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| BasicBlockのJITキャッシュ参照 | 常駐JITエントリのbank・entry位置を保持し、同じブロックのPC再検索を省く | Loader BasicBlock内の8bit値 | 有効範囲0〜71、未設定`0xFF` |
-| 全バンク参照索引 | 3バンクのエントリ位置を`head_pc`順に保持する。キャッシュ更新時の参照再構築とchain metadataの後方再計算に使う | 固定長配列 | 最大72件、8ビット参照 |
-| バンク別エントリ配列 | 各バンクの`head_pc`昇順JITエントリを保持する | 固定長ソート配列 | 各バンク最大24件 |
+| BasicBlockのJITキャッシュ参照 | 常駐JITエントリのbank・entry位置を保持し、同じブロックのPC再検索を省く | Loader BasicBlock内の8bit値 | `0`〜`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY - 1`、未設定`0xFF` |
+| 全バンク参照索引 | `FB_CONF_JIT_NUM_BUFFERS` バンクのエントリ位置を`head_pc`順に保持する。キャッシュ更新時の参照再構築とchain metadataの後方再計算に使う | 固定長配列 | `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下、8ビット参照 |
+| バンク別エントリ配列 | 各バンクの`head_pc`昇順JITエントリを保持する | 固定長ソート配列 | 各バンク最大 `FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY` 件 |
 | カードマーキング表 | カードごとの 2-bit 状態表 | 密ビュー | `fireball::bit_view<2>` |
 | カード更新表 | 前回の巡回以降に `EXECUTED` へ遷移したカードの印 | 密ビュー | `fireball::bit_view<1>`、コード領域カード数ビット |
-| 被チェイン逆引きテーブル | 後続PCのハッシュ値からsource参照を引き、PCとtarget addressを照合する | 固定長バケット配列と参照連結配列 | 64バケットと最大72参照、合計136バイト |
+| 被チェイン逆引きテーブル | 後続PCのハッシュ値からsource参照を引き、PCとtarget addressを照合する | 固定長バケット配列と参照連結配列 | `FB_CONF_JIT_INBOUND_BUCKET_COUNT + FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` byte |
 | 履歴バッファ | Interpreterが解決したindexとPCを観測通知から記録する基本ブロック履歴 | 固定容量リング | `(block_index, unified_pc)` の8バイトレコード。単一moduleに束縛されたRuntime内で使う。Runtimeと同じ寿命 `{HistoryBuffer}` |
 
 ## 4. 動的モデル
@@ -136,7 +136,7 @@ flowchart TD
 
   基本ブロック終端（分岐命令または `end`）到達時、累積スコア `TotalScore(BB)` を判定閾値 `S_threshold = 9` と比較する。現行trace compileはWASM decode、variant選択、raw stencilのslot展開、template分岐再配置を実行するため、閾値が損益分岐回数を保証するものではない。compile latencyは [`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md) のtrace単位計測で評価する。
   `TotalScore(BB) >= 9` を満たす場合、そのブロックの `head_pc` が属するカードの `jit_candidate_bitmap` ビット（1bit/カード）を `1` にセットする。満たさない極小ブロックや呼び出し主体ブロックは `0`（インタープリタ専任）に維持される。
-  **設計理由と不変条件**: JIT キャッシュ（2KB $\times$ 3面）の容量とコンパイル・トレース管理の費用には上限がある。実行時のホットスポット検出前に、投資対効果（加速利得 $\ge$ コンパイルコスト＋マージン）を満たすブロックだけを静的に選別する。
+  **設計理由と不変条件**: JIT キャッシュ（`FB_CONF_JIT_BANK_SIZE` $\times$ `FB_CONF_JIT_NUM_BUFFERS` 面）の容量とコンパイル・トレース管理の費用には上限がある。実行時のホットスポット検出前に、投資対効果（加速利得 $\ge$ コンパイルコスト＋マージン）を満たすブロックだけを静的に選別する。
   対象外ブロックでは、インタープリタ実行ループの `HotspotBitmap.touch(pc)` と履歴記録を完全に省く。この処理は $O(1)$ で不要になる。これによりキャッシュ汚染とスラッシングを防ぐ。
 
 ##### 命令別短縮利得スコア定義台帳 (`opcode_benefit_table` / `int4_t`)
@@ -161,7 +161,7 @@ ROM 上に配置される 128 バイトルックアップテーブル（256 オ�
 1. **実行コンテキストのBasicBlock index参照 ($O(1)$)**: Loaderが関数入口と制御辺についてindexを前計算し、Interpreterは`current_block_index`へ現在indexを保持する。分岐と継続は注釈済みindexからBasicBlock metadataを参照する。関数呼出しと復帰の遷移先はInterpreter仕様に従う。dispatch中にPCからindexを検索しない。
 2. **カード状態によるJIT検索抑止 ($O(1)$)**: BasicBlock解決後にカード状態を読む。状態が`COMPILED`でなければJIT providerを呼ばず、キャッシュ参照も変更せずInterpreter命令を実行する。状態が`COMPILED`でもカード内の別ブロックだけがコンパイル済みの場合があるため、正確なPCはBasicBlock参照またはJIT索引で照合する。
 3. **BasicBlock内キャッシュ参照 ($O(1)$)**: `jit_cache_reference != 0xFF`なら、値が指す常駐エントリを使う。キャッシュ配列の並べ替え・削除・破棄時は参照をresident entryへ更新し、residentでないentryへの参照を残さない。Runtime領域の解放前にも、借用しているBasicBlockの常駐参照を無効化する。
-4. **キャッシュ更新用PC索引 ($O(n \log n)$)**: キャッシュ更新時に3バンク合計最大72件の参照を`head_pc`順に並べ、BasicBlock参照の再構築とchain metadataの後方再計算に使う。通常の実行lookupとchain successor解決では索引を検索しない。metadataを持たないQA fixtureのPC lookupだけが`lower_bound`を使う。JIT用Radix表や製品実行時のグローバルPC→trace検索経路は設けない。
+4. **キャッシュ更新用PC索引 ($O(n \log n)$)**: キャッシュ更新時に全バンク合計 `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下の参照を`head_pc`順に並べ、BasicBlock参照の再構築とchain metadataの後方再計算に使う。通常の実行lookupとchain successor解決では索引を検索しない。metadataを持たないQA fixtureのPC lookupだけが`lower_bound`を使う。JIT用Radix表や製品実行時のグローバルPC→trace検索経路は設けない。
 5. **ホットスポット昇格判定**:
    - C++ Interpreterはブロック開始PCを保持する。通常命令を実行したブロックを実行拡張へ通知する。候補マスクの判定と開始PCの固定履歴バッファへの記録はTier 3 JIT拡張が行う。JIT拡張は境界で履歴を分析し、カード状態を更新する。JIT trace/chainだけの実行区間では記録しない。
    - 実行頻度が閾値に達したカードを`HOT`のままJIT拡張内のコンパイル待ち列へ登録する。Tier 3 JIT拡張が元のWASMコードをコンパイルし、コードcacheへの挿入まで成功した場合に`COMPILED`へ遷移する。
@@ -366,7 +366,7 @@ flowchart TD
 
 ### 6.2 メモリ制約
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} -->
-- **方策**: 各24件の3面循環バッファを採用する。WarmとOldestのhitは所在を変えず実行する。Oldestは次のローテーションで破棄する。新規chainのリンク先はActiveまたはWarmに限定する。
+  - **方策**: 各 `FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY` 件の `FB_CONF_JIT_NUM_BUFFERS` 面循環バッファを採用する。WarmとOldestのhitは所在を変えず実行する。Oldestは次のローテーションで破棄する。新規chainのリンク先はActiveまたはWarmに限定する。
 
 ## 7. 形式検証・テスト仕様との対応
 

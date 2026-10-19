@@ -38,7 +38,7 @@ ROM 上の索引構築（ModuleView）も担当する。
 - **`import_storage` / `export_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
 - **`module.blocks`と`block_storage`**: `module.blocks`はコード順の全BasicBlock metadataを保持する。Python参照実装の`block_storage`と`Module.get_block()`はPython側からのPC検索に使う。Native ModuleExecutionViewにはPC→block検索行とradix表を転送しない。Native dispatchは現在のblock indexとLoader注釈の次block indexで遷移し、indexを使う境界でPC一致をassertする。BasicBlockは`br`・`br_if`・`br_table`・`return`で分割する。`call`・`call_indirect`は復帰継続位置から次のBasicBlockを始める。`if`・`else`の各本体は、それぞれの命令の次から始める。`loop`命令の制御ブロックから本体先頭へ遷移する。`block`・`if`の`end`で分割する。`block`の開始命令と`0xFC`接頭辞命令では分割しない。`loop`の`end`は同じBasicBlock内で実行する。関数末尾の`end`は関数終了境界とする。`0xFC`命令がRuntimeへ処理を引き渡す場合は、命令を消費した位置から同じBasicBlock内で再開する。デバッガのブロック単位ステップ実行は、`is_requested_block_boundary`が指定停止PCと実行中PCを比較して停止位置を決める。JIT trace境界metadataはblock indexとPCを保持する。
 
-`head_pc`と`next_pc`はCode section payload内の命令先頭オフセットである。PCはsection IDとpayload lengthの直後を0として数え、payload内の関数数・body size・locals宣言を含む。各エントリは関数所有情報と関数先頭PCを持つ。`BasicBlock`はデコード済み命令列を持たず、ローダーは各ブロックのコード範囲を個別にパースする。Interpreter注釈プールにはLEB128を復号した生の即値を保持せず、frame offset、ブロック・関数・型index、符号拡張済み整数定数、メモリ実効offsetなど実行時に使う導出値だけを関数所有の8bit-packed領域へブロック順に連結する。可変LEB128命令だけu8命令幅recordを持ち、256 byte以上の命令幅は`ERR_WASM_UNSUPPORTED_FEATURE`で拒否する。固定幅`f32.const`/`f64.const` payloadはプールへ複製しない。固定長命令はopcode、`br_table`はlabel countとtarget列から長さを求める。各ブロックはプール先頭からのbyte offsetを開始位置として保持する。`jit_cache_reference`はJITキャッシュ上の位置を示す8bitの可変ヒントであり、未設定値は`0xFF`とする。JITキャッシュの挿入・昇格・退避・flushで参照を更新または無効化する。その他のブロック境界・制御情報はロード後不変である。Native実行は現在のblock indexと注釈に保持した遷移先indexを使い、PC→block検索表を持たない。Python参照実装は`block_storage`を`Module.get_block()`で使う。indexで遷移する際はPCも照合する。JITのcache keyもPCのままとし、境界metadataではblock indexとPCを照合する。JIT常駐エントリ索引は独立した最大72件のソート配列であり、JIT用Radix表は設けない。 `{Loader_BasicBlockIndex}` <!-- definition: {Loader_BasicBlockIndex} --> `{GOTCHA-LOAD-04}` <!-- definition: {GOTCHA-LOAD-04} -->
+`head_pc`と`next_pc`はCode section payload内の命令先頭オフセットである。PCはsection IDとpayload lengthの直後を0として数え、payload内の関数数・body size・locals宣言を含む。各エントリは関数所有情報と関数先頭PCを持つ。`BasicBlock`はデコード済み命令列を持たず、ローダーは各ブロックのコード範囲を個別にパースする。Interpreter注釈プールにはLEB128を復号した生の即値を保持せず、frame offset、ブロック・関数・型index、符号拡張済み整数定数、メモリ実効offsetなど実行時に使う導出値だけを関数所有の8bit-packed領域へブロック順に連結する。可変LEB128命令だけu8命令幅recordを持ち、256 byte以上の命令幅は`ERR_WASM_UNSUPPORTED_FEATURE`で拒否する。固定幅`f32.const`/`f64.const` payloadはプールへ複製しない。固定長命令はopcode、`br_table`はlabel countとtarget列から長さを求める。各ブロックはプール先頭からのbyte offsetを開始位置として保持する。`jit_cache_reference`はJITキャッシュ上の位置を示す8bitの可変ヒントであり、未設定値は`0xFF`とする。JITキャッシュの挿入・昇格・退避・flushで参照を更新または無効化する。その他のブロック境界・制御情報はロード後不変である。Native実行は現在のblock indexと注釈に保持した遷移先indexを使い、PC→block検索表を持たない。Python参照実装は`block_storage`を`Module.get_block()`で使う。indexで遷移する際はPCも照合する。JITのcache keyもPCのままとし、境界metadataではblock indexとPCを照合する。JIT常駐エントリ索引は独立した `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下のソート配列であり、JIT用Radix表は設けない。 `{Loader_BasicBlockIndex}` <!-- definition: {Loader_BasicBlockIndex} --> `{GOTCHA-LOAD-04}` <!-- definition: {GOTCHA-LOAD-04} -->
 - **`control_map`**: Python参照経路が使う疎な制御delimiter、else継続先、branch edgeとstack復元値をロード時に保持する。Native側は同じ制御遷移を注釈poolから実行し、dense per-byte `NativeControlMapEntry`を確保しない。
 
 スタック型検証のopcode対応表は、実装に属する読み取り専用の表である。Python参照実装は構築完了時に不変列へ凍結し、可変の登録表を残さない。WASM原本のコード、型バイト列と名前は原本への借用範囲とする。ロード時に計算するローカル配置とデコード済み定数はモジュールのメタデータアリーナへ確保し、実行中の可変スタックやJIT参照と責務を分ける。 <!-- traceability: {ROMParsing} {ZeroCopyIndexing} {META_BumpAllocator} -->
@@ -159,7 +159,7 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
   **設計理由と不変条件**: 32-bit ハッシュ値による探索のみで関数解決を完了させると、万一のハッシュ衝突発生時に誤った関数がディスパッチされ、壊滅的な誤動作を引き起こす。そのため、ハッシュ探索で候補エントリがヒットした際は必ず ROM 上の元のシンボル名文字列と 1 回完全一致照合を行い、ハッシュ衝突によるシンボル誤認を完全に排除する。
 - **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値で対象モジュールの `export_storage`から借用した`radix_binary_tree_view`を探索する。候補区間の索引探索は $O(1) + O(\log n)$、ROM上の元文字列による衝突照合を含む worst-case は $O(1) + O(\log n) + O(L)$ であり、照合後に依存関係を解決してモジュールを実行可能状態へ遷移させる。
 - **ファイル位置逆引き (lookup_by_file_offset)**: 任意のファイル内バイトオフセットから `entity_offset_storage`の借用`radix_binary_tree_view`を検索し、そのオフセットを包含するデコード済みエンティティ（セクション、関数、データ等）を即座に特定・返却する。
-- **メモリセクション検証**: Memory Sectionをパースし、論理ページサイズ（64KB単位）と初期ページ数を取得する。初期ページ数を`FB_CONF_MAX_WASM_PAGES`と照合する。WASMリニアメモリの物理バック方式とARMv8-Mの容量対応はTBDとする。
+- **メモリセクション検証**: Memory Sectionをパースし、論理ページサイズ（`FB_CONF_WASM_PAGE_SIZE`単位）と初期ページ数を取得する。初期ページ数を`FB_CONF_MAX_WASM_PAGES`と照合する。WASMリニアメモリの物理バック方式とARMv8-Mの容量対応はTBDとする。
 - **ランタイム単位のメモリ寿命 (`OneRuntimeOneGuest`, `{Runtime_BumpAllocator}`)**:
   各ランタイムは専用バンプアロケータアリーナを所有し、ロードした全モジュールのメタデータをそこへ保持する。モジュール単位のアリーナ巻き戻しやアンロードはサポートしない。モジュール終了後もメタデータはランタイム破棄まで有効であり、破棄時にアリーナ全体を $O(1)$ でリセット・返却する。ロード中に検証または確保が失敗した場合に限り、そのロード開始時の watermark へロールバックする。
 JIT の候補選択と命令別利得評価は Tier 3 の [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が定める。Loader はコードと基本ブロックの範囲・制御対象だけを保持する。
@@ -170,17 +170,17 @@ JIT の候補選択と命令別利得評価は Tier 3 の [`jit_runtime.md`](doc
 
 | 順序 | 走査と目的 | 読み取る情報と確定・出力 | 一時領域の上限 |
 | :--- | :--- | :--- | :--- |
-| 1 | 入力検査と制御深さ・ブロック数の事前計数 | 命令と即値を読み、対応する命令形式、基本ブロック数、最大制御深さを確定する。 | 復号中の命令一件と、開いている `block`・`loop`・`if` の記録32件。 |
-| 2 | オペランドスタックの型検証 | 命令、即値、関数型、ローカル型を読み、型整合、最大スタック語数、`drop`・`select` の幅、分岐先のスタック復元情報を確定する。 | 値型64件、制御枠33件以下、ローカル型320件以下を使う。`drop`、`select`、分岐配置の各作業列はそれぞれ最大 $B$ 件である。`br_table` の深度列と変換先配置はそれぞれ最大 $B$ 件である。 |
+| 1 | 入力検査と制御深さ・ブロック数の事前計数 | 命令と即値を読み、対応する命令形式、基本ブロック数、最大制御深さを確定する。 | 復号中の命令一件と、開いている `block`・`loop`・`if` の記録 `FB_CONF_MAX_NESTING_DEPTH` 件。 |
+| 2 | オペランドスタックの型検証 | 命令、即値、関数型、ローカル型を読み、型整合、最大スタック語数、`drop`・`select` の幅、分岐先のスタック復元情報を確定する。 | 値型 `FB_CONF_MAX_VALUE_STACK` 件、制御枠 `FB_CONF_MAX_NESTING_DEPTH + 1` 件以下、ローカル型 `FB_CONF_MAX_LOCALS + FB_CONF_MAX_FUNCTION_ARGUMENTS` 件以下を使う。`drop`、`select`、分岐配置の各作業列はそれぞれ最大 $B$ 件である。`br_table` の深度列と変換先配置はそれぞれ最大 $B$ 件である。 |
 | 3 | 制御対応表の容量計数 | 命令を読み、制御ブロック開始数と分岐命令数を数える。 | 復号中の命令一件と件数用のスカラー値。 |
-| 4 | 制御対応表の構築 | 命令、即値、手順2の分岐配置を読み、開始・終端・`else` の対応、分岐先、スタック復元値を確定する。 | 制御ブロック・分岐・`else` の各作業列はそれぞれ最大 $B$ 件。開いた制御枠は32件。`br_table` の一時ターゲット列は最大 $B$ 件である。 |
-| 5 | モジュール全体のブロック容量計数 | 各関数の命令を読み直し、全関数分の基本ブロック数を合計する。 | 復号中の命令一件と、開いている制御枠32件。合計数は最大65,535件である。 |
-| 6 | 関数ごとのブロック容量再計数 | 各関数の命令を読み直し、抽出結果を格納するブロック容量を確定する。 | 復号中の命令一件と、開いている制御枠32件。 |
-| 7 | 基本ブロック範囲の抽出 | 命令と手順4の制御対応表を読み、各ブロックの先頭、継続先、ループ先、制御深さ、命令範囲を確定する。 | 開いている制御枠32件と、関数内ブロック数 $K$ 以下の抽出列。$K \le B$ である。 |
+| 4 | 制御対応表の構築 | 命令、即値、手順2の分岐配置を読み、開始・終端・`else` の対応、分岐先、スタック復元値を確定する。 | 制御ブロック・分岐・`else` の各作業列はそれぞれ最大 $B$ 件。開いた制御枠は `FB_CONF_MAX_NESTING_DEPTH` 件。`br_table` の一時ターゲット列は最大 $B$ 件である。 |
+| 5 | モジュール全体のブロック容量計数 | 各関数の命令を読み直し、全関数分の基本ブロック数を合計する。 | 復号中の命令一件と、開いている制御枠 `FB_CONF_MAX_NESTING_DEPTH` 件。合計数は最大65,535件である。 |
+| 6 | 関数ごとのブロック容量再計数 | 各関数の命令を読み直し、抽出結果を格納するブロック容量を確定する。 | 復号中の命令一件と、開いている制御枠 `FB_CONF_MAX_NESTING_DEPTH` 件。 |
+| 7 | 基本ブロック範囲の抽出 | 命令と手順4の制御対応表を読み、各ブロックの先頭、継続先、ループ先、制御深さ、命令範囲を確定する。 | 開いている制御枠 `FB_CONF_MAX_NESTING_DEPTH` 件と、関数内ブロック数 $K$ 以下の抽出列。$K \le B$ である。 |
 | 8 | 注釈プール容量の計数 | 各ブロックの命令範囲と即値を読み、実行用導出値に必要な総バイト数を数える。ブロック範囲を合わせると関数本体を一度走査する。 | 復号中の命令一件と、合計バイト数のスカラー値。 |
-| 9 | 注釈プールの書き込み | 各ブロックの命令、即値、制御対応表、型検証結果を読み、導出値とブロックごとの開始位置を書き込む。ブロック範囲を合わせると関数本体を一度走査する。 | 復号中の命令一件、ブロック先頭列と注釈開始位置列は各 $K$ 件以下。注釈プールは計数済み容量を確保し、上限は $5B$ バイトである。 |
+| 9 | 注釈プールの書き込み | 各ブロックの命令、即値、制御対応表、型検証結果を読み、導出値とブロックごとの開始位置を書き込む。ブロック範囲を合わせると関数本体を一度走査する。 | 復号中の命令一件、ブロック先頭列と注釈開始位置列は各 $K$ 件以下。注釈プールは計数済み容量を確保し、上限は `FB_CONF_INTERP_ANNOTATION_POOL_BYTES_PER_BODY_BYTE × B` バイトである。 |
 
-手順1のセクション事前計数では、命令走査に先立ってローカル宣言を一度読む。関数記録の作成時にはローカル数の計数と型の展開のため、ローカル宣言を二度読む。ローカル宣言は命令ストリームの9回には含めない。ローカル型の保持数は最大256件であり、関数パラメータを含む型列は最大320件である。
+手順1のセクション事前計数では、命令走査に先立ってローカル宣言を一度読む。関数記録の作成時にはローカル数の計数と型の展開のため、ローカル宣言を二度読む。ローカル宣言は命令ストリームの9回には含めない。ローカル型の保持数は `FB_CONF_MAX_LOCALS` 件以下であり、関数パラメータを含む型列は `FB_CONF_MAX_LOCALS + FB_CONF_MAX_FUNCTION_ARGUMENTS` 件以下である。
 
 手順4で確定した制御対応表、手順7で確定した基本ブロック、手順9で書いた注釈プールは実行用メタデータとして保持する。手順2の`drop`・`select`幅は実行用に保持する。手順2の分岐配置と走査中の作業列は、後続の構築が終わると破棄する。`end`がloop末尾か他の制御ブロック末尾かは、各走査の現在の制御深さと開いている開始命令から判定する。 {Loader_BasicBlockIndex}
 
@@ -239,10 +239,10 @@ flowchart TD
 
 | 項目 | 定数名 | 既定値 | 根拠 |
 | :--- | :--- | :--- | :--- |
-| 最大モジュール数 | `FB_CONF_MAX_MODULES` | 4 | 単一アプリ + 3ライブラリ |
-| 最大関数数/モジュール | `FB_CONF_MAX_FUNCTIONS` | 256 | 典型的な組み込みWASMアプリ |
-| 最大グローバル数/モジュール | `FB_CONF_MAX_GLOBALS` | 32 | グローバルアクセサ配列 |
-| 最大インポート数/モジュール | `FB_CONF_MAX_IMPORTS` | 32 | インポート解決テーブル |
+| 最大モジュール数 | `FB_CONF_MAX_MODULES` | [`system_config.md`](docs/components/tier1_core/system_config.md) | 単一アプリ + (`FB_CONF_MAX_MODULES - 1`) ライブラリ |
+| 最大関数数/モジュール | `FB_CONF_MAX_FUNCTIONS` | [`system_config.md`](docs/components/tier1_core/system_config.md) | 典型的な組み込みWASMアプリ |
+| 最大グローバル数/モジュール | `FB_CONF_MAX_GLOBALS` | [`system_config.md`](docs/components/tier1_core/system_config.md) | グローバルアクセサ配列 |
+| 最大インポート数/モジュール | `FB_CONF_MAX_IMPORTS` | [`system_config.md`](docs/components/tier1_core/system_config.md) | インポート解決テーブル |
 | エクスポート数/モジュール | 個別上限なし | 規定しない | 第1パスで実数を数え、第2パスで同数の `StaticVector` を確保する。受理数は全モジュールが共有するランタイムアリーナ容量で決まる |
 
 ### 4.3 軽量検証スコープ

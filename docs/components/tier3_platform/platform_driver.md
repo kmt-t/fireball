@@ -83,9 +83,9 @@ flowchart TD
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 最大登録デバイス数 | システムが同時に管理可能なデバイスの総数。ビルド時定数 `FB_CONF_HAL_MAX_DEVICES`（現行値 `8`）で設定する | エントリ数 | 1-255 (許容範囲) |
-| 最大バッファ数 | 通信に使用する内部バッファの予約数。ビルド時定数 `FB_CONF_HAL_MAX_BUFFERS`（現行値 `4`）で設定する | エントリ数 | 1-255 (許容範囲) |
-| `buffer_size` | 単一バッファに割り当てられる固定バイト数。ビルド時定数 `FB_CONF_HAL_BUFFER_SIZE`（現行値 `256`）で設定する | バイト数 | - |
+| 最大登録デバイス数 | システムが同時に管理可能なデバイスの総数。ビルド時定数 `FB_CONF_HAL_MAX_DEVICES` で設定する | エントリ数 | 1-255 (許容範囲) |
+| 最大バッファ数 | 通信に使用する内部バッファの予約数。ビルド時定数 `FB_CONF_HAL_MAX_BUFFERS` で設定する | エントリ数 | 1-255 (許容範囲) |
+| `buffer_size` | 単一バッファに割り当てられる固定バイト数。ビルド時定数 `FB_CONF_HAL_BUFFER_SIZE` で設定する | バイト数 | - |
 
 ---
 
@@ -150,7 +150,7 @@ sequenceDiagram
 `{BufferedLogging}` の物理出力は Tier 1 `printk` 契約を実装する`PrintkSink`経由で行い、HALの`stream-write`経路を使わない。ロガーのリングバッファとHALドライバーの固定長I/Oバッファプールは別の所有領域である。
 
 **静的固定長バッファプールの境界厳格検査 ({GOTCHA-HAL-01})**: <!-- definition: {GOTCHA-HAL-01} -->
-`HalBufferPool` は、`FB_CONF_HAL_MAX_BUFFERS` 個の固定サイズスロット（`FB_CONF_HAL_BUFFER_SIZE` = 256 バイト）を保持する。ゲストの`map-buffer(buffer_id)`が選択した1スロットだけをvMMIO DYNAMICへマップし、I/O完了時の`unmap-buffer(handle)`で解除する。マッピング競合は`BUSY`を返し、境界超過や不正なハンドルだけを`HalBufferTrap`で即時停止させる。
+`HalBufferPool` は、`FB_CONF_HAL_MAX_BUFFERS` 個の固定サイズスロットを保持する。スロット容量は `FB_CONF_HAL_BUFFER_SIZE` である。ゲストの`map-buffer(buffer_id)`が選択した1スロットだけをvMMIO DYNAMICへマップし、I/O完了時の`unmap-buffer(handle)`で解除する。マッピング競合は`BUSY`を返し、境界超過や不正なハンドルだけを`HalBufferTrap`で即時停止させる。
 **設計理由と不変条件**: 固定スロットは共有メモリの所有権を持たず、HALの`acquire`/`release`も存在しない。HALドライバは専用Sinkとしてマッピング中のスロットだけを参照する。スロット境界の検査を省くと、隣接する別スロットの領域まで書込みが及ぶおそれがある。
 
 `stream-read` / `stream-write` を処理するHALドライバは、コマンドに含まれる `hal-buffer-id` を使って現在のI/Oでマップされたバッファスロットへ専用Sink経由でアクセスする。ゲスト側のマッピングは操作完了時に解除し、ドライバ側は同じ固定スロットの境界検査だけを通過して読み書きする。したがって、標準入出力のストリーミングにドライバ専用の複製バッファや生ポインタは存在しない。
@@ -189,7 +189,7 @@ UART および SEGGER RTT は同一のRaw RSPバイトトランスポート契�
 
 ### 7.1 検証対象の不変条件
 - **非同期割り込み境界分離**: ISR からタスク状態を直接変更せずキュー経由で安全にディスパッチすること（`interrupt_boundary_model.py` の `isr_does_not_update_task_state_directly` および `interrupt_event_reaches_scheduler_boundary`）。
-- **固定長スロット境界保護**: 要求サイズが 256 バイトを超える場合の即時拒絶（`GOTCHA-HAL-01`）。
+- **固定長スロット境界保護**: 要求サイズが `FB_CONF_HAL_BUFFER_SIZE` を超える場合の即時拒絶（`GOTCHA-HAL-01`）。
 - **32bitタイマー折り返し**: 1周期未満の測定区間に限り、符号なしモジュロ差分が経過tick数を返すこと（`platform_driver_concept.py` の `test_u32_timer_elapsed_handles_wraparound`）。物理タイマーの折り返しは対象ハードウェアとの統合時に検証する。
 
 ### 7.2 テスト仕様書との連携

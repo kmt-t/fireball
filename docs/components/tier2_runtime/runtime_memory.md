@@ -55,10 +55,10 @@ flowchart TD
 
 #### 4.1.3 ページ単位権限分離仕様（Page-Granular Permission Isolation）
 <!-- traceability: {META_FaultIsolation} -->
-物理RAMの割当方法はプラットフォーム依存でTBDとする。FC=14仮想アドレス予約は物理バック領域の割当から独立する。`FB_PAGE_SIZE = 4096`はFC=14の仮想予約スロット幅であり、物理割当の粒度・最小量ではない。共有メモリの物理使用量は`FB_CONF_SHM_SIZE = 1024`バイトの予算内で、要求されたサイズだけを確保する。 {PageGranularPermissionIsolation} <!-- definition: {PageGranularPermissionIsolation} --> {GOTCHA-MEM-01} <!-- definition: {GOTCHA-MEM-01} -->
+物理RAMの割当方法はプラットフォーム依存でTBDとする。FC=14仮想アドレス予約は物理バック領域の割当から独立する。`FB_PAGE_SIZE`はFC=14の仮想予約スロット幅であり、物理割当の粒度・最小量ではない。共有メモリの物理使用量は`FB_CONF_SHM_SIZE`の予算内で、要求されたサイズだけを確保する。 {PageGranularPermissionIsolation} <!-- definition: {PageGranularPermissionIsolation} --> {GOTCHA-MEM-01} <!-- definition: {GOTCHA-MEM-01} -->
 
-1. **独立した仮想予約**: `allocate_shared(size)`はcurrent taskを所有者として認証し、1〜`FB_CONF_SHM_SIZE`バイトを受け付ける。ブロックごとに4KBの仮想スロットを予約するが、この予約は物理メモリ使用量へ加算しない。同じタスクのブロックも異なる仮想スロットを使う。
-2. **物理バック領域の計上**: 物理プールから消費するのは要求された`size`バイトだけであり、全ブロックの合計を`FB_CONF_SHM_SIZE`以下に保つ。物理基点は4KB境界に揃える必要はなく、空き領域へ再利用可能に配置する。
+1. **独立した仮想予約**: `allocate_shared(size)`はcurrent taskを所有者として認証し、1〜`FB_CONF_SHM_SIZE`バイトを受け付ける。ブロックごとに`FB_PAGE_SIZE`の仮想スロットを予約するが、この予約は物理メモリ使用量へ加算しない。同じタスクのブロックも異なる仮想スロットを使う。
+2. **物理バック領域の計上**: 物理プールから消費するのは要求された`size`バイトだけであり、全ブロックの合計を`FB_CONF_SHM_SIZE`以下に保つ。物理基点は`FB_PAGE_SIZE`境界に揃える必要はなく、空き領域へ再利用可能に配置する。
 3. **境界検査と所有権移譲**: 各仮想スロットは1ブロックだけを指し、PTEは実サイズを保持する。`offset >= size`は境界trapとする。IPCのRevoke/Grantではそのブロックの仮想スロットを単位に旧マッピングを外し、所有者台帳が一致した場合だけ新所有者へ対応付ける。
 
 #### 4.1.4 共有メモリライフサイクルと権限遷移プロトコル（物理実装）
@@ -117,7 +117,7 @@ flowchart TD
 - **方策**:
   - : システム全体の総割当量をコンパイル時定数 `FB_CONF_MEMORY_POOL_SIZE` 以内に厳格制限。
   - : 各タスク・各ランタイムに独立した静的パーティション（アリーナ）を割り当て、ヒープ干渉を物理的に排除する。共有メモリは4KB仮想予約スロット単位で所有者を分離し、物理バック領域は要求バイト数だけ消費する。
-  - : システムヒープおよび共有メモリヒープの容量を `FB_CONF_SYSTEM_HEAP_SIZE` および `FB_CONF_SHM_POOL_SIZE` でコンパイル時静的確定し、無制限な動的拡張（OS からの再確保）を禁止。
+  - : Runtime、Kernel、Subsystemの各ヒープ容量を `FB_CONF_RUNTIME_HEAP_SIZE`、`FB_CONF_KERNEL_HEAP_SIZE`、`FB_CONF_SUBSYS_HEAP_SIZE` でコンパイル時静的確定し、共有メモリ容量は `FB_CONF_SHM_SIZE` で定める。無制限な動的拡張（OS からの再確保）を禁止。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {META_FaultIsolation} {PageGranularPermissionIsolation} -->

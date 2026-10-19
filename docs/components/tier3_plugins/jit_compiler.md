@@ -239,7 +239,7 @@ C++ local get/set/tee Runtime API経路は設けない。
 
 `i32.const, local.set`融合（{GOTCHA-JITC-08}）は即値を命令へ埋め込み、localへ書く。融合で定数pushを除去するため、この操作は`sp`も`rel`も変更しない。`i32.const, local.tee`融合は同じ即値をlocalと共有スタックへ書く。 <!-- definition: {GOTCHA-JITC-08} -->
 
-1トレースは最大64 WASM命令、bodyとtrace末尾定数領域を合わせた出力領域1,536バイト、共有stack深さ128 wordを上限とする。WASM数値即値とlocal offsetはtrace codeに直接埋め込む。定数領域は先頭のheader相対参照4 byte、Runtime API argument record、終端recordのInterpreter annotation offsetを保持する。各recordのslot、immediate count、immediate byte spanはそれぞれu8であり、API最大3 immediateのpayloadは値の型幅で格納する。64命令と最大129件のrecord stagingで必要となる領域は出力領域内に収まる。ヘッダは定数領域の先頭offsetだけを保持し、slot数fieldを持たない。C++フロントエンドは復号済み命令列、operation symbol列、Runtime API用定数recordを固定長配列に一時保持する。最大blobはheader 32バイトとbody/pool領域1,536バイトの合計1,568バイトである。定数record stagingは最大129件である。
+1トレースは `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS` WASM命令、`FB_CONF_JIT_MAX_BODY_BYTES` のbodyと末尾定数pool、共有stack深さ `2 × FB_CONF_MAX_VALUE_STACK` wordを上限とする。WASM数値即値とlocal offsetはtrace codeに直接埋め込む。定数領域は先頭のheader相対参照4 byte、Runtime API argument record、終端recordのInterpreter annotation offsetを保持する。各recordのslot、immediate count、immediate byte spanはそれぞれu8であり、API最大 `FB_CONF_JIT_RUNTIME_API_MAX_IMMEDIATES` immediateのpayloadは値の型幅で格納する。最大129件のrecord stagingで必要となる領域は出力領域内に収まる。ヘッダは定数領域の先頭offsetだけを保持し、slot数fieldを持たない。C++フロントエンドは復号済み命令列、operation symbol列、Runtime API用定数recordを固定長配列に一時保持する。最大blobはheader 32バイトとbody/pool領域1,536バイトの合計1,568バイトである。定数record stagingは最大129件である。
 
 トレースのコンパイルでは、生成コード、ローカルアクセス命令、即値、およびRuntime API用定数を有界な一時領域へ構成する。WASM入力と実行メタデータの借用期間を守り、実行コード領域とロード用領域を別々に計上する。
 
@@ -260,7 +260,7 @@ trace単位コード生成はx64実装に限って定義する。ARMv8-M向けLI
 
 #### JIT トレース検索 & 3面キャッシュ代謝オーケストレーション
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} -->
-3段JIT検索および連続8KBキャッシュ領域の管理は[`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md)を正本とする。コンパイラコアは生成したトレースの登録と命令同期を同コンポーネントへ委譲する。
+3段JIT検索および連続 `FB_CONF_JIT_CACHE_SIZE` キャッシュ領域の管理は[`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md)を正本とする。コンパイラコアは生成したトレースの登録と命令同期を同コンポーネントへ委譲する。
 
 #### トレース・チェイニング（共通コード領域のchain dispatcher経由）
 <!-- traceability: {JIT_LazyChaining} {JIT_RuntimeAPI} -->
@@ -392,7 +392,7 @@ ARMv8-Mのコンパイラと実機検証はTBDである。
 
 ### 7.4 既知の制限・未検証範囲
 
-現行x64参照実装は直線後続の常駐traceを直接chainする。`if`、`br`、`br_if`はtraceへ含めず、Interpreter CPS handlerへ戻す。分岐先への直接chainは行わない。`br_table`、`return`、関数境界のその他経路も各Interpreter復帰契約に従う。chain更新時のbody数とstack要件は、最大72件の常駐trace内で循環を検出し、相異なるtraceを一度ずつ集計する。
+現行x64参照実装は直線後続の常駐traceを直接chainする。`if`、`br`、`br_if`はtraceへ含めず、Interpreter CPS handlerへ戻す。分岐先への直接chainは行わない。`br_table`、`return`、関数境界のその他経路も各Interpreter復帰契約に従う。chain更新時のbody数とstack要件は、`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下の常駐trace内で循環を検出し、相異なるtraceを一度ずつ集計する。
 
 直線chainの循環集計、退役時のリンク解除、QA計測はTEST-JITR-35、76、77および循環chain試験で検証する。分岐opcodeのtrace除外、Interpreter CPS処理、LOOP後方辺のyield判定はTEST-JITR-63、67、69、73と対応するInterpreter試験で検証する。既存の形式モデルはキャッシュ寿命とyield到達時の復帰を抽象検証する。条件評価、スタック巻き戻し、関数呼出しの生成コードまでは検証しない。
 
@@ -406,7 +406,7 @@ ARMv8-Mのコンパイラと実機検証はTBDである。
 WASM値は共有オペランドスタックに残し、JIT traceの`bool`戻り値には使わない。通常完了では未接続chain targetの終端dispatcherだけが境界metadata pointerを`ctx.rel`へ置き、`body_end_ip`を`ctx.ip`に設定して`true`を返す。trapまたはCPS exitでは`false`を返すため、Interpreter dispatcherは状態判定を先に行う。共通chain dispatcher経由では同じ共有スタックを引き継ぎ、entry保存処理を重ねない。
 
 - **決定事項**:
-  - **背景**: 現行x64参照構成のコードキャッシュは8KBである。生成コードは可変長であり、すべてのtraceの開始位置が一定の命令アライメントを満たす保証はない。
+  - **背景**: 現行x64参照構成のコードキャッシュは `FB_CONF_JIT_CACHE_SIZE` である。生成コードは可変長であり、すべてのtraceの開始位置が一定の命令アライメントを満たす保証はない。
   - **選択肢**:
     - 案1: バイト単位のオフセットを保持する。現行キャッシュ容量と任意のtrace開始位置を表現できる。
     - 案2: 一定アライメントを前提にシフトして圧縮する。現行の可変長配置には追加の整列が必要になる。

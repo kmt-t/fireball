@@ -75,7 +75,7 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 | `ThreeStageRouting` | `ipc_router.md` | URI検索、RBAC判定、CSP所有権移譲 | `TEST-INT-80`, `TEST-INT-81` | 観測あり。成功時のメッセージと所有権、URI/RBAC拒否を検査する |
 | `PreflightRejection` | `ipc_router.md` | RBAC拒否・サイズ超過で送信側所有権を維持する | `TEST-INT-81` | 観測あり。拒否ステータスとSENDER_OWNSを検査する |
 | `RAM_Bypass_Bit31` | `runtime_vmmio.md` | Bit 31が0のRAMアクセスでページテーブルを参照しない | `TEST-INT-90` | 一部。OK_GUEST_RAMを検査する。ページテーブル不参照を直接検査しない |
-| `DirectMappedTLB32` | `runtime_vmmio.md` | Folding XOR Hashによる32エントリTLB | `TEST-INT-92` | 一部。同一ページの再アクセスでヒット数が1増える。ハッシュ式と衝突時の置換は検査しない |
+| `DirectMappedTLB` | `runtime_vmmio.md` | Folding XOR Hashによる`FB_CONF_VMMIO_TLB_ENTRIES`エントリTLB | `TEST-INT-92` | 一部。同一ページの再アクセスでヒット数が1増える。ハッシュ式と衝突時の置換は検査しない |
 | `OwnerMismatchTrap` | `runtime_vmmio.md` | 非所有者SHMアクセスの遮断 | `TEST-INT-93` | 一部。OWNER_MISMATCHを検査する。物理副作用不在の独立assertはない |
 | `UnregisteredPageTrap` | `runtime_vmmio.md` | Revoke後のSHMアクセスを遮断する | `TEST-INT-94` | 観測あり。Revoke後のUNREGISTERED_PAGEを検査する |
 | `ActiveDataSegments` | `runtime_loader.md` | Active dataセグメントをリニアメモリへ配置する | `TEST-INT-01` | 観測あり。2セグメントの文字列とバイト配列を検査する |
@@ -281,7 +281,7 @@ RSPは静的構成のExecutionControlを呼び、nativeフックが命令位置�
 - **検証シナリオ**:
   - Bit 31 RAM Bypass フラグ: ゲストリニア RAM（Bit 31 == 0）の $O(1)$ 高速パス
   - 仮想デバイス（FC=0xC）、共有メモリ（FC=0xE）、物理パススルー（FC=0xF）の PTE マッピング
-  - 5-bit Folding XOR Hash による Direct-Mapped Software TLB[32] ヒット/ミス遷移
+  - 5-bit Folding XOR Hash による Direct-Mapped Software TLB[FB_CONF_VMMIO_TLB_ENTRIES] ヒット/ミス遷移
   - マップ済みSHMの非所有者アクセス時の`OWNER_MISMATCH`遮断
   - Revoke後のアンマップ済みSHMアクセス時の`UNREGISTERED_PAGE`遮断
 
@@ -289,7 +289,7 @@ RSPは静的構成のExecutionControlを呼び、nativeフックが命令位置�
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-INT-90 | Bit 31 RAM Bypass 高速パス | リニア RAM アドレス | `access()` 実行 | ページテーブルを介さず `OK_GUEST_RAM` で即時バイパスされる | `RAM_Bypass_Bit31` |
 | TEST-INT-91 | 仮想デバイス書き込みとハンドラディスパッチ | デバイスページ登録済み | `access()` で書き込み | `OK_STATIC_DEVICE` が返り登録ハンドラが呼び出される | `vMMIO_TrapAndEmulate` |
-| TEST-INT-92 | 32エントリ Direct-Mapped TLB キャッシュ | 同一ページ反復アクセス | 連続 `access()` | 2回目以降が TLB ヒットとなり `tlb_hits` が増加する | `DirectMappedTLB32` |
+| TEST-INT-92 | `FB_CONF_VMMIO_TLB_ENTRIES`エントリ Direct-Mapped TLB キャッシュ | 同一ページ反復アクセス | 連続 `access()` | 2回目以降が TLB ヒットとなり `tlb_hits` が増加する | `DirectMappedTLB` |
 | TEST-INT-93 | マップ済みSHMへの非所有者アクセス | task A所有のSHM PTEが登録済みでRevoke前、task Bが実行中 | task Bから同じアドレスを`access()`する | `TRAP_OWNER_MISMATCH`で遮断され、物理アクセスは発生しない | `OwnerMismatchTrap` |
 | TEST-INT-94 | Revoke後のSHMアクセス | 所有権移譲に伴いSHM PTEをRevoke済み | 非所有タスクから同じアドレスを`access()`する | TLBが無効化され、`TRAP_UNREGISTERED_PAGE`で遮断される | `UnregisteredPageTrap` |
 

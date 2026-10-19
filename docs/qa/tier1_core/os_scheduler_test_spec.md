@@ -31,8 +31,8 @@
 | TEST-SCHED-17 | 割り込みFIFOのロックフリー性と容量境界 | ISR producerとCOOS consumerが同一の固定長SPSC FIFOを使用 | producerが満杯まで投入し、consumerが順に取り出し、空きスロットへ再投入する | mutex／スピンロックなしでFIFO順序を保ち、満杯時は既存イベントを上書きせず`false`を返し、consumer後に再利用できる | `{GLOBAL_InterruptWakeup}` |
 | TEST-SCHED-18 | 時刻待機中の他タスク実行・アイドルフック・期限起床 | 時刻待機タスクとREADYタスクが各1つ存在し、単調時計を制御できる | 待機タスクが未来期限を登録して`BLOCKED_TIMER`へ移る | READYタスクが時刻を進める前に実行される。READYキューが空になった時点でアイドルフックを呼び、その後に次回期限まで待つ。待機タスクは期限到達後にREADYキュー末尾へ戻って完了する | `{GLOBAL_IdleDetection}` |
 | TEST-SCHED-19 | タイマー待ちタスク終了時の期限解除 | 異なる未来期限を持つ`BLOCKED_TIMER`タスクが2つある | 早い期限のタスクを`task_killed`し、残るタスクを実行する | 終了タスクは期限到達で再開せず、残るタスクは自身の期限で一度だけ再開する。取り消した期限で余分な起床・待機周期を発生させない | pysim ``, `GOTCHA-SCHED-03` |
-| TEST-SCHED-20 | 閾値以下の実行区間では診断ログを出さない | QAハーネスが単調時計の開始値とyield時刻を供給し、実行区間が300 µs以下である | タスクを一度実行してyieldさせる | printkイベントは出力されず、タスクは従来どおりREADYキュー末尾へ戻る | `{TaskSliceDurationLog}` |
-| TEST-SCHED-21 | 閾値を超える実行区間を一件記録する | QAハーネスが単調時計の開始値とyield時刻を供給し、実行区間が300 µsを超える | タスクを一度実行してyieldさせる | printkへ診断イベントを一度だけ出力し、タスクIDを名前の識別子として経過時間とともに含む。タスクは従来どおりREADYキュー末尾へ戻る | `{TaskSliceDurationLog}` |
+| TEST-SCHED-20 | 閾値以下の実行区間では診断ログを出さない | QAハーネスが単調時計の開始値とyield時刻を供給し、実行区間が`FB_CONF_TASK_SLICE_LOG_THRESHOLD_NS`以下である | タスクを一度実行してyieldさせる | printkイベントは出力されず、タスクは従来どおりREADYキュー末尾へ戻る | `{TaskSliceDurationLog}` |
+| TEST-SCHED-21 | 閾値を超える実行区間を一件記録する | QAハーネスが単調時計の開始値とyield時刻を供給し、実行区間が`FB_CONF_TASK_SLICE_LOG_THRESHOLD_NS`を超える | タスクを一度実行してyieldさせる | printkへ診断イベントを一度だけ出力し、タスクIDを名前の識別子として経過時間とともに含む。タスクは従来どおりREADYキュー末尾へ戻る | `{TaskSliceDurationLog}` |
 | TEST-SCHED-22 | 診断ログ出力失敗後も通常のスケジューリング結果を保つ | 閾値を超える区間を実行し、printk出力先が失敗を返す | 対象タスクをyieldさせ、後続のREADYタスクも実行する | printkの失敗結果にかかわらずREADY順、タスク状態、および実行結果が通常時と一致する | `{TaskSliceDurationLog}`, `printk.md` |
 
 ### 実装上の注意点に対応する検証

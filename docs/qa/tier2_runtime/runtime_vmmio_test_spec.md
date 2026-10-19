@@ -5,7 +5,7 @@
 正本: [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)
 参考実装: [`vmmio_concept.py`](docs/components/tier2_runtime/concepts/vmmio_concept.py)
 
-Bit31によるRAM/vMMIO高速分岐、64件のFlatMap PTE + 32エントリDirect-Mapped TLB、Stage1/2/3の3段階セキュリティゲート、SHM所有権チェック、TLB無効化を検証する。システムコールとVDMAのhost-call transportは本書の対象外とし、`runtime_syscall_test_spec.md`で検証する。
+Bit31によるRAM/vMMIO高速分岐、`FB_CONF_VMMIO_MAX_PTES`件のFlatMap PTE + `FB_CONF_VMMIO_TLB_ENTRIES`エントリDirect-Mapped TLB、Stage1/2/3の3段階セキュリティゲート、SHM所有権チェック、TLB無効化を検証する。システムコールとVDMAのhost-call transportは本書の対象外とし、`runtime_syscall_test_spec.md`で検証する。
 
 ## 2. テストケース一覧
 

@@ -94,12 +94,12 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
 | エントリフォーマット | `{ id: u32, format: null-terminated UTF-8 }` (AoS) |
 | 最大エントリ数 | `FB_CONF_LOG_DICT_MAX_ENTRIES` (コンパイル時固定) |
 | 所有権モデル | ストレージ所有権分離。ROM上のソート済みAoS固定長配列（`flat_map_storage`）に実体を配置し、`LogDictionary` および `Logger` は非所有スパン（`flat_map_view`）を介して二分探索を行う。ロガー本体が辞書配列を複製・所有することはない |
-| フォーマット文字列 | Tier 1 [`printk.md`](docs/components/tier1_core/printk.md)の数値書式契約に従い、構成時に検査する。最大4個の `u32` 引数を参照する |
-| 引数数メタデータ | 数値指定子数 $n$（$0 \le n \le 4$）をビルド時に確定する。`%%`は引数を消費しない。ソート済み辞書の各エントリに対応する不変の1バイト表を生成し、送受信側で同じIDと引数数の対応を共有する。ID索引と文字列は複製しない |
-| 引数スライス規則 | 固定容量の4引数スロットの先頭 $n$ 個のみを転送・展開する。未使用スロットの値は転送しない |
+| フォーマット文字列 | Tier 1 [`printk.md`](docs/components/tier1_core/printk.md)の数値書式契約に従い、構成時に検査する。最大 `FB_CONF_LOG_MAX_ARGUMENTS` 個の `u32` 引数を参照する |
+| 引数数メタデータ | 数値指定子数 $n$（$0 \le n \le FB_CONF_LOG_MAX_ARGUMENTS$）をビルド時に確定する。`%%`は引数を消費しない。ソート済み辞書の各エントリに対応する不変の1バイト表を生成し、送受信側で同じIDと引数数の対応を共有する。ID索引と文字列は複製しない |
+| 引数スライス規則 | `FB_CONF_LOG_MAX_ARGUMENTS` 個の固定容量スロットの先頭 $n$ 個のみを転送・展開する。未使用スロットの値は転送しない |
 | 登録時期 | ビルド時 (実行時の追加は不可) |
 
-デバイス上のロガーはフォーマット文字列を走査・展開しない。`printk` へ送る1レコードは `4 + 4n` バイトである。先頭に `level:u8` と `dict_offset:u24 little-endian` を格納し、辞書IDに対応する引数数 $n$ 個の `u32 little-endian` を順に続ける。引数数やレコード長のフィールドは送信しない。引数0〜4個の転送長は、それぞれ4、8、12、16、20バイトとなる。リングバッファの各スロットと送信作業領域は最大4引数の固定容量を維持する。
+デバイス上のロガーはフォーマット文字列を走査・展開しない。`printk` へ送る1レコードは `4 + 4n` バイトであり、最大長は `FB_CONF_LOG_MAX_RECORD_SIZE` である。先頭に `level:u8` と `dict_offset:u24 little-endian` を格納し、辞書IDに対応する引数数 $n$ 個の `u32 little-endian` を順に続ける。引数数やレコード長のフィールドは送信しない。リングバッファの各スロットと送信作業領域は `FB_CONF_LOG_MAX_ARGUMENTS` 個の引数を収める固定容量を維持する。
 
 ロガーとprintkは同一ビルドの辞書IDと引数数を共有する。
 復号、未知ID・欠損入力の拒否、物理出力、戻り値はTier 1の[`printk.md`](docs/components/tier1_core/printk.md)を正本とする。
@@ -139,7 +139,7 @@ Tier 1診断イベントの辞書エントリと引数数も、構成時に共�
 
 `unified_pc` はCode section payload先頭からトラップ命令先頭までの32ビットオフセットである。関数インデックスは符号化しないため、PC値だけではモジュールを特定しない。ログレコードはmodule IDを含まないため、複数モジュールを含む診断では、出力側が別途Runtimeまたはモジュール文脈を保持する必要がある。
 
-Runtimeイベントのtickは符号化時に`tick & 0xFFFF_FFFF`として32ビットへ循環させる。既存の4引数割り当ては変更しない。復号したtickの差分は`(end - start) & 0xFFFF_FFFF`で求める。差分から経過時間を求める場合、計測区間はカウンタの一周未満とし、対象時計の周波数を用いる。
+Runtimeイベントのtickは符号化時に`tick & 0xFFFF_FFFF`として32ビットへ循環させる。既存の `FB_CONF_LOG_MAX_ARGUMENTS` 引数割り当ては変更しない。復号したtickの差分は`(end - start) & 0xFFFF_FFFF`で求める。差分から経過時間を求める場合、計測区間はカウンタの一周未満とし、対象時計の周波数を用いる。
 
 ### 4.2.2 プロファイルログイベント
 
@@ -215,8 +215,8 @@ sequenceDiagram
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 発生したイベントを、レベルと辞書オフセット形式で記録する。 |
-| シグネチャ | `log_event(level: log-level, offset: dictionary-offset, args: scalar-argument-view<4>) -> log-result` |
-| 引数 | `level`: ログレベル重要度<br>`offset`: 辞書オフセット（24bit）<br>`args`: ログパラメータとなる最大4個のスカラー引数ビュー |
+| シグネチャ | `log_event(level: log-level, offset: dictionary-offset, args: scalar-argument-view<FB_CONF_LOG_MAX_ARGUMENTS>) -> log-result` |
+| 引数 | `level`: ログレベル重要度<br>`offset`: 辞書オフセット（24bit）<br>`args`: ログパラメータとなる最大 `FB_CONF_LOG_MAX_ARGUMENTS` 個のスカラー引数ビュー |
 | 戻り値 | `log-result`（概念実装では `SUCCESS`、レベル除外時は `FILTERED`、満杯時に上書きした場合は `OVERWRITTEN`） |
 | 期待する結果 | 正常：ログ情報がリングバッファにキューイングされる。 |
 
@@ -252,7 +252,7 @@ LoggerはTier 2 RuntimeとTier 3プラグインが利用する診断APIであり
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 検証対象の不変条件
-本書で定めた状態、境界、所有権、およびエラー処理を検証対象とする。同一辞書を共有する前提で、転送長 `4 + 4n` と次レコード位置の一致を引数数0〜4で検証する。未知IDと欠損入力は拒否状態へ遷移する。形式モデルは境界を抽象化し、具体的なバイト列と混在レコードの復号はTEST-LOG-15/16で検査する。
+本書で定めた状態、境界、所有権、およびエラー処理を検証対象とする。同一辞書を共有する前提で、転送長 `4 + 4n` と次レコード位置の一致を、引数数0〜`FB_CONF_LOG_MAX_ARGUMENTS`で検証する。未知IDと欠損入力は拒否状態へ遷移する。形式モデルは境界を抽象化し、具体的なバイト列と混在レコードの復号はTEST-LOG-15/16で検査する。
 
 ### 7.2 検証モデルと反証可能性
 形式検証モデルは[logging_flush_model.py](docs/components/tier2_runtime/formal/logging_flush_model.py)である。各モデルの正常系と`guards=False`変異で、保護条件が反証されることを確認する。

@@ -4,7 +4,7 @@
 
 正本: [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md)
 関連正本: [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)（{JIT_LazyChaining}、{JIT_AssemblyStencilCodegen}はjit_runtimeと共同責務）
-本仕様は、実行コンテキストのBasicBlock indexとPC照合、カード状態によるJIT検索抑止、BasicBlock内JIT参照、metadataなしQA fixtureのPC索引検索、ホットスポット昇格、3面コードキャッシュ、chain dispatcher、および実行可能メモリの初期権限を検証する。製品RuntimeはLoaderのBasicBlock参照を使い、最大72件のソート済みPC索引はキャッシュ更新とchain metadataの更新に使う。x64参照構成を対象とし、ARMv8-Mの物理配置、ABI、保護方式は別途定義する。
+本仕様は、実行コンテキストのBasicBlock indexとPC照合、カード状態によるJIT検索抑止、BasicBlock内JIT参照、metadataなしQA fixtureのPC索引検索、ホットスポット昇格、3面コードキャッシュ、chain dispatcher、および実行可能メモリの初期権限を検証する。製品RuntimeはLoaderのBasicBlock参照を使い、`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY`件以下のソート済みPC索引はキャッシュ更新とchain metadataの更新に使う。x64参照構成を対象とし、ARMv8-Mの物理配置、ABI、保護方式は別途定義する。
 
 ## 2. テストケース一覧
 
@@ -88,7 +88,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-28 | QA snapshot領域の容量と再利用 | QA専用ハーネスへ小さいモジュールを登録し、ホットスポット検出の有効・無効構成を用意する | QA snapshot生成、trace追加、候補除外、flushを順に行う | QA snapshotのtrace表容量は常駐枠上限と基本ブロック数の小さい方となる。候補マスクの観測は既存ストレージを借用する。更新でQA snapshot領域を追加確保しない。製品のdispatchへsnapshotを渡す要求とはしない | QA専用fixtureの検査、`` |
 | TEST-JITR-29 | 制御命令だけの区間の検索・観測抑止 | 構造命令と通常命令の開始PCが同じカードに入り、制御命令が連続する | native dispatcherで実行し、QAハーネスでJIT拡張の履歴とLoader索引の検索を観測する | 構造制御境界を除く命令bodyのブロックを開始PCで通知し、Runtime API lowering対象の命令もJIT拡張の単一リングへ直接記録する。制御命令だけの区間と記録通知でLoader索引を再検索しない。NativeStepからdispatchへ切り替えても、メモリ処理の再開PCを先頭として扱わない。分岐・呼出しの結果を維持する | ``, ``, ``, `` |
 | TEST-JITR-26 | BasicBlock内JITキャッシュ参照の直接ヒット | 常駐traceを指す有効な`jit_cache_reference`を持つBasicBlock | `COMPILED`カードで同じブロック入口を繰り返しdispatchする | JIT索引の二分探索を行わず、8bit参照から該当traceを返す。参照先traceの`head_pc`がBasicBlockのPCと一致し、正しい本体を実行する | `jit_runtime.md`「JITエントリ表と全バンク索引」、`{JIT_MultiBuffer_Cache}` |
-| TEST-JITR-82 | Loader metadataなしQA fixtureのPC索引検索 | module metadataを持たないQA fixtureと、Active/Warm/Oldestに分散した常駐traceがある | fixture用PC検索APIでヒットとmissを検査する | QA専用のmetadataなし経路だけが最大72件のソート索引をlower_boundし、正確なPCを確認する。製品Runtimeはこの経路を通らず、Loader BasicBlock indexとPCを使う | `{JIT_MultiBuffer_Cache}`, `jit_runtime.md`「JITエントリ表と全バンク索引」 |
+| TEST-JITR-82 | Loader metadataなしQA fixtureのPC索引検索 | module metadataを持たないQA fixtureと、Active/Warm/Oldestに分散した常駐traceがある | fixture用PC検索APIでヒットとmissを検査する | QA専用のmetadataなし経路だけが`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY`件以下のソート索引をlower_boundし、正確なPCを確認する。製品Runtimeはこの経路を通らず、Loader BasicBlock indexとPCを使う | `{JIT_MultiBuffer_Cache}`, `jit_runtime.md`「JITエントリ表と全バンク索引」 |
 | TEST-JITR-83 | current_block_indexとcard-stateによるJIT lookup抑止 | Interpreterのproviderに状態0〜3のカードを設定し、BasicBlock参照を未設定または既設定にする | 各状態のブロックをnative dispatcherから実行し、context index、PC照合、JIT provider callback、cache参照を確認する | dispatcherは`current_block_index`からBasicBlockを直接参照し、`head_pc`とPCの一致を検証する。状態0〜2ではJIT providerを呼ばずJIT参照も変更しない。状態3だけJIT providerへ進み、BasicBlock参照を使う。通常dispatchにLoader Radix・二分検索・block検索cacheはない | `jit_runtime.md`「BasicBlock indexによるJIT検索手順」、pysim ``, `` |
 | TEST-JITR-84 | 3面キャッシュ変更後のBasicBlock参照整合 | 有効なBasicBlock参照を持つtraceがActive/Warm/Oldestの移動・削除対象となる | insert、rotation、flushを各実行し、関連BasicBlockの参照とlookupを確認する | 移動した常駐traceの参照は新しいbank/entry位置へ更新され、退役traceの参照は`0xFF`へ戻る。参照から別PCのtraceへ到達しない | `jit_runtime.md`「JITエントリ表と全バンク索引」、`{GOTCHA-JITR-05}` |
 | TEST-JITR-87 | successor block indexによるchain lookup | Loader metadataを持つsourceとresident successor traceがある | sourceの`next_block_index`と`next_pc`でsuccessorを受け入れ、PC照合とchain targetを確認する | chain linkと候補受入れはBasicBlock indexから参照を引き、indexとPCを両方照合する。製品経路は`find_cached_trace_by_pc`を呼ばない。PC検索fixtureはTEST-JITR-82に分離する | `jit_runtime.md`「BasicBlock indexによるJIT検索手順」、``, `` |

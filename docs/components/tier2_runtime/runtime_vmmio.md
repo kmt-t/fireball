@@ -11,13 +11,13 @@ vMMIO（Virtual Memory-Mapped I/O）は、ホストが仲介するリソース�
 
 ホストとゲストの境界を越え、vMMIO アドレス空間（Bit 31 == 1、Stage 2 / 3）を経由するアクセスは、この層が仲介する。ゲスト専用 RAM（Stage 1: Bit 31 == 0）は vMMIO の管理対象外である。ゲスト専用 RAM には、境界検査だけで完結する高速バイパス経路を設ける。詳細は後述する。
 
-WASM ゲストのリニアメモリは標準仕様に従い、**64KBページ（65,536 bytes）** 単位で管理する論理空間である。vMMIO Stage 1の`guest_ram_size`はシミュレータのゲストアドレス窓に対する境界判定値であり、WASMリニアメモリのページ数を表さない。リニアメモリの物理バック方式とARMv8-Mの容量対応はTBDとする。境界超過アクセスは即座にトラップする。ホスト/デバイス側のvMMIO領域は**1ページ（4KB）**単位で管理する。
+WASM ゲストのリニアメモリは標準仕様に従い、`FB_CONF_WASM_PAGE_SIZE` 単位で管理する論理空間である。vMMIO Stage 1の`guest_ram_size`はシミュレータのゲストアドレス窓に対する境界判定値であり、WASMリニアメモリのページ数を表さない。リニアメモリの物理バック方式とARMv8-Mの容量対応はTBDとする。境界超過アクセスは即座にトラップする。ホスト/デバイス側のvMMIO領域は `FB_PAGE_SIZE` 単位で管理する。
 
-本アーキテクチャでは、PTE（Page Table Entry）の保存にシステム設計規約に準拠した **64件固定の静的ソート済み配列と、それを引く `fireball::flat_map_view`** を採用する。仮想ページ番号（VPN）から PTE へのマッピングをフラットに保持・管理する。PTE登録が64件を超える場合は、契約違反として `assert` で停止する。
+本アーキテクチャでは、PTE（Page Table Entry）の保存にシステム設計規約に準拠した `FB_CONF_VMMIO_MAX_PTES` 件の静的ソート済み配列と、それを引く `fireball::flat_map_view` を採用する。仮想ページ番号（VPN）から PTE へのマッピングをフラットに保持・管理する。PTE登録が `FB_CONF_VMMIO_MAX_PTES` 件を超える場合は、契約違反として `assert` で停止する。
 
 標準の `std::flat_map` を素のまま用いない理由: C++23 の `std::flat_map` はコンテナアダプタであり、既定の下位コンテナが `std::vector` である。そのままでは動的再確保に伴うレイテンシ揺らぎとメモリ断片化の排除原則に抵触する。本プロジェクトでは表の実体を静的配列から確保し、`fireball::flat_map_view` で引く設計とする。
 
-FlatMap 単体での探索は $O(\log N)$ である。本アーキテクチャでは手前に **ダイレクトマップ方式のソフトウェアTLB（32エントリ、$O(1)$ キャッシュ）** を配置する。JIT 実行やホットな共有メモリ操作のクリティカルパスでは、大半のアクセス（目標 90% 以上）が TLB キャッシュヒット（$O(1)$）で高速解決される。FlatMap 化に伴うテーブル探索の遅延は十分に吸収される。
+FlatMap 単体での探索は $O(\log N)$ である。本アーキテクチャでは手前に **ダイレクトマップ方式のソフトウェアTLB（`FB_CONF_VMMIO_TLB_ENTRIES` エントリ、$O(1)$ キャッシュ）** を配置する。JIT 実行やホットな共有メモリ操作のクリティカルパスでは、大半のアクセス（目標 90% 以上）が TLB キャッシュヒット（$O(1)$）で高速解決される。FlatMap 化に伴うテーブル探索の遅延は十分に吸収される。
 
 1. **リニアアドレス空間フィルタ（高速バイパス & 境界チェック）**:
    32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Stage 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。
@@ -27,8 +27,8 @@ FlatMap 単体での探索は $O(\log N)$ である。本アーキテクチャ�
    - 仮想ページ番号（VPN = `raw >> 12`）をキーとして、FlatMap（`vmmio_ptes`）に PTE を格納する。
    - 動的 SHM ページや物理パススルーページをフラットに登録・管理できる。
 3. **ダイレクトマップ方式ソフトウェアTLB（完全O(1)キャッシュ）**:
-   ホットパス高速化のため、一発でインデックスが決まるダイレクトマッピング（ハッシュ方式、32エントリ固定サイズ）を採用する。
-   - 仮想ページ番号（20-bit: `vpn = raw >> 12`）を 20→10→5 bit と2回の XORで折りたたみ、`temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); tlb_idx = temp & 0x1F` を算出してTLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。
+   ホットパス高速化のため、一発でインデックスが決まるダイレクトマッピング（ハッシュ方式、`FB_CONF_VMMIO_TLB_ENTRIES` エントリ固定サイズ）を採用する。
+   - 仮想ページ番号（20-bit: `vpn = raw >> 12`）を 20→10→5 bit と2回の XORで折りたたみ、`temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); tlb_idx = temp & (FB_CONF_VMMIO_TLB_ENTRIES - 1)` を算出してTLBに一撃でアクセスする。エントリ数は2の冪とする。ヒット時は権限チェックを通過した後に即時実行する。
   - **全ビット拡散**: FC[19:15] から下位ページ番号ビットまでの VPN 全20ビットが 5-bit 幅へ折り畳まれるため、FC 間やページ番号の変動に対して TLB スロットが均等に分散する。
 
 vMMIO領域（Stage 2/3）のセキュリティモデルは**PTEに埋め込まれた権限フィールドがゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。ゲストRAM（Stage 1）はPTEを経由せず、`FastAddressCheck` による境界チェックのみをゲートとする別経路である。アクセス特性に応じてセキュリティゲートを以下の3段階に階層化する。
@@ -56,8 +56,8 @@ vSoC (`runtime_vsoc.md`) から分解された仮想MMIO・デバイスレジス
 | 配置 | 構造体 | 概要 |
 | :--- | :--- | :--- |
 | ROM | `vmmio_address` | アドレスビットフィールド定義（C++23 ヘルパー構造体、実体なし） |
-| ROM/RAM | `vmmio_ptes[64]` | 仮想ページ番号 (VPN) → 32bit PTE の FlatMap（`fireball::flat_map_view<uint32_t, uint32_t>`）。登録上限は64件 |
-| RAM | ソフトウェアTLB配列 | `vmmio_tlb_cache[32]` 32エントリのダイレクトマップ型高速TLBキャッシュ配列 |
+| ROM/RAM | `vmmio_ptes[FB_CONF_VMMIO_MAX_PTES]` | 仮想ページ番号 (VPN) → 32bit PTE の FlatMap（`fireball::flat_map_view<uint32_t, uint32_t>`）。登録上限は `FB_CONF_VMMIO_MAX_PTES` 件 |
+| RAM | ソフトウェアTLB配列 | `vmmio_tlb_cache[FB_CONF_VMMIO_TLB_ENTRIES]` のダイレクトマップ型高速TLBキャッシュ配列 |
 
 - **`VmmioController`**: アドレス境界デコード、FlatMap PTE ルックアップ、TLBキャッシュ管理、動的マッピング管理を担う主要クラス。
 - **`vmmio_config`**: 静的な領域定義 (`vmmio_static_region`) の不変なテーブル。
@@ -69,8 +69,8 @@ graph TD
     subgraph vMMIO_Layer
         Filter["MSB Address Filter<br/>Bit 31 == 0 vs 1"]
         Decoder["Address Decoder<br/>FC(31:28) + VPN(31:12) + Offset(11:0)"]
-        FlatMap["vmmio_ptes[64] (FlatMap)<br/>Key: VPN -> Value: PTE"]
-        TLB["Direct-Mapped TLB (32)<br/>Index = Hash(VPN) & 31"]
+        FlatMap["vmmio_ptes[FB_CONF_VMMIO_MAX_PTES] (FlatMap)<br/>Key: VPN -> Value: PTE"]
+        TLB["Direct-Mapped TLB (FB_CONF_VMMIO_TLB_ENTRIES)<br/>Index = Hash(VPN) & (FB_CONF_VMMIO_TLB_ENTRIES - 1)"]
         Controller["VmmioController"]
         PermGate{"Permission Check<br/>Valid, R/W"}
     end
@@ -102,7 +102,7 @@ graph TD
 | Function Code | vMMIO 領域時の機能種別（FC）。`vpn >> 16` でも抽出可能。 | ビット[31:28]（4 bits）、16種別 |
 | Device Metadata | 静的デバイス領域（FC=12）におけるデバイス／サービス識別メタデータ。host-call の syscall ID とは別の値である。 | ビット[27:16]（12 bits: `0..4095`） |
 | VPN (Virtual Page Number) | 仮想ページ番号（FC + Device Metadata + Page Index を包含）。FlatMap のキーおよび TLB のマッチタグ。 | ビット[31:12]（20 bits: `raw >> 12`） |
-| Offset | 4KBページ内でのバイトオフセット。PTE 解決後に相対アドレスとして使用。 | ビット[11:0]（12 bits）、4KB |
+| Offset | `FB_PAGE_SIZE` ページ内でのバイトオフセット。PTE 解決後に相対アドレスとして使用。 | ビット[11:0]（12 bits）、`FB_PAGE_SIZE` |
 
 アドレスデコード、TLB 探索、境界検査、および PTE 解決の実行可能なリファレンス実装は [`vmmio_concept.py`](docs/components/tier2_runtime/concepts/vmmio_concept.py) を正本とする。
 
@@ -112,7 +112,7 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | `0x0000_0000` – `0x7FFF_FFFF` | 0 | - | ゲスト RAM（WASM線形メモリ）— Stage 1 |
 | `0xC000_0000` – `0xC000_FFFF` | 1 | 12 (`0xC`) | Static Devices（IPCR, vIRQ等）— Stage 2。SYSCTL／VDMAのhost call transportは含まない |
-| `0xE000_0000` – `0xEFFF_FFFF` | 1 | 14 (`0xE`) | SHM（共有メモリ）— Stage 3。この 256MB はアドレスデコード上の FC=14 全域であり、実際にビットマップアロケータが PTE を割り当てる範囲は先頭 128KB（`0xE000_0000`〜`0xE001_FFFF`、32ページ）のみに限られる。残りは PTE 未登録のまま予約され、アクセスは `TRAP_UNREGISTERED_PAGE` となる |
+| `0xE000_0000` – `0xEFFF_FFFF` | 1 | 14 (`0xE`) | SHM（共有メモリ）— Stage 3。この256MBはアドレスデコード上のFC=14全域であり、ビットマップアロケータがPTEを割り当てる範囲は先頭 `FB_CONF_MAX_SHM_PAGES` 個の `FB_PAGE_SIZE` スロットである。残りはPTE未登録のまま予約され、アクセスは`TRAP_UNREGISTERED_PAGE`となる |
 | `0xF000_0000` – `0xFFFF_FFFF` | 1 | 15 (`0xF`) | PASSTHROUGH（物理アドレス直結）— Stage 3 |
 
 #### コントローラ群
@@ -121,8 +121,8 @@ graph TD
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| FlatMap ページテーブル | 仮想ページ番号 (VPN) → 32bit PTE のマッピング。64件固定で、登録超過は契約違反として `assert` で停止する。 | `vmmio_ptes[64]`（`fireball::flat_map_view<uint32_t, uint32_t>`） |
-| ソフトウェアTLB（グローバル） | 仮想ページ番号 (VPN) → PTE マッピングをダイレクトマップハッシュでキャッシュ。ホットパスを完全 O(1) に高速化する。 | `vmmio_tlb_cache[32]`（固定32エントリ、ハッシュ結合） |
+| FlatMap ページテーブル | 仮想ページ番号 (VPN) → 32bit PTE のマッピング。`FB_CONF_VMMIO_MAX_PTES` 件固定で、登録超過は契約違反として `assert` で停止する。 | `vmmio_ptes[FB_CONF_VMMIO_MAX_PTES]`（`fireball::flat_map_view<uint32_t, uint32_t>`） |
+| ソフトウェアTLB（グローバル） | 仮想ページ番号 (VPN) → PTE マッピングをダイレクトマップハッシュでキャッシュ。ホットパスを完全 O(1) に高速化する。 | `vmmio_tlb_cache[FB_CONF_VMMIO_TLB_ENTRIES]`（固定容量、ハッシュ結合） |
 
 #### 静的デバイスページテーブルエントリ
 <!-- traceability: {META_Static_Resolution} -->
@@ -156,11 +156,11 @@ FC=13のHALドライバーはゲストとして`vmmio.access`を実行しない�
 [7:0]   OWNER_TASK_ID (SHM / DYNAMIC)
 ```
 
-**FC=14（SHM）のマッピングは、共有メモリマネージャの予約スロットイベント購読により駆動される。4KB仮想スロット番号、物理バック基点、実サイズは独立したマッピングメタデータとして保持する。4KBの仮想予約は同量の物理RAM確保を意味しない。vMMIOはイベントに応じてPTE・サイズメタデータを登録または削除し、対応TLBをフラッシュする。** {VmmioShmDelegation} <!-- definition: {VmmioShmDelegation} -->
+**FC=14（SHM）のマッピングは、共有メモリマネージャの予約スロットイベント購読により駆動される。`FB_PAGE_SIZE` 仮想スロット番号、物理バック基点、実サイズは独立したマッピングメタデータとして保持する。`FB_PAGE_SIZE` の仮想予約は同量の物理RAM確保を意味しない。vMMIOはイベントに応じてPTE・サイズメタデータを登録または削除し、対応TLBをフラッシュする。** {VmmioShmDelegation} <!-- definition: {VmmioShmDelegation} -->
 
 #### 仮想アドレス割り当てアルゴリズム（ビット並列連続ビットマップ方式）
 <!-- traceability: {META_Static_Resolution} -->
-vMMIO SHM領域の先頭32ページ（128KB）は4KB単位の仮想予約スロットとして扱う。各SHMブロックが1スロットを占有し、PTEメタデータに物理基点と要求サイズを保持する。予約番号は固定長のページ台帳で管理する。物理SHM容量（`FB_CONF_SHM_SIZE`）とは別予算であり、スロット予約だけでは物理バイトを消費しない。
+vMMIO SHM領域の先頭 `FB_CONF_MAX_SHM_PAGES` ページは `FB_PAGE_SIZE` 単位の仮想予約スロットとして扱う。各SHMブロックが1スロットを占有し、PTEメタデータに物理基点と要求サイズを保持する。予約番号は固定長のページ台帳で管理する。物理SHM容量（`FB_CONF_SHM_SIZE`）とは別予算であり、スロット予約だけでは物理バイトを消費しない。
 
 #### FlatMap ページテーブル定義
 <!-- traceability: {META_FlatMapIndexed} {vMMIO_Isolation} -->
@@ -168,7 +168,7 @@ vMMIO SHM領域の先頭32ページ（128KB）は4KB単位の仮想予約スロ�
 | 構造体・型定義名 | 構成要素 | 型分類 | 役割と不変条件 |
 | :--- | :--- | :--- | :--- |
 | `pte_entry` | `vpn` (Key: 仮想ページ番号: 20bit)<br>`pte` (Value: 32bit PTE属性) | 構造体 | ソート済みページテーブルの1レコード |
-| `VmmioPteStore` | `std::array<pte_entry, FB_CONF_VMMIO_MAX_PTES>` (`64`) | 固定長配列 | コンパイル時に静的確保されるPTE実体ストレージ（動的確保ゼロ）。容量超過は `assert` で停止 |
+| `VmmioPteStore` | `std::array<pte_entry, FB_CONF_VMMIO_MAX_PTES>` | 固定長配列 | コンパイル時に静的確保されるPTE実体ストレージ（動的確保ゼロ）。容量超過は `assert` で停止 |
 | `VmmioPteView` | `fireball::flat_map_view<uint32_t, uint32_t>` | ビュー | 二分探索索引を提供する軽量ゼロコピービュー |
 
 
@@ -185,7 +185,7 @@ vMMIO SHM領域の先頭32ページ（128KB）は4KB単位の仮想予約スロ�
 
 #### 多段アドレスデコード & TLB ルックアップ（手順アクティビティ図）
 <!-- traceability: {GOTCHA-VMMIO-01} {GOTCHA-VMMIO-02} {META_Static_Resolution} -->
-32ビットゲストアドレスの Guest RAM 高速バイパス、20-bit VPN の Folding XOR による 32 エントリ TLB 探索、および PTE 二分探索の手順を示す。
+32ビットゲストアドレスの Guest RAM 高速バイパス、20-bit VPN の Folding XOR による `FB_CONF_VMMIO_TLB_ENTRIES` エントリ TLB 探索、および PTE 二分探索の手順を示す。
 
 ```mermaid
 flowchart TD
@@ -198,7 +198,7 @@ flowchart TD
     CalcRAM --> DirectAccess(["Direct O(1) Memory Access (Zero MMU Overhead)"])
 
     CheckBit31 -- "No (Bit 31 == 1)" --> ExtractVPN["Extract 20-bit VPN (raw >> 12) & Offset (raw & 0xFFF)"]
-    ExtractVPN --> FoldingXOR["GOTCHA-VMMIO-02: temp = VPN ^ (VPN >> 10); temp = temp ^ (temp >> 5); Hash = temp & 31"]
+    ExtractVPN --> FoldingXOR["GOTCHA-VMMIO-02: temp = VPN ^ (VPN >> 10); temp = temp ^ (temp >> 5); Hash = temp & (FB_CONF_VMMIO_TLB_ENTRIES - 1)"]
     FoldingXOR --> ProbeTLB["Probe Direct-Mapped TLB at index [Hash]"]
 
     ProbeTLB --> TLBHit{"TLB Entry.vpn == VPN?"}
@@ -281,7 +281,7 @@ sequenceDiagram
                 C-->>G: Trap (Unregistered Page / Undefined FC)
             end
             F-->>C: resolved PTE
-            C->>T: Refill entry at Hash(vpn) & 31
+            C->>T: Refill entry at Hash(vpn) & (FB_CONF_VMMIO_TLB_ENTRIES - 1)
         end
 
         C->>C: perm_check(PTE, is_write)
@@ -314,14 +314,14 @@ VDMA は `fireball:host/vdma.start(source, destination, byte-count)` の専用ho
 
 ### 4.3 仮想デバイスマップ
 <!-- traceability: {VDMA} -->
-各領域は 4KB 単位で割り当てられる。`vMMIO_BASE = 0x8000_0000` 以上の領域を対象とする。
+各領域は `FB_PAGE_SIZE` 単位で割り当てられる。`vMMIO_BASE = 0x8000_0000` 以上の領域を対象とする。
 
 | アドレス範囲 | FC | デバイス名 | 説明 |
 |:---| :--- | :--- | :--- |
 | `0xC000_1000` | `12` (`0xC`) | **IPCR** | IPCルータ連携レジスタ |
 | `0xC000_3000` | `12` (`0xC`) | **vIRQ** | 原因付き仮想割り込みディスパッチャ専用ページ |
 | `0xD000_0000` – `0xDFFF_FFFF` | `13` (`0xD`) | **DYNAMIC** | HALが提供する固定長バッファの動的マッピング。マップ対象ゲストは1つだけ |
-| `0xE000_0000` – `0xEFFF_FFFF` | `14` (`0xE`) | **SHM** | 共有メモリ。デコード上の全域は256MBだが、予約対象は先頭128KB（4KB×32スロット）のみ。各PTEの物理基点と実サイズは要求に応じる。PTE格納表全体の上限は64件 |
+| `0xE000_0000` – `0xEFFF_FFFF` | `14` (`0xE`) | **SHM** | 共有メモリ。デコード上の全域は256MBだが、予約対象は先頭 `FB_CONF_MAX_SHM_PAGES × FB_PAGE_SIZE` 分のみ。各PTEの物理基点と実サイズは要求に応じる。PTE格納表全体の上限は `FB_CONF_VMMIO_MAX_PTES` 件 |
 | `0xF000_0000` – `0xFFFF_FFFF` | `15` (`0xF`) | **PASSTHROUGH** | 物理アドレス直結 |
 
 PASSTHROUGH アドレス変換:
@@ -397,7 +397,7 @@ vIRQは、物理割り込みの原因源表と有効な登録状態を保持す�
 
 #### vIRQ ページ配置と固定スロット
 
-vIRQページは `FB_CONF_VMMIO_VIRQ_BASE`（`0xC000_3000`）から `FB_CONF_VMMIO_VIRQ_PAGE_SIZE`（4KB）を占有する。原因源表と有効登録表は読み取り専用の参照スナップショットとして公開し、登録・解除の書込みは拒否する。host callによる登録要求は保留値として扱い、現在有効な関数インデックスを実行中のゲストから途中で観測できないようにする。
+vIRQページは `FB_CONF_VMMIO_VIRQ_BASE` から `FB_CONF_VMMIO_VIRQ_PAGE_SIZE` を占有する。原因源表と有効登録表は読み取り専用の参照スナップショットとして公開し、登録・解除の書込みは拒否する。host callによる登録要求は保留値として扱い、現在有効な関数インデックスを実行中のゲストから途中で観測できないようにする。
 
 | オフセット | 領域 | アクセス | 内容 |
 | :--- | :--- | :--- | :--- |
@@ -409,11 +409,11 @@ vIRQページは `FB_CONF_VMMIO_VIRQ_BASE`（`0xC000_3000`）から `FB_CONF_VMM
 | `0x110` | FAULT 登録スロット | R | FAULT 分類ディスパッチャの有効なWASM関数インデックス |
 | `0x120` – `0x13F` | デバイス登録スロット | R | `device_index` ごとの有効なデバイスディスパッチャ。最大 `FB_CONF_HAL_MAX_DEVICES` 件 |
 
-登録値 `0xFFFF_FFFF` は未登録を示す固定値である。`virq.register` / `virq.unregister` 以外の登録操作、範囲外ノード、未登録値以外の不正な関数インデックス、または期待シグネチャを満たさない関数はvSoCが拒否する。登録対象はroot、4分類、各デバイスの静的ノードに限り、親子関係と原因源表はホスト設定で固定する。
+登録値 `0xFFFF_FFFF` は未登録を示す固定値である。`virq.register` / `virq.unregister` 以外の登録操作、範囲外ノード、未登録値以外の不正な関数インデックス、または期待シグネチャを満たさない関数はvSoCが拒否する。登録対象はroot、`FB_CONF_VIRQ_CATEGORY_COUNT` 分類、各デバイスの静的ノードに限り、親子関係と原因源表はホスト設定で固定する。
 
 #### 静的ノードと原因源表
 
-ノードIDは `root → 分類 → デバイス` の順に固定する。最大ノード数は `FB_CONF_VIRQ_MAX_NODES`（root 1件、分類4件、デバイス `FB_CONF_HAL_MAX_DEVICES` 件）であり、原因源表の最大件数は `FB_CONF_VIRQ_MAX_SOURCES`（SYSTEM/RUNTIME/FAULTの3系統とデバイス源）である。
+ノードIDは `root → 分類 → デバイス` の順に固定する。最大ノード数は `FB_CONF_VIRQ_MAX_NODES`（root 1件、分類 `FB_CONF_VIRQ_CATEGORY_COUNT` 件、デバイス `FB_CONF_HAL_MAX_DEVICES` 件）であり、原因源表の最大件数は `FB_CONF_VIRQ_MAX_SOURCES`（SYSTEM/RUNTIME/FAULTの3系統とデバイス源）である。
 
 | ノード | ノードIDの範囲 | 役割 |
 | :--- | :--- | :--- |
@@ -486,14 +486,14 @@ sequenceDiagram
 ### 4.8 ソフトウェアTLB
 <!-- traceability: {VDMA} {OwnershipTransfer} {META_ConfigurableSystem} -->
 Stage 3 アクセス（FC=14/15）では、毎回 FlatMap の二分探索を走らせる遅延を排除する。
-このため、仮想ページ番号（VPN = `raw >> 12`）に基づくマッピングを32エントリのダイレクトマップキャッシュに保持する。
+このため、仮想ページ番号（VPN = `raw >> 12`）に基づくマッピングを `FB_CONF_VMMIO_TLB_ENTRIES` エントリのダイレクトマップキャッシュに保持する。
 
 - **Guest RAM アクセス時の TLB 完全バイパス (`GOTCHA-VMMIO-01`)**: {GOTCHA-VMMIO-01} <!-- definition: {GOTCHA-VMMIO-01} -->
   **設計理由と不変条件**: 最上位ビットが 0 のアドレス空間（`0x0000_0000`〜`0x7FFF_FFFF`）はゲスト RAM 専用領域である。全メモリアクセスの 99% 以上を占める最頻パスにおいて毎回 TLB ルックアップやハッシュ計算を行うと、実行性能が致命的に劣化する。そのため、最上位ビットが 0 のアクセスは TLB を一切参照せず、直接ゲストベースアドレス加算＋サイズ境界検査のみで即時メモリアクセスを完結させる。TLB は最上位ビットが 1 の vMMIO / ペリフェラル領域にのみ適用される。
 - **Folding XOR ハッシュによる機能コード（FC）の均等分散 ({GOTCHA-VMMIO-02})**: <!-- definition: {GOTCHA-VMMIO-02} -->
   - キー（VPN）: `raw >> 12`（20-bit）
-  - HASH / インデックス計算: `temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); tlb_idx = temp & 0x1F`（20→10→5 bit、2回の XOR）
-  - **設計理由と不変条件**: 単純なビットマスクでは、同一オフセットを持つ異なる機能コード（FC=14 SHM と FC=15 PASSTHROUGH 等）が同一スロットに衝突する。上位の FC から下位ページまでの全 20 ビットを 5-bit 幅で折りたたんで XOR 合成する。これにより異なるデバイス領域間の競合を極小化し、32 スロットの利用効率を最大化する。
+  - HASH / インデックス計算: `temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); tlb_idx = temp & (FB_CONF_VMMIO_TLB_ENTRIES - 1)`（20→10→5 bit、2回の XOR）
+  - **設計理由と不変条件**: 単純なビットマスクでは、同一オフセットを持つ異なる機能コード（FC=14 SHM と FC=15 PASSTHROUGH 等）が同一スロットに衝突する。上位の FC から下位ページまでの全 20 ビットを5-bit幅で折りたたんでXOR合成し、`FB_CONF_VMMIO_TLB_ENTRIES` スロットへ分散する。
 - **アクセス権限剥奪（Revoke）時の TLB 即時無効化 (`GOTCHA-VMMIO-03`)**: {GOTCHA-VMMIO-03} <!-- definition: {GOTCHA-VMMIO-03} -->
   - **設計理由と不変条件**: 共有メモリの送信や権限剥奪トランザクションにおいて、所有者 ID を `FB_TASK_ID_FLIGHT` へ変更する際は、該当 VPN に対応する TLB エントリを直ちに無効化する。TLB 無効化を怠ると、古いタスクからデータが読み書き可能となり、所有権移譲プロトコルの安全性（ゼロコピー手渡しと二重所有防止）が破壊されるためである。
 - **キャッシュ更新 & 押し出し (Eviction & Refill)**:

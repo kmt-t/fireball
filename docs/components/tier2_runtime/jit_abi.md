@@ -28,20 +28,20 @@
 | 型 | 基底型 | 用途と上限根拠 |
 | :--- | :--- | :--- |
 | `block_index_t` | `uint16_t` | BasicBlock番号。`0xFFFF`を予約し、最大65,535ブロック、最大有効番号65,534とする |
-| `frame_word_offset_t` | `uint16_t` | ローカルフレーム内word offset。最大ローカル256個と引数64個が各2 wordでも640 wordで収まる |
+| `frame_word_offset_t` | `uint16_t` | ローカルフレーム内word offset。`FB_CONF_MAX_LOCALS` 個と `FB_CONF_MAX_FUNCTION_ARGUMENTS` 個が各2 wordでも `2 × (FB_CONF_MAX_LOCALS + FB_CONF_MAX_FUNCTION_ARGUMENTS)` wordで収まる |
 | `annotation_offset_t` | `uint32_t` | 注釈pool内byte offset/count。16bitへ制限しない |
 | `wasm_pc_t` | `uint32_t` | WASM module PC。ROM 96KBを扱うため32bitを維持する |
 | `code_ip_t` | `uint32_t` | 関数コード内の実行IP・復帰IP |
 | `code_offset_t` | `uint32_t` | コード領域の長さ・offset・命令span。容量拡張に備えて32bitを維持する |
-| `function_index_t` | `uint16_t` | 最大32 importと256定義関数の合計288を収める |
-| `type_index_t` | `uint16_t` | 型数上限256。将来の拡張に備えて16bitを維持する |
-| `global_index_t` | `uint16_t` | global数上限32 |
-| `local_count_t` | `uint16_t` | local数256、または最大640 frame word |
-| `operand_words_t` | `uint8_t` | operand stack上限64値。i64/f64を2 wordで数えても最大128 word |
-| `frame_depth_t` | `uint8_t` | 制御構造の入れ子上限32 |
+| `function_index_t` | `uint16_t` | `FB_CONF_MAX_IMPORTS` importと `FB_CONF_MAX_FUNCTIONS` 定義関数の合計を収める |
+| `type_index_t` | `uint16_t` | 型数上限 `FB_CONF_MAX_TYPES`。将来の拡張に備えて16bitを維持する |
+| `global_index_t` | `uint16_t` | global数上限 `FB_CONF_MAX_GLOBALS` |
+| `local_count_t` | `uint16_t` | local数 `FB_CONF_MAX_LOCALS`、または最大 `2 × (FB_CONF_MAX_LOCALS + FB_CONF_MAX_FUNCTION_ARGUMENTS)` frame word |
+| `operand_words_t` | `uint8_t` | operand stack上限 `FB_CONF_MAX_VALUE_STACK` 値。i64/f64を2 wordで数えても最大 `2 × FB_CONF_MAX_VALUE_STACK` word |
+| `frame_depth_t` | `uint8_t` | 制御構造の入れ子上限 `FB_CONF_MAX_NESTING_DEPTH` |
 | `instruction_width_t` | `uint8_t` | LEB128即値を含む命令の符号化幅。255 byte超過はロード時に拒否する |
-| `jit_stack_words_t` | `uint8_t` | Interpreterの64値上限と2-word値幅から最大128 word |
-| `jit_body_count_t` | `uint8_t` | JIT trace命令上限64 |
+| `jit_stack_words_t` | `uint8_t` | Interpreterの `FB_CONF_MAX_VALUE_STACK` 値上限と2-word値幅から最大 `2 × FB_CONF_MAX_VALUE_STACK` word |
+| `jit_body_count_t` | `uint8_t` | JIT trace命令上限 `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS` |
 | `card_index_t` | `uint32_t` | JIT card番号。module長に応じて増えるため32bitを維持する |
 
 値幅、フレーム深さ、命令幅、trace長の各縮小はreaderとJIT入口の上限検査で保証する。`block_index_t`の有効番号と無効値を混同しない。Native ModuleExecutionViewはPCからBasicBlock番号を引く専用索引を持たない。
@@ -81,7 +81,7 @@ Interpreter opcode handlerの型は`void (execution_context*, const uint8_t*, ui
 | `+0x15` | `result_words` | 1バイト | トレースが確定する結果ワード数 |
 | `+0x16` | `chain_words` | 1バイト | 現在のchain全体が必要とする最大スタック領域 |
 | `+0x17` | `chain_body_count` | 1バイト | rootから終端または最初の再訪までに含む相異なるtrace body数。循環時もchain更新で有限に再計算 |
-| `+0x18` | `frame_depth` | 1バイト | 関数開始位置から当該ブロック開始位置までの制御フレーム深さ（最大32） |
+| `+0x18` | `frame_depth` | 1バイト | 関数開始位置から当該ブロック開始位置までの制御フレーム深さ（最大 `FB_CONF_MAX_NESTING_DEPTH`） |
 | `+0x19` | 予約 | 1バイト | `block_index`を2-byte境界へ揃える |
 | `+0x1A` | `block_index` | 2バイト | Loaderの`block_index_t`基本ブロック番号（`0xFFFF`は無効） |
 | `+0x20` | `const_rel_offset` | 4バイト | ヘッダ先頭からtrace専用定数領域先頭までの符号なし相対offset |

@@ -38,7 +38,7 @@ graph LR
 | キーワード | 内容 | 優先度 | 検証方法 |
 | :--- | :--- | :--- | :--- |
 | `{JIT_AssemblyStencilCodegen}` | x64の操作、trace入口・出口、共通chain dispatcherをアセンブリsourceで記述し、ビルド時にPIC raw binaryとC++ byte arrayへ変換する。trace生成時は選択したステンシル本体で成功接続markerを置き換え、命令間をfall-throughで実行する。operation間call/jumpによる接続はしない。実行時に次opcodeや次操作を取得してディスパッチしない。JITでコード生成時に確定する即値はtrace codeへ直接埋め込む。Runtime APIが実行時に必要とする引数recordはtrace末尾の定数領域に置き、`rel`で読む。trace形成上限と対応する定数pool容量は、通常の全対応命令列を収容する。 | 高 | レビュー <!-- definition: {JIT_AssemblyStencilCodegen} --> |
-| `{JIT_MultiBuffer_Cache}` | 連続8KB（4KBページ×2）のJITコード領域を、共通コード2KB（非エビクション）とActive/Warm/Oldest各2KBの3面循環キャッシュへ固定分割する。Interpreterはブロック開始時にLoaderのBasicBlockをRadix索引で先に検索する。BasicBlockは有効なJITエントリ位置を8bitで保持し、未設定時だけ最大72件のソート済みJIT索引を二分探索する。カード状態がCOMPILEDでない場合はJITエントリ検索と位置更新を行わない。JIT常駐索引用のRadix表は持たない。 | 高 | テスト <!-- definition: {JIT_MultiBuffer_Cache} --> |
+| `{JIT_MultiBuffer_Cache}` | `FB_CONF_JIT_CACHE_SIZE` のJITコード領域を、`FB_CONF_JIT_CACHE_PAGE_SIZE` 単位の物理ページで構成する。`FB_CONF_JIT_COMMON_CODE_SIZE` を非エビクション共通コードへ割り当て、`FB_CONF_JIT_BANK_SIZE` のバンクを `FB_CONF_JIT_NUM_BUFFERS` 面の循環キャッシュとして固定分割する。Interpreterはブロック開始時にLoaderのBasicBlockをRadix索引で先に検索する。BasicBlockは有効なJITエントリ位置を8bitで保持し、未設定時だけ `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下のソート済みJIT索引を二分探索する。カード状態がCOMPILEDでない場合はJITエントリ検索と位置更新を行わない。JIT常駐索引用のRadix表は持たない。 | 高 | テスト <!-- definition: {JIT_MultiBuffer_Cache} --> |
 | `{PositionIndependentCode}` | 出力バイナリはPIC（位置独立コード）とする。 | 高 | テスト <!-- definition: {PositionIndependentCode} --> |
 | `{WasmCodeSectionPC}` | WASM PCは各モジュールのCode section payload先頭を0とし、payload内にある命令先頭バイトのオフセットで表す。PC単独はモジュールを越えて一意ではなく、モジュール横断の識別には`(module_id, pc)`を使う。 | 高 | テスト <!-- definition: {WasmCodeSectionPC} --> |
 | `{NativeAPI_Export}` | 最小限のトラップ命令とvMMIOによるホストサービス提供をサポートする。 | 高 | テスト <!-- definition: {NativeAPI_Export} --> |
@@ -53,7 +53,7 @@ graph LR
 | `{EnvironmentPointer}` | 周辺コンポーネント・リニアメモリへの参照を `execution_context` 内の環境フィールド（`vsoc_runtime` 領域）経由で型安全に行う。 | 高 | レビュー <!-- definition: {EnvironmentPointer} --> |
 | `{ROMParsing}` | WASMモジュールをRAMに展開せず、ROM上のデータを直接解析・実行する (Zero Copy Loading)。 | 高 | テスト <!-- definition: {ROMParsing} --> |
 | `{MemoryBoundaryCheck}` | メモリアクセス時の境界チェックを強制し、隔離性を保証する。 | 高 | テスト <!-- definition: {MemoryBoundaryCheck} --> |
-| `{WasmPageAlignment}` | メモリ割り当てをWASMページ単位（64KB）で行い、アドレス変換を効率化する。 | 中 | レビュー <!-- definition: {WasmPageAlignment} --> |
+| `{WasmPageAlignment}` | メモリ割り当てを `FB_CONF_WASM_PAGE_SIZE` 単位で行い、アドレス変換を効率化する。 | 中 | レビュー <!-- definition: {WasmPageAlignment} --> |
 | `{UnifiedAccessModel}` | 物理・共有メモリへの全アクセスをvMMIO層（PTEマッピング・unmap機構）に一本化してセキュリティを標準化する。未認可領域は unmap によりアクセス不可とし、ゲスト専用RAM（論理メモリ）はレイテンシ最優先のため`FastAddressCheck`による独立した高速境界チェック経路とし、vMMIO層の対象外とする。 | 高 | レビュー <!-- definition: {UnifiedAccessModel} --> |
 | `{Wasm32Only}` | wasm32の単一リニアメモリを対象とし、WASM Core 1.0 MVPを基礎に明示選択した`0xFC`命令だけを追加する。Wasm64やマルチスレッド等は除外する。 | 高 | テスト <!-- definition: {Wasm32Only} --> |
 | `{WasmFCSubset}` | `0xFC`の飽和型浮動小数点→整数変換8命令と、単一メモリ向け`memory.copy`/`memory.fill`だけをサポートする。変換はNaN・無限大・範囲外値をWASM規則で飽和させ、メモリ操作は全範囲を事前検証する。`memory.copy`はゲストリニアアドレスとvMMIO管理下のDYNAMIC・SHM・PASSTHROUGHアドレスを扱う。vMMIO側は内部vDMA経路で転送し、完了とCPU可視性を確認してから次命令へ進む。内部の同期・非同期は転送対象と操作に応じる。コピーの観測結果はWASMのmemmove意味論を保つ。 | 高 | テスト <!-- definition: {WasmFCSubset} --> |
@@ -65,7 +65,7 @@ graph LR
 | `{System_Allocator}` | カーネル・仮想化基盤（COOS, vMMIO, IPC Router等）が常駐・運用するシステムコンテナの内部ストレージを dlmalloc（`mspace`）により動的アロケートし、個別解放・自動合体によるメモリ再利用を可能にする。 | 高 | レビュー <!-- definition: {System_Allocator} --> |
 | `{Shm_Allocator}` | IPC共有メモリプールから、タスクが要求する可変長（`size`）の `shared_block` バッファを切り出し、独立した4KB仮想予約スロット単位の権限分離を維持しつつ、要求サイズ分の物理バック領域をRAII解放時に再利用する。 | 高 | テスト <!-- definition: {Shm_Allocator} --> |
 | `InterpreterContextStackless` | Cスタックを使わないスタックレスなインタープリタ実行。 | 高 | レビュー |
-| `{JIT_OldestExecuteOnly}` | 3面循環コードキャッシュは各バンク24件、合計72件の記述枠を持つ。Oldestヒットは所在とコードアドレスを変えず実行する。新規chainのリンク先はActiveまたはWarmに限定する。WarmからOldestへ移った既存chainは維持し、Oldest破棄直前に解除する。 | 高 | レビュー <!-- definition: {JIT_OldestExecuteOnly} --> |
+| `{JIT_OldestExecuteOnly}` | `FB_CONF_JIT_NUM_BUFFERS` 面循環コードキャッシュは各バンク `FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY` 件、全体で `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件の記述枠を持つ。Oldestヒットは所在とコードアドレスを変えず実行する。新規chainのリンク先はActiveまたはWarmに限定する。WarmからOldestへ移った既存chainは維持し、Oldest破棄直前に解除する。 | 高 | レビュー <!-- definition: {JIT_OldestExecuteOnly} --> |
 
 #### 3.1.2 タスク管理・通信 (COOS)
 
@@ -76,7 +76,7 @@ graph LR
 | `{GLOBAL_UseCpp20Coroutine}` | C++20/23 コルーチンを活用し、標準的な言語機能によるコンテキストスイッチを実現する。 | 高 | レビュー |
 | `{LowOverheadSwitch}` | コンテキスト切り替え時のレジスタ退避・復帰を最小化し、数サイクルでのタスク遷移を目指す。 | 高 | 計測 <!-- definition: {LowOverheadSwitch} --> |
 | `{COOS_Deterministic}` | コンテキストスイッチを明示的なポイントに限定し、確定的な実行を確保する。 | 高 | テスト <!-- definition: {COOS_Deterministic} --> |
-| `{TaskSliceDurationLog}` | OSはタスクの実行区間を計測し、300 µsを超えた区間をタスク名（`task_id`を識別子とする）と時間つきでログに出す。この要求は診断のみであり、スケジューリング順序とタスクの扱いを変えず、実時間の上限を保証しない。 | 中 | テスト <!-- definition: {TaskSliceDurationLog} --> |
+| `{TaskSliceDurationLog}` | OSはタスクの実行区間を計測し、`FB_CONF_TASK_SLICE_LOG_THRESHOLD_NS` を超えた区間をタスク名（`task_id`を識別子とする）と時間つきでログに出す。この要求は診断のみであり、スケジューリング順序とタスクの扱いを変えず、実時間の上限を保証しない。 | 中 | テスト <!-- definition: {TaskSliceDurationLog} --> |
 | `CSPCommunication` | ホーアCSPに基づき、所有権移譲によるゼロコピーメッセージパッシングを行う。 | 高 | テスト |
 | `{IPC_ZeroCopy}` | 通信時のデータコピーを排除する。 | 高 | テスト <!-- definition: {IPC_ZeroCopy} --> |
 | `{GLOBAL_InterruptWakeup}` | 割り込み発生時、固定5ワードの原因付きイベントを有界FIFOへ記録し、協調境界で関連タスクをウェイクアップする。ゲスト配送の階層ディスパッチはvSoCへ委譲する。 | 高 | テスト |
@@ -208,7 +208,7 @@ graph LR
 | `{Challenge_CoosBlockedList}` | `BLOCKED` タスクリストの管理コストとリアルタイム性のトレードオフ。 → `{ADR_EventDrivenWakeQueue}` として決定。 | 決定済 <!-- definition: {ADR_EventDrivenWakeQueue} --> <!-- definition: {Challenge_CoosBlockedList} --> |
 | `{Challenge_CspHandoffStarvation}` | COOS の CSP Handoff 連鎖（IPCルータ含む）が特定のタスクセット間で閉じ、他タスクが実行機会を失うスターベーションリスク。緩和策は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` による連鎖の有界化。 | 検討中 <!-- definition: {Challenge_CspHandoffStarvation} --> |
 | `{Challenge_DebuggerResource}` | 極小メモリ環境でのデバッグ用バッファ確保、インタープリタ専用デバッグ構成、およびJIT同時構成拒否の制約。 | 決定済 <!-- definition: {Challenge_DebuggerResource} --> |
-| `{ADR_ScalableCodeOffset}` | 現行x64参照構成の8KBキャッシュではバイト単位のコードオフセットを使用する。64KBを超える拡張の表現とARMv8-Mの物理配置はTBDとする。 | 現行構成は決定済・拡張はTBD <!-- definition: {ADR_ScalableCodeOffset} --> |
+| `{ADR_ScalableCodeOffset}` | 現行x64参照構成の `FB_CONF_JIT_CACHE_SIZE` キャッシュではバイト単位のコードオフセットを使用する。キャッシュを64KB超へ拡張する場合の表現とARMv8-Mの物理配置はTBDとする。 | 現行構成は決定済・拡張はTBD <!-- definition: {ADR_ScalableCodeOffset} --> |
 | `{ADR_SafeQueuingOnHotMiss}` | ホットスポット検出時の二重コンパイル要求防止策。 | 決定済 <!-- definition: {ADR_SafeQueuingOnHotMiss} --> |
 | `{ADR_RendezvousChannel}` | 要求と応答の双方をバッファなしの同期ランデブーとする。相手の受信待機まで送信側をBLOCKする。ランデブー成立後のCPU実行順序に追加の制約を課さず、COOSに従う。 | 決定済 <!-- definition: {ADR_RendezvousChannel} --> |
 | `{ADR_TaskIdLifetime}` | タスクIDは生存期間内だけ有効とする。終了タスクの登録・待機・所有資源を解放した後に再利用を許可する。終了済みIDの使用は契約違反とする。 | 決定済 <!-- definition: {ADR_TaskIdLifetime} --> |

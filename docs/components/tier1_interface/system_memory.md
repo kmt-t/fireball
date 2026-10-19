@@ -205,13 +205,13 @@ WIT インターフェース名は kebab-case で定義する。C++ の公開 AP
 
 #### 5.1.5 JITキャッシュアロケータ（`jit-cache-allocator`）
 <!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_StrictMemoryLimit} -->
-JITコード生成専用に予約された連続固定長リージョン（`FB_CONF_JIT_CACHE_SIZE`=8,192B、4KB物理ページ2枚）の貸与を契約する。領域の固定区画は共通コード2KBとActive/Warm/Oldest各2KBとし、`system_config.md`を正本とする。JITサブシステム（`jit_runtime.md`）は3可変バンクの世代交代を担当し、共通コード領域をエビクションしない。
+JITコード生成専用に予約された連続固定長リージョン（`FB_CONF_JIT_CACHE_SIZE`）の貸与を契約する。領域は `FB_CONF_JIT_CACHE_PAGE_SIZE` の物理ページで構成し、共通コード領域に `FB_CONF_JIT_COMMON_CODE_SIZE`、可変バンクに `FB_CONF_JIT_BANK_SIZE` を割り当てる。バンク面数は `FB_CONF_JIT_NUM_BUFFERS` とし、`system_config.md`を正本とする。JITサブシステム（`jit_runtime.md`）は可変バンクの世代交代を担当し、共通コード領域をエビクションしない。
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | JIT コード生成用の固定長リージョンを貸与する。 |
 | シグネチャ | `acquire-jit-cache() -> result<jit-cache-region, memory-error>`<br>(C++マッピング: `fireball::co_mem::acquire_jit_cache`) |
-| 戻り値 | 成功時は `jit-cache-region`（連続した固定長 `FB_CONF_JIT_CACHE_SIZE`=8,192バイト、物理ページ2枚の実行可能メモリ領域ハンドル） |
+| 戻り値 | 成功時は `jit-cache-region`（固定長 `FB_CONF_JIT_CACHE_SIZE`、物理ページ数 `FB_CONF_JIT_CACHE_SIZE / FB_CONF_JIT_CACHE_PAGE_SIZE` の実行可能メモリ領域ハンドル） |
 | 事前条件 | システム起動時に1度のみ呼び出される（動的な複数リージョン確保は想定しない） |
 | 補足 | x64参照構成の初期RWX設定は `jit_runtime.md` を正本とする。ARMv8-Mの保護属性と切替方式は Tier 2 の実装詳細（`runtime_memory.md`）で決定する。 |
 

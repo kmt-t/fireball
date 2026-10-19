@@ -45,7 +45,7 @@ graph TD
 | `FB_CONF_KERNEL_HEAP_SIZE` | COOSカーネル（スケジューラ、CSP、TCB、共有メモリ）用静的プールサイズ | 対象構成で定義 | |
 | `FB_CONF_SUBSYS_HEAP_SIZE` | IPCルータ・HAL・ログバッファ用静的プールサイズ | 対象構成で定義 | |
 | `FB_CONF_INTERP_STACK_SIZE` | インタープリタ統合スタック（`execution_context` + フレーム/オペランド）総容量 | 対象構成で定義 | |
-| `FB_CONF_JIT_CACHE_SIZE` | x64参照構成のJITコードキャッシュ容量 | `8192` (x64参照構成) | `{JIT_MultiBuffer_Cache}` |
+| `FB_CONF_RUNTIME_BUMP_ARENA_BYTES` | PySimのRuntime所有バンプアリーナ容量。ターゲットRAM予算には算入しない | `131072` (PySimのみ) | |
 | `FB_CONF_MAX_GUEST_VMS` | 同時にロード可能なゲストVMの最大数 | `1` | |
 | `FB_CONF_SHM_SIZE` | ゼロコピーIPCで使用する静的共有メモリの総バイト数（カーネル用プールの内数） | 対象構成で定義 | |
 | `FB_CONF_MAX_SHM_PAGES` | FC=14で予約する仮想アドレススロット数。物理SHMバイト予算とは独立 | 対象構成で定義 | |
@@ -81,16 +81,23 @@ ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式�
 <!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_StrictMemoryLimit} {vMMIO_Isolation} {META_ConfigurableSystem} {META_RestrictedPhysicalAccess} {META_FlatMapIndexed} {GLOBAL_StaticScalability} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
-| `FB_CONF_WASM_PAGE_SIZE` | WASM標準論理ページサイズ (64KB, 65,536 Bytes) | `65536` | |
+| `FB_CONF_WASM_PAGE_SIZE` | WASM標準論理ページサイズ | `65536` | |
 | `FB_CONF_MAX_WASM_PAGES` | 初期WASMリニアメモリに許可する最大ページ数 | 対象構成で定義 | |
 | `FB_CONF_JIT_CACHE_PAGE_SIZE` | x64参照構成で使用するJITコード領域のページ単位 | `4096` (x64参照構成) | |
 | `FB_CONF_JIT_COMMON_CODE_SIZE` | 相対ジャンプ等の非エビクション共通コード領域 | `2048` | |
 | `FB_CONF_JIT_BANK_SIZE` | 各エビクション対象バンクのサイズ | `2048` | |
-| `FB_CONF_JIT_CACHE_SIZE` | 連続JIT領域（共通コード2KB + 3バンク×2KB） | `8192` | |
-| `FB_CONF_JIT_NUM_BUFFERS` | JITキャッシュバッファ面数 (3面) | `3` | `{JIT_OldestExecuteOnly}` |
+| `FB_CONF_JIT_CACHE_SIZE` | 連続JIT領域 | `8192` | |
+| `FB_CONF_JIT_NUM_BUFFERS` | JITキャッシュバッファ面数 | `3` | `{JIT_OldestExecuteOnly}` |
+| `FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY` | JITキャッシュ1面の常駐trace記述枠数 | `24` (x64参照構成) | |
+| `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` | 全JITキャッシュ面の常駐trace記述枠数 | `FB_CONF_JIT_NUM_BUFFERS × FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY` (`72`、x64参照構成) | |
 | `FB_CONF_JIT_MAX_INBOUND_CHAINS_PER_BANK` | 単一キャッシュバンクの最大被チェインエントリ数 | `32` | `{JIT_LazyChaining}` |
+| `FB_CONF_JIT_INBOUND_BUCKET_COUNT` | 常駐traceの後続PCを索引する被チェイン逆引き表のバケット数 | `64` | |
+| `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS` | 1 traceに含める最大WASM命令数 | `64` (x64参照構成) | |
+| `FB_CONF_JIT_MAX_BODY_BYTES` | trace bodyと末尾定数poolを合わせた最大出力バイト数 | `1536` (x64参照構成) | |
+| `FB_CONF_JIT_X64_TRACE_HEADER_BYTES` | x64 trace blobの固定headerサイズ | `32` (x64参照構成) | |
+| `FB_CONF_JIT_RUNTIME_API_MAX_IMMEDIATES` | 1 Runtime API recordが保持する最大即値数 | `3` (x64参照構成) | |
 | `FB_CONF_JIT_CARD_SHIFT` | JITカードテーブルのビットシフト数（関数ごと、4バイト単位 = 2） | `2` | |
-| `FB_CONF_INTERPRETER_YIELD_THRESHOLD` | Interpreterが協調yieldするまでに取得するLOOP後方分岐数。C++ Interpreter単独とHybrid JITに適用する。`64`は100 MHz STM32 Cortex-M33で約300 µs（30,000サイクル / 約469サイクル/後方分岐）を狙う初期値であり、実機・実ワークロードで校正する | `64` | |
+| `FB_CONF_INTERPRETER_YIELD_THRESHOLD` | Interpreterが協調yieldするまでに取得するLOOP後方分岐数。C++ Interpreter単独とHybrid JITに適用する。100 MHz STM32 Cortex-M33で約300 µs（30,000サイクル / 約469サイクル/後方分岐）を狙う初期値であり、実機・実ワークロードで校正する | `64` | |
 | `FB_CONF_JIT_AGING_STEP_UNITS` | 3面キャッシュのローテーション1回ごとに処理する関数更新表の非ゼロバイト数（1バイト = 8関数） | `2` | |
 | `FB_CONF_JIT_AGING_STEP_SCAN_BYTES` | 3面キャッシュのローテーション1回ごとに走査する関数更新表のバイト数の上限（値が0のバイトも数える） | `8` | |
 
@@ -100,11 +107,12 @@ ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式�
 | `FB_CONF_VSOC_PASSTHROUGH_BASE` | ゲスト仮想PASSTHROUGH領域（FC=15）の開始アドレス。実デバイスへの物理対応付けは対象プラットフォームで設定する | 対象構成で定義 | |
 | `FB_CONF_VMMIO_MAX_REGIONS` | 登録可能な最大vMMIO領域数 | `8` | |
 | `FB_CONF_VMMIO_MAX_PTES` | FlatMap ページテーブルに保持可能な PTE の最大件数 | `64` | |
+| `FB_CONF_VMMIO_TLB_ENTRIES` | ダイレクトマップ型ソフトウェアTLBの固定エントリ数。Folding XOR indexのmaskに使うため2の冪とする | `32` | |
 | `FB_CONF_VMMIO_ALLOWED_ADDRS` | ゲストからのアクセスを許可する物理アドレス範囲 | `constexpr`構造体配列 | |
 | `FB_CONF_VMMIO_VIRQ_BASE` | 原因付き仮想割り込みディスパッチャ（vIRQ）専用ページの基底アドレス | `0xC0003000` | |
 | `FB_CONF_VMMIO_VIRQ_PAGE_SIZE` | vIRQ専用ページの固定サイズ | `4096` | |
 | `FB_CONF_VIRQ_CATEGORY_COUNT` | vIRQの固定分類ノード数（DEVICE/SYSTEM/RUNTIME/FAULT） | `4` | |
-| `FB_CONF_VIRQ_MAX_NODES` | vIRQ静的ノード数（root + 4分類 + デバイスノード） | `1 + FB_CONF_VIRQ_CATEGORY_COUNT + FB_CONF_HAL_MAX_DEVICES` | |
+| `FB_CONF_VIRQ_MAX_NODES` | vIRQ静的ノード数（root + `FB_CONF_VIRQ_CATEGORY_COUNT` 分類 + デバイスノード） | `1 + FB_CONF_VIRQ_CATEGORY_COUNT + FB_CONF_HAL_MAX_DEVICES` | |
 | `FB_CONF_VIRQ_MAX_SOURCES` | vIRQ静的原因源数（SYSTEM/RUNTIME/FAULT + デバイス源） | `3 + FB_CONF_HAL_MAX_DEVICES` | |
 
 実行経路の検査用カウンタと測定区間のリセットはQAの診断ハーネスが所有する。製品Runtimeは検査用API、累積カウンタ、集計分岐を保持しない。JITホットスポット観測はコンパイル候補を決定する製品機構として扱い、診断ハーネスとは独立して構成する。
@@ -119,7 +127,10 @@ vMMIO Stage 1アドレス窓へのアクセスは、有効サイズとの比較�
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_LOG_BUFFER_SIZE` | ログメッセージ保持用のバッファサイズ (Bytes) | `512` | |
 | `FB_CONF_LOG_DICT_MAX_ENTRIES` | ROM上に保持する固定ログ辞書エントリの最大数 | `128` | `{DictionaryBasedIPC}` |
+| `FB_CONF_LOG_MAX_ARGUMENTS` | ログ1レコードが保持する最大の`u32`引数数 | `4` | |
+| `FB_CONF_LOG_MAX_RECORD_SIZE` | ログ送信作業領域および1レコードの最大バイト数。headerと最大引数列から導出する | `4 + 4 × FB_CONF_LOG_MAX_ARGUMENTS` (`20`) | |
 | `FB_CONF_DEBUG_MAX_BREAKPOINTS` | 最大ブレークポイント数 | `8` | `{META_ConfigurableSystem}` |
+| `FB_CONF_DEBUG_MAX_ASSERTIONS` | デバッガが保持するassertion記録の最大数 | `64` | |
 | `FB_CONF_DEBUG_PACKET_SIZE` | RSPパケットバッファサイズ | `1024` | |
 | `FB_CONF_DEBUG_MAX_PC_SAMPLES` | プロファイラバッファに保持可能なPCサンプリングエントリの最大件数 | `64` | `Debug_Integrated` `{META_NoStdVector}` |
 
@@ -151,6 +162,36 @@ assert FB_CONF_MAX_TASKS <= 254, "FB_CONF_MAX_TASKS must be <= 254"
 | `FB_CONF_RETRY_MAX_ATTEMPTS` | `retry` 戦略で再実行する最大回数 | `3` | |
 
 `retry` を実装するすべてのコンポーネントはこの2値を共有する。個別のコンポーネント文書で異なる待機時間・回数を独自に定義しないこと。
+
+#### 3.3.9 WASMローダー・Interpreter
+<!-- traceability: {META_ConfigurableSystem} {LightweightVerifier} {Wasm32Only} -->
+WASMモジュールの件数上限とInterpreterの固定容量上限を定める。表の値はPySimの`config.py`とLoader概念コードの現行値であり、対応する仕様の上限として扱う。`FB_CONF_RUNTIME_BUMP_ARENA_BYTES`はPySim固有の計測用容量であり、ターゲットRAM予算やネイティブ構成値を定めない。
+
+| マクロ名 | 説明 | デフォルト値 | 導出元 |
+| :--- | :--- | :--- | :--- |
+| `FB_CONF_MAX_MODULES` | Runtimeにロードできる最大モジュール数 | `4` | [`loader_concept.py`](docs/components/tier2_runtime/concepts/loader_concept.py) の現行値 |
+| `FB_CONF_MAX_FUNCTIONS` | 1モジュールに定義できる最大関数数 | `256` | |
+| `FB_CONF_MAX_TYPES` | 1モジュールに定義できる最大型数 | `256` | |
+| `FB_CONF_MAX_IMPORTS` | 1モジュールに定義できる最大インポート数 | `32` | |
+| `FB_CONF_MAX_GLOBALS` | 1モジュールに定義・インポートできる最大グローバル数 | `32` | |
+| `FB_CONF_MAX_TABLES` | 1モジュールに定義・インポートできる最大テーブル数 | `16` | |
+| `FB_CONF_MAX_MEMORIES` | 1モジュールに定義・インポートできる最大メモリ数 | `4` | |
+| `FB_CONF_MAX_ELEMENTS` | 1モジュールに保持できる最大要素セグメント数 | `64` | |
+| `FB_CONF_MAX_DATA_SEGMENTS` | 1モジュールに保持できる最大データセグメント数 | `64` | |
+| `FB_CONF_MAX_LOCALS` | 1関数に定義できる最大ローカル数（引数を除く） | `256` | |
+| `FB_CONF_MAX_FUNCTION_ARGUMENTS` | 1関数で受理する最大引数数 | `64` | |
+| `FB_CONF_MAX_VALUE_STACK` | Interpreterの値スタック上限 | `64` | |
+| `FB_CONF_MAX_NESTING_DEPTH` | WASM制御構造およびInterpreter呼出しの最大入れ子深さ | `32` | |
+| `FB_CONF_INTERP_ANNOTATION_POOL_BYTES_PER_BODY_BYTE` | 関数本体長に対するInterpreter注釈プールの最大バイト倍率 | `5` | |
+
+関数引数の受理上限を定め、ローカル数と合わせてフレーム配置と型列容量を見積もる。
+
+#### 3.3.10 スケジューラ
+<!-- traceability: {META_ConfigurableSystem} {TaskSliceDurationLog} -->
+| マクロ名 | 説明 | デフォルト値 | 導出元 |
+| :--- | :--- | :--- | :--- |
+| `FB_CONF_TIMER_IDLE_POLL_SLICE_NS` | アイドル待機中に外部イベントを再確認する最大間隔（ns） | `1000000` (1 ms) | |
+| `FB_CONF_TASK_SLICE_LOG_THRESHOLD_NS` | タスク実行区間の診断ログを出力する閾値（ns） | `300000` (300 µs) | |
 
 ## 4. 動的モデル
 

@@ -103,7 +103,7 @@ HAL の公開境界は、WASI 0.3p の interface / stream / pollable に対応�
 - クロック購読で予約した一回限りのpollableは、指定時間後にreadyとなる。確認と待機はその単一ハンドルを対象とし、破棄時に固定スロットを解放する。
 - `poll-wait`はreadyになったときだけ成功応答を返す。待機中の協調実行は本書のコマンドルーティング契約に従う。
 
-`poll-wait`を提供するドライバは、未完了pollableの次回確認時刻を単調時計の絶対時刻で返す。COOSはその時刻を期限待ちTCBへ登録する。アイドル中の割り込み確認間隔は最大1msとする。
+`poll-wait`を提供するドライバは、未完了pollableの次回確認時刻を単調時計の絶対時刻で返す。COOSはその時刻を期限待ちTCBへ登録する。アイドル中の割り込み確認間隔は`FB_CONF_TIMER_IDLE_POLL_SLICE_NS`以下とする。
 
 GPIO、I2C、SPI 等の WASI 標準外機能も、`get-interface` で得たハンドルと同じバッファ／コマンド境界を使う拡張操作として定義する。個別デバイスの WIT resource 型やゲスト向け Preview1 ラッパーは定義しない。物理配置と境界検査は Tier 3 を正本とする。
 

@@ -107,7 +107,7 @@ providerのlookupと観測callbackは0または1を返す。0はcache missまた
 
 ネイティブdispatchには`execution_context`、値スタック基点、ローカルスタック基点、実行拡張を渡す。命令位置、コードと制御状態、スタック位置と容量、local base、関数番号、yieldしきい値はInterpreterが所有する実行状態から取得する。個別の呼出し構造体へ複製しない。戻り値はstatusとABIエラーだけを持ち、命令位置、スタック位置、trap codeは`execution_context`を唯一の格納先とする。実行拡張は`owner`、本体実行入口、観測入口で構成する。観測入口はInterpreterが対象ブロックを実行した後に候補判定と履歴記録を一度に行う。候補マスクと履歴配列をInterpreterへ渡さず、複製もしない。
 
-CallFrameとCallStackの配置、容量、および関数呼出し時の状態管理は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とする。本仕様はInterpreterが所有する構造体のlayoutを重複定義しない。関数参照とモジュール参照はWASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{META_NoStdVector}`
+CallFrameとCallStackの配置、容量、および関数呼出し時の状態管理は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とする。本仕様はInterpreterが所有する構造体のlayoutを重複定義しない。関数viewはLoaderが求めた`max_operand_stack_words`を32bit語単位で保持し、x64上で72バイトである。関数入口で引数を除いたSPを基準にこの最大高を検査し、関数途中のtrace入口では容量を再検査しない。定数バッファ参照、関数参照、モジュール参照はWASMコードと関数メタデータを渡す非所有の標準レイアウト構造体である。この境界に文字列、`std::vector`、仮想関数、例外を含めない。 `{META_NoStdVector}`
 
 実行時のオペランド領域とローカル値領域は、固定容量の構造体と配列として配置する。値領域は`WASM_VALUE_SLOT_BYTES`の境界に配置した型情報を持たない32bit word配列であり、WASMのi32/f32は1 word、i64/f64は2 wordを使う。各関数のローカル値も同じ32bit wordを連続して使う。Loaderは各ローカルの先頭word offsetとWASM型を関数実行viewへ渡す。幅は保持済みWASM型から導出し、サイズ表を別に保持しない。JITは関数引数を含むローカル数が16以下の場合を対象とし、`local.get/set/tee`はoperationとWASM値型に対応するstencilへlowerする。local indexはtrace compile時にLoaderのoffset表から解決し、そのcompact word offsetを命令エンコーダがtrace codeへ直接書き込む。offset別stencil variant、local Runtime API、実行時`rel`読出しは使わない。関数引数を含むローカル数が17以上のtraceは直接local stencilの対象外である。実行時の値には型tagを付けない。制御分岐はLoaderが生成した注釈済みedgeを使い、実行時ControlFrameを保持しない。 `{META_NoStdVector}`
 

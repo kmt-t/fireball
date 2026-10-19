@@ -18,7 +18,7 @@ JIT拡張はInterpreterのネイティブ実行拡張として接続する。Int
 
 JIT traceの選択は`execution_context.current_block_index`からBasicBlock metadataを直接参照して行う。現在のindexとPCはInterpreterからJIT providerへ渡し、BasicBlockの`head_pc`がPCと一致することを検証する。対象カードが`COMPILED`でなければ、JITエントリ検索を呼ばずInterpreterを実行する。`COMPILED`ならBasicBlock内の8bitキャッシュ参照を使う。未設定なら当該ブロックはcache missとする。カード状態は複数BasicBlockで共有されうるため、カードが`COMPILED`でも未常駐のブロックがある。LoaderのRadix表はロード時の構築とその他の利用に残るが、通常dispatchのブロック解決には使わない。JIT常駐索引はPC順を維持し、JITのキーは引き続き`(module_id, pc)`である。
 
-InterpreterはLoader注釈プールの辺indexと`current_block_index`を使い、分岐と継続のBasicBlockを解決する。JIT境界metadataの`block_index`には次BasicBlock indexを入れる。chain link、候補受入れ、JIT trace exitはindexとPCの両方を照合する。関数呼出しと復帰の扱いは[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とし、JIT Runtimeは再定義しない。通常の製品経路では`find_cached_trace_by_pc`を呼ばない。
+InterpreterはLoader注釈プールの辺indexと`current_block_index`を使い、分岐先と通常継続先のBasicBlockを得る。call先と復帰先の解決は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とする。JIT境界metadataの`block_index`には次BasicBlock indexを入れる。chain link、候補受入れ、JIT trace exitはindexとPCの両方を照合する。terminal call stencilのhandler接続要件は[`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)と[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)に従う。通常の製品経路では`find_cached_trace_by_pc`を呼ばない。
 
 3面コードキャッシュはデータ用バンプアロケータとは別に管理する。x64参照構成は領域の確保または借用時にRWXを設定し、昇格やリンク更新のたびに権限を切り替えない。書込みAPIはパッチ区間外の変更を拒否する。ARMv8-Mの物理配置と保護方式はTBDである。
 
@@ -158,7 +158,7 @@ ROM 上に配置される 128 バイトルックアップテーブル（256 オ�
 
 
 
-1. **実行コンテキストのBasicBlock index参照 ($O(1)$)**: Loaderが関数入口と制御辺についてindexを前計算し、Interpreterは`current_block_index`へ現在indexを保持する。分岐と継続は注釈済みindexからBasicBlock metadataを参照する。関数呼出しと復帰の遷移先はInterpreter仕様に従う。dispatch中にPCからindexを検索しない。
+1. **実行コンテキストのBasicBlock index参照 ($O(1)$)**: Loaderが関数入口と制御辺についてindexを前計算し、Interpreterは`current_block_index`へ現在indexを保持する。分岐と通常継続は注釈済みindexからBasicBlock metadataと`rel`開始位置を直接得る。呼出しと復帰のindexは[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)の契約に従う。境界停止のPC比較を除き、dispatch中にPCからindexを検索しない。
 2. **カード状態によるJIT検索抑止 ($O(1)$)**: BasicBlock解決後にカード状態を読む。状態が`COMPILED`でなければJIT providerを呼ばず、キャッシュ参照も変更せずInterpreter命令を実行する。状態が`COMPILED`でもカード内の別ブロックだけがコンパイル済みの場合があるため、正確なPCはBasicBlock参照またはJIT索引で照合する。
 3. **BasicBlock内キャッシュ参照 ($O(1)$)**: `jit_cache_reference != 0xFF`なら、値が指す常駐エントリを使う。キャッシュ配列の並べ替え・削除・破棄時は参照をresident entryへ更新し、residentでないentryへの参照を残さない。Runtime領域の解放前にも、借用しているBasicBlockの常駐参照を無効化する。
 4. **キャッシュ更新用PC索引 ($O(n \log n)$)**: キャッシュ更新時に全バンク合計 `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下の参照を`head_pc`順に並べ、BasicBlock参照の再構築とchain metadataの後方再計算に使う。通常の実行lookupとchain successor解決では索引を検索しない。metadataを持たないQA fixtureのPC lookupだけが`lower_bound`を使う。JIT用Radix表や製品実行時のグローバルPC→trace検索経路は設けない。
@@ -304,7 +304,7 @@ stateDiagram-v2
 
 trace chainは、直線後続の常駐traceへ共通chain dispatcherからtail-jumpする経路である。分岐命令はtraceに含めず、C++ Interpreter CPS handlerが処理する。共通chain dispatcherはopcodeを判定せず、直線chainのtargetへの転送だけを担う。未接続targetは0で表す。C++ handler後にdispatcherが次traceを検索・起動する遷移はmachine-code chainではない。
 
-常駐トレースの選択、chain接続はTier 3 JIT拡張が所有する。Interpreterは共有実行状態とroot traceのentry情報を受け取り、trace entryを通常の関数呼出しとして実行する。chain dispatcherはtarget traceへ移る前に`rel`をtargetの定数領域先頭へ設定する。trace終端が`call`／`call_indirect`なら、trace末尾stencilが共通コード領域のborrowed table pointerとslotからTier 2 CPS handlerへ直接tail-callする。定義済みcalleeは既存CPS handler列で実行し、callee returnはcaller continuationへ戻る。import、trap、yield、関数完了などの既存exit条件でのみ実行境界へ戻る。通常の未接続chainで終端dispatcherへ到達したときはmetadata pointerを一時的に`context.rel`へ渡し、`body_end_ip`を`context.ip`へ設定して`true`で戻る。C++ dispatcherはそのmetadataからstackとInterpreter `rel`を確定する。未実行の終端分岐命令をInterpreterへ渡した場合は、対応handlerで処理して実行を再開する。JITで処理済みの制御命令は再実行しない。trace entryの`false`はtrap/CPS exitを示す。JIT拡張はlookup時にchainを走査せず、終端情報をtrace descriptorへ組み立てない。
+常駐トレースの選択、chain接続はTier 3 JIT拡張が所有する。Interpreterは共有実行状態とroot traceのentry情報を受け取り、trace entryを実行する。chain dispatcherはtarget traceへ移る前に`rel`をtargetの定数領域先頭へ設定する。call命令の意味論は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、terminal call stencilのhandler接続は[`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)と[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)を正本とする。通常の未接続chainで終端dispatcherへ到達したときはmetadata pointerを一時的に`context.rel`へ渡し、`body_end_ip`を`context.ip`へ設定して`true`で戻る。C++ dispatcherはそのmetadataからstackとInterpreter `rel`を確定する。未実行の終端分岐命令をInterpreterへ渡した場合は、対応handlerで処理して実行を再開する。JITで処理済みの制御命令は再実行しない。trace entryの`false`はtrap/CPS exitを示す。JIT拡張はlookup時にchainを走査せず、終端情報をtrace descriptorへ組み立てない。
 
 Interpreterは制御処理で確定した次ブロックのPCを保持する。通常命令を実行したブロックの観測を実行拡張へ通知する。候補性の判定、固定長履歴への記録、カード更新、コンパイル要求はJIT拡張内部で行う。Runtime Event Sinkはこの履歴を受け取らない。JIT無効構成は履歴、候補状態、コンパイラ、実行可能領域を持たない。デバッガ付き実行ではRuntimeがJIT拡張を迂回し、通常のInterpreter dispatcherを使う。
 

@@ -1336,7 +1336,8 @@ bool runtime_end(execution_context *context, const std::uint8_t *&instruction_ip
                  [[maybe_unused]] std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                  [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  advance_instruction_ip(instruction_ip, rel);
+  // END has no instruction-stream immediate, so its encoded width is one byte.
+  ++instruction_ip;
   const auto next_block_index = static_cast<block_index_t>(read_u16(rel));
   if (next_block_index == kInvalidBlockIndex) {
     return finish_function_boundary(current, local_base, instruction_ip, rel);

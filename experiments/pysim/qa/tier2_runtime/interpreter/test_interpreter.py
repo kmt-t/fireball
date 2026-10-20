@@ -20,6 +20,7 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 # RuntimeEngine and Interpreter modules.
 
 import pytest
+from config import FB_CONF_MAX_VALUE_STACK
 from qa.shared.helpers import (
     get_call_cont,
     make_native_interpreter,
@@ -1703,8 +1704,8 @@ def test_vmmio_load_preserves_backing_and_missing_dynamic_contract() -> None:
 
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("callee", [False, True])
-def test_function_entry_capacity_precedes_traps_and_side_effects(native: bool, callee: bool):
-    """Function admission may replace an earlier WASM trap only when capacity is insufficient."""
+def test_function_entry_capacity_allows_33_i64_values_before_wasm_trap(native: bool, callee: bool):
+    """Thirty-three i64 values fit in 128 words, so the function reaches its WASM trap."""
     wide = " ".join(["i64.const 0"] * 33 + ["drop"] * 33)
     body = f"i32.const 99 global.set 0 local.get 0 if unreachable else {wide} end"
     functions = f"(func (param i32) {body})"
@@ -1718,13 +1719,13 @@ def test_function_entry_capacity_precedes_traps_and_side_effects(native: bool, c
     while not call.finished:
         call = engine.step(call)
     assert call.trap is not None
-    assert call.trap.code == InterpreterTrapCode.OPERAND_STACK_CAPACITY
-    assert engine.globals[0] == 0
+    assert call.trap.code == InterpreterTrapCode.UNREACHABLE
+    assert engine.globals[0] == 99
     assert not call.context.call_frame_stack
 
 
 @pytest.mark.parametrize("native", [False, True])
-@pytest.mark.parametrize("count", [31, 32])
+@pytest.mark.parametrize("count", [32, 63, 64])
 def test_callee_capacity_uses_entry_sp_after_arguments(native: bool, count: int):
     """Caller live values occupy capacity; parameters become locals before callee admission."""
     wide = " ".join(["i64.const 0"] * count + ["drop"] * count)
@@ -1737,11 +1738,33 @@ def test_callee_capacity_uses_entry_sp_after_arguments(native: bool, count: int)
     call = engine.start(1, ())
     while not call.finished:
         call = engine.step(call)
-    if count == 31:
+    if count < 64:
         assert call.trap is None and tuple(call.results or ()) == (7,)
     else:
         assert call.trap is not None
         assert call.trap.code == InterpreterTrapCode.OPERAND_STACK_CAPACITY
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_maximum_i64_argument_count_fits_word_staging(native: bool) -> None:
+    parameters = " ".join("(param i64)" for _ in range(FB_CONF_MAX_VALUE_STACK))
+    pushes = " ".join(f"i64.const {index}" for index in range(FB_CONF_MAX_VALUE_STACK))
+    module = parse_standalone(
+        wat_to_wasm(
+            f"""(module
+          (func $pick {parameters} (result i64) local.get {FB_CONF_MAX_VALUE_STACK - 1})
+          (export "direct" (func $pick))
+          (func (export "nested") (result i64) {pushes} call $pick))"""
+        )
+    )
+    engine = make_native_interpreter(module) if native else Interpreter(module)
+    args = list(range(FB_CONF_MAX_VALUE_STACK))
+    assert engine.call(module.export_func_index("direct"), args).unwrap() == [
+        FB_CONF_MAX_VALUE_STACK - 1
+    ]
+    assert engine.call(module.export_func_index("nested"), []).unwrap() == [
+        FB_CONF_MAX_VALUE_STACK - 1
+    ]
 
 
 ALL_TESTS = sorted(

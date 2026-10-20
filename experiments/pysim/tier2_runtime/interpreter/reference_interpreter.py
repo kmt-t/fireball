@@ -576,7 +576,7 @@ class ReferenceInterpreter:
     ) -> Trap | None:
         active_words = sum(len(active.values) for active in call.context.call_frame_stack)
         function = self.module.functions[func_index - len(self.module.imports)]
-        if active_words + function.max_operand_stack_words > FB_CONF_MAX_VALUE_STACK:
+        if active_words + function.max_operand_stack_words > 2 * FB_CONF_MAX_VALUE_STACK:
             return Trap(TrapCode.OPERAND_STACK_CAPACITY)
         if len(call.context.call_frame_stack) >= FB_CONF_MAX_NESTING_DEPTH:
             return Trap(TrapCode.CALL_STACK_CAPACITY)

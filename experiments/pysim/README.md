@@ -246,7 +246,7 @@ bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
 ### 6.2 JIT参照実装の内部情報
 
 - `BumpAllocator`は実行用bufferとLoader由来のtyped backing viewを管理する。JIT managerは借用期間中それらを保持し、native compilerへ渡す。
-- x64 compilerは実行コードregion内のtrace出力領域にassembly生成コード、命令エンコード済みlocal access、即値、Runtime API用定数poolを構成する。decode済み命令列、operation symbol列、最大129件の定数record staging、stack modelは固定長配列で保持する。実行可能コード領域とLoader arenaのbufferは別管理する。
+- x64 compilerは実行コードregion内のtrace出力領域にassembly生成コード、命令エンコード済みlocal access、即値、Runtime API用定数poolを構成する。decode済み命令列、operation symbol列、stack modelは固定長配列で保持する。operation用配列の容量は`FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS + 1`件、再配置record用配列の容量は`8 × FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS + 1`件である。実行可能コード領域とLoader arenaのbufferは別管理する。
 - `jit_runtime<Measurement>`は計測型でQAと製品構成を切り替える。製品側は`void`、QA側は専用計測型を選ぶ。QA用の代替block入力、compiler無効化、自己所有memory、16-bit trace参照IDの検査をQA構成に限定する。
 
 ### 6.3 JIT命令プロファイルの根拠

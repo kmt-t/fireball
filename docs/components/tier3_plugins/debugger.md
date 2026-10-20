@@ -62,7 +62,7 @@ graph TD
 | `cmd_queue` | HALから供給されるコマンドキュー。 | 構造体への参照 | `debug_command_queue` |
 | デバッグ状態 | デバッガの現在の動作モード（実行中、中断中など）。 | 列挙型 | `debug_state` |
 | ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。昇順ソート済みの固定長配列（`FB_CONF_DEBUG_MAX_BREAKPOINTS` 件）として保持し、実行時の判定は `fireball::flat_set_view<address>` の `contains()` で行う。 | 固定長配列 + 集合ビュー | `FlatViewNarrowing` |
-| RSPパケットバッファ | フレーミングされた 1 パケットの ASCII ペイロード | 固定長配列 | 256 Bytes (`FB_CONF_RSP_PACKET_MAX`) |
+| RSPパケットバッファ | フレーミングされた 1 パケットの ASCII ペイロード | 固定長配列 | `FB_CONF_DEBUG_PACKET_SIZE` |
 | `last_stop_reason` | 直近の停止要因。 | ID値 | 信号番号等 |
 
 #### 仮想レジスタセット（virtual_register_set）

@@ -44,7 +44,8 @@ graph TD
 | `FB_CONF_RUNTIME_HEAP_SIZE` | ホスト（WASMランタイム）実行専用の独立静的プールサイズ | 対象構成で定義 | |
 | `FB_CONF_KERNEL_HEAP_SIZE` | COOSカーネル（スケジューラ、CSP、TCB、共有メモリ）用静的プールサイズ | 対象構成で定義 | |
 | `FB_CONF_SUBSYS_HEAP_SIZE` | IPCルータ・HAL・ログバッファ用静的プールサイズ | 対象構成で定義 | |
-| `FB_CONF_INTERP_STACK_SIZE` | インタープリタ統合スタック（`execution_context` + フレーム/オペランド）総容量 | 対象構成で定義 | |
+| `FB_CONF_INTERP_OPSTACK_SIZE` | オペランドスタックの総容量。最大 `2 × FB_CONF_MAX_VALUE_STACK` wordを確保する | `8 × FB_CONF_MAX_VALUE_STACK` bytes (`512`) | |
+| `FB_CONF_INTERP_LOCALSTACK_SIZE` | ローカル値領域の総容量 | `512` bytes (`128` word × `4` bytes) | |
 | `FB_CONF_RUNTIME_BUMP_ARENA_BYTES` | PySimのRuntime所有バンプアリーナ容量。ターゲットRAM予算には算入しない | `131072` (PySimのみ) | |
 | `FB_CONF_MAX_GUEST_VMS` | 同時にロード可能なゲストVMの最大数 | `1` | |
 | `FB_CONF_SHM_SIZE` | ゼロコピーIPCで使用する静的共有メモリの総バイト数（カーネル用プールの内数） | 対象構成で定義 | |
@@ -131,7 +132,7 @@ vMMIO Stage 1アドレス窓へのアクセスは、有効サイズとの比較�
 | `FB_CONF_LOG_MAX_RECORD_SIZE` | ログ送信作業領域および1レコードの最大バイト数。headerと最大引数列から導出する | `4 + 4 × FB_CONF_LOG_MAX_ARGUMENTS` (`20`) | |
 | `FB_CONF_DEBUG_MAX_BREAKPOINTS` | 最大ブレークポイント数 | `8` | `{META_ConfigurableSystem}` |
 | `FB_CONF_DEBUG_MAX_ASSERTIONS` | デバッガが保持するassertion記録の最大数 | `64` | |
-| `FB_CONF_DEBUG_PACKET_SIZE` | RSPパケットバッファサイズ | `1024` | |
+| `FB_CONF_DEBUG_PACKET_SIZE` | RSPパケットバッファサイズ | `256` | |
 | `FB_CONF_DEBUG_MAX_PC_SAMPLES` | プロファイラバッファに保持可能なPCサンプリングエントリの最大件数 | `64` | `Debug_Integrated` `{META_NoStdVector}` |
 
 #### 3.3.6 タスクID型・予約値
@@ -180,7 +181,7 @@ WASMモジュールの件数上限とInterpreterの固定容量上限を定め�
 | `FB_CONF_MAX_DATA_SEGMENTS` | 1モジュールに保持できる最大データセグメント数 | `64` | |
 | `FB_CONF_MAX_LOCALS` | 1関数に定義できる最大ローカル数（引数を除く） | `256` | |
 | `FB_CONF_MAX_FUNCTION_ARGUMENTS` | 1関数で受理する最大引数数 | `64` | |
-| `FB_CONF_MAX_VALUE_STACK` | Interpreterの値スタック上限 | `64` | |
+| `FB_CONF_MAX_VALUE_STACK` | オペランドスタックに同時に積めるWASM値の最大数。i32、f32、i64、f64をそれぞれ1値として数える | `64` | |
 | `FB_CONF_MAX_NESTING_DEPTH` | WASM制御構造およびInterpreter呼出しの最大入れ子深さ | `32` | |
 | `FB_CONF_INTERP_ANNOTATION_POOL_BYTES_PER_BODY_BYTE` | 関数本体長に対するInterpreter注釈プールの最大バイト倍率 | `5` | |
 

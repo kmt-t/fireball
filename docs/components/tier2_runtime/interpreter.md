@@ -224,8 +224,8 @@ flowchart TD
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| `オペランドスタック` 容量 | `オペランドスタック` バッファの総バイト数 | バイト数 | 32bit符号なし (`FB_CONF_INTERP_OPSTACK_SIZE`) |
-| `ローカル値領域` 容量 | `ローカル値領域` バッファの総バイト数 | バイト数 | 32bit符号なし (`FB_CONF_INTERP_LOCALSTACK_SIZE`) |
+| `オペランドスタック` 容量 | `オペランドスタック` バッファの総バイト数 | バイト数 | 32bit符号なし（[`system_config.md`](docs/components/tier1_core/system_config.md) の `FB_CONF_INTERP_OPSTACK_SIZE`） |
+| `ローカル値領域` 容量 | `ローカル値領域` バッファの総バイト数 | バイト数 | 32bit符号なし（[`system_config.md`](docs/components/tier1_core/system_config.md) の `FB_CONF_INTERP_LOCALSTACK_SIZE`） |
 | Yield 閾値 | 次の yield までに実行を許可する命令（トレース）数 | 回数 | 32bit符号なし |
 
 #### オプコードハンドラ / トレース実行（opcode_handler / exec_trace）

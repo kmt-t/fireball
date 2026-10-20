@@ -239,7 +239,9 @@ C++ local get/set/tee Runtime API経路は設けない。
 
 `i32.const, local.set`融合（{GOTCHA-JITC-08}）は即値を命令へ埋め込み、localへ書く。融合で定数pushを除去するため、この操作は`sp`も`rel`も変更しない。`i32.const, local.tee`融合は同じ即値をlocalと共有スタックへ書く。 <!-- definition: {GOTCHA-JITC-08} -->
 
-1トレースは `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS` WASM命令、`FB_CONF_JIT_MAX_BODY_BYTES` のbodyと末尾定数pool、共有stack深さ `2 × FB_CONF_MAX_VALUE_STACK` wordを上限とする。WASM数値即値とlocal offsetはtrace codeに直接埋め込む。定数領域は先頭のheader相対参照4 byte、Runtime API argument record、終端recordのInterpreter annotation offsetを保持する。各recordのslot、immediate count、immediate byte spanはそれぞれu8であり、API最大 `FB_CONF_JIT_RUNTIME_API_MAX_IMMEDIATES` immediateのpayloadは値の型幅で格納する。最大129件のrecord stagingで必要となる領域は出力領域内に収まる。ヘッダは定数領域の先頭offsetだけを保持し、slot数fieldを持たない。C++フロントエンドは復号済み命令列、operation symbol列、Runtime API用定数recordを固定長配列に一時保持する。最大blobはheader 32バイトとbody/pool領域1,536バイトの合計1,568バイトである。定数record stagingは最大129件である。
+1トレースは `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS` WASM命令、`FB_CONF_JIT_MAX_BODY_BYTES` のbodyと末尾定数pool、共有stack深さ `2 × FB_CONF_MAX_VALUE_STACK` wordを上限とする。WASM数値即値とlocal offsetはtrace codeに直接埋め込む。定数領域は先頭のheader相対参照4 byte、Runtime API argument record、終端recordのInterpreter annotation offsetを保持する。各recordのslot、immediate count、immediate byte spanはそれぞれu8であり、API最大 `FB_CONF_JIT_RUNTIME_API_MAX_IMMEDIATES` immediateのpayloadは値の型幅で格納する。ヘッダは定数領域の先頭offsetだけを保持し、slot数fieldを持たない。C++フロントエンドのoperation用固定長配列は `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS + 1` 件、再配置record用配列は `8 × FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS + 1` 件を保持する。
+
+native trace blobはheader、trace body、境界metadata前のalignment padding、境界metadata、定数poolの順に配置する。bodyと定数poolの合計は `FB_CONF_JIT_MAX_BODY_BYTES` に収める。trace compilerはheaderとbody末尾を定数poolのalignmentにそろえる。現行x64配置ではmetadata前のpaddingは増分を持たない。最大blob容量は `FB_CONF_JIT_X64_TRACE_HEADER_BYTES + FB_CONF_JIT_MAX_BODY_BYTES + 境界metadataのサイズ` で導く。
 
 トレースのコンパイルでは、生成コード、ローカルアクセス命令、即値、およびRuntime API用定数を有界な一時領域へ構成する。WASM入力と実行メタデータの借用期間を守り、実行コード領域とロード用領域を別々に計上する。
 

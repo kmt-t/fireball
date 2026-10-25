@@ -9,8 +9,8 @@ from typing import Protocol, Self, cast
 
 from bump_allocator import BumpAllocator
 from config import (
+    FB_CONF_INTERP_OPSTACK_SIZE,
     FB_CONF_MAX_NESTING_DEPTH,
-    FB_CONF_MAX_VALUE_STACK,
 )
 from system_containers import SequenceView as Sequence
 from system_containers import StaticVector
@@ -576,7 +576,7 @@ class ReferenceInterpreter:
     ) -> Trap | None:
         active_words = sum(len(active.values) for active in call.context.call_frame_stack)
         function = self.module.functions[func_index - len(self.module.imports)]
-        if active_words + function.max_operand_stack_words > 2 * FB_CONF_MAX_VALUE_STACK:
+        if active_words + function.max_operand_stack_words > FB_CONF_INTERP_OPSTACK_SIZE // 4:
             return Trap(TrapCode.OPERAND_STACK_CAPACITY)
         if len(call.context.call_frame_stack) >= FB_CONF_MAX_NESTING_DEPTH:
             return Trap(TrapCode.CALL_STACK_CAPACITY)

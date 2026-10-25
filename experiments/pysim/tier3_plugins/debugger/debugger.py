@@ -17,7 +17,11 @@ import ctypes
 from collections.abc import Iterator, Mapping
 from typing import Protocol
 
-from config import FB_CONF_DEBUG_MAX_ASSERTIONS, FB_CONF_DEBUG_MAX_BREAKPOINTS
+from config import (
+    FB_CONF_DEBUG_MAX_ASSERTIONS,
+    FB_CONF_DEBUG_MAX_BREAKPOINTS,
+    FB_CONF_DEBUG_PACKET_SIZE,
+)
 from system_containers import MutableFlatMapStorage, ReadOnlyFlatMapView, SequenceView, StaticVector
 from tier2_runtime.abi import native_abi
 from tier2_runtime.abi.interpreter_abi import (
@@ -442,7 +446,7 @@ class GDBRspProtocol:
             return self.format_packet("OK"), current_pc
         # qSupported - advertise only capabilities implemented by this server.
         elif cmd == "q" and args.startswith("Supported"):
-            return self.format_packet("PacketSize=256"), current_pc
+            return self.format_packet(f"PacketSize={FB_CONF_DEBUG_PACKET_SIZE}"), current_pc
         # ExecutionControl arms the selected native hooks and resumes the same driver.
         elif cmd == "s" or cmd == "c":
             engine = self.dbg.require_execution_engine()

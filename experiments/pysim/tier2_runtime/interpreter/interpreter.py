@@ -11,6 +11,8 @@ from typing import Protocol, Self
 
 from bump_allocator import BumpAllocator
 from config import (
+    FB_CONF_INTERP_LOCALSTACK_SIZE,
+    FB_CONF_INTERP_OPSTACK_SIZE,
     FB_CONF_INTERPRETER_YIELD_THRESHOLD,
     FB_CONF_MAX_NESTING_DEPTH,
     FB_CONF_MAX_VALUE_STACK,
@@ -22,7 +24,6 @@ from tier2_runtime.abi.interpreter_abi import (
     EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD,
     EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY,
     EXECUTION_CONTEXT_FLAG_STOP_AT_BLOCK_BOUNDARY,
-    NATIVE_VALUE_STACK_CAPACITY,
     CallFrameNative,
     ExecutionContextABI,
     FunctionExecutionViewNative,
@@ -90,14 +91,14 @@ NativeDispatchEntryPoint = _native_abi.NativeDispatchEntryPoint
 WasmHostFunction = HostFunction
 
 
-FB_CONF_MAX_LOCAL_STACK = NATIVE_VALUE_STACK_CAPACITY
+FB_CONF_MAX_LOCAL_STACK = FB_CONF_INTERP_LOCALSTACK_SIZE // 4
 
 
 def _encode_public_args(
     values: Sequence[WasmNumber], param_types: Sequence[int]
 ) -> StaticVector[int]:
     assert len(values) == len(param_types)
-    raw_args: StaticVector[int] = StaticVector(capacity=2 * FB_CONF_MAX_VALUE_STACK)
+    raw_args: StaticVector[int] = StaticVector(capacity=FB_CONF_INTERP_OPSTACK_SIZE // 4)
     for value, value_type in zip(values, param_types, strict=True):
         if value_type == I64:
             raw = int(value) & I64_MASK
@@ -331,7 +332,7 @@ class ExecutionContext(ExecutionContextABI):
     ):
         """Own the ABI record and fixed-capacity stacks used by native execution."""
         super().__init__()
-        self.stack: NativeValueStack = NativeValueStack(capacity=2 * FB_CONF_MAX_VALUE_STACK)
+        self.stack: NativeValueStack = NativeValueStack(capacity=FB_CONF_INTERP_OPSTACK_SIZE // 4)
         self.local_stack: NativeValueStack = NativeValueStack(capacity=FB_CONF_MAX_LOCAL_STACK)
         self.debug_control = debug_control
         self.current_block_index = 0xFFFF
@@ -1842,7 +1843,7 @@ class _NativeInterpreterBase:
             call_state._locals = locals_arr
             return None
 
-        popped_raw_args: StaticVector[int] = StaticVector(capacity=2 * FB_CONF_MAX_VALUE_STACK)
+        popped_raw_args: StaticVector[int] = StaticVector(capacity=FB_CONF_INTERP_OPSTACK_SIZE // 4)
         for value_type in reversed(callee_ft.params):
             for _ in range(value_slot_width(value_type)):
                 value = frame.values.pop_back()

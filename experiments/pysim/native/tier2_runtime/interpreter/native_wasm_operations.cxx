@@ -1493,7 +1493,7 @@ bool runtime_i32_unary(execution_context *context, const std::uint8_t *&instruct
   advance_instruction_ip(instruction_ip, rel);
   return true;
 }
-template <bool Indirect>
+template <bool Indirect, bool DirectCps>
 bool runtime_call(execution_context *context, const std::uint8_t *&instruction_ip,
                   std::uint32_t *&sp, std::uint32_t *&local_stack,
                   const std::uint8_t *&rel) {
@@ -1602,8 +1602,12 @@ bool runtime_call(execution_context *context, const std::uint8_t *&instruction_i
   instruction_ip = current.code;
   local_stack = callee_local_base;
   current.local_base = local_stack;
-  rel = interpreter_rel_for_block_index(callee, target.entry_block_index);
-  return true;
+  if constexpr (DirectCps) {
+    rel = interpreter_rel_for_block_index(callee, target.entry_block_index);
+    return true;
+  } else {
+    return call_boundary(current, 0, target.entry_block_index, rel);
+  }
 }
 template <auto Operation>
 bool runtime_i32_binary(execution_context *context, const std::uint8_t *&instruction_ip,
@@ -1945,14 +1949,22 @@ bool runtime_fc_memory_fill(execution_context *context, const std::uint8_t *&ins
   return continue_within_block(current, next_ip, rel);
 }
 
-template bool runtime_call<false>(execution_context *context,
+template bool runtime_call<false, false>(execution_context *context,
                                   const std::uint8_t *&instruction_ip,
                                   std::uint32_t *&sp, std::uint32_t *&local_stack,
                                   [[maybe_unused]] const std::uint8_t *&rel);
-template bool runtime_call<true>(execution_context *context,
+template bool runtime_call<true, false>(execution_context *context,
                                  const std::uint8_t *&instruction_ip,
                                  std::uint32_t *&sp, std::uint32_t *&local_stack,
                                  [[maybe_unused]] const std::uint8_t *&rel);
+template bool runtime_call<false, true>(execution_context *context,
+                                        const std::uint8_t *&instruction_ip,
+                                        std::uint32_t *&sp, std::uint32_t *&local_stack,
+                                        [[maybe_unused]] const std::uint8_t *&rel);
+template bool runtime_call<true, true>(execution_context *context,
+                                       const std::uint8_t *&instruction_ip,
+                                       std::uint32_t *&sp, std::uint32_t *&local_stack,
+                                       [[maybe_unused]] const std::uint8_t *&rel);
 template bool runtime_conversion<conversion_f32_convert_i32_s>(
     execution_context *context, const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
     [[maybe_unused]] std::uint32_t *&local_base, [[maybe_unused]] const std::uint8_t *&rel);

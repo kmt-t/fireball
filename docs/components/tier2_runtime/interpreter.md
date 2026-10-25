@@ -164,7 +164,7 @@ function view、ローカル・オペランド基点、復帰位置、境界停�
 `ローカル値領域`のフレーム開始位置は32-bit wordポインタで保持する。
 記述子はCallStackへ固定容量で積む。関数メタデータは記述子の生成時に一度取得して紐付け、命令実行中にコードや制御表を再検索しない（{GOTCHA-INTP-14}）。 <!-- definition: {GOTCHA-INTP-14} --> ローカル値は現在の空き位置から確保し、記述子に保存した開始位置から参照する。`オペランドスタック`と`ローカル値領域`は型情報を持たない32ビットワード列であり、記述子、戻りPC、型情報を格納しない。各ローカルの開始オフセットとワード数はLoaderが関数単位で前計算し、値は必要なワード数だけ連続配置する。値の有効ワードは関数シグネチャに従う。i32/f32は1ワード、i64/f64は2ワードを占有する（{GOTCHA-INTP-13}）。 <!-- definition: {GOTCHA-INTP-13} -->
 
-`local.get`, `local.set`, `local.tee` は型を解釈しない。CallFrameの `local_offsets[local_index]` と関数viewの `local_types[local_index]` から対象ワード範囲を取得する。必要な 1 または 2 ワードをオペランドスタックとの間で生コピーする（{GOTCHA-INTP-15}）。 <!-- definition: {GOTCHA-INTP-15} --> 型付き演算や ABI 境界の読み書きのみが、既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続する。`call`と`call_indirect`はC++命令ハンドラから呼ぶRuntime APIがcallee選択、frame設定、型検査を行う。定義済みゲスト関数への呼出しは、設定したcallee先頭から既存のCPS列を続け、callee復帰後はcallerの次命令から同じCPS列を再開する。呼出しごとにC++ dispatcherへ戻らない。import・host callは既存のInterpreter/RuntimeEngine境界へ戻り、そこからcallerを再開する。関数復帰はC++命令ハンドラから呼ぶRuntime APIが処理し、最上位の完了をRuntimeEngineへ返す。JIT traceのcall終端operationも共通function tableからこのCPS handlerへ直接tail-callする。Fireball host import の `fireball_call` も実行エンジンからホストハンドラへ直接接続し、SYSCTL/vMMIO syscall vectorを経由しない（{GOTCHA-INTP-21}）。 <!-- definition: {GOTCHA-INTP-21} -->
+`local.get`, `local.set`, `local.tee` は型を解釈しない。CallFrameの `local_offsets[local_index]` と関数viewの `local_types[local_index]` から対象ワード範囲を取得する。必要な 1 または 2 ワードをオペランドスタックとの間で生コピーする（{GOTCHA-INTP-15}）。 <!-- definition: {GOTCHA-INTP-15} --> 型付き演算や ABI 境界の読み書きのみが、既知の型に応じて値を解釈する。オペランドスタックはコール境界を跨いで連続する。`call`と`call_indirect`はC++命令ハンドラから呼ぶRuntime APIがcallee選択、frame設定、型検査を行う。通常のInterpreter opcode経路はcallee入口を確定してnative dispatcherのcall boundaryへ戻り、dispatcherが確定済みのcalleeから実行を続ける。JIT trace末尾のcall stencilは専用Tier 2 CPS handlerへ直接tail-callし、定義済みcalleeをそのCPS列から実行する。callee復帰時は保存した復帰BasicBlock indexからcaller metadataと`rel`を取得し、native dispatcherがcallerの次命令を再開する。import・host callは既存のInterpreter/RuntimeEngine境界へ戻り、そこからcallerを再開する。関数復帰はC++命令ハンドラから呼ぶRuntime APIが処理し、最上位の完了をRuntimeEngineへ返す。Fireball host import の `fireball_call` も実行エンジンからホストハンドラへ直接接続し、SYSCTL/vMMIO syscall vectorを経由しない（{GOTCHA-INTP-21}）。 <!-- definition: {GOTCHA-INTP-21} -->
 
 値スタックは型タグを持たない32ビットワード列とし、型は各命令の操作側で解釈する（{GOTCHA-INTP-12}）。 <!-- definition: {GOTCHA-INTP-12} -->
 
@@ -457,7 +457,7 @@ C++命令意味論は各命令のRuntime APIに保持し、CPS命令ハンドラ
 - ローカル変数命令: `local.get/set/tee`。
 - 数値命令: i32/i64の数値命令、およびf32/f64の定数・比較・算術・丸め・平方根・reinterpret/変換。
 
-定義済みゲスト関数への`call`と`call_indirect`は、C++ handlerが呼ぶRuntime APIがcalleeの関数呼出し記述子、コード位置、注釈位置を設定し、`musttail` CPS継続でcallee入口から実行する。通常のInterpreter dispatcherへ戻って呼出し先を選び直さない。callee復帰時はCallFrameの復帰BasicBlock indexからcaller metadataと`rel`を取得し、呼出し元の次命令からCPSを再開する。呼出しと復帰の各遷移でBasicBlock indexとPCの一致をassertする。JIT trace末尾のcall handlerも既存のTier 2 CPS handlerへ直接tail-callし、この関数呼出し契約を使う。import、trap、yield、最上位関数の完了などは各境界契約に従って実行境界へ戻る。
+定義済みゲスト関数への通常の`call`と`call_indirect`は、C++ handlerが呼ぶRuntime APIがcalleeの関数呼出し記述子、コード位置、注釈位置を設定し、`kCallBoundary`を返す。native dispatcherは確定済みのcallee入口から次のCPS handler列を始め、呼出し先を再選択しない。callee復帰時はCallFrameの復帰BasicBlock indexからcaller metadataと`rel`を取得し、native dispatcherが呼出し元の次命令を再開する。呼出しと復帰の各遷移でBasicBlock indexとPCの一致をassertする。JIT trace末尾のcall stencilは専用Tier 2 CPS handlerへ直接tail-callし、定義済みcalleeをそのCPS列から実行する。import、trap、yield、最上位関数の完了などは各境界契約に従って実行境界へ戻る。
 
 `call_indirect`は実行時に選択した関数だけを期待シグネチャと照合する。
 引数型列と結果型列が一致すれば、型定義の索引が異なっても適合する。

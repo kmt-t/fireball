@@ -334,7 +334,7 @@ bool conversion_f32_demote_f64(execution_context &current, std::uint32_t *&sp,
 /** @brief `conversion_identity`の数値変換を実行し、WASMの変換エラーを明示する。 */
 bool conversion_identity(execution_context &, std::uint32_t *&, std::uint32_t &trap_code);
 
-template <bool Indirect>
+template <bool Indirect, bool DirectCps = false>
 /** @brief `runtime_call`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
 [[gnu::always_inline]] bool
 runtime_call(execution_context *context, const std::uint8_t *&instruction_ip, std::uint32_t *&sp,

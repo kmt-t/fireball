@@ -174,7 +174,7 @@ inline FIREBALL_CPS_CALL void h_jit_call(execution_context *context,
          function.interpreter_annotation_byte_count == 0);
   assert(function.interpreter_annotation_pool != nullptr);
   [[clang::musttail]]
-  return h_runtime_api<void, &runtime_call<Indirect>>(
+  return h_runtime_api<void, &runtime_call<Indirect, true>>(
       context, instruction_ip, sp, function.interpreter_annotation_pool + annotation_offset);
 }
 

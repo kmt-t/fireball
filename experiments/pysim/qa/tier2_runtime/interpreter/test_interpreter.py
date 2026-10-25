@@ -1707,13 +1707,21 @@ def test_vmmio_load_preserves_backing_and_missing_dynamic_contract() -> None:
 def test_function_entry_capacity_allows_33_i64_values_before_wasm_trap(native: bool, callee: bool):
     """Thirty-three i64 values fit in 128 words, so the function reaches its WASM trap."""
     wide = " ".join(["i64.const 0"] * 33 + ["drop"] * 33)
-    body = f"i32.const 99 global.set 0 local.get 0 if unreachable else {wide} end"
+    body = (
+        "i32.const 99 global.set 0 local.get 0 if unreachable "
+        f"i32.const 101 global.set 1 else {wide} end"
+    )
     functions = f"(func (param i32) {body})"
     index = 0
     if callee:
         functions += "(func (param i32) local.get 0 call 0)"
         index = 1
-    module = parse_standalone(wat_to_wasm(f"(module (global (mut i32) (i32.const 0)) {functions})"))
+    module = parse_standalone(
+        wat_to_wasm(
+            f"(module (global (mut i32) (i32.const 0)) "
+            f"(global (mut i32) (i32.const 0)) {functions})"
+        )
+    )
     engine = make_native_interpreter(module) if native else Interpreter(module)
     call = engine.start(index, (1,))
     while not call.finished:
@@ -1721,6 +1729,7 @@ def test_function_entry_capacity_allows_33_i64_values_before_wasm_trap(native: b
     assert call.trap is not None
     assert call.trap.code == InterpreterTrapCode.UNREACHABLE
     assert engine.globals[0] == 99
+    assert engine.globals[1] == 0
     assert not call.context.call_frame_stack
 
 

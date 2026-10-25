@@ -1080,9 +1080,11 @@ int run_native_step_abi(const fb_native_step_call *call, fb_native_result *outpu
   assert(call->code != nullptr && call->context != nullptr);
   assert(call->stack != nullptr && call->locals != nullptr);
   assert(call->code_bytes <= std::numeric_limits<std::uint32_t>::max());
-  assert(call->stack_capacity <= 128 && call->stack_size <= call->stack_capacity);
+  assert(call->stack_capacity <= FIREBALL_NATIVE_VALUE_STACK_CAPACITY &&
+         call->stack_size <= call->stack_capacity);
   assert(call->context_bytes >= sizeof(fireball_execution_context_native));
-  assert(call->stack_bytes >= 128 * sizeof(std::uint32_t));
+  assert(call->stack_bytes >=
+         FIREBALL_NATIVE_VALUE_STACK_CAPACITY * sizeof(std::uint32_t));
   assert(call->locals_bytes >=
          static_cast<std::uint64_t>(call->local_slots) * sizeof(std::uint32_t));
   assert(call->ip < call->code_bytes);

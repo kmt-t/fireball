@@ -786,14 +786,10 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
     state.extension->trace_executed(&state.input, trace.trace_cookie);
   }
   if (!completed) {
-    assert(context.trap_code != 0 || cps_exit_pending(context));
-    if (!cps_exit_pending(context)) {
-      // A JIT arithmetic stencil can report a trap code before the dispatcher
-      // records the corresponding CPS exit.
-      assert(context.trap_code != 0);
-      context.rel = previous_rel;
+    if (context.trap_code != 0) {
       return trace.body_count;
     }
+    assert(cps_exit_pending(context));
     const auto exit_kind = cps_exit_kind(context);
     if (exit_kind != kRuntimeApiBoundary && exit_kind != kBlockBoundary &&
         exit_kind != kCallBoundary) {

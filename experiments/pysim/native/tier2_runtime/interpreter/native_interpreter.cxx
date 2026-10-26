@@ -163,8 +163,8 @@ inline constexpr native_opcode_handler runtime_api_handler = &h_runtime_api<Debu
 
 template <bool Indirect>
 inline FIREBALL_CPS_CALL void h_jit_call(execution_context *context,
-                                         const std::uint8_t *instruction_ip,
-                                         std::uint32_t *sp, const std::uint8_t *rel) {
+                                         const std::uint8_t *instruction_ip, std::uint32_t *sp,
+                                         const std::uint8_t *rel) {
   auto *annotation = rel;
   const auto annotation_offset = read_u32(annotation);
   const auto &frame = active_frame(*context);
@@ -173,13 +173,12 @@ inline FIREBALL_CPS_CALL void h_jit_call(execution_context *context,
   assert(function.interpreter_annotation_pool != nullptr ||
          function.interpreter_annotation_byte_count == 0);
   assert(function.interpreter_annotation_pool != nullptr);
-  [[clang::musttail]]
-  return h_runtime_api<void, &runtime_call<Indirect, true>>(
+  [[clang::musttail]] return h_runtime_api<void, &runtime_call<Indirect, true>>(
       context, instruction_ip, sp, function.interpreter_annotation_pool + annotation_offset);
 }
 
-inline constexpr std::array<fireball_native_cps_handler, 2> kJitCallHandlers{
-    &h_jit_call<false>, &h_jit_call<true>};
+inline constexpr std::array<fireball_native_cps_handler, 2> kJitCallHandlers{&h_jit_call<false>,
+                                                                             &h_jit_call<true>};
 
 template <typename Debugger> constexpr auto make_fc_opcode_handlers() {
   std::array<native_opcode_handler, 12> handlers{};
@@ -759,8 +758,7 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
   }
   assert(source_block.next_pc == trace_exit->next_pc);
   assert(source_block.next_block_index == trace_exit->block_index);
-  assert(trace_exit->block_index == kNoBlockIndex ||
-         trace_exit->block_index < module->block_count);
+  assert(trace_exit->block_index == kNoBlockIndex || trace_exit->block_index < module->block_count);
   // The function entry reserved its loader-proven peak, including this trace.
   assert(trace.stack_words <=
          static_cast<std::uint32_t>(context.stack_limit - context.stack_pointer));
@@ -789,6 +787,13 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
   }
   if (!completed) {
     assert(context.trap_code != 0 || cps_exit_pending(context));
+    if (!cps_exit_pending(context)) {
+      // A JIT arithmetic stencil can report a trap code before the dispatcher
+      // records the corresponding CPS exit.
+      assert(context.trap_code != 0);
+      context.rel = previous_rel;
+      return trace.body_count;
+    }
     const auto exit_kind = cps_exit_kind(context);
     if (exit_kind != kRuntimeApiBoundary && exit_kind != kBlockBoundary &&
         exit_kind != kCallBoundary) {
@@ -1112,8 +1117,7 @@ int run_native_step_abi(const fb_native_step_call *call, fb_native_result *outpu
   assert(call->stack_capacity <= FIREBALL_NATIVE_VALUE_STACK_CAPACITY &&
          call->stack_size <= call->stack_capacity);
   assert(call->context_bytes >= sizeof(fireball_execution_context_native));
-  assert(call->stack_bytes >=
-         FIREBALL_NATIVE_VALUE_STACK_CAPACITY * sizeof(std::uint32_t));
+  assert(call->stack_bytes >= FIREBALL_NATIVE_VALUE_STACK_CAPACITY * sizeof(std::uint32_t));
   assert(call->locals_bytes >=
          static_cast<std::uint64_t>(call->local_slots) * sizeof(std::uint32_t));
   assert(call->ip < call->code_bytes);
@@ -1157,10 +1161,9 @@ int run_native_step_abi(const fb_native_step_call *call, fb_native_result *outpu
     const auto previous_flags = execution_context->runtime_flags;
     execution_context->runtime_flags |= kSingleControlStepFlag;
     (void)dispatch_next<block_step_aspect>(execution_context, raw_code + call->ip, sp, call->rel);
-    constexpr auto kStepStateFlags =
-        kPendingBlockHeadFlag | kRelCursorReadyFlag | kCpsExitMask;
-    execution_context->runtime_flags = (previous_flags & ~kStepStateFlags) |
-                                       (execution_context->runtime_flags & kStepStateFlags);
+    constexpr auto kStepStateFlags = kPendingBlockHeadFlag | kRelCursorReadyFlag | kCpsExitMask;
+    execution_context->runtime_flags =
+        (previous_flags & ~kStepStateFlags) | (execution_context->runtime_flags & kStepStateFlags);
   } else {
     execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
     (void)dispatch_next<block_step_aspect>(execution_context, raw_code + call->ip, sp, call->rel);
@@ -1250,7 +1253,6 @@ fb_native_run_debug_dispatch(const fb_native_dispatch_call *call, fb_native_resu
   return run_native_dispatch_abi<false, false, false, false, debugger_aspect>(call, result);
 }
 
-extern "C" FB_PYSIM_INTERPRETER_EXPORT const void *
-fb_native_jit_call_handlers() {
+extern "C" FB_PYSIM_INTERPRETER_EXPORT const void *fb_native_jit_call_handlers() {
   return static_cast<const void *>(kJitCallHandlers.data());
 }

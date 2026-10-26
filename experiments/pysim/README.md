@@ -258,6 +258,7 @@ bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
 ランタイムarena測定と資源一覧は次のentry pointで再取得する。結果はホストABIと指定入力に対する参照値であり、対象MCUのRAM/ROM適合を証明しない。
 
 ```bash
+make -C experiments/pysim
 bash experiments/pysim/native/tier1_core/printk/build_native.sh
 bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
 bash experiments/pysim/native/tier3_plugins/jit/build_native.sh

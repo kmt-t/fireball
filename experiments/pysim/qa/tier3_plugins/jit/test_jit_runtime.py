@@ -3020,12 +3020,13 @@ def test_jitr_host_import_call_trace_tail_calls_cps_handler_and_resumes_once():
 
 
 def test_jitr_defined_call_after_import_keeps_call_annotation_and_stack_prefix():
-    """TEST-JITR-92: a CPS call after import keeps its index and stack prefix."""
+    """TEST-JITR-92: call keeps its stack prefix and runs the caller suffix once."""
     module = parse_standalone(
         wat_to_wasm(
             """(module
               (import "qa" "unused" (func $unused (param i32) (result i32)))
               (memory 1)
+              (global $suffix_count (mut i32) (i32.const 0))
               (func $increment (param $value i32) (result i32)
                 local.get $value i32.const 1 i32.add)
               (func (export "run") (result i32)
@@ -3034,6 +3035,7 @@ def test_jitr_defined_call_after_import_keeps_call_annotation_and_stack_prefix()
                 i32.const 1 i32.add
                 call $increment
                 i32.store
+                global.get $suffix_count i32.const 1 i32.add global.set $suffix_count
                 i32.const 0 i32.load))"""
         )
     )
@@ -3057,7 +3059,9 @@ def test_jitr_defined_call_after_import_keeps_call_annotation_and_stack_prefix()
         vmmio=reference_vmmio,
         phys_mem=reference_physical_memory,
     )
-    expected = reference.call(caller, []).unwrap()
+    reference_state = reference.start(caller, [])
+    while not reference_state.finished:
+        reference_state = reference.step_native(reference_state)
 
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
@@ -3087,10 +3091,12 @@ def test_jitr_defined_call_after_import_keeps_call_annotation_and_stack_prefix()
         vmmio=jit_vmmio,
         phys_mem=jit_physical_memory,
     )
-    actual = engine.call(interpreter, caller, []).unwrap()
-    assert actual == expected == [43]
+    actual_state = _run_with_runtime_engine(engine, interpreter, caller)
+    assert actual_state.results == reference_state.results == [43]
     assert jit_memory == reference_memory
     assert int.from_bytes(jit_memory[:4], "little") == 43
+    assert interpreter.globals[0] == reference.globals[0] == 1
+    _assert_completed_call_state_matches(reference_state, actual_state)
     assert engine.stat_jit_invocations > 0
 
 

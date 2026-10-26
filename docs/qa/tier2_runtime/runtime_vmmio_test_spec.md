@@ -104,18 +104,18 @@ Bit31によるRAM/vMMIO高速分岐、`FB_CONF_VMMIO_MAX_PTES`件のFlatMap PTE 
 
 | ケースID | 実装テスト | 直接観測する結果 |
 | :--- | :--- | :--- |
-| TEST-VMMIO-01 | `` | RAMの成功、全TLBエントリとカウンタの不変 |
+| `TEST-VMMIO-01` | `` | RAMの成功、全TLBエントリとカウンタの不変 |
 | TEST-VMMIO-02、03 | ``、`` | 非2の冪容量の末尾・超過境界、折り畳まれ得るアドレスの拒否 |
 | TEST-VMMIO-10、11 | `` | cold・hit双方のハンドラ引数と結果 |
 | TEST-VMMIO-12、13 | ``、`` | 未定義FCと未登録PTEの別トラップ |
 | TEST-VMMIO-14、15 | `` | FC間のスロット分離、交互アクセスの正しい解決、18hit・2miss |
-| TEST-VMMIO-16 | `` | 32ページすべての物理アドレス、8ページ作業集合のhit |
-| TEST-VMMIO-17 | `` | warmな読み出し専用PTEへの書込み拒否 |
-| TEST-VMMIO-18 | `` | A→B→A衝突時の各物理アドレスと再walk |
+| `TEST-VMMIO-16` | `` | 32ページすべての物理アドレス、8ページ作業集合のhit |
+| `TEST-VMMIO-17` | `` | warmな読み出し専用PTEへの書込み拒否 |
+| `TEST-VMMIO-18` | `` | A→B→A衝突時の各物理アドレスと再walk |
 | TEST-VMMIO-19、30 | `` | 廃止doorbellの未登録トラップ |
 | TEST-VMMIO-20〜23 | `` | マップ時の物理アドレス、削除後のPTE/TLB不在、旧所有者と他タスク双方の拒否 |
-| TEST-VMMIO-25 | `` | 物理ページ番号とページ内オフセットの保存 |
-| TEST-VMMIO-28 | ``、`` | RAM、SHM実サイズ、ページ境界の幅検査。実NativeInterpreterのDYNAMIC load/storeでは末尾ちょうどの値と1byte超過の具体trapを検査する |
+| `TEST-VMMIO-25` | `` | 物理ページ番号とページ内オフセットの保存 |
+| `TEST-VMMIO-28` | ``、`` | RAM、SHM実サイズ、ページ境界の幅検査。実NativeInterpreterのDYNAMIC load/storeでは末尾ちょうどの値と1byte超過の具体trapを検査する |
 | TEST-VMMIO-29、32 | `` | warmなDYNAMIC/SHMの非所有者読書き拒否、PTEと所有者の保存 |
 
 2026-10-01にLinux・CPython 3.14.6・uv環境で局所スイートを実行した。

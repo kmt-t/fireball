@@ -96,19 +96,19 @@ QAブロックドライバはローダメタデータ取得と既存のブロッ
 | 要求 | 実行関数 | 独立した期待値と観測 |
 | :--- | :--- | :--- |
 | TEST-DBG-08c | `` | 32bit最大PCを含む固定配列を保存し、幅超過を0へ丸めずE01で拒否する |
-| TEST-DBG-10/23 | `` | `PC(41 0a)=5` / `PC(6a)=7`と全stackを照合し、同じ呼出しから結果15へ継続する |
+| `TEST-DBG-10/23` | `` | `PC(41 0a)=5` / `PC(6a)=7`と全stackを照合し、同じ呼出しから結果15へ継続する |
 | TEST-DBG-09/10 | `` | ブロック内の停止命令をCode section payload相対PCで指定し、書いたlocal0=7を使用して結果17へ継続する |
-| TEST-DBG-10 | `` | call/call_indirectでcallee先頭、endでcaller次命令へ止まり、結果12を得る |
-| TEST-DBG-10 | `` | ifの真偽それぞれの固定PC列と全stackを照合する |
-| TEST-DBG-10 | `` | 2回のloopのPC・値履歴を照合し、結果0へ継続する。実行時制御フレームは保持しない |
-| TEST-DBG-10 | `` | 各停止後の全65536byteを照合し、後続storeの先行実行を検出する |
-| TEST-DBG-10 | `` | 多byte LEB128とi64/f32/f64の固定PC・全生ワードを照合する |
-| TEST-DBG-10 | `` | host importの引数7を1回だけ記録し、後続命令を先行実行しない |
-| TEST-DBG-10/11 | `` | `PC(unreachable)`でs/cが停止し、global更新とW00を発生させない |
-| TEST-DBG-12 | `` | 通常native入口は144byteのABI領域を使い、debug hookを有効化せず、構成時weaveを呼ばない |
-| TEST-DBG-12/13 | `` | 2002命令のcが既存native stepの1回で完了する |
+| `TEST-DBG-10` | `` | call/call_indirectでcallee先頭、endでcaller次命令へ止まり、結果12を得る |
+| `TEST-DBG-10` | `` | ifの真偽それぞれの固定PC列と全stackを照合する |
+| `TEST-DBG-10` | `` | 2回のloopのPC・値履歴を照合し、結果0へ継続する。実行時制御フレームは保持しない |
+| `TEST-DBG-10` | `` | 各停止後の全65536byteを照合し、後続storeの先行実行を検出する |
+| `TEST-DBG-10` | `` | 多byte LEB128とi64/f32/f64の固定PC・全生ワードを照合する |
+| `TEST-DBG-10` | `` | host importの引数7を1回だけ記録し、後続命令を先行実行しない |
+| `TEST-DBG-10/11` | `` | `PC(unreachable)`でs/cが停止し、global更新とW00を発生させない |
+| `TEST-DBG-12` | `` | 通常native入口は144byteのABI領域を使い、debug hookを有効化せず、構成時weaveを呼ばない |
+| `TEST-DBG-12/13` | `` | 2002命令のcが既存native stepの1回で完了する |
 | GOTCHA-DBG-01 | `` | [`debugger.md`](docs/components/tier3_plugins/debugger.md)、JITとDebuggerの同時構成を生成前に拒否する |
-| TEST-DBG-12/13 | `` | 通常構成と2つのデバッグ構成の状態・ブレークポイントを相互に変更しない |
+| `TEST-DBG-12/13` | `` | 通常構成と2つのデバッグ構成の状態・ブレークポイントを相互に変更しない |
 | TEST-DBG-20〜24 | `` | 実TCPのsでlocal.getだけを実行し、同じ状態から結果498とW00を得る |
 
 実TCPの同じ結線はScenario 7と8でも検査する。

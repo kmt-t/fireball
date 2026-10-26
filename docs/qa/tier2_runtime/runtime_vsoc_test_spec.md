@@ -304,14 +304,14 @@ guestの借用ビューをunmap越しに保持しない。
 | 対象契約 | 実行入口と条件 | 直接観測する状態と限界 |
 | :--- | :--- | :--- |
 | TEST-VSOC-60/61 | `` | 既存の生成範囲に、65536byteメモリの最後の1byte、末尾同士のゼロ長、32768byteの重複copyを固定例で加えた。全byteとvDMA呼出し0を検査する |
-| TEST-VSOC-67、TEST-SYS-20 | ``のN01〜N32 | 両入口とL/D/S/Pの全32構成で、成功結果、直後guest load、marker、全バック領域を照合する。7因子の有効672構成に現れる165水準対を含む。実機cacheの証拠にはしない |
+| `TEST-VSOC-67、TEST-SYS-20` | ``のN01〜N32 | 両入口とL/D/S/Pの全32構成で、成功結果、直後guest load、marker、全バック領域を照合する。7因子の有効672構成に現れる165水準対を含む。実機cacheの証拠にはしない |
 | TEST-VSOC-67/72 | ``の両入口 | guestの非整列32bit store/load、実SharedBlockのbyte、SHMからguestへのDMAが同じ実体を使うことを照合する |
-| TEST-VSOC-64 | ``の88条件、両端不正の32構成、``の4条件 | 元と先を別々に検査する。末尾一致と有効隣接PTEから始まる要求は成功する。実容量越え、単一要求のページ越え、u32桁あふれは拒否し、全状態を保存する。拒否後に同じ端点種別を再利用する |
-| TEST-VSOC-68、TEST-SYS-21 | ``の24条件、``の18条件 | PASSTHROUGHの方向別read/write許可をcold/warmで検査する。実DYNAMICとSHMの非所有者を、元と先、両入口で拒否する。SHMはTLB充填後も検査する。所有者からの再転送は成功する。bulkはゼロ長でも同じゲートを検査する |
-| TEST-VSOC-69 | `` | 手動SHMマッピングとPASSTHROUGHが同じ物理RAMを指す。仮想順と物理順の逆転、同一範囲、前後重複を、転送前byte列から導く物理配列全体と比較する。専用importの重複保証へ拡大しない |
+| `TEST-VSOC-64` | ``の88条件、両端不正の32構成、``の4条件 | 元と先を別々に検査する。末尾一致と有効隣接PTEから始まる要求は成功する。実容量越え、単一要求のページ越え、u32桁あふれは拒否し、全状態を保存する。拒否後に同じ端点種別を再利用する |
+| `TEST-VSOC-68、TEST-SYS-21` | ``の24条件、``の18条件 | PASSTHROUGHの方向別read/write許可をcold/warmで検査する。実DYNAMICとSHMの非所有者を、元と先、両入口で拒否する。SHMはTLB充填後も検査する。所有者からの再転送は成功する。bulkはゼロ長でも同じゲートを検査する |
+| `TEST-VSOC-69` | `` | 手動SHMマッピングとPASSTHROUGHが同じ物理RAMを指す。仮想順と物理順の逆転、同一範囲、前後重複を、転送前byte列から導く物理配列全体と比較する。専用importの重複保証へ拡大しない |
 | TEST-VSOC-70/71 | ``の20条件、ゼロ長の12条件 | 元と先でFC=12、予約FC、未マップD/S/Pを拒否する。全byteと制御レジスタを保存する。有効L/D/S/Pのゼロ長とリニア末尾は成功し、末尾+1はtrapとなる |
-| TEST-VSOC-72 | `` | 必須のunmap→拒否→map→転送を含む履歴を生成する。各操作後のbyte、PTE、所有者を独立した状態と比較する。冗長なmap/unmapは発行しない |
-| TEST-VSOC-72 | ``の両入口 | 実SharedBlockのrelease→grant→claimを使う。TLB充填後の旧マッピングを撤去し、旧所有者を拒否する。データ保存と新所有者からの転送を照合する。所有権を失ったSharedBlockのビューは使わない |
+| `TEST-VSOC-72` | `` | 必須のunmap→拒否→map→転送を含む履歴を生成する。各操作後のbyte、PTE、所有者を独立した状態と比較する。冗長なmap/unmapは発行しない |
+| `TEST-VSOC-72` | ``の両入口 | 実SharedBlockのrelease→grant→claimを使う。TLB充填後の旧マッピングを撤去し、旧所有者を拒否する。データ保存と新所有者からの転送を照合する。所有権を失ったSharedBlockのビューは使わない |
 
 Hypothesisは任意byte列の転送を64例、物理aliasを48例、境界拒否と再利用を48例、DYNAMIC履歴を32例まで生成する。
 本実行ではそれぞれ64、48、48、32例が成功した。
@@ -343,8 +343,8 @@ COOSの待機登録、割り込みFIFO、配送、TCB、別READYタスクは実�
 | :--- | :--- | :--- |
 | TEST-VSOC-62/65/73、TEST-SYS-22 | ``の36条件 | 両入口、転送先D/S/P、coherent/noncoherentモデル、即時完了または0/7回の保留を使う。保留中のguest全byteとTCBを照合し、デバイス役のREADYタスクが進む。部分転送を許し、成功markerとloadは可視化後だけ実行する |
 | TEST-VSOC-62/65/73 | `` | 長さ4〜32のbyte列、0〜24回の保留、入口、転送先、可視性モデルを生成する。各保留・進捗・通知・可視化時点で、範囲外を含む全byteを比較する。無条件の有限完了は主張しない |
-| TEST-VSOC-63 | ``の24条件 | 両入口、D/S/P、即時/遅延、開始後0/3byte更新を使う。専用importはモックが定めるIOを返す。bulkはその結果をWASM trapへ変換する。部分byteを保存し、成功markerを実行しない。ロールバックを要求しない |
-| TEST-VSOC-66 | ``の6条件 | 先行するモック転送の部分byteとengine状態を保存する。占有時のAGAINはこのモック対象だけの契約である。拒否時の全状態を保存し、明示的な停止確認後に同じ端点で有効転送を行う |
+| `TEST-VSOC-63` | ``の24条件 | 両入口、D/S/P、即時/遅延、開始後0/3byte更新を使う。専用importはモックが定めるIOを返す。bulkはその結果をWASM trapへ変換する。部分byteを保存し、成功markerを実行しない。ロールバックを要求しない |
+| `TEST-VSOC-66` | ``の6条件 | 先行するモック転送の部分byteとengine状態を保存する。占有時のAGAINはこのモック対象だけの契約である。拒否時の全状態を保存し、明示的な停止確認後に同じ端点で有効転送を行う |
 
 遅延モデルは異なる待機キーの通知を先に投函する。
 その通知では対象guestを起床しない。
@@ -373,12 +373,12 @@ clean、barrier、invalidateの手順は外部サービスモックの入力条�
 
 | 要求・契約 | 実行入口 | 直接観測する状態 |
 | :--- | :--- | :--- |
-| TEST-VSOC-10 | ``、`` | 実NativeInterpreterとSystem.run_guestを使う。しきい値1/3/7の各COOS境界でguestの進捗とREADY状態を照合し、同じ呼出しの結果10を得る |
-| TEST-VSOC-52 | `` | 実host callによる登録・解除の保留、割り込み待機、scheduler配送、System.dispatch_current_interruptでの反映を照合する |
-| TEST-VSOC-53 | `` | root/category/deviceの順序に加え、固定5ワードの原因レコードを各段で照合する |
-| TEST-VSOC-55 | `` | 実HAL TimerのpollableとWASI03p poll、実native dispatcherを使う。poll時の登録表・guestメモリ保存と、vIRQ時のHAL処理件数保存を照合する |
+| `TEST-VSOC-10` | ``、`` | 実NativeInterpreterとSystem.run_guestを使う。しきい値1/3/7の各COOS境界でguestの進捗とREADY状態を照合し、同じ呼出しの結果10を得る |
+| `TEST-VSOC-52` | `` | 実host callによる登録・解除の保留、割り込み待機、scheduler配送、System.dispatch_current_interruptでの反映を照合する |
+| `TEST-VSOC-53` | `` | root/category/deviceの順序に加え、固定5ワードの原因レコードを各段で照合する |
+| `TEST-VSOC-55` | `` | 実HAL TimerのpollableとWASI03p poll、実native dispatcherを使う。poll時の登録表・guestメモリ保存と、vIRQ時のHAL処理件数保存を照合する |
 | JITのidle結線 | `` | Systemのscheduler idleからLIFO compile順、キュー空、カードとcache登録を照合する。コンパイラだけは既知結果を返す境界doubleとする |
-| TEST-LOG-06 | `` | 実idle hookによる全ログ出力とリング空を照合する |
+| `TEST-LOG-06` | `` | 実idle hookによる全ログ出力とリング空を照合する |
 | Interpreter/JIT・COOS・Loggingの結合 | `` | 実WASMの全12回の値通知、初期再スケジュールとLOOPしきい値での全handoff、実JIT到達、cache登録、idle後の全6ログを照合する |
 
 LoaderとDebuggerの補助統合ケースには、実際に観測する操作と限定したケースIDを記載する。

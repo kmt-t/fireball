@@ -114,12 +114,12 @@
 | :--- | :--- | :--- |
 | TEST-SYS-10、13、93 | 32bit・8bitのデータ搬送 | write/readの往復比較に加え、既知のlittle-endian物理バイト列と8bit書込み周辺のsentinelを検査する。read8の出力は4byteの値だけを更新する |
 | TEST-SYS-11、12、14、94 | 範囲外・権限拒否とSHM全幅境界 | errnoだけでなく、ゲストメモリと全物理バック領域の保存を比較する。SHM境界は範囲外となる5バイト目も保存対象とする |
-| TEST-SYS-21 | TLB未充填・所有者アクセス後の2件 | 非所有者は拒否される。転送前の全物理バック領域とゲストRAMを保存比較する。所有者の再転送内容は入力バイト列から導く |
-| TEST-SYS-20 | `.py`の専用import正常16方向 | 実NativeInterpreterとCOOSから実HAL・SHM・PASSTHROUGH・guest RAMを使う。戻り値0、直後guest load、転送範囲と範囲外を独立snapshotで比較する |
-| TEST-SYS-21 | `.py`の実SHM非所有者拒否4条件 | 専用importを実guestから呼ぶ。転送元と先、TLB未充填と充填後の全4条件で非0を返し、実SHMを含む全領域とPTEを保存する。所有者からの再転送は成功する |
+| `TEST-SYS-21` | TLB未充填・所有者アクセス後の2件 | 非所有者は拒否される。転送前の全物理バック領域とゲストRAMを保存比較する。所有者の再転送内容は入力バイト列から導く |
+| `TEST-SYS-20` | `.py`の専用import正常16方向 | 実NativeInterpreterとCOOSから実HAL・SHM・PASSTHROUGH・guest RAMを使う。戻り値0、直後guest load、転送範囲と範囲外を独立snapshotで比較する |
+| `TEST-SYS-21` | `.py`の実SHM非所有者拒否4条件 | 専用importを実guestから呼ぶ。転送元と先、TLB未充填と充填後の全4条件で非0を返し、実SHMを含む全領域とPTEを保存する。所有者からの再転送は成功する |
 | TEST-SYS-30、31 | 登録置換・解除の各1件 | 有効表はcommit前に変化しない。指定した関数番号と未登録値をcommit後に確認する |
-| TEST-SYS-32 | 不正登録4件・不正解除2件 | 正常な有効登録と保留登録を保存比較する。拒否後のcommitは正常な保留登録を反映する |
-| TEST-SYS-50 | 出力領域の重複4件 | 拒否後のメモリとタスク状態を保存比較する。再受信内容は送信元の固定ペイロードから導く |
+| `TEST-SYS-32` | 不正登録4件・不正解除2件 | 正常な有効登録と保留登録を保存比較する。拒否後のcommitは正常な保留登録を反映する |
+| `TEST-SYS-50` | 出力領域の重複4件 | 拒否後のメモリとタスク状態を保存比較する。再受信内容は送信元の固定ペイロードから導く |
 | TEST-SYS-81、82 | EOFとclose | EOFは非0の受信長を0へ更新し、全メモリとstdin状態を保存する。closeは対象fdの除去と別fdの保存を直接検査する |
 | TEST-SYS-83、85 | 単調時計と乱数データの搬送 | 単調時計は呼出前後の参照値で64bit値を囲む。乱数は既存参照バックエンドのentropy入力を既知16バイトに固定し、要求長・全バイト・範囲外の保存を照合する |
 | GOTCHA-SYS-03 | 後半iovecの境界違反 | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md)、実stdout HALを結線する。拒否後に全メモリ、出力なし、HAL処理件数0を照合する |

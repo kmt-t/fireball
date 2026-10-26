@@ -103,16 +103,16 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 | ケースID | 現行Pysim QA | 直接観測する結果 |
 | :--- | :--- | :--- |
 | TEST-LOAD-01〜07 | ``〜`` | 不正ヘッダ、section境界・順序、型・メモリ上限の拒否とアロケータwatermark復元 |
-| TEST-LOAD-10 | `` | 型レコードの範囲、引数型・戻り型・関数コードと原本バイナリの同一所有者参照 |
-| TEST-LOAD-16 | `` | 原本上のData/Elementセクション範囲、インポート済みimmutable globalを使う初期化、メモリとテーブル状態 |
+| `TEST-LOAD-10` | `` | 型レコードの範囲、引数型・戻り型・関数コードと原本バイナリの同一所有者参照 |
+| `TEST-LOAD-16` | `` | 原本上のData/Elementセクション範囲、インポート済みimmutable globalを使う初期化、メモリとテーブル状態 |
 | TEST-LOAD-20〜24 | ``〜`` | QA専用ハーネスによる未解決状態、関数リンク、シグネチャ拒否、部分リンク防止、登録上限 |
 | TEST-LOAD-30〜32 | ``〜`` | 関数上限、64件超のexport保持、u32/u64 LEB128のバイト上限 |
-| TEST-LOAD-46 | `` | 既知のハッシュ衝突名をパーサのエクスポート検索で区別 |
+| `TEST-LOAD-46` | `` | 既知のハッシュ衝突名をパーサのエクスポート検索で区別 |
 | TEST-LOAD-48、57、58、63 | ``、``、``、`test_wasm_reader.py::test_load_63_splits_at_control_transfers_and_branch_destinations` | 大規模BasicBlock索引、Runtime API命令を含むtrace範囲、BasicBlock単位のLEB128プール、分割位置・構造命令所属 |
 | TEST-LOAD-51〜53、55〜56 | 対応する`*` | 到達不能時の型検証、Custom名境界、LEB128/件数、メモリページ・整列上限 |
 
 | TEST-LOAD-59〜60 | 対応する`*` | assert無効時の検証trapと内部assertの原因維持・watermark復元 |
-| TEST-LOAD-61 | `` | 不変のopcode対応表の上書き拒否と解析結果 |
+| `TEST-LOAD-61` | `` | 不変のopcode対応表の上書き拒否と解析結果 |
 
 ## 4. 未検証・スコープ外
 

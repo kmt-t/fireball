@@ -63,7 +63,7 @@
 
 | テストケースID | 実行可能テスト | 実際に確認する範囲 |
 | :--- | :--- | :--- |
-| TEST-MEM-08 | `` | 不存在IDとRAII drop済みIDの拒否、全SHMバイト、所有者台帳、ページ世代、総量と有効ブロックの保存、拒否後の正常Grant/Claim |
+| `TEST-MEM-08` | `` | 不存在IDとRAII drop済みIDの拒否、全SHMバイト、所有者台帳、ページ世代、総量と有効ブロックの保存、拒否後の正常Grant/Claim |
 | TEST-MEM-10d | `` | 台帳更新後の旧・新所有者通知と回数、release/grantでmapなし、claim/rollbackで有効所有ビューをmap、内容保存とdrop時のunmap |
 
 pysimのTEST-MEM-08は`INVALID_SHM_ID`と`INVALID_OR_DEALLOCATED_SHM_ID`を観測する。

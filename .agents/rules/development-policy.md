@@ -18,7 +18,6 @@ Fireball の開発方針と作業順序を定める。
 - **Bonsai Design (盆栽デザイン)**: 最初から過密な実装を行わず、仕様・検証・シミュレーション・本実装と段階的に密度を引き上げる。
 - **Zero-Cost Abstraction (ゼロコスト抽象化)**: 言語機能やコンパイラ最適化を活用し、実行時のオーバーヘッドを排除する。
 - **コード設計の原則**: 確定情報の再判定、分岐結果の読み直し、状態の重複を避ける。詳細は [コード設計の原則](code-design-principles.md) を正本とする。
-- **WASM実行系の失敗境界**: 不正なWASMバイナリの検証失敗と、WASM仕様上の実行エラーはtrapとして扱う。Interpreter・JIT・LoaderのホストAPI引数、設定、内部状態、所有権、バッファ範囲、実装環境の前提は契約とし、違反を責務境界の早期 `assert` で停止させる。内部の `AssertionError` を捕捉してWASMのtrapへ変換しない。cache miss、コンパイル対象外、バンク満杯など、仕様で定めた正常なアルゴリズム選択は失敗分類と分ける。
 - **Single-Pass Hot Path**: 同じ実行単位の検索、状態更新、走査を重複させない。ホットパスの分岐とコードキャッシュ書換えは実測で必要性を確認し、不要な処理経路を削除する。
 - **Strict Memory Policy**: `malloc` / `free` / `realloc` / `calloc` および通常の `new` / `delete` を禁止する。placement/in-place `new` と、プロジェクトで提供する独自ヒープ API・独自コンテナは許可する。標準の動的 STL コンテナは、システム提供アロケータを使用していても禁止する。
 - **Code Size Constraint (20 KSLOC制約)**: 対象はターゲットへ組み込む C/C++ 製品コードとする。現時点のゲートは `inc/` と `src/` の作成済みファイルを計測する。pysim の Python とホスト native コードは別の参照実装として扱う。除外条件、計数方式、最終適合判定に必要なビルド構成は `docs/architecture/resource_budget_estimation.md` を正本とする。

@@ -296,3 +296,37 @@ def test_intp_85_control_transfers_do_not_exit_the_handler_chain() -> None:
     assert engine.stat_native_control_handlers == 1, (
         "only the outermost completion may exit the CPS handler chain"
     )
+
+
+def test_intp_87_single_step_at_call_stops_at_callee_head() -> None:
+    """TEST-INTP-87: a single native step at a CALL stops at the callee's first block head.
+
+    The expected result 12 is computed by hand from the WAT: callee returns 7 and run adds 5.
+    """
+    module = parse_standalone(
+        wat_to_wasm(
+            """(module
+            (func $callee (result i32) i32.const 7)
+            (func (export "run") (result i32) call $callee i32.const 5 i32.add))"""
+        )
+    )
+    run_index = 1
+    callee_index = 0
+    run_base = module.function_pc_offset(run_index)
+    callee_base = module.function_pc_offset(callee_index)
+    interpreter = make_native_interpreter(module)
+    call = interpreter.start(run_index, [])
+    frame = call._frame
+    assert frame is not None
+    frame.set_runtime_boundary(run_base + len(module.code_for(run_index)) - 1, None)
+    call.context.runtime_flags |= interpreter_module.EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+    stack_before = tuple(call.context.stack)
+
+    assert interpreter._try_native_step_to_boundary(call)
+
+    assert not call.finished
+    assert call.current_pc() == callee_base
+    assert call.context.current_block_index == module.get_block_index(callee_base)
+    assert call.context.runtime_flags & interpreter_module.EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+    assert tuple(call.context.stack) == stack_before
+    assert interpreter._complete_call(call).unwrap() == [12]

@@ -1040,7 +1040,7 @@ bool conversion_identity(execution_context &, std::uint32_t *&, std::uint32_t &t
 bool runtime_nop(execution_context *, const std::uint8_t *&instruction_ip,
                  [[maybe_unused]] std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                  [[maybe_unused]] const std::uint8_t *&rel) {
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 
@@ -1058,7 +1058,7 @@ bool runtime_block(execution_context *context, const std::uint8_t *&instruction_
                    [[maybe_unused]] std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                    const std::uint8_t *&rel) {
   if (*instruction_ip == 0x02u) {
-    advance_instruction_ip(instruction_ip, rel);
+    instruction_ip += 2;
     return continue_within_block(*context, instruction_offset(*context, instruction_ip), rel);
   }
   auto &current = *context;
@@ -1326,7 +1326,7 @@ bool runtime_drop(execution_context *context, const std::uint8_t *&instruction_i
   assert(width == 1 || width == 2);
   assert(sp >= current.stack_base + width);
   sp -= width;
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 
@@ -1346,7 +1346,7 @@ bool runtime_select(execution_context *context, const std::uint8_t *&instruction
     }
   }
   sp -= width;
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 
@@ -1431,7 +1431,7 @@ bool runtime_conversion(execution_context *context, const std::uint8_t *&instruc
     assert(trap_code != 0);
     return trap(current, trap_code);
   }
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 
@@ -1452,7 +1452,7 @@ bool runtime_f32_const(execution_context *context, const std::uint8_t *&instruct
   std::uint32_t bits = 0;
   std::memcpy(&bits, instruction_ip + 1, sizeof(bits));
   (void)push(*context, sp, static_cast<std::uint32_t>(bits));
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 5;
   return true;
 }
 
@@ -1462,7 +1462,7 @@ bool runtime_f64_const(execution_context *context, const std::uint8_t *&instruct
   std::uint64_t bits = 0;
   std::memcpy(&bits, instruction_ip + 1, sizeof(bits));
   (void)push_u64(*context, sp, bits);
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 9;
   return true;
 }
 
@@ -1511,7 +1511,7 @@ bool runtime_i32_unary(execution_context *context, const std::uint8_t *&instruct
   [[maybe_unused]] auto &current = *context;
   assert(!(sp == current.stack_base));
   sp[-1] = Operation(sp[-1]);
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 template <bool Indirect, bool DirectCps>
@@ -1639,7 +1639,7 @@ bool runtime_i32_binary(execution_context *context, const std::uint8_t *&instruc
   const auto result = Operation(sp[-2], sp[-1]);
   --sp;
   sp[-1] = result;
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 template <auto Operation>
@@ -1655,7 +1655,7 @@ bool runtime_i32_checked_binary(execution_context *context, const std::uint8_t *
   }
   --sp;
   sp[-1] = result;
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 template <auto Operation, bool ResultIsBool>
@@ -1668,7 +1668,7 @@ bool runtime_i64_binary(execution_context *context, const std::uint8_t *&instruc
   const auto rhs = combine_u64(sp[-2], sp[-1]);
   const auto result = Operation(lhs, rhs);
   replace_u64_operands<ResultIsBool>(sp, result, 4);
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 template <auto Operation, bool ResultIsBool>
@@ -1685,7 +1685,7 @@ bool runtime_i64_checked_binary(execution_context *context, const std::uint8_t *
     return trap(current, trap_code);
   }
   replace_u64_operands<ResultIsBool>(sp, result, 4);
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 template <auto Operation, bool ResultIsBool>
@@ -1697,7 +1697,7 @@ bool runtime_i64_unary(execution_context *context, const std::uint8_t *&instruct
   const auto value = combine_u64(sp[-2], sp[-1]);
   const auto result = Operation(value);
   replace_u64_operands<ResultIsBool>(sp, result, 2);
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 template <auto Operation, bool ResultIsBool>
@@ -1713,7 +1713,7 @@ bool runtime_f32_binary(execution_context *context, const std::uint8_t *&instruc
   } else {
     sp[-1] = f32_to_bits(result);
   }
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 template <auto Operation, bool ResultIsBool>
@@ -1730,7 +1730,7 @@ bool runtime_f64_binary(execution_context *context, const std::uint8_t *&instruc
   } else {
     replace_u64_operands<false>(sp, f64_to_bits(result), 4);
   }
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 template <auto Operation>
@@ -1740,7 +1740,7 @@ bool runtime_f32_unary(execution_context *context, const std::uint8_t *&instruct
   [[maybe_unused]] auto &current = *context;
   assert(!(sp == current.stack_base));
   sp[-1] = f32_to_bits(Operation(f32_from_bits(sp[-1])));
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 template <auto Operation>
@@ -1751,7 +1751,7 @@ bool runtime_f64_unary(execution_context *context, const std::uint8_t *&instruct
   assert(!(sp < current.stack_base + 2));
   const auto value = f64_from_bits(combine_u64(sp[-2], sp[-1]));
   replace_u64_operands<false>(sp, f64_to_bits(Operation(value)), 2);
-  advance_instruction_ip(instruction_ip, rel);
+  instruction_ip += 1;
   return true;
 }
 template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>

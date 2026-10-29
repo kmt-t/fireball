@@ -737,8 +737,7 @@ execution_extension(const dispatch_input_t<WithExtension> &input) {
   }
 }
 
-template <bool CollectStats, bool WithJit, bool WithExtension, bool ReturnAtBlockBoundary,
-          typename ResultType = fb_native_result>
+template <bool CollectStats, bool WithJit, bool WithExtension, typename ResultType = fb_native_result>
 struct native_dispatch_state {
   static_assert(!CollectStats || !std::is_same_v<ResultType, fb_native_result>);
   const fb_native_dispatch_call &input;
@@ -751,11 +750,10 @@ struct native_dispatch_state {
       CollectStats, WithExtension && !std::is_same_v<ResultType, fb_native_result>> metrics;
 };
 
-template <bool CollectStats, bool WithJit, bool WithExtension, bool ReturnAtBlockBoundary,
-          typename ResultType>
+template <bool CollectStats, bool WithJit, bool WithExtension, typename ResultType>
 inline void
 prepare_native_dispatch(native_dispatch_state<CollectStats, WithJit, WithExtension,
-                                              ReturnAtBlockBoundary, ResultType> &state) {
+                                              ResultType> &state) {
   [[maybe_unused]] const auto &input = state.input;
   auto &context = state.context;
   assert(input.stack != nullptr && input.locals != nullptr);
@@ -783,10 +781,9 @@ prepare_native_dispatch(native_dispatch_state<CollectStats, WithJit, WithExtensi
   context.local_base = frame.local_base;
 }
 
-template <bool CollectStats, bool WithExtension, bool ReturnAtBlockBoundary, typename ResultType>
+template <bool CollectStats, bool WithExtension, typename ResultType>
 inline std::uint32_t
-execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, ReturnAtBlockBoundary,
-                                        ResultType> &state,
+execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, ResultType> &state,
                   fireball_call_frame_native &frame, block_index_t block_index, wasm_pc_t pc,
                   const std::uint8_t *&dispatch_rel) {
   auto &context = state.context;
@@ -885,11 +882,10 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Retur
   return trace.body_count;
 }
 
-template <bool CollectStats, bool WithJit, bool WithExtension, bool ReturnAtBlockBoundary = false,
-          typename ResultType = fb_native_result>
+template <bool CollectStats, bool WithJit, bool WithExtension, typename ResultType = fb_native_result>
 inline void
 record_dispatch_segment_stats(native_dispatch_state<CollectStats, WithJit, WithExtension,
-                                                    ReturnAtBlockBoundary, ResultType> &state,
+                                                    ResultType> &state,
                               std::uint32_t executed_bodies) {
   if constexpr (CollectStats) {
     if (executed_bodies == 0) {
@@ -905,10 +901,9 @@ record_dispatch_segment_stats(native_dispatch_state<CollectStats, WithJit, WithE
   }
 }
 
-template <bool CollectStats, bool WithJit, bool WithExtension, bool ReturnAtBlockBoundary,
-          typename Debugger, typename ResultType>
+template <bool CollectStats, bool WithJit, bool WithExtension, typename Debugger, typename ResultType>
 inline bool handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, WithExtension,
-                                                      ReturnAtBlockBoundary, ResultType> &state,
+                                                      ResultType> &state,
                                 std::uint32_t exit_kind) {
   auto &context = state.context;
   switch (exit_kind) {
@@ -934,10 +929,6 @@ inline bool handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, Wit
       state.status = kDispatchYield;
       return false;
     }
-    if constexpr (ReturnAtBlockBoundary) {
-      state.status = kNativeCallBoundary;
-      return false;
-    }
     return true;
   }
   case kTrap:
@@ -959,10 +950,6 @@ inline bool handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, Wit
     return false;
   case kBlockBoundary: {
     context.runtime_flags |= kPendingBlockHeadFlag;
-    if constexpr (ReturnAtBlockBoundary) {
-      state.status = kBlockBoundary;
-      return false;
-    }
     if constexpr (CollectStats) {
       ++state.metrics.stats.control_handler_count;
       state.metrics.stats.control_handler_pending_trace = true;
@@ -979,8 +966,7 @@ inline bool handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, Wit
   }
 }
 
-template <bool CollectStats, bool WithJit, bool WithExtension, bool ReturnAtBlockBoundary,
-          typename Debugger, typename ResultType>
+template <bool CollectStats, bool WithJit, bool WithExtension, typename Debugger, typename ResultType>
 int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, ResultType *result) {
   assert(result != nullptr && input != nullptr);
   const auto &call = base_dispatch_input<WithExtension>(*input);
@@ -1012,7 +998,7 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
     assert(debug->control->breakpoint_count == 0 || debug->control->breakpoints != nullptr);
   }
   auto &context = *static_cast<execution_context *>(call.context);
-  native_dispatch_state<CollectStats, WithJit, WithExtension, ReturnAtBlockBoundary, ResultType>
+  native_dispatch_state<CollectStats, WithJit, WithExtension, ResultType>
       state{call, extension, jit_provider, context, kNativeErrorInternal, 0, {}};
   prepare_native_dispatch(state);
   // Boundary overrides are valid only within one Runtime dispatch.
@@ -1050,7 +1036,7 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
               (state.jit_provider->card_states[card >> 2] >> ((card & 3u) * 2u)) & 3u;
           if (card_state == 3u) {
             executed_bodies =
-                execute_jit_trace<CollectStats, WithExtension, ReturnAtBlockBoundary, ResultType>(
+                execute_jit_trace<CollectStats, WithExtension, ResultType>(
                     state, frame, block_index, pc, dispatch_rel);
           }
         }
@@ -1116,7 +1102,7 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
       }
     }
     // Every stopped iteration has a WASM execution status in the shared state.
-    if (!handle_runtime_exit<CollectStats, WithJit, WithExtension, ReturnAtBlockBoundary, Debugger,
+    if (!handle_runtime_exit<CollectStats, WithJit, WithExtension, Debugger,
                              ResultType>(state, exit_kind)) {
       break;
     }
@@ -1150,8 +1136,7 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
   return 1;
 }
 
-int run_native_step_abi(const fb_native_step_call *call, fb_native_result *output,
-                        bool direct_control) {
+int run_native_step_abi(const fb_native_step_call *call, fb_native_result *output) {
   assert(call != nullptr && output != nullptr);
   *output = {};
   assert(call->code != nullptr && call->context != nullptr);
@@ -1197,22 +1182,9 @@ int run_native_step_abi(const fb_native_step_call *call, fb_native_result *outpu
   execution_context->local_base = local_base;
   auto *sp = execution_context->stack_pointer;
   clear_cps_exit(*execution_context);
-  if (direct_control) {
-    assert(opcode_is_control_instruction(raw_code[call->ip]) ||
-           raw_code[call->ip] == kOpcodeFcPrefix);
-    execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
-    const auto previous_flags = execution_context->runtime_flags;
-    execution_context->runtime_flags |= kSingleControlStepFlag;
-    (void)dispatch_next<block_step_aspect, false>(execution_context, raw_code + call->ip, sp,
-                                                  call->rel);
-    constexpr auto kStepStateFlags = kPendingBlockHeadFlag | kRelCursorReadyFlag | kCpsExitMask;
-    execution_context->runtime_flags =
-        (previous_flags & ~kStepStateFlags) | (execution_context->runtime_flags & kStepStateFlags);
-  } else {
-    execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
-    (void)dispatch_next<block_step_aspect, false>(execution_context, raw_code + call->ip, sp,
-                                                  call->rel);
-  }
+  execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
+  (void)dispatch_next<block_step_aspect, false>(execution_context, raw_code + call->ip, sp,
+                                                call->rel);
   const auto exit_kind = cps_exit_kind(*execution_context);
   switch (exit_kind) {
   case kRuntimeApiBoundary:
@@ -1245,23 +1217,23 @@ int run_native_step_abi(const fb_native_step_call *call, fb_native_result *outpu
 namespace fireball::interpreter {
 // QA owns the result type. Only the QA build emits these dispatcher variants.
 template int
-run_native_dispatch_abi<false, false, false, false, void, FB_INTERPRETER_MEASURED_RESULT>(
+run_native_dispatch_abi<false, false, false, void, FB_INTERPRETER_MEASURED_RESULT>(
     const fb_native_dispatch_call *, FB_INTERPRETER_MEASURED_RESULT *);
 template int
-run_native_dispatch_abi<false, false, true, false, void, FB_INTERPRETER_MEASURED_RESULT>(
+run_native_dispatch_abi<false, false, true, void, FB_INTERPRETER_MEASURED_RESULT>(
     const fb_native_dispatch_extension_call *, FB_INTERPRETER_MEASURED_RESULT *);
 template int
-run_native_dispatch_abi<true, false, false, false, void, FB_INTERPRETER_MEASURED_RESULT>(
+run_native_dispatch_abi<true, false, false, void, FB_INTERPRETER_MEASURED_RESULT>(
     const fb_native_dispatch_call *, FB_INTERPRETER_MEASURED_RESULT *);
 template int
-run_native_dispatch_abi<true, false, true, false, void, FB_INTERPRETER_MEASURED_RESULT>(
+run_native_dispatch_abi<true, false, true, void, FB_INTERPRETER_MEASURED_RESULT>(
     const fb_native_dispatch_extension_call *, FB_INTERPRETER_MEASURED_RESULT *);
 template int
-run_native_dispatch_abi<true, true, false, false, void, FB_INTERPRETER_MEASURED_RESULT>(
+run_native_dispatch_abi<true, true, false, void, FB_INTERPRETER_MEASURED_RESULT>(
     const fb_native_dispatch_call *, FB_INTERPRETER_MEASURED_RESULT *);
-template int run_native_dispatch_abi<true, true, true, false, void, FB_INTERPRETER_MEASURED_RESULT>(
+template int run_native_dispatch_abi<true, true, true, void, FB_INTERPRETER_MEASURED_RESULT>(
     const fb_native_dispatch_extension_call *, FB_INTERPRETER_MEASURED_RESULT *);
-template int run_native_dispatch_abi<false, true, true, false, void, fb_native_result>(
+template int run_native_dispatch_abi<false, true, true, void, fb_native_result>(
     const fb_native_dispatch_extension_call *, fb_native_result *);
 } // namespace fireball::interpreter
 #endif
@@ -1270,13 +1242,9 @@ using namespace fireball::interpreter;
 
 extern "C" FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_step(const fb_native_step_call *call,
                                                               fb_native_result *result) {
-  return run_native_step_abi(call, result, false);
+  return run_native_step_abi(call, result);
 }
 
-extern "C" FB_PYSIM_INTERPRETER_EXPORT int
-fb_native_run_control_step(const fb_native_step_call *call, fb_native_result *result) {
-  return run_native_step_abi(call, result, true);
-}
 
 extern "C" FB_PYSIM_INTERPRETER_EXPORT int
 fb_native_run_dispatch(const fb_native_dispatch_call *call, fb_native_result *result) {
@@ -1288,14 +1256,10 @@ fb_native_run_dispatch_jit(const fb_native_dispatch_call *call, fb_native_result
   return run_native_dispatch_abi<false, true, false>(call, result);
 }
 
-extern "C" FB_PYSIM_INTERPRETER_EXPORT int
-fb_native_run_dispatch_block(const fb_native_dispatch_call *call, fb_native_result *result) {
-  return run_native_dispatch_abi<false, false, false, true>(call, result);
-}
 
 extern "C" FB_PYSIM_INTERPRETER_EXPORT int
 fb_native_run_debug_dispatch(const fb_native_dispatch_call *call, fb_native_result *result) {
-  return run_native_dispatch_abi<false, false, false, false, debugger_aspect>(call, result);
+  return run_native_dispatch_abi<false, false, false, debugger_aspect>(call, result);
 }
 
 extern "C" FB_PYSIM_INTERPRETER_EXPORT const void *fb_native_jit_call_handlers() {

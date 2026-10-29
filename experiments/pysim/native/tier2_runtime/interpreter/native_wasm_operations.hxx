@@ -22,7 +22,6 @@ constexpr std::uint32_t kPendingBlockHeadFlag = 1u << 5;
 constexpr std::uint32_t kCpsExitShift = 8;
 constexpr std::uint32_t kCpsExitMask = fb_native_cps_exit_mask;
 constexpr std::uint32_t kDispatchYield = 5;
-constexpr std::uint32_t kNativeCallBoundary = 6;
 constexpr std::uint32_t kDebugStop = 7;
 constexpr std::uint32_t kTrapLocalStackCapacity = 1;
 constexpr std::uint32_t kTrapCallStackCapacity = 3;

@@ -39,7 +39,6 @@ from tier2_runtime.abi.native_stack_abi import (
 )
 from tier2_runtime.interpreter.errors import (
     LOG_EVT_TRAP_BASE,
-    NATIVE_DISPATCH_CALL_BOUNDARY,
     NATIVE_DISPATCH_DEBUG_STOP,
     NATIVE_DISPATCH_RUNTIME_API_BOUNDARY,
     NATIVE_DISPATCH_YIELD,
@@ -1301,8 +1300,6 @@ class _NativeInterpreterBase:
             # A statically composed debugger has stopped native execution.
             # This is a runtime boundary, not a different instruction driver.
             return NativeInterpreterBoundary(call_state)
-        elif native_status == NATIVE_DISPATCH_CALL_BOUNDARY:
-            return NativeInterpreterBoundary(call_state)
         else:
             assert False, f"unexpected C++ interpreter status: {native_status}"
         return NativeInterpreterBoundary(
@@ -1487,65 +1484,6 @@ class _NativeInterpreterBase:
         rel = int(context.rel or 0)
         assert rel != 0
         return rel
-
-    def step_native_control(self, call_state: InterpreterCall) -> InterpreterCall:
-        """Execute one supported structured-control opcode through its C++ handler."""
-        frame = call_state._frame
-        locals_arr = call_state._locals
-        assert frame is not None and locals_arr is not None
-        assert call_state._ip != RETURN_SENTINEL_IP
-        assert self.debugger is None, (
-            "native control stepping does not support Python debugger hooks"
-        )
-
-        context = call_state.context
-        rel = self._native_rel_cursor(call_state)
-        execution = context.module_execution
-        assert execution is not None
-        with _native_linear_memory_scope(context, frame.env.memory):
-            native_status, native_ip, native_size, native_trap = _native_abi.run_step(
-                _native_abi.RUN_CONTROL_STEP,
-                int(frame._native_function_view.code or 0),
-                len(frame.code),
-                int(context.context_ptr.value or 0),
-                context.context_view.nbytes,
-                frame.values.address,
-                frame.values.native_bytes,
-                locals_arr._storage.address,
-                locals_arr._storage.native_bytes,
-                len(frame.values),
-                frame.values.capacity,
-                call_state._ip,
-                frame.local_slot_count,
-                call=context._native_step_call,
-                result=context._native_result,
-                rel=rel,
-            )
-
-        frame.values.set_size(native_size)
-        context.ip = native_ip
-        context.call_frame_stack.sync_from_native(context, self._env)
-        if context.call_frame_stack:
-            active = context.call_frame_stack[-1]
-            call_state.func_index = active.func_index
-            call_state._frame = active
-            call_state._locals = active.locals
-            if native_status == 3 and native_ip >= len(active.code):
-                native_ip = RETURN_SENTINEL_IP
-            call_state._ip = native_ip
-
-        if native_status == 3:
-            return call_state
-        if native_status == 1:
-            call_state._ip = RETURN_SENTINEL_IP
-            return self._finish_native_frame(call_state)
-        if native_status == 2:
-            self._abort_call(call_state, Trap(TrapCode(native_trap)), native_ip)
-            return call_state
-        if native_status == NATIVE_DISPATCH_RUNTIME_API_BOUNDARY:
-            self.resolve_native_api_boundary(call_state)
-            return call_state
-        assert False, f"C++ control handler does not implement opcode at 0x{native_ip:04X}"
 
     def run_native_dispatch(
         self,

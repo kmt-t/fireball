@@ -11,7 +11,7 @@ int run_stats_dispatch(const dispatch_input_t<WithExtension> *call, fb_native_re
   auto &total = *static_cast<qa_native_result *>(result);
   qa_native_result current{};
   const auto status =
-      run_native_dispatch_abi<true, WithJit, WithExtension, false, void, qa_native_result>(
+      run_native_dispatch_abi<true, WithJit, WithExtension, void, qa_native_result>(
           call, &current);
   total.status = current.status;
   total.error_code = current.error_code;
@@ -28,13 +28,13 @@ int run_stats_dispatch(const dispatch_input_t<WithExtension> *call, fb_native_re
 
 extern "C" FB_PYSIM_INTERPRETER_EXPORT int fb_qa_run_dispatch(const fb_native_dispatch_call *call,
                                                               fb_native_result *result) {
-  return run_native_dispatch_abi<false, false, false, false, void, qa_native_result>(
+  return run_native_dispatch_abi<false, false, false, void, qa_native_result>(
       call, static_cast<qa_native_result *>(result));
 }
 
 extern "C" FB_PYSIM_INTERPRETER_EXPORT int
 fb_qa_run_dispatch_extension(const fb_native_dispatch_call *call, fb_native_result *result) {
-  return run_native_dispatch_abi<false, false, true, false, void, qa_native_result>(
+  return run_native_dispatch_abi<false, false, true, void, qa_native_result>(
       reinterpret_cast<const fb_native_dispatch_extension_call *>(call),
       static_cast<qa_native_result *>(result));
 }

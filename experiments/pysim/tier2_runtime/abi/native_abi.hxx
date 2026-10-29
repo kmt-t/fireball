@@ -121,12 +121,8 @@ static_assert(sizeof(fb_native_result) == 8);
 
 FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_step(const fb_native_step_call *call,
                                                    fb_native_result *result);
-FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_control_step(const fb_native_step_call *call,
-                                                           fb_native_result *result);
 FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch(const fb_native_dispatch_call *call,
                                                        fb_native_result *result);
-FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_dispatch_block(const fb_native_dispatch_call *call,
-                                                             fb_native_result *result);
 
 FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_debug_dispatch(const fb_native_dispatch_call *call,
                                                              fb_native_result *result);

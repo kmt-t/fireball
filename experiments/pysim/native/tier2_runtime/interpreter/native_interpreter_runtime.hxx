@@ -16,16 +16,13 @@ using dispatch_input_t =
  * @return ABI呼び出しの成功を示す1。WASMの終了状態はresultへ格納する。
  * @details 計測を含む具体的な組合せは実装モジュールで明示的に生成する。
  */
-template <bool CollectStats, bool WithJit, bool WithExtension, bool ReturnAtBlockBoundary = false,
-          typename Debugger = void, typename ResultType = fb_native_result>
+template <bool CollectStats, bool WithJit, bool WithExtension, typename Debugger = void, typename ResultType = fb_native_result>
 int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, ResultType *result);
 
 /**
- * @brief 一命令または制御命令を実行する。
+ * @brief 一命令を実行する。
  * @pre callとoutput、およびcallの指定する領域は有効である。
- * @param direct_control 制御命令だけを実行する場合はtrue。
  * @return ABI呼び出しの成功を示す1。実行状態とtrapはoutputに格納する。
  */
-int run_native_step_abi(const fb_native_step_call *call, fb_native_result *output,
-                        bool direct_control);
+int run_native_step_abi(const fb_native_step_call *call, fb_native_result *output);
 } // namespace fireball::interpreter

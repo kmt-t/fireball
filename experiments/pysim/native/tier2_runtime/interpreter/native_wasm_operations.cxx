@@ -1230,8 +1230,9 @@ bool runtime_end(execution_context *context, const std::uint8_t *&instruction_ip
   if (next_block_index == kInvalidBlockIndex) {
     return finish_function_boundary<Direct>(current, local_base, instruction_ip, rel);
   }
-  // The loader resolves the continuation to a later block head, so an END never targets its own block.
-  assert(next_block_index != current.current_block_index);
+  if (next_block_index == current.current_block_index) {
+    return continue_within_block(current, instruction_offset(current, instruction_ip), rel);
+  }
   const auto next_ip = code_ip_for_block_index(current, next_block_index);
   instruction_ip = current.code + next_ip;
   return continue_to_block(current, next_ip, next_block_index, rel);

@@ -521,6 +521,7 @@ bool record_loop_backedge(execution_context &current, code_ip_t source_ip, code_
   if (target_ip > source_ip) {
     return false;
   }
+  // Fires only after 2^32 backedges with threshold UINT32_MAX and no yield reset in between.
   assert(current.loop_jump_count < UINT32_MAX);
   ++current.loop_jump_count;
   return true;

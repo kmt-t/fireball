@@ -512,7 +512,7 @@ import/host呼出し、グローバル、リニアメモリの各命令で外部
 ### 6.3 安全性制約と方策
 <!-- traceability: {META_FaultIsolation} {MemoryBoundaryCheck} {GOTCHA-INTP-10} -->
 - **目標**: ゲストの暴走を確実に隔離する。
-- **方策**: `sp_boundary` と `memory_size` による境界チェックを実施する。不正な引数、未初期化状態、無効なフレーム、範囲外の内部状態は回復せず `assert` で停止する（{GOTCHA-INTP-17}）。 <!-- definition: {GOTCHA-INTP-17} --> COOS協調境界での `interrupt-event` 保留処理により安全な割り込み処理を行う。
+- **方策**: `sp_boundary` と `memory_size` による境界チェックを実施する。不正な引数、未初期化状態、無効なフレーム、範囲外の内部状態、ホストAPI引数、設定、所有権、実装環境の前提の違反は、回復せず `assert` で停止する（{GOTCHA-INTP-17}）。`assert` で停止した契約違反は、WASM の trap として報告しない。 <!-- definition: {GOTCHA-INTP-17} --> COOS協調境界での `interrupt-event` 保留処理により安全な割り込み処理を行う。
 
 
 ## 7. 形式検証・テスト仕様との対応

@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import ast
 import os
+import subprocess
 import sys
 import time
 from collections.abc import Sequence
@@ -162,6 +163,29 @@ TEST_SUITES = [
 ]
 
 
+def assert_native_libraries_current() -> None:
+    """Stop before the suites when a git-ignored native library is older than its sources.
+
+    The suites load the libraries built by `make -C experiments/pysim`.
+    The check never rebuilds, because a rebuild changes build artifacts without an explicit request.
+    """
+    result = subprocess.run(
+        ["make", "-q", "-C", str(PYSIM_ROOT)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return
+    print(
+        "native ライブラリが古い、または確認できないため試験を開始しない。\n"
+        f"再ビルドしてから再実行する: make -C {PYSIM_ROOT.relative_to(REPO_ROOT)}\n"
+        f"make -q の終了コード: {result.returncode}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
 def assert_registered_test_modules(test_dir: Path, registered: Sequence[Path]) -> None:
     """検証マトリクスの実行入口から、実在する試験モジュールを取りこぼさない。"""
     discovered: set[Path] = set()
@@ -190,6 +214,7 @@ def assert_registered_test_modules(test_dir: Path, registered: Sequence[Path]) -
 
 
 def run_all_tests():
+    assert_native_libraries_current()
     assert_registered_test_modules(TEST_DIR, tuple(path for _, _, path in TEST_SUITES))
     print("=" * 84)
     print(f"Python optimization level (parent and children): {sys.flags.optimize}")
@@ -252,6 +277,7 @@ def run_all_tests():
 
 def run_optimized_checks() -> None:
     """An assertion-enabled parent compares valid product and real QA state in 3 modes."""
+    assert_native_libraries_current()
     assert_registered_test_modules(TEST_DIR, tuple(path for _, _, path in TEST_SUITES))
     result = run_python(
         [

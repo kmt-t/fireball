@@ -844,7 +844,7 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Resul
             interpreter_rel_after_jit_trace(frame, block_index, trace_exit->interpreter_rel_bytes);
         context.current_block_index = trace_exit->block_index;
       }
-    } else if (exit_kind == kBlockBoundary || exit_kind == kCallBoundary) {
+    } else if (exit_kind == kBlockBoundary) {
       assert((context.runtime_flags & kRelCursorReadyFlag) != 0);
     }
     return trace.body_count;
@@ -916,21 +916,6 @@ inline bool handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, Wit
       assert(false && "debug stop requires a debugger handler table");
       __builtin_unreachable();
     }
-  case kCallBoundary: {
-    // The call terminator installed the callee frame and its entry cursor.
-    context.runtime_flags |= kPendingBlockHeadFlag;
-    if constexpr (CollectStats) {
-      ++state.metrics.stats.control_handler_count;
-    }
-    if constexpr (CollectStats) {
-      state.metrics.stats.control_handler_pending_trace = true;
-    }
-    if (context.loop_jump_count >= context.loop_jump_threshold) {
-      state.status = kDispatchYield;
-      return false;
-    }
-    return true;
-  }
   case kTrap:
     context.runtime_flags &= ~kPendingBlockHeadFlag;
     state.trap_code = context.trap_code;

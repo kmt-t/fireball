@@ -352,13 +352,6 @@ bool trap(execution_context &current, std::uint32_t code) {
   return false;
 }
 
-bool call_boundary(execution_context &current, code_ip_t ip, block_index_t block_index,
-                   const std::uint8_t *&rel) {
-  set_block_cursor(current, ip, block_index, rel);
-  record_cps_exit(current, kCallBoundary);
-  return false;
-}
-
 bool debug_stop(execution_context &current) {
   current.trap_code = 0;
   record_cps_exit(current, kDebugStop);
@@ -1495,7 +1488,7 @@ bool runtime_call(execution_context *context, const std::uint8_t *&instruction_i
     rel = interpreter_rel_for_block_index(callee, target.entry_block_index);
     return true;
   } else {
-    return call_boundary(current, 0, target.entry_block_index, rel);
+    return block_boundary(current, 0, target.entry_block_index, rel);
   }
 }
 template <auto Operation>

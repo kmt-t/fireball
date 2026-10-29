@@ -12,7 +12,6 @@ namespace fireball::wasm_runtime {
 constexpr std::uint32_t kComplete = 1;
 constexpr std::uint32_t kTrap = 2;
 constexpr std::uint32_t kBlockBoundary = 3;
-constexpr std::uint32_t kCallBoundary = 4;
 constexpr std::uint32_t kRuntimeApiBoundary = 8;
 constexpr std::uint32_t kStopAtBlockBoundaryFlag = 1u << 0;
 constexpr std::uint32_t kSingleControlStepFlag = 1u << 2;
@@ -74,9 +73,6 @@ bool continue_to_block(execution_context &current, code_ip_t ip, block_index_t b
 bool complete(execution_context &current);
 /** @brief WASMのtrap理由を記録し、通常継続を停止する。 */
 bool trap(execution_context &current, std::uint32_t code);
-/** @brief 呼び出し先の入口を確定してCPSを停止する。 */
-bool call_boundary(execution_context &current, code_ip_t ip, block_index_t block_index,
-                   const std::uint8_t *&rel);
 /** @brief `debug_stop`に対応する実行状態または値を求める。 */
 bool debug_stop(execution_context &current);
 /** @brief Interpreter注釈プールの固定幅値を読み出す。 */

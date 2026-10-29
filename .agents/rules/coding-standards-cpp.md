@@ -20,7 +20,7 @@ scope: GLOBAL
 
 ## 2. 組み込みメモリ・安全制約 (Embedded & Safety Constraints)
 
-- **内部契約と処理経路**: [開発方針](development-policy.md)の `Contract-First / Fail-Fast` と「WASM実行系の失敗境界」を適用する。入口で契約を `assert` し、下流の重複したエラー分岐を削る。アサーションを無効化しても必要な状態更新が実行される構造とする。
+- **内部契約と処理経路**: [コード設計の原則](code-design-principles.md) 2.1 と、[Interpreter の設計書](../../docs/components/tier2_runtime/interpreter.md) の GOTCHA-INTP-10 と GOTCHA-INTP-17 を適用する。入口で契約を `assert` し、下流の重複したエラー分岐を削る。アサーションを無効化しても必要な状態更新が実行される構造とする。
 
 - **メモリ確保 API とコンテナの制約**:
   - ヒープ確保関数（`malloc`, `free`, `realloc`, `calloc`）および通常の演算子（`new`, `new[]`, `delete`, `delete[]`）の使用を禁止する。

@@ -22,10 +22,10 @@ scope: GLOBAL
 
 ### 即時失敗とアサーション
 
-- 内部契約と処理経路の正本は [開発方針](development-policy.md)の `Contract-First / Fail-Fast` と「WASM実行系の失敗境界」とする。最初に契約を確定できる境界で `assert` し、下流の重複チェックと不要な欠損状態を削る。
+- 内部契約と処理経路の正本は [コード設計の原則](code-design-principles.md) 2.1 と、[Interpreter の設計書](../../docs/components/tier2_runtime/interpreter.md) の GOTCHA-INTP-10 と GOTCHA-INTP-17 とする。最初に契約を確定できる境界で `assert` し、下流の重複チェックと不要な欠損状態を削る。
 
 - `experiments/pysim/` は参照シミュレータであり、不変条件・事前条件・事後条件・型契約に違反した場合は `assert` で直ちに停止させる。pysim で不具合を握りつぶしたり、暗黙のフォールバックで処理を継続したりしてはならない。
-- pysim の製品コードでは明示的な `raise` を禁止する。不正なWASMバイナリを拒否する専用のtrap送出手続きは「WASM実行系の失敗境界」に従う例外とする。`try` / `except` による境界での捕捉は許可するが、通常のエラーは `Result` 等の戻り値へ集約し、事前条件・不変条件違反は `assert` で停止させる。内部の `AssertionError` をtrapへ変換しない。
+- pysim の製品コードでは明示的な `raise` を禁止する。不正なWASMバイナリを拒否する専用のtrap送出手続きは、検証失敗を trap として報告するための例外とする。`try` / `except` による境界での捕捉は許可するが、通常のエラーは `Result` 等の戻り値へ集約し、事前条件・不変条件違反は `assert` で停止させる。内部の `AssertionError` をtrapへ変換しない。
 - `isinstance`、`type`、`hasattr`、`getattr`、`setattr` および型・リフレクション用の特殊属性を使用しない。実行時型判定ではなく、静的な型・専用メソッド・明示的な状態を使う。
 - `pytest` / `unittest` / `mock`、`test_*` / `_test_*` の製品シンボル、テスト専用フックやバックドアを `experiments/pysim` の製品コードへ持ち込まない。テスト専用セットアップは `experiments/pysim/qa` 側に置く。
 - `None` は「未設定」「無効」という意味だけに使う。`None` を既定値で置き換えてはならない（`x if x is not None else default`、`if x is None: x = default` のような補完を書かない）。必須入力を `None` で受けて、呼び出し側のテスト用セットアップや互換経路を本番コードへ埋め込んではならない。必須メタデータはテストまたは上位の呼び出し側で取得して具象型の引数として渡す。

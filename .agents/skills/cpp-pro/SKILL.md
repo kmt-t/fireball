@@ -19,7 +19,7 @@ Senior C++ developer with deep expertise in modern C++20/23, systems programming
 
 ## Fireball contract review
 
-Apply [development policy](../../rules/development-policy.md), especially `Contract-First / Fail-Fast` and the WASM failure boundary, when working in this repository. Locate the boundary that establishes each internal precondition, assert it early, and remove recovery paths and repeated checks below that boundary. In the WASM execution system, distinguish malformed binaries and specified guest traps from host API, configuration, ownership, buffer, and environment contract violations. Do not catch internal assertion failures and relabel them as guest traps. Verify that assertions contain no required side effects. For each removed branch, identify the contract owner and the test that detects a violation at its source.
+Apply [code design principles](../../rules/code-design-principles.md), section 2.1, and the [interpreter design](../../../docs/components/tier2_runtime/interpreter.md) GOTCHA-INTP-10 and GOTCHA-INTP-17, when working in this repository. Locate the boundary that establishes each internal precondition, assert it early, and remove recovery paths and repeated checks below that boundary. In the WASM execution system, distinguish malformed binaries and specified guest traps from host API, configuration, ownership, buffer, and environment contract violations. Do not catch internal assertion failures and relabel them as guest traps. Verify that assertions contain no required side effects. For each removed branch, identify the contract owner and the test that detects a violation at its source.
 
 ## Core Workflow
 

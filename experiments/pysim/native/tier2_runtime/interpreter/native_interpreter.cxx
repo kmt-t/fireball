@@ -233,21 +233,24 @@ inline FIREBALL_CPS_CALL void h_fc_dispatch(execution_context *context,
 static_assert(std::is_same_v<decltype(&h_fc_dispatch<void, false>), native_opcode_handler>);
 
 template <typename Debugger, bool WithJit> constexpr auto make_opcode_handlers() {
+  // Interpreter-only dispatch (no JIT, no debugger) continues through control transfers.
+  constexpr bool kDirect = !WithJit && std::is_void_v<Debugger>;
   std::array<native_opcode_handler, 256> handlers{};
   handlers.fill(&h_unsupported_opcode<Debugger>);
   handlers[0x00] = &h_unreachable<Debugger>;
   handlers[0x01] = runtime_api_handler<Debugger, WithJit, &runtime_nop>;
   handlers[0x02] = runtime_api_handler<Debugger, WithJit, &runtime_block>; // block
   handlers[0x03] = runtime_api_handler<Debugger, WithJit, &runtime_block>; // loop
-  handlers[0x04] = runtime_api_handler<Debugger, WithJit, &runtime_if>;
+  handlers[0x04] = runtime_api_handler<Debugger, WithJit, &runtime_if<kDirect>>;
   handlers[0x05] = runtime_api_handler<Debugger, WithJit, &runtime_else>;
-  handlers[0x0B] = runtime_api_handler<Debugger, WithJit, &runtime_end>;
-  handlers[0x0C] = runtime_api_handler<Debugger, WithJit, &runtime_br>;
-  handlers[0x0D] = runtime_api_handler<Debugger, WithJit, &runtime_br_if>;
-  handlers[0x0E] = runtime_api_handler<Debugger, WithJit, &runtime_br_table>;
-  handlers[0x0F] = runtime_api_handler<Debugger, WithJit, &runtime_return>;
-  handlers[0x10] = runtime_api_handler<Debugger, WithJit, &runtime_call<false>>; // call
-  handlers[0x11] = runtime_api_handler<Debugger, WithJit, &runtime_call<true>>;  // call_indirect
+  handlers[0x0B] = runtime_api_handler<Debugger, WithJit, &runtime_end<kDirect>>;
+  handlers[0x0C] = runtime_api_handler<Debugger, WithJit, &runtime_br<kDirect>>;
+  handlers[0x0D] = runtime_api_handler<Debugger, WithJit, &runtime_br_if<kDirect>>;
+  handlers[0x0E] = runtime_api_handler<Debugger, WithJit, &runtime_br_table<kDirect>>;
+  handlers[0x0F] = runtime_api_handler<Debugger, WithJit, &runtime_return<kDirect>>;
+  handlers[0x10] = runtime_api_handler<Debugger, WithJit, &runtime_call<false, kDirect>>; // call
+  handlers[0x11] =
+      runtime_api_handler<Debugger, WithJit, &runtime_call<true, kDirect>>; // call_indirect
   handlers[0x1A] = runtime_api_handler<Debugger, WithJit, &runtime_drop>;
   handlers[0x1B] = runtime_api_handler<Debugger, WithJit, &runtime_select>;
   handlers[0x20] = runtime_api_handler<Debugger, WithJit, &runtime_local_get>;

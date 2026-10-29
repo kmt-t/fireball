@@ -296,6 +296,23 @@ bool block_boundary(execution_context &current, code_ip_t ip, block_index_t bloc
   return false;
 }
 
+// Interpreter-only configurations keep the handler chain for block transfers. A backedge exits
+// only after its count reaches the threshold, so the dispatcher can yield.
+template <bool Direct>
+bool transfer_to_block(execution_context &current, code_ip_t ip, block_index_t block_index,
+                       const std::uint8_t *&rel, bool backedge) {
+  if constexpr (!Direct) {
+    return block_boundary(current, ip, block_index, rel);
+  } else {
+    set_block_cursor(current, ip, block_index, rel);
+    if (backedge && current.loop_jump_count >= current.loop_jump_threshold) {
+      record_cps_exit(current, kBlockBoundary);
+      return false;
+    }
+    return true;
+  }
+}
+
 bool continue_to_block(execution_context &current, code_ip_t ip, block_index_t block_index,
                        const std::uint8_t *&rel) {
   set_block_cursor(current, ip, block_index, rel);
@@ -528,14 +545,14 @@ bool finish_current_function(execution_context &current, std::uint32_t *&local_b
   return false;
 }
 
+template <bool Direct>
 bool finish_function_boundary(execution_context &current, std::uint32_t *&local_base,
-                              const std::uint8_t *&instruction_ip,
-                              const std::uint8_t *&rel) {
+                              const std::uint8_t *&instruction_ip, const std::uint8_t *&rel) {
   if (finish_current_function(current, local_base, instruction_ip)) {
     return complete(current);
   }
   const auto next_ip = instruction_offset(current, instruction_ip);
-  return block_boundary(current, next_ip, current.current_block_index, rel);
+  return transfer_to_block<Direct>(current, next_ip, current.current_block_index, rel, true);
 }
 
 bool is_requested_block_boundary(const execution_context &current, code_ip_t ip) {
@@ -1051,6 +1068,7 @@ bool runtime_block(execution_context *context, const std::uint8_t *&instruction_
   return continue_to_block(current, next_ip, target_block_index, rel);
 }
 
+template <bool Direct>
 bool runtime_br_if(execution_context *context, const std::uint8_t *&instruction_ip,
                    std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                    [[maybe_unused]] const std::uint8_t *&rel) {
@@ -1071,16 +1089,16 @@ bool runtime_br_if(execution_context *context, const std::uint8_t *&instruction_
     assert(source_block.next_block_index != kInvalidBlockIndex);
     assert(source_block.next_pc == frame.function_view->code_pc_offset + next_ip);
     instruction_ip = current.code + next_ip;
-    return block_boundary(current, next_ip, source_block.next_block_index, rel);
+    return transfer_to_block<Direct>(current, next_ip, source_block.next_block_index, rel, false);
   }
   branch(current, sp, target_block_index, target_stack_base_words, result_words);
   if (target_block_index == kInvalidBlockIndex) {
-    return finish_function_boundary(current, local_base, instruction_ip, rel);
+    return finish_function_boundary<Direct>(current, local_base, instruction_ip, rel);
   }
   const auto next_ip = code_ip_for_block_index(current, target_block_index);
-  record_loop_backedge(current, source_ip, next_ip);
+  const auto backedge = record_loop_backedge(current, source_ip, next_ip);
   instruction_ip = current.code + next_ip;
-  return block_boundary(current, next_ip, target_block_index, rel);
+  return transfer_to_block<Direct>(current, next_ip, target_block_index, rel, backedge);
 }
 
 bool apply_local_get(execution_context *context, std::uint32_t *&sp, std::uint32_t *&local_base,
@@ -1332,6 +1350,7 @@ bool runtime_select(execution_context *context, const std::uint8_t *&instruction
   return true;
 }
 
+template <bool Direct>
 bool runtime_end(execution_context *context, const std::uint8_t *&instruction_ip,
                  [[maybe_unused]] std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                  [[maybe_unused]] const std::uint8_t *&rel) {
@@ -1340,7 +1359,7 @@ bool runtime_end(execution_context *context, const std::uint8_t *&instruction_ip
   ++instruction_ip;
   const auto next_block_index = static_cast<block_index_t>(read_u16(rel));
   if (next_block_index == kInvalidBlockIndex) {
-    return finish_function_boundary(current, local_base, instruction_ip, rel);
+    return finish_function_boundary<Direct>(current, local_base, instruction_ip, rel);
   }
   if (next_block_index == current.current_block_index) {
     return continue_within_block(current, instruction_offset(current, instruction_ip), rel);
@@ -1350,14 +1369,16 @@ bool runtime_end(execution_context *context, const std::uint8_t *&instruction_ip
   return continue_to_block(current, next_ip, next_block_index, rel);
 }
 
+template <bool Direct>
 bool runtime_return(execution_context *context, const std::uint8_t *&instruction_ip,
                     [[maybe_unused]] std::uint32_t *&sp,
                     [[maybe_unused]] std::uint32_t *&local_base,
                     [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  return finish_function_boundary(current, local_base, instruction_ip, rel);
+  return finish_function_boundary<Direct>(current, local_base, instruction_ip, rel);
 }
 
+template <bool Direct>
 bool runtime_br_table(execution_context *context, const std::uint8_t *&instruction_ip,
                       std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                       [[maybe_unused]] const std::uint8_t *&rel) {
@@ -1381,12 +1402,12 @@ bool runtime_br_table(execution_context *context, const std::uint8_t *&instructi
   const auto selected_result_words = read_u8(selected_block_rel);
   branch(current, sp, selected_block_index, selected_stack_base_words, selected_result_words);
   if (selected_block_index == kInvalidBlockIndex) {
-    return finish_function_boundary(current, local_base, instruction_ip, rel);
+    return finish_function_boundary<Direct>(current, local_base, instruction_ip, rel);
   }
   const auto next_ip = code_ip_for_block_index(current, selected_block_index);
-  record_loop_backedge(current, source_ip, next_ip);
+  const auto backedge = record_loop_backedge(current, source_ip, next_ip);
   instruction_ip = current.code + next_ip;
-  return block_boundary(current, next_ip, selected_block_index, rel);
+  return transfer_to_block<Direct>(current, next_ip, selected_block_index, rel, backedge);
 }
 
 bool runtime_i32_const(execution_context *context, const std::uint8_t *&instruction_ip,
@@ -1831,6 +1852,7 @@ bool runtime_memory_store(execution_context *context, const std::uint8_t *&instr
   return runtime_memory_store_decoded<Width, ValueWords>(context, sp, local_base, instruction_ip,
                                                          source_ip, next_ip, offset, rel);
 }
+template <bool Direct>
 bool runtime_if(execution_context *context, const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                 [[maybe_unused]] std::uint32_t *&local_base,
                 [[maybe_unused]] const std::uint8_t *&rel) {
@@ -1841,13 +1863,14 @@ bool runtime_if(execution_context *context, const std::uint8_t *&instruction_ip,
   const auto else_block_index = static_cast<block_index_t>(read_u16(rel));
   const auto target_block_index = condition == 0 ? else_block_index : then_block_index;
   if (target_block_index == kInvalidBlockIndex) {
-    return finish_function_boundary(current, local_base, instruction_ip, rel);
+    return finish_function_boundary<Direct>(current, local_base, instruction_ip, rel);
   }
   const auto next_ip = code_ip_for_block_index(current, target_block_index);
   instruction_ip = current.code + next_ip;
-  return block_boundary(current, next_ip, target_block_index, rel);
+  return transfer_to_block<Direct>(current, next_ip, target_block_index, rel, false);
 }
 
+template <bool Direct>
 bool runtime_br(execution_context *context, const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                 [[maybe_unused]] std::uint32_t *&local_base,
                 [[maybe_unused]] const std::uint8_t *&rel) {
@@ -1858,12 +1881,12 @@ bool runtime_br(execution_context *context, const std::uint8_t *&instruction_ip,
   const auto result_words = read_u8(rel);
   branch(current, sp, target_block_index, target_stack_base_words, result_words);
   if (target_block_index == kInvalidBlockIndex) {
-    return finish_function_boundary(current, local_base, instruction_ip, rel);
+    return finish_function_boundary<Direct>(current, local_base, instruction_ip, rel);
   }
   const auto next_ip = code_ip_for_block_index(current, target_block_index);
-  record_loop_backedge(current, source_ip, next_ip);
+  const auto backedge = record_loop_backedge(current, source_ip, next_ip);
   instruction_ip = current.code + next_ip;
-  return block_boundary(current, next_ip, target_block_index, rel);
+  return transfer_to_block<Direct>(current, next_ip, target_block_index, rel, backedge);
 }
 
 bool runtime_fc_memory_copy_decoded(execution_context *context, std::uint32_t *&sp,
@@ -2632,4 +2655,41 @@ runtime_fc_saturating_conversion_decoded<conversion_i64_trunc_sat_f64_s>(executi
 template bool
 runtime_fc_saturating_conversion_decoded<conversion_i64_trunc_sat_f64_u>(execution_context *context,
                                                                          std::uint32_t *&sp);
+template bool runtime_if<false>(execution_context *context, const std::uint8_t *&instruction_ip,
+                                std::uint32_t *&sp, std::uint32_t *&local_base,
+                                const std::uint8_t *&rel);
+template bool runtime_if<true>(execution_context *context, const std::uint8_t *&instruction_ip,
+                               std::uint32_t *&sp, std::uint32_t *&local_base,
+                               const std::uint8_t *&rel);
+template bool runtime_br<false>(execution_context *context, const std::uint8_t *&instruction_ip,
+                                std::uint32_t *&sp, std::uint32_t *&local_base,
+                                const std::uint8_t *&rel);
+template bool runtime_br<true>(execution_context *context, const std::uint8_t *&instruction_ip,
+                               std::uint32_t *&sp, std::uint32_t *&local_base,
+                               const std::uint8_t *&rel);
+template bool runtime_br_if<false>(execution_context *context, const std::uint8_t *&instruction_ip,
+                                   std::uint32_t *&sp, std::uint32_t *&local_base,
+                                   const std::uint8_t *&rel);
+template bool runtime_br_if<true>(execution_context *context, const std::uint8_t *&instruction_ip,
+                                  std::uint32_t *&sp, std::uint32_t *&local_base,
+                                  const std::uint8_t *&rel);
+template bool runtime_br_table<false>(execution_context *context,
+                                      const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
+                                      std::uint32_t *&local_base, const std::uint8_t *&rel);
+template bool runtime_br_table<true>(execution_context *context,
+                                     const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
+                                     std::uint32_t *&local_base, const std::uint8_t *&rel);
+template bool runtime_return<false>(execution_context *context, const std::uint8_t *&instruction_ip,
+                                    std::uint32_t *&sp, std::uint32_t *&local_base,
+                                    const std::uint8_t *&rel);
+template bool runtime_return<true>(execution_context *context, const std::uint8_t *&instruction_ip,
+                                   std::uint32_t *&sp, std::uint32_t *&local_base,
+                                   const std::uint8_t *&rel);
+template bool runtime_end<false>(execution_context *context, const std::uint8_t *&instruction_ip,
+                                 std::uint32_t *&sp, std::uint32_t *&local_base,
+                                 const std::uint8_t *&rel);
+template bool runtime_end<true>(execution_context *context, const std::uint8_t *&instruction_ip,
+                                std::uint32_t *&sp, std::uint32_t *&local_base,
+                                const std::uint8_t *&rel);
+
 } // namespace fireball::wasm_runtime

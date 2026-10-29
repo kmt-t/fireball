@@ -212,9 +212,9 @@ constexpr auto make_opcode_jit_runtime_api_table() {
   apis[0x02] = FB_JIT_CONTROL_API(0x02, &jit_runtime_api_annotated<&runtime_block>);
   apis[0x03] = FB_JIT_CONTROL_API(0x03, &jit_runtime_api_annotated<&runtime_block>);
   apis[0x05] = FB_JIT_CONTROL_API(0x05, &jit_runtime_api_annotated<&runtime_else>);
-  apis[0x0B] = FB_JIT_CONTROL_API(0x0B, &jit_runtime_api_annotated<&runtime_end>);
-  apis[0x0E] = FB_JIT_CONTROL_API(0x0E, &jit_runtime_api_annotated<&runtime_br_table>);
-  apis[0x0F] = FB_JIT_CONTROL_API(0x0F, &jit_runtime_api_passthrough<&runtime_return>);
+  apis[0x0B] = FB_JIT_CONTROL_API(0x0B, &jit_runtime_api_annotated<&runtime_end<false>>);
+  apis[0x0E] = FB_JIT_CONTROL_API(0x0E, &jit_runtime_api_annotated<&runtime_br_table<false>>);
+  apis[0x0F] = FB_JIT_CONTROL_API(0x0F, &jit_runtime_api_passthrough<&runtime_return<false>>);
   apis[0x1A] = &jit_runtime_api_passthrough<&runtime_drop>;
   apis[0x1B] = &jit_runtime_api_passthrough<&runtime_select>;
   apis[0x23] = &jit_runtime_api_passthrough<&runtime_global_get>;

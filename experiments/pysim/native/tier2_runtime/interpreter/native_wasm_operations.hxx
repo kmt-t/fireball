@@ -358,17 +358,18 @@ runtime_call(execution_context *context, const std::uint8_t *&instruction_ip, st
                                           [[maybe_unused]] const std::uint8_t *&rel);
 
 /** @brief `runtime_if`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
-[[gnu::always_inline]] bool runtime_if(execution_context *context,
-                                       const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
-                                       [[maybe_unused]] std::uint32_t *&local_base,
-                                       [[maybe_unused]] const std::uint8_t *&rel);
+template <bool Direct>
+[[gnu::always_inline]] bool
+runtime_if(execution_context *context, const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
+           [[maybe_unused]] std::uint32_t *&local_base, [[maybe_unused]] const std::uint8_t *&rel);
 
 /** @brief `runtime_br`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
-[[gnu::always_inline]] bool runtime_br(execution_context *context,
-                                       const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
-                                       [[maybe_unused]] std::uint32_t *&local_base,
-                                       [[maybe_unused]] const std::uint8_t *&rel);
+template <bool Direct>
+[[gnu::always_inline]] bool
+runtime_br(execution_context *context, const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
+           [[maybe_unused]] std::uint32_t *&local_base, [[maybe_unused]] const std::uint8_t *&rel);
 /** @brief `runtime_br_if`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
+template <bool Direct>
 [[gnu::always_inline]] bool runtime_br_if(execution_context *context,
                                           const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                                           [[maybe_unused]] std::uint32_t *&local_base,
@@ -443,23 +444,23 @@ bool apply_local_tee(execution_context *context, std::uint32_t *&sp, std::uint32
                                            [[maybe_unused]] std::uint32_t *&local_base,
                                            [[maybe_unused]] const std::uint8_t *&rel);
 /** @brief `runtime_end`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
-[[gnu::always_inline]] bool runtime_end(execution_context *context,
-                                        const std::uint8_t *&instruction_ip,
-                                        [[maybe_unused]] std::uint32_t *&sp,
-                                        [[maybe_unused]] std::uint32_t *&local_base,
-                                        [[maybe_unused]] const std::uint8_t *&rel);
+template <bool Direct>
+[[gnu::always_inline]] bool
+runtime_end(execution_context *context, const std::uint8_t *&instruction_ip,
+            [[maybe_unused]] std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+            [[maybe_unused]] const std::uint8_t *&rel);
 /** @brief `runtime_return`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
-[[gnu::always_inline]] bool runtime_return(execution_context *context,
-                                           const std::uint8_t *&instruction_ip,
-                                           [[maybe_unused]] std::uint32_t *&sp,
-                                           [[maybe_unused]] std::uint32_t *&local_base,
-                                           [[maybe_unused]] const std::uint8_t *&rel);
+template <bool Direct>
+[[gnu::always_inline]] bool
+runtime_return(execution_context *context, const std::uint8_t *&instruction_ip,
+               [[maybe_unused]] std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+               [[maybe_unused]] const std::uint8_t *&rel);
 /** @brief `runtime_br_table`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
-[[gnu::always_inline]] bool runtime_br_table(execution_context *context,
-                                             const std::uint8_t *&instruction_ip,
-                                             std::uint32_t *&sp,
-                                             [[maybe_unused]] std::uint32_t *&local_base,
-                                             [[maybe_unused]] const std::uint8_t *&rel);
+template <bool Direct>
+[[gnu::always_inline]] bool
+runtime_br_table(execution_context *context, const std::uint8_t *&instruction_ip,
+                 std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+                 [[maybe_unused]] const std::uint8_t *&rel);
 /** @brief `runtime_i32_const`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
 [[gnu::always_inline]] bool runtime_i32_const(execution_context *context,
                                               const std::uint8_t *&instruction_ip,

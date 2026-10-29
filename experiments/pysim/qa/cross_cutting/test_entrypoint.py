@@ -135,7 +135,7 @@ def test_optimized_qa_setup_preserves_real_fixture_state(optimization: int) -> N
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout.splitlines()[-1]) == {
         "optimization": optimization,
-        "outcome": [1, 6, 1, 0],
+        "outcome": [1, 0xFFFF_FFFF, 1, 0],
         "top": 7,
         "registers": [[10, 20, 30], 1, 999],
         "jit_cache": {

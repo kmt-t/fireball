@@ -23,6 +23,7 @@ from tier2_runtime.abi.interpreter_abi import (
 )
 from tier2_runtime.abi.native_stack_abi import NativeCallFrameStack
 from tier2_runtime.interpreter.control_flow import build_interpreter_annotation_pool
+from tier2_runtime.interpreter.errors import RETURN_SENTINEL_PC
 from tier2_runtime.interpreter.interpreter import TrapCode
 from tier2_runtime.wasm.module import LocalLayout
 
@@ -91,10 +92,10 @@ def test_native_cps_entry_uses_shared_operand_stack() -> None:
         stack.capacity,
         0,
     )
-    assert (status, next_ip, stack_size, trap_code) == (1, len(code), 1, 0)
+    assert (status, next_ip, stack_size, trap_code) == (1, RETURN_SENTINEL_PC, 1, 0)
     assert stack.raw_at(0) == 7
     assert context.code_size == len(code)
-    assert context.ip == len(code)
+    assert context.ip == RETURN_SENTINEL_PC
     assert context.stack_pointer == stack.value_ptr(1).value
 
 
@@ -105,7 +106,7 @@ def test_native_shared_stack_keeps_values_across_handler_dispatch() -> None:
     # ((3 + 4) * 2) + 5: every intermediate value remains in the shared stack.
     code = memoryview(bytearray((0x41, 3, 0x41, 4, 0x6A, 0x41, 2, 0x6C, 0x41, 5, 0x6A, 0x0B)))
     outcome = _run_step(code, context, stack, locals_stack, 0, stack.capacity, 0)
-    assert outcome == (1, len(code), 1, 0)
+    assert outcome == (1, RETURN_SENTINEL_PC, 1, 0)
     assert stack.raw_at(0) == 19
 
 
@@ -157,7 +158,7 @@ def test_native_const_capacity_traps_without_partial_push(
         # A raw host entry must already satisfy the function's capacity contract.
         code = b"\x01\x01" + constant + b"\x0b"
         outcome, context, before, after = _run_guarded_const(code, stack_capacity, initial_size)
-        assert outcome == (1, len(code), initial_size + len(raw_words), 0)
+        assert outcome == (1, RETURN_SENTINEL_PC, initial_size + len(raw_words), 0)
         assert context.stack_pointer == context.stack_base + (initial_size + len(raw_words)) * 4
         expected = list(before)
         expected[initial_size : initial_size + len(raw_words)] = raw_words

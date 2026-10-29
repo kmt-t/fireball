@@ -223,9 +223,9 @@ inline FIREBALL_CPS_CALL void h_fc_dispatch(execution_context *context,
                                             std::uint32_t *sp, const std::uint8_t *rel) {
   const auto subopcode = peek_u8(rel + sizeof(instruction_width_t));
   // The selected Runtime API consumes the width record, subopcode, and operands.
-  if (subopcode >= kFcOpcodeHandlers<Debugger, WithJit>.size()) {
-    [[clang::musttail]] return h_unsupported_opcode<Debugger>(context, instruction_ip, sp, rel);
-  }
+  // The loader accepts only the subopcodes that have handlers (or trap entries) in this table.
+  constexpr auto kHandlerCount = kFcOpcodeHandlers<Debugger, WithJit>.size();
+  assert(subopcode < kHandlerCount);
   [[clang::musttail]] return kFcOpcodeHandlers<Debugger, WithJit>[subopcode](
       context, instruction_ip, sp, rel);
 }

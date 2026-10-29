@@ -521,9 +521,8 @@ bool record_loop_backedge(execution_context &current, code_ip_t source_ip, code_
   if (target_ip > source_ip) {
     return false;
   }
-  if (current.loop_jump_count < UINT32_MAX) {
-    ++current.loop_jump_count;
-  }
+  assert(current.loop_jump_count < UINT32_MAX);
+  ++current.loop_jump_count;
   return true;
 }
 
@@ -1230,9 +1229,8 @@ bool runtime_end(execution_context *context, const std::uint8_t *&instruction_ip
   if (next_block_index == kInvalidBlockIndex) {
     return finish_function_boundary<Direct>(current, local_base, instruction_ip, rel);
   }
-  if (next_block_index == current.current_block_index) {
-    return continue_within_block(current, instruction_offset(current, instruction_ip), rel);
-  }
+  // The loader resolves the continuation to a later block head, so an END never targets its own block.
+  assert(next_block_index != current.current_block_index);
   const auto next_ip = code_ip_for_block_index(current, next_block_index);
   instruction_ip = current.code + next_ip;
   return continue_to_block(current, next_ip, next_block_index, rel);
@@ -1401,9 +1399,8 @@ bool runtime_call(execution_context *context, const std::uint8_t *&instruction_i
   if constexpr (Indirect) {
     expected_type_index = static_cast<type_index_t>(read_u16(rel));
     table_index = 0;
-    if (table_index >= module.table_count || module.tables == nullptr) {
-      return trap(current, kTrapTableIndexOutOfBounds);
-    }
+    // The loader requires a table for CALL_INDIRECT and accepts only table index zero.
+    assert(table_index < module.table_count && module.tables != nullptr);
     const auto &table = module.tables[table_index];
     assert(!(sp == current.stack_base));
     table_slot = sp[-1];

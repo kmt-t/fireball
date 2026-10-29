@@ -8,6 +8,7 @@
 | :--- | :--- | :--- |
 | 開発・実装上の必須条件 | [開発ルール](../.agents/rules/development-policy.md)、各コーディングルール | 守るべき条件を定める。 |
 | 検証の反パターン | [verification-antipatterns](../.agents/rules/verification-antipatterns.md) | 証拠のない検証、恒真アサーション、未結線テストなどを防ぐ。 |
+| コード設計の原則 | [code-design-principles](../.agents/rules/code-design-principles.md) | 確定情報の再判定、分岐結果の読み直し、状態の重複、事前に確定できる分岐を防ぐ。 |
 | 製品仕様の証拠連鎖 | [製品仕様・証拠マトリクス](../docs/qa/product_verification_matrix.md) | コンポーネント設計、コンセプト、形式モデル、テスト仕様の対応を定める。 |
 | PySim実行QAの在庫と被覆 | [PySim QA実行マトリクス](../experiments/pysim/qa/verification_matrix.md) | 参照シミュレータのテスト登録、シナリオ、因子水準の実行網羅を管理する。製品適合の証拠にはしない。 |
 | テスト仕様・結果の配置 | [品質保証資料の案内](../docs/qa/README.md) | テスト仕様と記録済み証跡を分類する。 |

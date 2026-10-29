@@ -262,3 +262,37 @@ def test_release_bulk_memory_preserves_annotation_cursor(
     assert memory[8:12] == (b"data" if operation == "copy" else b"****")
     assert memory[:4] == b"data"
     assert memory[12:16] == b"\x00" * 4
+
+
+def test_intp_85_control_transfers_do_not_exit_the_handler_chain() -> None:
+    """TEST-INTP-85: if, else, br_if, call, and return continue without a CPS exit.
+
+    Only the completion of the outermost function leaves the handler chain.
+    """
+    from qa.shared.runtime_stats import RuntimeStatsEngine
+
+    wat = """
+    (module
+      (func $callee (param i32) (result i32) local.get 0 i32.const 1 i32.add)
+      (func (export "f") (param i32) (result i32)
+        block (result i32)
+          local.get 0 i32.const 3 i32.gt_s
+          if (result i32)
+            local.get 0 call $callee
+          else
+            i32.const 0
+          end
+          local.get 0 i32.const 100 i32.lt_s
+          br_if 0
+          drop
+          i32.const 7
+        end))
+    """
+    engine = RuntimeStatsEngine(collect_runtime_stats=True)
+    module = engine.load_wasm(wat_to_wasm(wat))
+    guest = make_native_interpreter(module)
+    results = engine.call(guest, module.export_func_index("f"), [5]).unwrap()
+    assert results == [6]
+    assert engine.stat_native_control_handlers == 1, (
+        "only the outermost completion may exit the CPS handler chain"
+    )

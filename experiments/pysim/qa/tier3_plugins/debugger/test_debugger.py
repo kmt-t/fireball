@@ -693,3 +693,39 @@ def test_dbg_13_two_compositions_keep_stop_state_and_storage_independent() -> No
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([str(_TEST_FILE)]))
+
+
+def test_intp_86_debug_table_stops_at_every_instruction_across_control_transfers():
+    """TEST-INTP-86: the debug handler table yields after every instruction, including `if`.
+
+    Each RSP step must advance one WASM instruction, so the control transfers of an `if` are
+    observable one by one instead of being executed in a batch.
+    """
+    engine = RuntimeEngineDebugDriver()
+    module = engine.load_wasm(
+        wat_to_wasm(
+            '(module (func (export "f") (param i32) (result i32)'
+            " local.get 0 if (result i32) i32.const 1 else i32.const 2 end))"
+        )
+    )
+    block = instruction_blocks(module)[0]
+    execution = make_debug_execution(module, 0, (1,))
+    debugger = DebuggerManager(engine=execution)
+    debugger.attach()
+    rsp = GDBRspProtocol(debugger)
+    ctx = execution.context
+    pc = execution.call.current_pc()
+    stops = []
+    response, next_pc = rsp.handle_packet("s", block.head_pc, ctx, {block.head_pc: block})
+    assert response == GDBRspProtocol.format_packet("S05")
+    stops.append(next_pc)
+    assert next_pc == pc + 2, "local.get is the first instruction"
+    while True:
+        response, next_pc = rsp.handle_packet("s", next_pc, ctx, {})
+        if response != GDBRspProtocol.format_packet("S05"):
+            break
+        assert next_pc > stops[-1], "each step must advance the program counter"
+        stops.append(next_pc)
+    assert len(stops) >= 4, "the if, the branch, and the end each stop separately"
+    assert response == GDBRspProtocol.format_packet("W00")
+    assert execution.call.results == [1]

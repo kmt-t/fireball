@@ -88,12 +88,6 @@ std::uint16_t read_u16(const std::uint8_t *&rel);
 std::uint32_t read_u32(const std::uint8_t *&rel);
 /** @brief Interpreter注釈プールのu8値を先読みする。 */
 std::uint8_t peek_u8(const std::uint8_t *rel);
-/** @brief `instruction_width`に対応する実行状態または値を求める。 */
-instruction_width_t instruction_width(const std::uint8_t *ip, const std::uint8_t *rel);
-/** @brief デコード済み命令幅を消費し、命令カーソルを進める。 */
-void advance_instruction_ip(const std::uint8_t *&ip, const std::uint8_t *&rel);
-/** @brief デコード済み命令幅のレコードを消費する。 */
-instruction_width_t consume_instruction_width(const std::uint8_t *ip, const std::uint8_t *&rel);
 /** @brief 有効な命令カーソルをコード先頭からの位置へ変換する。 */
 code_ip_t instruction_offset(const execution_context &current, const std::uint8_t *ip);
 /** @brief Interpreter注釈プールの固定幅値を読み出す。 */

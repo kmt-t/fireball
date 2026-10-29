@@ -383,44 +383,6 @@ std::uint32_t read_u32(const std::uint8_t *&rel) {
 
 std::uint8_t peek_u8(const std::uint8_t *rel) { return *rel; }
 
-constexpr auto make_instruction_width_table() {
-  // Zero marks the opcodes whose encoded width is stored in the annotation pool.
-  std::array<std::uint8_t, 256> widths{};
-  widths.fill(1);
-  for (const auto opcode : {0x02u, 0x03u, 0x04u, 0x3Fu, 0x40u}) {
-    widths[opcode] = 2;
-  }
-  widths[0x43u] = 5;
-  widths[0x44u] = 9;
-  for (const auto opcode :
-       {0x0Du, 0x10u, 0x11u, 0x20u, 0x21u, 0x22u, 0x23u, 0x24u, 0x41u, 0x42u, 0xFCu}) {
-    widths[opcode] = 0;
-  }
-  for (std::uint32_t opcode = 0x28u; opcode <= 0x3Eu; ++opcode) {
-    widths[opcode] = 0;
-  }
-  return widths;
-}
-
-constexpr auto kInstructionWidthTable = make_instruction_width_table();
-
-instruction_width_t instruction_width(const std::uint8_t *ip, const std::uint8_t *rel) {
-  const auto fixed_width = kInstructionWidthTable[*ip];
-  return fixed_width != 0 ? fixed_width : *rel;
-}
-
-instruction_width_t consume_instruction_width(const std::uint8_t *ip, const std::uint8_t *&rel) {
-  const auto fixed_width = kInstructionWidthTable[*ip];
-  if (fixed_width != 0) {
-    return fixed_width;
-  }
-  return *rel++;
-}
-
-void advance_instruction_ip(const std::uint8_t *&ip, const std::uint8_t *&rel) {
-  ip += consume_instruction_width(ip, rel);
-}
-
 code_ip_t instruction_offset(const execution_context &current, const std::uint8_t *ip) {
   assert(current.code != nullptr && ip >= current.code && ip <= current.code + current.code_size);
   return static_cast<std::uint32_t>(ip - current.code);
@@ -1074,7 +1036,7 @@ bool runtime_br_if(execution_context *context, const std::uint8_t *&instruction_
                    [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
   const auto source_ip = instruction_offset(current, instruction_ip);
-  const auto width = consume_instruction_width(instruction_ip, rel);
+  const auto width = read_u8(rel);
   std::uint32_t condition = 0;
   const auto target_block_index = static_cast<block_index_t>(read_u16(rel));
   const auto target_stack_base_words = read_u8(rel);
@@ -1187,7 +1149,7 @@ bool runtime_local_get(execution_context *context, const std::uint8_t *&instruct
                        std::uint32_t *&sp, std::uint32_t *&local_base,
                        [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto encoded_width = consume_instruction_width(instruction_ip, rel);
+  const auto encoded_width = read_u8(rel);
   const auto offset = static_cast<frame_word_offset_t>(read_u16(rel));
   const auto width = read_u8(rel);
   if (!runtime_local_get_annotated(current, sp, local_base, offset, width)) {
@@ -1207,7 +1169,7 @@ bool runtime_local_set(execution_context *context, const std::uint8_t *&instruct
                        std::uint32_t *&sp, std::uint32_t *&local_base,
                        [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto encoded_width = consume_instruction_width(instruction_ip, rel);
+  const auto encoded_width = read_u8(rel);
   const auto offset = static_cast<frame_word_offset_t>(read_u16(rel));
   const auto width = read_u8(rel);
   if (!runtime_local_set_annotated(current, sp, local_base, offset, width, true)) {
@@ -1259,7 +1221,7 @@ bool runtime_local_tee(execution_context *context, const std::uint8_t *&instruct
                        std::uint32_t *&sp, std::uint32_t *&local_base,
                        [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto encoded_width = consume_instruction_width(instruction_ip, rel);
+  const auto encoded_width = read_u8(rel);
   const auto offset = static_cast<frame_word_offset_t>(read_u16(rel));
   const auto width = read_u8(rel);
   if (!runtime_local_set_annotated(current, sp, local_base, offset, width, false)) {
@@ -1273,7 +1235,7 @@ bool runtime_global_get(execution_context *context, const std::uint8_t *&instruc
                         std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                         [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto encoded_width = consume_instruction_width(instruction_ip, rel);
+  const auto encoded_width = read_u8(rel);
   const auto index = static_cast<global_index_t>(read_u16(rel));
 
   const auto &frame = active_frame(current);
@@ -1297,7 +1259,7 @@ bool runtime_global_set(execution_context *context, const std::uint8_t *&instruc
                         std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                         [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto encoded_width = consume_instruction_width(instruction_ip, rel);
+  const auto encoded_width = read_u8(rel);
   const auto index = static_cast<global_index_t>(read_u16(rel));
 
   const auto &frame = active_frame(current);
@@ -1414,7 +1376,7 @@ bool runtime_i32_const(execution_context *context, const std::uint8_t *&instruct
                        std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                        [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto encoded_width = consume_instruction_width(instruction_ip, rel);
+  const auto encoded_width = read_u8(rel);
   const auto value = read_s32(rel);
   (void)push(current, sp, static_cast<std::uint32_t>(value));
   instruction_ip += encoded_width;
@@ -1439,7 +1401,7 @@ bool runtime_i64_const(execution_context *context, const std::uint8_t *&instruct
                        std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                        [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto encoded_width = consume_instruction_width(instruction_ip, rel);
+  const auto encoded_width = read_u8(rel);
   const auto value = read_s64(rel);
   (void)push_u64(current, sp, static_cast<std::uint64_t>(value));
   instruction_ip += encoded_width;
@@ -1487,7 +1449,7 @@ bool runtime_fc_saturating_conversion(execution_context *context,
                                       [[maybe_unused]] std::uint32_t *&local_base,
                                       [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto encoded_width = consume_instruction_width(instruction_ip, rel);
+  const auto encoded_width = read_u8(rel);
   (void)read_u8(rel);
   const auto next_ip = instruction_offset(current, instruction_ip) + encoded_width;
   (void)runtime_fc_saturating_conversion_decoded<Operation>(context, sp);
@@ -1520,7 +1482,7 @@ bool runtime_call(execution_context *context, const std::uint8_t *&instruction_i
                   const std::uint8_t *&rel) {
   auto &current = *context;
   const auto source_ip = instruction_offset(current, instruction_ip);
-  const auto encoded_width = consume_instruction_width(instruction_ip, rel);
+  const auto encoded_width = read_u8(rel);
   function_index_t function_index = 0;
   [[maybe_unused]] type_index_t expected_type_index = 0;
   std::uint32_t table_index = 0;
@@ -1799,7 +1761,7 @@ bool runtime_memory_load(execution_context *context, const std::uint8_t *&instru
                          std::uint32_t *&sp, std::uint32_t *&local_base,
                          const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto encoded_width = consume_instruction_width(instruction_ip, rel);
+  const auto encoded_width = read_u8(rel);
   const auto offset = read_u32(rel);
   const auto source_ip = instruction_offset(current, instruction_ip);
   const auto next_ip = source_ip + encoded_width;
@@ -1845,7 +1807,7 @@ bool runtime_memory_store(execution_context *context, const std::uint8_t *&instr
                           std::uint32_t *&sp, std::uint32_t *&local_base,
                           const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto encoded_width = consume_instruction_width(instruction_ip, rel);
+  const auto encoded_width = read_u8(rel);
   const auto offset = read_u32(rel);
   const auto source_ip = instruction_offset(current, instruction_ip);
   const auto next_ip = source_ip + encoded_width;
@@ -1922,7 +1884,7 @@ bool runtime_fc_memory_copy(execution_context *context, const std::uint8_t *&ins
                             std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                             const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto encoded_width = consume_instruction_width(instruction_ip, rel);
+  const auto encoded_width = read_u8(rel);
   [[maybe_unused]] const auto subopcode = read_u8(rel);
   assert(subopcode == 0x0A);
   const auto source_ip = instruction_offset(current, instruction_ip);
@@ -1961,7 +1923,7 @@ bool runtime_fc_memory_fill(execution_context *context, const std::uint8_t *&ins
                             std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                             const std::uint8_t *&rel) {
   auto &current = *context;
-  const auto encoded_width = consume_instruction_width(instruction_ip, rel);
+  const auto encoded_width = read_u8(rel);
   [[maybe_unused]] const auto subopcode = read_u8(rel);
   assert(subopcode == 0x0B);
   const auto source_ip = instruction_offset(current, instruction_ip);

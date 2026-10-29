@@ -95,7 +95,7 @@ flowchart TD
 <!-- traceability: {JIT_RuntimeAPI} {LowLatencyJIT} {PositionIndependentCode} {SimpleJITArchitecture} {JIT_BackedgeYield} -->
 - **関数/モジュール一括コンパイルの禁止**: 関数全体やモジュール全体の事前一括コンパイルは行わない。
  - **ベーシックブロック/トレース単位コンパイル**: カードマーキング表で HOT（`10`）に達した直線命令列（基本ブロック / トレース）のみを対象とする。スケジューラのidle時等にC++ trace builderがbuild済みstencilを組み立てる。
-- **制御フロー境界**: `block`、`loop`、`else`、`end`はLoaderが静的制御フローmetadataとして解決する構文デリミタであり、trace本体に機械語操作を生成しない。`if`、`br`、`br_if`はtrace終端として残し、trace compilerはopcodeをコードまたはRuntime APIへ含めない。trace完了後にC++ Interpreter dispatcherがCPS handlerで命令を処理する。分岐先へnative traceをchainしない。Interpreterが分岐先のBasicBlockを選んだ後は通常の検索経路で後続traceを選ぶ。実行時制御フレームは保持しない。取得済みLOOP後方辺は`loop_jump_count`へ一度だけ加算し、yieldしきい値はInterpreter境界で判定する。`br_table`と`return`は各々の命令契約に従う。
+- **制御フロー境界**: `block`、`loop`、`else`、`end`はLoaderが静的制御フローmetadataとして解決する構文デリミタであり、trace本体に機械語操作を生成しない。`if`、`br`、`br_if`はtrace終端として残し、trace compilerはopcodeをコードまたはRuntime APIへ含めない。trace完了後にC++ Interpreter dispatcherがCPS handlerで命令を処理する。分岐先へnative traceをchainしない。Interpreterは分岐先のBasicBlockを選んだ後、そのハンドラ内でJIT入口を判定する。実行時制御フレームは保持しない。取得済みLOOP後方辺は`loop_jump_count`へ一度だけ加算し、yieldしきい値はInterpreter境界で判定する。`br_table`と`return`は各々の命令契約に従う。
 
 `call`、`call_indirect`を含む基本ブロックはJITコンパイル対象である。trace compilerは呼出しopcodeを最後のoperationとして生成し、終端位置を呼出し命令の直後に記録する。x64 stencilは共通コード領域の借用table pointerを通じ、Runtime API function pointer tableの添字からTier 2 CPS handlerへ直接tail-callする。trace内に関数の絶対アドレスを持たない。呼出しの意味論は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とし、終端handoffのABIは[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)に従う。
 - **実行ABI**: Interpreter handlerは`ctx`, `ip*`, `sp*`, `rel*`の4引数で`void`を返す。JIT trace entryも同じ4引数で`bool`を返す。正常完了時は未接続chain targetに到達した終端dispatcherだけがmetadata pointerを一時的に`ctx.rel`へ渡し、`body_end_ip`を`ctx.ip`へ設定する。先頭3引数は実行状態、`rel`は定数領域を指す`const uint8_t*`である。JITは`ctx.rel`にpool anchorを保持し、`rel` cursorは先頭header参照の4 byte後からRuntime API recordを順次読む。各trace入口およびchain先でanchorとcursorを初期化する。ローカル基点は`ctx.local_base`から取得する。Interpreter dispatcherは`true`後にmetadataからstackとInterpreter `rel`を確定し、未実行の終端命令を処理して次のBasicBlockを解決する。`false`はtrapまたはyieldを含むCPS exitを示す。
@@ -116,7 +116,7 @@ Loaderは構造化制御フローを静的metadataへ解決する。trace compil
 
 `if`、`br`、`br_if`は構文デリミタではない。traceはそれらのopcode直前で終了し、opcodeを実行しない。C++ Interpreter dispatcherがLoader metadataと未実行opcodeからCPS handlerを選び、条件評価、stack復元、PC、block indexを更新する。分岐先traceが常駐していてもnative chainは行わない。
 
-trace chainは、直線後続の常駐traceへ共通コード領域のchain dispatcherからtail-jumpする経路である。分岐命令はchain接続点にせず、CPS exit後にInterpreter dispatcherが処理を続ける。取得済みLOOP後方辺は共有`loop_jump_count`へ一度だけ加算し、yieldしきい値とstatusの契約は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)に従う。
+trace chainは、直線後続の常駐traceへ共通コード領域のchain dispatcherからtail-jumpする経路である。分岐命令はchain接続点にせず、分岐のハンドラがJIT入口を判定し、入口のときだけCPS exitを出す。取得済みLOOP後方辺は共有`loop_jump_count`へ一度だけ加算し、yieldしきい値とstatusの契約は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)に従う。
 
 未接続chain targetでは、終端dispatcherが境界metadataと再開PCをInterpreterへ渡す。C++ handler実行後にC++ dispatcherが次traceを検索・起動する遷移はchainではない。共通chain dispatcherは、生成コードが確定したtargetへの転送を担う。
 
@@ -189,7 +189,7 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
    - Interpreterへ戻る境界では、実行済みの処理と未実行の命令位置を区別する。復帰後に制御命令を二重実行しない。
    - 取得済みLOOP後方辺を共通`loop_jump_count`へ一度だけ加算し、Interpreter境界でしきい値を判定する。
    - 単独実行とHybrid JITは同じ `FB_CONF_INTERPRETER_YIELD_THRESHOLD` を使う。
-   - 分岐は常にInterpreter CPSへ戻る。yieldしきい値到達時はyield statusをC++ dispatcherへ返す。
+   - 分岐は、JIT入口のときだけInterpreter CPSへ戻る。yieldしきい値到達時はyield statusをC++ dispatcherへ返す。
    - トラップ、外部呼出し、関数完了は各契約の実行境界としてRuntimeEngineへ返す。
 4. **共有スタック範囲不変条件 (Shared Stack Range Invariant)**:
    - Interpreterは全WASM値を共有オペランド領域に保持する。JITは定数畳込みや隣接命令の融合で実行時に不要な中間値を除去できる。融合後も生存する値は共有オペランド領域に置く。

@@ -22,7 +22,7 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 
 ネイティブ経路では、Loaderが各BasicBlockのコード範囲を個別にパースし、実行時の計算に必要な導出値だけをInterpreter注釈プールへ格納する。LEB128即値はロード時に復号し、その生の値は格納しない。`local.get`、`local.set`、`local.tee`は論理local番号をフレーム語offsetと幅へ変換する。メモリ命令はalignmentを捨て、実効offsetを格納する。固定幅の`f32.const`/`f64.const`は元コードから読む。注釈はアラインメントなしの8bit列で、BasicBlockごとの開始byte offsetを記録する。`rel`はプールを指す`const uint8_t*`であり、導出値と可変命令幅を読むたびに進める。制御移動を終える命令は、次の`ip`、BasicBlock index、`rel`を確定してからCPSを終了する。Interpreter dispatcherは確定済みの状態を使い、到達先の再判定や`rel`の再計算を行わない。`block`、`loop`、`else`、`end`はCPSを終了しない構文デリミタである。`call`、`call_indirect`、関数復帰はそれぞれ制御移動を終える。
 
-Loaderは制御命令の各遷移先、関数入口、関数復帰先について、PCに加えて自然順`module.blocks`のindexと注釈開始位置を用意する。`execution_context.current_block_index`は実行中または次に開始するBasicBlockを指す。終端命令のRuntime APIは、遷移先の`ip`、index、`rel`を実行状態へ設定して`false`を返す。Interpreter dispatcherはその状態をそのまま使って次のhandlerを呼ぶ。dispatcherはPCで到達先を再判定せず、block metadataから`rel`を再計算しない。遷移先indexとPCの一致は、遷移先を確定した側でassertする。
+Loaderは制御命令の各遷移先、関数入口、関数復帰先について、PCに加えて自然順`module.blocks`のindexと注釈開始位置を用意する。`execution_context.current_block_index`は実行中または次に開始するBasicBlockを指す。制御を移すRuntime APIは、遷移先の`ip`、index、`rel`を実行状態へ設定する。CPS終端となる遷移だけ、Runtime APIは`false`を返す。Interpreter dispatcherはその状態をそのまま使って次のhandlerを呼ぶ。dispatcherはPCで到達先を再判定せず、block metadataから`rel`を再計算しない。遷移先indexとPCの一致は、遷移先を確定した側でassertする。
 
 注釈プールはlittle-endianの導出値を格納する。local参照はu16フレーム語offsetとu8幅、global/function/type/block indexはu16、符号拡張済み`i32.const`はu32、`i64.const`はu64、メモリ実効offsetはu32である。各branch recordはu16 target block index、u8 stack base word数、u8保持結果word数を持つ。`br_table`はu16 label countとdefaultを含む4-byte record列を格納する。命令幅はLEB128即値を持つ命令だけu8で記録し、固定幅命令はopcodeから進める。`br_table`はlabel countと4-byte record列から長さを求める。PC/即値offset表は設けない。CPS handler間では命令カーソルpointer`ip`を引き回し、通常命令ごとに`execution_context.ip`をメモリへ書き戻さない。コンテキストの`ip`はtrapまたは実行境界で同期する。
 
@@ -143,7 +143,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | Interpreter注釈プール位置 (`rel`) | Runtime API境界からInterpreterを再開するときの注釈カーソル | ポインタ | 8バイト（`+0x80`） |
 | 現在のBasicBlock index (`current_block_index`) | 実行中または次に開始するBasicBlockの自然順index | `block_index_t`（u16、`0xFFFF`は無効値） | 2バイト（`+0x88`、後続2byteを予約） |
 
-構造体全体は144バイトである。コード、各値スタックの基点・位置・上限、CallStack配列とその基点、現在のローカルフレーム基点、Interpreter注釈プール位置は非所有ポインタとしてコンテキストから参照する。`ip`は関数コード内のオフセットであり、CPS handlerの`sp`と`rel`はそれぞれ共有オペランド領域と注釈領域を指す。通常命令は注釈の読出しに伴い`rel`を前進させる。制御移動を終えるRuntime APIは確定した遷移先の`ip`、BasicBlock index、`rel`を設定して`false`を返す。Interpreter dispatcherは確定済み状態を使い、到達先の再判定や`rel`の再計算をしない。スタック頂点値は共有値スタックを正本とし、ABI引数に複製しない。`current_block_index`は同じ実行コンテキストを手がかりにLoaderのBasicBlock metadataを直接参照するために使う。CallStack深さはCallStack自身から読み、重複フィールドを持たない。 `{ExecutionContext_Layout}`
+構造体全体は144バイトである。コード、各値スタックの基点・位置・上限、CallStack配列とその基点、現在のローカルフレーム基点、Interpreter注釈プール位置は非所有ポインタとしてコンテキストから参照する。`ip`は関数コード内のオフセットであり、CPS handlerの`sp`と`rel`はそれぞれ共有オペランド領域と注釈領域を指す。通常命令は注釈の読出しに伴い`rel`を前進させる。制御を移すRuntime APIは確定した遷移先の`ip`、BasicBlock index、`rel`を設定する。CPS終端となる遷移だけ、Runtime APIは`false`を返す。Interpreter dispatcherは確定済み状態を使い、到達先の再判定や`rel`の再計算をしない。スタック頂点値は共有値スタックを正本とし、ABI引数に複製しない。`current_block_index`は同じ実行コンテキストを手がかりにLoaderのBasicBlock metadataを直接参照するために使う。CallStack深さはCallStack自身から読み、重複フィールドを持たない。 `{ExecutionContext_Layout}`
 
 Python参照実装の疎な`control_map`はロード時に確定したdelimiter、ELSE継続先、分岐先とstack復元値を保持する。ネイティブ実装は同じ導出値をInterpreter注釈プールに保持する。制御命令は実行時に制御フレームを積まず、branch時は対象stack baseへSPを戻して結果wordを復元する。
 
@@ -184,7 +184,7 @@ Interpreterはローカルindexから事前計算済みword offsetとlocal type�
 | JIT境界の次PC (`boundary_next_pc`) | 現在のJIT境界に対応する静的後続PC | 32bit符号なし | dispatch中のみ有効 (`+0x20`) |
 | JIT境界のloop先 (`boundary_loops_to`) | 現在のJIT境界に対応するloop後方PC | 32bit符号なし | dispatch中のみ有効 (`+0x24`) |
 
-CallFrameには呼出しごとに変わるポインタと復帰情報だけを置く。コード参照・コードサイズ・制御表・ローカル表と個数・引数数・結果アリティは`function_view`にあるため複製しない。関数番号も共有function viewに一度だけ置く。`rel`はCallFrameに保持しない。終端命令のRuntime APIが遷移先のBasicBlock metadataから注釈開始offsetを選び、`false`を返す前に`rel`へ設定する。関数復帰Runtime APIも保存した復帰indexから呼出し元BasicBlock metadataを参照し、復帰先の`ip`、index、`rel`を設定する。x86-64のCallFrameは40バイト、32枠のCallStackは1288バイトである。呼出し時は呼出し先記述子を積み、引数を含むローカル値をローカル値領域の現在位置から確保する。復帰時は記述子を取り除き、保存した復帰indexから呼出し元BasicBlock metadataを直接参照して再開し、ローカル値領域を保存位置まで一括で戻す。 `{CallFrame_Layout}` <!-- definition: {CallFrame_Layout} -->
+CallFrameには呼出しごとに変わるポインタと復帰情報だけを置く。コード参照・コードサイズ・制御表・ローカル表と個数・引数数・結果アリティは`function_view`にあるため複製しない。関数番号も共有function viewに一度だけ置く。`rel`はCallFrameに保持しない。制御を移すRuntime APIが遷移先のBasicBlock metadataから注釈開始offsetを選び、`rel`へ設定する。関数復帰Runtime APIも保存した復帰indexから呼出し元BasicBlock metadataを参照し、復帰先の`ip`、index、`rel`を設定する。x86-64のCallFrameは40バイト、32枠のCallStackは1288バイトである。呼出し時は呼出し先記述子を積み、引数を含むローカル値をローカル値領域の現在位置から確保する。復帰時は記述子を取り除き、保存した復帰indexから呼出し元BasicBlock metadataを直接参照して再開し、ローカル値領域を保存位置まで一括で戻す。 `{CallFrame_Layout}` <!-- definition: {CallFrame_Layout} -->
 
 #### 静的制御遷移メタデータ
 <!-- traceability: {CPS_3Args} {ContextPointerRegister} {PositionIndependentCode} -->
@@ -234,7 +234,7 @@ flowchart TD
 
 各C++命令の意味論と状態更新は命令別のRuntime APIが担当する。CPS命令ハンドラは対応するRuntime APIを呼び、正常継続ならopcodeから次のhandlerを選んで`[[clang::musttail]]`で継続する。Runtime API自身はopcodeをディスパッチしない。Tier 2のopcode handler表はInterpreter用CPS handlerだけを保持する。JIT Runtime API wrapperとopcode対応表はTier 3 JITが所有し、Interpreter handler表へ登録しない。`br`、`br_if`、`br_table`、`return`、`call`、`call_indirect`を処理するRuntime APIは遷移先の`ip`、BasicBlock index、`rel`を確定してから`false`を返す。CPS handlerは後続handlerを呼ばない。Interpreter dispatcherは確定済み状態で次のhandlerを呼び、遷移先判定と`rel`再計算をしない。`block`、`loop`、`else`、`end`の構文デリミタはCPSを終了しない。Interpreter注釈領域の`rel`は注釈値の読出しに伴って前進させる。基本ブロック内の各opcodeで属性を検査して`rel`を再同期する処理や、命令ごとのoffset表は設けない。
 
-インタープリタハンドラは次のハンドラへ4引数`ctx`, `ip*`, `sp*`, `rel*`を末尾呼び出しで渡す（{GOTCHA-INTP-08}）。 <!-- definition: {GOTCHA-INTP-08} --> Interpreter Runtime APIとJIT Runtime APIは`bool`を返す。`true`は通常継続、`false`はtrapまたはCPS終端を`ctx`に記録して後続実行を止めることを示す。InterpreterのCPS handlerは`false`時に次のhandlerを呼ばず、JIT stencilは`false`時にabort slotへ分岐する。CPS列の終端理由は`ctx.runtime_flags`に記録する。CPS exitの種別には関数完了（`kComplete`）も含む。制御移動を終えるRuntime APIは`ip`、BasicBlock index、`rel`を確定してから`false`を返す。Interpreter dispatcherは終了理由を読み、確定済みの遷移先状態をそのまま次の呼出しへ使う。終端遷移を再判定せず、`rel`を再計算しない。Interpreter handlerは`void`を返す。JIT trace entryは同じ4引数の`bool`関数である。正常完了時は未接続chain targetに到達した終端dispatcherだけがmetadata pointerを一時的に`ctx.rel`へ置き、`body_end_ip`を`ctx.ip`へ設定して`true`を返す。JIT traceはopcodeごとに次PCへ進めず、Runtime API stencilはtrap位置をAPI呼出し前に記録できる。終端dispatcherが正常完了位置を設定した後、C++ dispatcherは`ctx.ip`を上書きしない。trap/CPS exit時は`false`を返す。
+インタープリタハンドラは次のハンドラへ4引数`ctx`, `ip*`, `sp*`, `rel*`を末尾呼び出しで渡す（{GOTCHA-INTP-08}）。 <!-- definition: {GOTCHA-INTP-08} --> Interpreter Runtime APIとJIT Runtime APIは`bool`を返す。`true`は通常継続、`false`は、trap、CPS終端（完了、ホスト境界、yield、デバッグ停止、後方辺と関数復帰の閾値超過、JIT trace入口）を`ctx`に記録して後続実行を止めることを示す。InterpreterのCPS handlerは`false`時に次のhandlerを呼ばず、JIT stencilは`false`時にabort slotへ分岐する。CPS列の終端理由は`ctx.runtime_flags`に記録する。CPS exitの種別には関数完了（`kComplete`）も含む。制御を移すRuntime APIは`ip`、BasicBlock index、`rel`を確定する。CPS終端となる遷移だけ`false`を返す。Interpreter dispatcherは終了理由を読み、確定済みの遷移先状態をそのまま次の呼出しへ使う。終端遷移を再判定せず、`rel`を再計算しない。Interpreter handlerは`void`を返す。JIT trace entryは同じ4引数の`bool`関数である。正常完了時は未接続chain targetに到達した終端dispatcherだけがmetadata pointerを一時的に`ctx.rel`へ置き、`body_end_ip`を`ctx.ip`へ設定して`true`を返す。JIT traceはopcodeごとに次PCへ進めず、Runtime API stencilはtrap位置をAPI呼出し前に記録できる。終端dispatcherが正常完了位置を設定した後、C++ dispatcherは`ctx.ip`を上書きしない。trap/CPS exit時は`false`を返す。
 
 命令実行中のWASMトラップは、例外を送出せず、具体的なトラップコードと終了理由を`ctx`に保持してハンドラが値を返さず戻る（{GOTCHA-INTP-10}）。 <!-- definition: {GOTCHA-INTP-10} --> トラップを受け取った実行器は全アクティブフレームを破棄して実行結果を確定する。以後の命令は実行しない。同期的な公開APIは、確定済みトラップを正常な戻り値（特に`None`）と混同せず、呼び出し側へ明示する。これはハンドラ内部の実行経路とは分離する。実装上の注意点に対応する検証条件と確認状況は [interpreter_test_spec.md](docs/qa/tier2_runtime/interpreter_test_spec.md#継続状態と資源境界の検証) を参照する。
 
@@ -260,7 +260,7 @@ x64ではトレースが共有オペランド領域へ状態を書き戻す。AR
   - JIT trace entryは正常完了で`true`、trap/CPS exitで`false`を返す。Interpreter dispatcherは`true`の後にmetadataからstackとInterpreter `rel`を更新し、未実行の終端命令を処理して次BasicBlockを解決する。trace entryが`false`を返した場合はmetadataを読まず、`execution_context`の終了理由を判定する。
   - 実行コンテキスト、命令カーソルポインタ、オペランド領域の現在位置の物理的な保持方法は対象ABIに従う。
   - opcode属性表は各命令の処理区分と属性フラグを保持する。命令ディスパッチには独立したopcodeハンドラ表を使う。
-  - LoaderはBasicBlockごとの注釈開始byte offsetを記録する。制御移動を終える命令は選んだ遷移先のoffsetを`rel`へ設定してから`false`を返す。`rel`にはframe offset、ブロック・関数・型index、符号拡張済み整数定数、メモリ実効offsetなど実行時に使う導出値だけを8bit packedで保持する。LEB128の復号結果は格納せず、固定幅float payloadは元コードに残す。可変LEB128命令だけu8命令幅を記録し、固定長命令はopcode、`br_table`はlabel countとtarget列から長さを求める。
+  - LoaderはBasicBlockごとの注釈開始byte offsetを記録する。制御を移す命令は選んだ遷移先のoffsetを`rel`へ設定する。CPS終端となる遷移だけ`false`を返す。`rel`にはframe offset、ブロック・関数・型index、符号拡張済み整数定数、メモリ実効offsetなど実行時に使う導出値だけを8bit packedで保持する。LEB128の復号結果は格納せず、固定幅float payloadは元コードに残す。可変LEB128命令だけu8命令幅を記録し、固定長命令はopcode、`br_table`はlabel countとtarget列から長さを求める。
   - CPS handlerは命令カーソルポインタ`ip`を次handlerへ渡す。Runtime APIは`rel`から命令幅recordを読み、`ip`を進める。実行中に元WASMコードのLEB128を再走査しない。`execution_context.ip`はtrapまたは実行境界で同期する。
   - 継続可能な命令ではCPS handlerが次opcodeの表引きを行い、`[[clang::musttail]]` による末尾呼び出しで`ctx, ip*, sp*, rel*`を次のhandlerへ渡す。Runtime APIは状態を更新してhandlerへ戻るだけである。push/popは共有オペランドスタックを更新し、次の命令は`sp[-1]`から頂点値を読む。
   - 関数終端は`end`、`return`、関数外への分岐のRuntime APIで確定する。命令ディスパッチごとに関数終端を判定しない。実行入口のPC範囲は`assert`で契約違反を検出する。
@@ -419,7 +419,7 @@ sequenceDiagram
 
 #### 実行ステップ (`run_step`)
 
-Pythonのブロック実行経路は要求されたブロック境界を検査する専用のCPSハンドラ表を選ぶ。通常の関数呼び出しは境界検査を含まない表を選ぶ。Debuggerの型引数は既存の選択軸を使い、境界検査用の型タグを加える。実行時に全命令で`kStopAtBlockBoundaryFlag`を読む分岐は通常の関数呼び出しに置かない。
+デバッグ構成のCPSハンドラ表は、ブロック境界と一命令ごとに必ずCPSを出す。通常構成のCPSハンドラ表は、後方辺と関数復帰の閾値超過、JIT trace入口、trap、完了、ホスト境界、yield、デバッグ停止だけでCPSを出す。Debuggerの型引数は既存の選択軸を使い、デバッグ構成の表を選ぶ。通常構成の表に、全命令で`kStopAtBlockBoundaryFlag`を読む分岐を置かない。
 <!-- traceability: {META_RecoveryStrategy} -->
 
 | 項目 | 内容 |
@@ -451,13 +451,13 @@ Pythonのブロック実行経路は要求されたブロック境界を検査�
 
 C++命令意味論は各命令のRuntime APIに保持し、CPS命令ハンドラはそのAPIを呼んでからopcode handler表で次のhandlerを選び、末尾継続する。handler prototypeは`ctx`, `ip`, `sp`, `rel`の4引数で揃える。`rel`は第4引数の注釈領域ポインタであり、通常命令の注釈読出しに伴って前進する。命令ディスパッチは独立したopcode handler表を引く。末尾呼び出しで次のhandlerへ移るため、命令ごとにC++コールスタックを積み増さない（{InterpreterContextStackless}）。未対応命令や不正な命令状態はtrapで実行を停止する。Runtime APIが所有する外部処理だけを明示的なRuntime API境界でRuntimeへ渡す。 <!-- definition: {InterpreterContextStackless} -->
 
-通常のブロック内命令はCPS handlerが対応するRuntime APIを呼んで実行する。`br`、`br_if`、`br_table`、`return`、`call`、`call_indirect`は制御移動を終える命令である。各Runtime APIは次の`ip`、BasicBlock index、`rel`を確定して`false`を返す。Interpreter dispatcherは確定済み状態で次のhandlerを呼ぶ。dispatcherは先頭で遷移先を再判定せず、`rel`を再計算しない。`block`、`loop`、`else`、`end`は制御を移さない構文デリミタであり、CPSを止めない。命令表にない命令と不正な命令状態はtrapでインタープリタ実行を中断する。Runtime APIが所有する処理だけをRuntime API境界でRuntimeへ渡す。
+通常のブロック内命令はCPS handlerが対応するRuntime APIを呼んで実行する。`block`、`loop`、`end`は制御を移さない構文デリミタであり、CPSを止めない。`if`、`else`、`br`、`br_if`、`br_table`、`return`、`call`、`call_indirect`は制御を移す命令である。各Runtime APIは次の`ip`、BasicBlock index、`rel`を確定する。遷移先がJIT trace入口であるときだけ、Runtime APIは`false`を返してCPSを終える。Interpreter dispatcherは確定済み状態で次のhandlerを呼ぶ。dispatcherは先頭で遷移先を再判定せず、`rel`を再計算しない。ループ後方辺と関数復帰は、取得済み後方辺数が閾値に達したときだけ`false`を返す。命令表にない命令と不正な命令状態はtrapでインタープリタ実行を中断する。Runtime APIが所有する処理だけをRuntime API境界でRuntimeへ渡す。
 
 - 制御・スタック命令: `block`、`loop`、`if`、`br`、`br_if`、`drop`、`select`、`return`。
 - ローカル変数命令: `local.get/set/tee`。
 - 数値命令: i32/i64の数値命令、およびf32/f64の定数・比較・算術・丸め・平方根・reinterpret/変換。
 
-定義済みゲスト関数への通常の`call`と`call_indirect`は、C++ handlerが呼ぶRuntime APIがcalleeの関数呼出し記述子、コード位置、注釈位置を設定し、`kCallBoundary`を返す。native dispatcherは確定済みのcallee入口から次のCPS handler列を始め、呼出し先を再選択しない。callee復帰時はCallFrameの復帰BasicBlock indexからcaller metadataと`rel`を取得し、native dispatcherが呼出し元の次命令を再開する。呼出しと復帰の各遷移でBasicBlock indexとPCの一致をassertする。JIT trace末尾のcall stencilは専用Tier 2 CPS handlerへ直接tail-callし、定義済みcalleeをそのCPS列から実行する。import、trap、yield、最上位関数の完了などは各境界契約に従って実行境界へ戻る。
+定義済みゲスト関数への通常の`call`と`call_indirect`は、C++ handlerが呼ぶRuntime APIがcalleeの関数呼出し記述子、コード位置、注釈位置を設定する。同じCPS handler列は確定済みのcallee入口から続き、呼出し先を再選択しない。呼出し先の入口でJIT判定を行い、判定が trace 入口のときだけ`false`を返す。`kCallBoundary`は呼出しのCPS終端に使わない。callee復帰時はCallFrameの復帰BasicBlock indexからcaller metadataと`rel`を取得し、native dispatcherが呼出し元の次命令を再開する。呼出しと復帰の各遷移でBasicBlock indexとPCの一致をassertする。JIT trace末尾のcall stencilは専用Tier 2 CPS handlerへ直接tail-callし、定義済みcalleeをそのCPS列から実行する。import、trap、yield、最上位関数の完了などは各境界契約に従って実行境界へ戻る。
 
 `call_indirect`は実行時に選択した関数だけを期待シグネチャと照合する。
 引数型列と結果型列が一致すれば、型定義の索引が異なっても適合する。

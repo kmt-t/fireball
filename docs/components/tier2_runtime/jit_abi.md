@@ -101,7 +101,7 @@ chainはtrace終端から共通コード領域のchain dispatcherへ移り、そ
 
 ### JITランタイム呼出し契約
 
-Tier 2は共有実行状態とブロック開始PCを実行拡張へ渡す接続契約を定める。JIT providerは2-bit card-state表の読み取り専用ビューとカード範囲を渡す。Interpreter dispatcherはブロック開始時にカード状態を読み、`COMPILED`以外ではlookup関数を呼ばない。ビューの領域はdispatch期間中JIT拡張が保持する。JIT拡張が正確なPCのキャッシュ検索、chain終端の反映、履歴記録を内部で完了する。Tier 2へJITキャッシュ配置や置換状態を公開しない。
+Tier 2は共有実行状態とブロック開始PCを実行拡張へ渡す接続契約を定める。JIT providerは2-bit card-state表の読み取り専用ビューとカード範囲を渡す。Interpreterは、ジャンプ、呼出しの入口、後方辺、関数復帰の判定点でカード状態を読み、`COMPILED`以外ではlookup関数を呼ばない。判定の結果が`COMPILED`のときだけ、CPSを終えてdispatcherからtraceを実行する。ビューの領域はdispatch期間中JIT拡張が保持する。JIT拡張が正確なPCのキャッシュ検索、chain終端の反映、履歴記録を内部で完了する。Tier 2へJITキャッシュ配置や置換状態を公開しない。
 
 providerのlookupと観測callbackは0または1を返す。0はcache missまたは観測対象外を示す。境界処理callbackは1を返す。これ以外は内部接続契約の違反として呼出し直後でassertし、WASMのtrapや継続可能な内部エラーへ変換しない。callbackの実行はassert式の外へ置く。
 

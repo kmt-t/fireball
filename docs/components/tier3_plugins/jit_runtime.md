@@ -300,7 +300,7 @@ stateDiagram-v2
 
 命令列長は、後続アドレスから自分自身の先頭アドレスを引いて求めてはならない。後方分岐ブロックでは差分が負になる。その結果「短すぎる」と誤判定される。命令列長はブロック自身の命令バイト数から直接求める。
 
-`if`、`br`、`br_if`はJIT traceから除外し、trace完了後にC++ Interpreter dispatcherがCPS handlerで実行する。分岐先traceへnative chainしない。取得済みLOOP後方辺だけを共通contextの`loop_jump_count`で一度ずつ数える。しきい値の正本はInterpreter設定の`FB_CONF_INTERPRETER_YIELD_THRESHOLD`である。yield statusはC++ dispatcherを経てTier 2 RuntimeとSystemからCOOSへ渡る。外部呼出し、trap、関数完了は各契約の実行境界となる。
+`if`、`br`、`br_if`はJIT traceから除外し、trace完了後に分岐のCPS handlerが実行する。分岐先traceへnative chainしない。取得済みLOOP後方辺だけを共通contextの`loop_jump_count`で一度ずつ数える。しきい値の正本はInterpreter設定の`FB_CONF_INTERPRETER_YIELD_THRESHOLD`である。yield statusはC++ dispatcherを経てTier 2 RuntimeとSystemからCOOSへ渡る。外部呼出し、trap、関数完了は各契約の実行境界となる。
 
 trace chainは、直線後続の常駐traceへ共通chain dispatcherからtail-jumpする経路である。分岐命令はtraceに含めず、C++ Interpreter CPS handlerが処理する。共通chain dispatcherはopcodeを判定せず、直線chainのtargetへの転送だけを担う。未接続targetは0で表す。C++ handler後にdispatcherが次traceを検索・起動する遷移はmachine-code chainではない。
 
@@ -354,7 +354,7 @@ flowchart TD
 #### Interpreter拡張境界
 | 項目 | 内容 |
 | :--- | :--- |
-| 呼出 | Interpreter dispatcherはBasicBlock入口でJIT拡張のtrace lookupを呼び、root entry、root `rel`、root frame depth、chain全体の必要stack量とtrace body数を受け取る。trace関数は`bool`を返す。`true`の場合は終端dispatcherだけがmetadata pointerを一時的に`context.rel`へ渡し、`body_end_ip`を`context.ip`へ設定する。Interpreter dispatcherはmetadataからstackとInterpreter `rel`を更新し、未実行の終端命令の処理後に次BasicBlockを解決する。`false`ならtrap/CPS exitを処理する。`if`、`br`、`br_if`はJIT traceに含まれず、CPS handlerが一度実行する。実行時制御フレームは作らない。 |
+| 呼出 | Interpreterは判定点（ジャンプ、呼出しの入口、後方辺、関数復帰）でカード状態が`COMPILED`のとき、JIT拡張のtrace lookupを呼び、root entry、root `rel`、root frame depth、chain全体の必要stack量とtrace body数を受け取る。trace関数は`bool`を返す。`true`の場合は終端dispatcherだけがmetadata pointerを一時的に`context.rel`へ渡し、`body_end_ip`を`context.ip`へ設定する。Interpreter dispatcherはmetadataからstackとInterpreter `rel`を更新し、未実行の終端命令の処理後に次BasicBlockを解決する。`false`ならtrap/CPS exitを処理する。`if`、`br`、`br_if`はJIT traceに含まれず、分岐のCPS handlerが一度実行する。実行時制御フレームは作らない。 |
 | 内部処理 | 候補選択、trace lookup、履歴分析、キャッシュ更新、コンパイル要求はTier 3拡張内部に閉じる。個別のC++ Runtime操作APIを追加しない。 |
 | 拡張なし構成 | JIT拡張を結線しないInterpreter構成では、Interpreter dispatcherがCPS handlerを実行する。 |
 | 不変条件 | Tier 2 Runtimeはカード表、履歴リング、キュー、キャッシュ実装を参照しない。 |

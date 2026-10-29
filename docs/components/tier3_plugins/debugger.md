@@ -183,7 +183,7 @@ sequenceDiagram
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 現在の停止位置からちょうど一命令だけをゲストに進ませる。 |
+| 機能概要 | 現在の停止位置からちょうど一命令だけをゲストに進ませる。デバッグ構成のCPSハンドラ表が一命令ごとにCPSを出すことで実現する（[`interpreter.md`](docs/components/tier2_runtime/interpreter.md) の実行ステップ）。 |
 | シグネチャ | `step_instruction() -> void` |
 | 期待する結果 | 正常：一命令実行後に再び `Stopped` 状態になる。 |
 

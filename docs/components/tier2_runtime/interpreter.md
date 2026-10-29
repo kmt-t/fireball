@@ -24,7 +24,7 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 
 Loaderは制御命令の各遷移先、関数入口、関数復帰先について、PCに加えて自然順`module.blocks`のindexと注釈開始位置を用意する。`execution_context.current_block_index`は実行中または次に開始するBasicBlockを指す。制御を移すRuntime APIは、遷移先の`ip`、index、`rel`を実行状態へ設定する。CPS終端となる遷移だけ、Runtime APIは`false`を返す。Interpreter dispatcherはその状態をそのまま使って次のhandlerを呼ぶ。dispatcherはPCで到達先を再判定せず、block metadataから`rel`を再計算しない。遷移先indexとPCの一致は、遷移先を確定した側でassertする。
 
-注釈プールはlittle-endianの導出値を格納する。local参照はu16フレーム語offsetとu8幅、global/function/type/block indexはu16、符号拡張済み`i32.const`はu32、`i64.const`はu64、メモリ実効offsetはu32である。各branch recordはu16 target block index、u8 stack base word数、u8保持結果word数を持つ。`br_table`はu16 label countとdefaultを含む4-byte record列を格納する。命令幅はLEB128即値を持つ命令だけu8で記録し、固定幅命令はopcodeから進める。`br_table`はlabel countと4-byte record列から長さを求める。PC/即値offset表は設けない。CPS handler間では命令カーソルpointer`ip`を引き回し、通常命令ごとに`execution_context.ip`をメモリへ書き戻さない。コンテキストの`ip`はtrapまたは実行境界で同期する。
+注釈プールはlittle-endianの導出値を格納する。local参照はu16フレーム語offsetとu8幅、global/function/type/block indexはu16、符号拡張済み`i32.const`はu32、`i64.const`はu64、メモリ実効offsetはu32である。各branch recordはu16 target block index、u8 stack base word数、u8保持結果word数を持つ。`br_table`はu16 label countとdefaultを含む4-byte record列を格納する。命令幅はLEB128即値を持つ可変幅命令だけu8で注釈に記録する。固定幅命令の幅は、そのopcodeに対応するハンドラ固有の定数であり、ハンドラは固定幅命令の幅をopcodeから判定しない。`br_table`はlabel countと4-byte record列から長さを求める。PC/即値offset表は設けない。CPS handler間では命令カーソルpointer`ip`を引き回し、通常命令ごとに`execution_context.ip`をメモリへ書き戻さない。コンテキストの`ip`はtrapまたは実行境界で同期する。
 
 Loaderは制御構造の対応終端、elseの継続先、各branch labelの遷移先とoperand stack復元値をロード時に解決する。ネイティブInterpreterは注釈プールのblock indexとstack情報を使い、実行時の制御フレーム配列、branch depthの探索、PCからのBasicBlock検索を行わない。Python参照経路も静的な分岐メタデータから同じ遷移を行う。制御ネスト上限はロード時に検査する（`{GOTCHA-INTP-05}`）。 <!-- definition: {GOTCHA-INTP-05} -->
 
@@ -260,8 +260,8 @@ x64ではトレースが共有オペランド領域へ状態を書き戻す。AR
   - JIT trace entryは正常完了で`true`、trap/CPS exitで`false`を返す。Interpreter dispatcherは`true`の後にmetadataからstackとInterpreter `rel`を更新し、未実行の終端命令を処理して次BasicBlockを解決する。trace entryが`false`を返した場合はmetadataを読まず、`execution_context`の終了理由を判定する。
   - 実行コンテキスト、命令カーソルポインタ、オペランド領域の現在位置の物理的な保持方法は対象ABIに従う。
   - opcode属性表は各命令の処理区分と属性フラグを保持する。命令ディスパッチには独立したopcodeハンドラ表を使う。
-  - LoaderはBasicBlockごとの注釈開始byte offsetを記録する。制御を移す命令は選んだ遷移先のoffsetを`rel`へ設定する。CPS終端となる遷移だけ`false`を返す。`rel`にはframe offset、ブロック・関数・型index、符号拡張済み整数定数、メモリ実効offsetなど実行時に使う導出値だけを8bit packedで保持する。LEB128の復号結果は格納せず、固定幅float payloadは元コードに残す。可変LEB128命令だけu8命令幅を記録し、固定長命令はopcode、`br_table`はlabel countとtarget列から長さを求める。
-  - CPS handlerは命令カーソルポインタ`ip`を次handlerへ渡す。Runtime APIは`rel`から命令幅recordを読み、`ip`を進める。実行中に元WASMコードのLEB128を再走査しない。`execution_context.ip`はtrapまたは実行境界で同期する。
+  - LoaderはBasicBlockごとの注釈開始byte offsetを記録する。制御を移す命令は選んだ遷移先のoffsetを`rel`へ設定する。CPS終端となる遷移だけ`false`を返す。`rel`にはframe offset、ブロック・関数・型index、符号拡張済み整数定数、メモリ実効offsetなど実行時に使う導出値だけを8bit packedで保持する。LEB128の復号結果は格納せず、固定幅float payloadは元コードに残す。可変LEB128命令だけu8命令幅を記録する。固定長命令の幅はハンドラ固有の定数であり、`br_table`はlabel countとtarget列から長さを求める。
+  - CPS handlerは命令カーソルポインタ`ip`を次handlerへ渡す。可変幅命令のRuntime APIは`rel`から命令幅recordを読み、`ip`を進める。固定幅命令のRuntime APIはハンドラ固有の定数幅で`ip`を進め、`rel`からも`opcode`からも幅を判定しない。実行中に元WASMコードのLEB128を再走査しない。`execution_context.ip`はtrapまたは実行境界で同期する。
   - 継続可能な命令ではCPS handlerが次opcodeの表引きを行い、`[[clang::musttail]]` による末尾呼び出しで`ctx, ip*, sp*, rel*`を次のhandlerへ渡す。Runtime APIは状態を更新してhandlerへ戻るだけである。push/popは共有オペランドスタックを更新し、次の命令は`sp[-1]`から頂点値を読む。
   - 関数終端は`end`、`return`、関数外への分岐のRuntime APIで確定する。命令ディスパッチごとに関数終端を判定しない。実行入口のPC範囲は`assert`で契約違反を検出する。
   - 実行拡張の有無は別々の実行入口で確定する。拡張ありの入口は関数ポインタを`assert`で検証し、命令実行中は拡張ポインタの有無を判定しない。

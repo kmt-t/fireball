@@ -331,3 +331,44 @@ def test_intp_87_single_step_at_call_stops_at_callee_head() -> None:
     assert call.context.runtime_flags & interpreter_module.EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
     assert tuple(call.context.stack) == stack_before
     assert interpreter._complete_call(call).unwrap() == [12]
+
+
+def test_intp_88_trap_code_is_set_only_by_a_trap() -> None:
+    """TEST-INTP-88: a trap leaves its WASM code in the context; a non-trap exit leaves zero.
+
+    The expected codes come from the WASM trap definitions in TrapCode, not from the output.
+    """
+    trapping = parse_standalone(
+        wat_to_wasm(
+            '(module (func (export "run") (result i32) i32.const 1 i32.const 0 i32.div_s))'
+        )
+    )
+    interpreter = make_native_interpreter(trapping)
+    call = interpreter.start(0, [])
+    call.context.trap_code = 99
+    assert not interpreter._complete_call(call).is_ok
+    assert call.trap is not None and call.trap.code == TrapCode.INTEGER_DIVIDE_BY_ZERO
+    assert call.context.trap_code == TrapCode.INTEGER_DIVIDE_BY_ZERO
+
+    returning = parse_standalone(wat_to_wasm('(module (func (export "run") (result i32) i32.const 7))'))
+    interpreter = make_native_interpreter(returning)
+    call = interpreter.start(0, [])
+    call.context.trap_code = 99
+    assert interpreter._complete_call(call).unwrap() == [7]
+    assert call.context.trap_code == 0
+
+    callee_module = parse_standalone(
+        wat_to_wasm(
+            """(module
+            (func $callee (result i32) i32.const 7)
+            (func (export "run") (result i32) call $callee i32.const 5 i32.add))"""
+        )
+    )
+    interpreter = make_native_interpreter(callee_module)
+    call = interpreter.start(1, [])
+    run_base = callee_module.function_pc_offset(1)
+    call._frame.set_runtime_boundary(run_base + len(callee_module.code_for(1)) - 1, None)
+    call.context.runtime_flags |= interpreter_module.EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+    call.context.trap_code = 99
+    assert interpreter._try_native_step_to_boundary(call)
+    assert call.context.trap_code == 0

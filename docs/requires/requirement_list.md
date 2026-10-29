@@ -132,7 +132,7 @@ graph LR
 | :--- | :--- | :--- | :--- |
 | `{HistoryBuffer}` | JITホットスポット検出のために、実行履歴を保持するリング状のバッファ。 | 中 | レビュー <!-- definition: {HistoryBuffer} --> |
 | `{RuntimeEventSink}` | Runtimeは意味上の実行境界イベントを固定幅レコードの固定容量イベントリングへ記録し、安全点でversioned little-endian ABIバッチとしてPythonへ渡す。イベント無効構成にはSink、イベントリング、時計、発行経路を含めず、JIT拡張のホットスポット履歴とは独立させる。 | 高 | テスト <!-- definition: {RuntimeEventSink} --> |
-| `{RuntimeHotspotProfiler}` | ホットスポット検出を選んだJIT拡張は、Interpreterから受け取る適格な`(module_id, unified_pc)`履歴を固定容量で保持し、Interpreter区間の終了時にカードを更新する。JIT-only区間は記録・分析せず、履歴上書きは欠落状態として示す。Runtime Event Sinkとは独立し、JIT拡張の破棄時に状態を解放する。ホットスポット分析をTier 2 Runtimeの別プラグインとして構成しない。 | 高 | テスト <!-- definition: {RuntimeHotspotProfiler} --> |
+| `{RuntimeHotspotProfiler}` | ホットスポット検出を選んだJIT拡張は、Interpreterから受け取る適格な`(module_id, unified_pc)`履歴を固定容量で保持する。判定点で履歴を記録し、Interpreterの実行境界でカードを更新する。JIT-only区間は記録・分析せず、履歴上書きは欠落状態として示す。Runtime Event Sinkとは独立し、JIT拡張の破棄時に状態を解放する。ホットスポット分析をTier 2 Runtimeの別プラグインとして構成しない。 | 高 | テスト <!-- definition: {RuntimeHotspotProfiler} --> |
 | `{LightweightVerifier}` | ロード時に最小限のチェック（マジック値、バージョン等）のみを行う高速検証器。 | 中 | テスト <!-- definition: {LightweightVerifier} --> |
 | `{COOS_Scheduling_Refine}` | スケジューリングアルゴリズムの継続的な改善と最適化。 | 中 | レビュー <!-- definition: {COOS_Scheduling_Refine} --> |
 | `{vMMIO_TLB}` | ソフトウェアTLBによるvMMIOアクセスの高速化。 | 中 | レビュー <!-- definition: {vMMIO_TLB} --> |

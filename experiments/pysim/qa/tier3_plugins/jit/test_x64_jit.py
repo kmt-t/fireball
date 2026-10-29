@@ -189,7 +189,7 @@ def test_x64_wide_arithmetic_uses_native_stencils():
 
 
 def test_trace_compiler_cps_4arg_and_pic():
-    """TEST-JITC-01/22: Verify the logical entry ABI and execute a CPS trace."""
+    """TEST-JITC-01, TEST-JITC-22: Verify the logical entry ABI and execute a CPS trace."""
     compiler = TraceCompiler()
     # Block: local[1] = (local[0] + 10) * 3 - 5 -- real WASM bytecode, run through
     # The test prepares the same loader metadata passed by the runtime.

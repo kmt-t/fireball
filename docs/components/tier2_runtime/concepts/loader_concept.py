@@ -1190,7 +1190,7 @@ def test_wasm_loader_lifecycle_and_verification() -> None:
 
 def test_wasm_loader_radix_binary_tree_offset_indexing() -> None:
     """
-    Verifies TEST-LOAD-40 ~ TEST-LOAD-44:
+    Verifies TEST-LOAD-40..TEST-LOAD-44:
     - Registration of decoded entities in DecodedEntityRegistry
     - RadixBinaryTree file offset containment search over a bounded interval
     - Reverse-lookup of FunctionAccessor, GlobalAccessor, SectionView by file byte offset
@@ -1231,7 +1231,7 @@ def test_wasm_loader_radix_binary_tree_offset_indexing() -> None:
 
 def test_wasm_loader_hash_radix_binary_tree_view_symbol_lookup() -> None:
     """
-    Verifies TEST-LOAD-13, TEST-LOAD-21, TEST-LOAD-45 ~ TEST-LOAD-47:
+    Verifies TEST-LOAD-13, TEST-LOAD-21, TEST-LOAD-45..TEST-LOAD-47:
     - Hash + RadixBinaryTreeView symbol lookup with bounded candidate verification
     - Hash + RadixBinaryTreeView import table lookup and multi-module linking
     - Hash collision resistance (string verification)

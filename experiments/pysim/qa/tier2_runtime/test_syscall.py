@@ -149,7 +149,7 @@ def test_syscall_04_guest_yield_hands_off_to_ready_task():
 
 
 def test_syscall_03_mmio_read_write():
-    """TEST-SYS-10, 11, 12, 93: MMIO data uses the output pointer, including errno-valued data."""
+    """TEST-SYS-10, TEST-SYS-11, TEST-SYS-12, TEST-SYS-93: MMIO data uses the output pointer, including errno-valued data."""
     sysv = System()
     sysv.start_runtime_task(name="test_runtime_task").unwrap()
     try:
@@ -395,7 +395,7 @@ def test_syscall_04_vdma_host_call_transfer(destination_kind: str, transport: st
 
 @pytest.mark.parametrize("offset,count", ((255, 2), (256, 1), (0, 257)))
 def test_vdma_dynamic_bounds_rejection_preserves_real_buffer(offset: int, count: int) -> None:
-    """TEST-VMMIO-28/31: 4KB PTE内でも256byte実バッファ外の転送を拒否する。"""
+    """TEST-VMMIO-28, TEST-VMMIO-31: 4KB PTE内でも256byte実バッファ外の転送を拒否する。"""
     from tier2_runtime.hal.dispatch import HalBufferMapStatus
     from tier3_platform.drivers.wasi.context import WasiHostContext
 
@@ -704,7 +704,7 @@ def test_syscall_32_invalid_virq_unregister_preserves_active_and_pending(node_id
 
 def test_syscall_06_ipc_lookup_send_recv():
     """
-    TEST-SYS-40, 42, 43 (payload limit), 44, 46..49, 51: IPC host-call contracts.
+    TEST-SYS-40, TEST-SYS-42, TEST-SYS-43 (payload limit), TEST-SYS-44, TEST-SYS-46..TEST-SYS-49, TEST-SYS-51: IPC host-call contracts.
     The guest task's own
     execution *is* the IPC_SEND/IPC_RECV call (runtime_syscall.md: a host call
     runs inside the calling task's coroutine), so it genuinely waits for its

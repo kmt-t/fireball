@@ -31,7 +31,7 @@
 
 ## 4. 未検証・スコープ外
 
-- TEST-SVC-01/02/04/05/09/11のpysimサービス実装への統合は未検証である。概念モデルの状態を、実ランタイムのTCBとヒープの状態に対応付ける証拠が必要である。
+- TEST-SVC-01, TEST-SVC-02, TEST-SVC-04, TEST-SVC-05, TEST-SVC-09, TEST-SVC-11のpysimサービス実装への統合は未検証である。概念モデルの状態を、実ランタイムのTCBとヒープの状態に対応付ける証拠が必要である。
 - TEST-SVC-12の実サービス要求・IPC後始末との統合は未実装である。reset callbackの操作回数から実TCB・Runtime・heapの再初期化を主張しない。
 - `service_load_result_t`のC++列挙型そのもの。
 - 物理メモリパーティション分離の実効性（`system_memory.md`/`runtime_memory.md`側）。

@@ -269,6 +269,6 @@ C++の計測実装はTier 1の`printk`へ64ビット数値を整形して同期�
 uv run python experiments/pysim/benchmarks/jit/record_trace_execution.py --output /tmp/trace_execution.json
 ```
 
-計測契約の抽象モデルは[`jit_trace_execution_model.py`](docs/components/tier3_plugins/formal/jit_trace_execution_model.py)を参照する。実行対象外操作、chainの計数漏れ、飽和、および退役時記録を検査する。`guards=False`で各違反を反証する。カウンタの寿命、32ビットの飽和境界、実際のC++ chain実行は[`jit_runtime_test_spec.md`](docs/qa/tier3_plugins/jit_runtime_test_spec.md)のTEST-JITR-76〜79で検査する。モデルと試験はQA計測構成の正しさを対象とし、製品の計数機構を要求しない。
+計測契約の抽象モデルは[`jit_trace_execution_model.py`](docs/components/tier3_plugins/formal/jit_trace_execution_model.py)を参照する。実行対象外操作、chainの計数漏れ、飽和、および退役時記録を検査する。`guards=False`で各違反を反証する。カウンタの寿命、32ビットの飽和境界、実際のC++ chain実行は[`jit_runtime_test_spec.md`](docs/qa/tier3_plugins/jit_runtime_test_spec.md)のTEST-JITR-76..TEST-JITR-79で検査する。モデルと試験はQA計測構成の正しさを対象とし、製品の計数機構を要求しない。
 
 `test_jitr_measurements_are_formatted_in_cpp_through_shared_printk`はC++側の整形と同期出力を検査する。

@@ -1,4 +1,4 @@
-"""TEST-HAL-17..25: reusable QA device profiles and real IPC/HAL integration.
+"""TEST-HAL-17..TEST-HAL-25: reusable QA device profiles and real IPC/HAL integration.
 
 ADC/PWM payloads, pin modes and edge numbers are local QA profiles. The
 compiled guest uses an explicit QA adapter, not production HAL WIT lowering.

@@ -164,7 +164,7 @@ def test_debugger_sink_is_replaceable() -> None:
 
 
 def test_gdb_remote_socket_session():
-    """TEST-DBG-20/21/22/24: Real TCP plumbing with the statically composed native ExecutionControl."""
+    """TEST-DBG-20, TEST-DBG-21, TEST-DBG-22, TEST-DBG-24: Real TCP plumbing with the statically composed native ExecutionControl."""
     print("[*] Starting GDB Remote Debugger Socket Connection Test...")
     # Load real bytecode. Block metadata locates the breakpoint; execution uses
     # the statically composed native interpreter and its instruction stop hook.

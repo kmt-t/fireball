@@ -28,7 +28,7 @@
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-MEM-10 | `allocate-shared`→`release`→`claim`の所有権移動 | タスクAが`allocate-shared`済み | ライフサイクル手順を実行 | `release`後はA側で無効化され、`claim`後はB側が所有権を得る（二重所有なし） | `{OwnershipTransfer}` |
-| TEST-MEM-10c | `rollback_transfer()`による所有権の復元 | `release()`済みで送信中断 | `rollback_transfer(handle)`を送信タスクの実行コンテキストから実行 | 所有権が送信元タスクへ復元される（ダングリングのまま放置されない）。物理的なページ再マッピング挙動の検証は [`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) TEST-MEM-10c(物理)を正本とする | ipc_router.md |
+| TEST-MEM-10c | `rollback_transfer()`による所有権の復元 | `release()`済みで送信中断 | `rollback_transfer(handle)`を送信タスクの実行コンテキストから実行 | 所有権が送信元タスクへ復元される（ダングリングのまま放置されない）。物理的なページ再マッピング挙動の検証は [`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) TEST-MEM-33(物理)を正本とする | ipc_router.md |
 | TEST-MEM-10d | 所有権変更通知フック | `PageMappingCallbacks`を登録済み | `release()`、`claim()`、`rollback_transfer()`を順に実行 | 所有権変更ごとに`on_owner_changed`が旧・新所有者を通知し、再利用可能な所有ビューの作成時だけ`on_map_page`が発火する。コールバックはtask-idを引数で自己申告させない | [`system_memory.md`](docs/components/tier1_interface/system_memory.md)「共有ページマッピング・所有権変更通知フック」 |
 | TEST-MEM-11 | `shared-block`のRAII自動解放 | Bがdropする | drop実行 | メモリが自動解放される（明示的`release`呼び出し不要） | `{ADR_SharedBlockRaii}` |
 | TEST-MEM-12 | `shm-id`のkv_pairエンコーディング | IPC送信 | メッセージ構築 | 型スコープ上位3bit=`0b000`（機能的）、下位5bit=`0b00001`（u32）のkv_pairとして格納される。`ipc_router.md`の型語彙表にない独自の`dtype=handle`は使わない | ipc_router.md |
@@ -57,7 +57,9 @@
 ## 3. テスト検証実績と網羅状況
 
 - 仕様書に定義された各テストケース（契約レベルの不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
-- TEST-MEM-26〜30（ランタイム用バンプアロケータ・JITキャッシュアロケータの契約レベル振る舞い）は本書で契約として定義済みだが、対応する実行可能テスト（concept code / pysim）は [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) および [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) 側の実装完了後にそれぞれの正本テスト仕様書へ追加される（現状は契約定義のみで実行時検証は未着手であることを明示する。サイレントな欠落ではなく既知の追跡対象とする）。
+- `TEST-MEM-26..TEST-MEM-30` は本書に契約として定義した。
+- 対応する実行可能テスト（concept code / pysim）は、対象実装の完了後に各正本テスト仕様書へ追加する。対象実装は[`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md)と[`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md)に記載する。
+- 現状は契約定義のみである。実行時検証は未着手の追跡対象である。
 
 ### 3.1 claim拒否と所有権通知の実行対応
 
@@ -68,7 +70,7 @@
 
 pysimのTEST-MEM-08は`INVALID_SHM_ID`と`INVALID_OR_DEALLOCATED_SHM_ID`を観測する。
 これは参照実装のエラー表現であり、WITのエラー値そのものは検査しない。
-Tier 2の同名TEST-MEM-10dは古いハンドルの失効を検査する別ケースである。
+Tier 2のTEST-MEM-34は古いハンドルの失効を検査する別ケースである。
 本書の10dは`PageMappingCallbacks`の契約を検査する。
 
 - 実行日: 2026-10-02。
@@ -79,8 +81,8 @@ Tier 2の同名TEST-MEM-10dは古いハンドルの失効を検査する別ケ�
 
 ## 4. 未検証・スコープ外
 
-- TEST-MEM-05の`invalid-owner`結果は、現行pysimの`release_task_heap`には未実装である。所有者台帳から呼出し元の領域だけを返却し、領域がなければ何もせず`None`を返す。既存試験が確認するのは他タスクのパーティション保全と所有者による返却である。型付き`acquire-slot`/`release-slot`も現行pysimには未実装である。これらは製品機能の未達として追跡し、TEST-MEM-08/10dの成功から達成済みとはしない。
-- 共有メモリのソフトウェア所有権・vMMIO通知（TEST-MEM-14〜16）は [`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) を参照する。ARMv8-Mの物理メモリ保護と実機受け入れ条件はTBDである。
+- TEST-MEM-05の`invalid-owner`結果は、現行pysimの`release_task_heap`には未実装である。所有者台帳から呼出し元の領域だけを返却し、領域がなければ何もせず`None`を返す。既存試験が確認するのは他タスクのパーティション保全と所有者による返却である。型付き`acquire-slot`/`release-slot`も現行pysimには未実装である。これらは製品機能の未達として追跡し、TEST-MEM-08, TEST-MEM-10dの成功から達成済みとはしない。
+- 共有メモリのソフトウェア所有権・vMMIO通知（TEST-MEM-14..TEST-MEM-16）は [`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) を参照する。ARMv8-Mの物理メモリ保護と実機受け入れ条件はTBDである。
 - vMMIO PTE / TLB の具体的な物理挙動（マッピング登録・アンマップ・再マッピング）は本書のスコープ外であり、`runtime_memory_test_spec.md` を正本とする（本契約はvMMIO等の内部シンボル・アドレス体系を一切参照しないため）。
 
-ソフトウェア所有権とvMMIO通知の`TEST-MEM-14〜16`は、[`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md)の責務とする。
+ソフトウェア所有権とvMMIO通知の`TEST-MEM-14..TEST-MEM-16`は、[`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md)の責務とする。

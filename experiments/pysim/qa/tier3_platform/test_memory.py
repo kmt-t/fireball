@@ -367,8 +367,8 @@ def test_mem_10_entry_reader_decodes_independent_wire_layout() -> None:
     assert block.read_bytes(0, 32) == wire
 
 
-def test_mem_10d_resource_revoke_invalidates_old_handle():
-    """TEST-MEM-10d: RESOURCE revoke permanently invalidates sender capabilities."""
+def test_mem_34_resource_revoke_invalidates_old_handle():
+    """TEST-MEM-34: RESOURCE revoke permanently invalidates sender capabilities."""
     mm, scheduler = _make_memory_manager(1, 2)
     mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sender_block = mm.allocate_shared(size=32).unwrap()
@@ -406,8 +406,8 @@ def test_mem_10d_resource_revoke_invalidates_old_handle():
     assert returned_block.read_bytes(0, 16) == b"resource payload"
 
 
-def test_mem_10c_rollback_transfer_restores_owner_id():
-    """TEST-MEM-10c: rollback_transfer() restores PTE owner_id to the original sender."""
+def test_mem_33_rollback_transfer_restores_owner_id():
+    """TEST-MEM-33: rollback_transfer() restores PTE owner_id to the original sender."""
     mm, scheduler = _make_memory_manager(1, 2)
     vmmio = VMMIOController(guest_ram_size=8192, scheduler=scheduler)
     mm = MemoryManager(scheduler, vmmio.page_mapping_callbacks)
@@ -554,7 +554,7 @@ def test_mem_16_virtual_page_reservation_is_independent_of_shm_backing():
 
 
 def test_reacquire_released_partition_does_not_overlap_live_task(monkeypatch) -> None:
-    """TEST-MEM-01/05: 固定2スロット構成で対象heapだけを返却・再初期化する。"""
+    """TEST-MEM-01, TEST-MEM-05: 固定2スロット構成で対象heapだけを返却・再初期化する。"""
     import tier2_runtime.memory.manager as memory_module
 
     # Select a compile-time configuration in the test, without changing the

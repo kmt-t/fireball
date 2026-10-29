@@ -189,7 +189,7 @@ Base64は既知入力の出力、借用範囲、`FB_CONF_LOG_MAX_RECORD_SIZE` �
 
 ### 7.3 テスト仕様書との連携
 
-[`runtime_logging_test_spec.md`](docs/qa/tier2_runtime/runtime_logging_test_spec.md)のTEST-LOG-14、17、18へ結び付ける。
+[`runtime_logging_test_spec.md`](docs/qa/tier2_runtime/runtime_logging_test_spec.md)のTEST-LOG-14, TEST-LOG-17, TEST-LOG-18へ結び付ける。
 出力とイベント辞書の検証は[`runtime_logging_test_spec.md`](docs/qa/tier2_runtime/runtime_logging_test_spec.md)に従う。
 この共有テスト仕様へのリンクは検証証拠であり、Tier 2ロガーへ動作契約を委譲するものではない。
 

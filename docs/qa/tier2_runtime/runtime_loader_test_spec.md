@@ -60,6 +60,7 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| TEST-LOAD-40 | デコード済みエンティティの登録 | `prepare()`でWASMモジュールをロードする | 登録済みエンティティと種別を確認する | エンティティ登録が空でなく、`SECTION`、`FUNCTION`、`GLOBAL`を含む | `loader_concept.py::test_wasm_loader_radix_binary_tree_offset_indexing` |
 | TEST-LOAD-41 | RadixBinaryTreeView によるファイルオフセット検索 | デコード済みモジュール | `lookup_by_file_offset(offset)` を実行 | 基数表による $O(1)$ の区間絞り込みと有界二分探索 $O(\log n)$ により、指定オフセットを包含するデコード済みエンティティが正確に返却される | 「ファイル位置逆引き」, `lookup-by-file-offset` |
 | TEST-LOAD-42 | 関数バイトコード位置からの関数アクセサ逆引き | 関数コード内オフセット | `lookup_by_file_offset(code_offset)` | 該当する `FunctionAccessor`（関数インデックス・シグネチャ）が即座に特定・返却される | - |
 | TEST-LOAD-43 | データセグメント・グローバル位置の特定 | データセグメント内オフセット | `lookup_by_file_offset(data_offset)` | 該当するデータ定義またはグローバルエントリが正確に返却される | - |
@@ -102,16 +103,16 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 
 | ケースID | 現行Pysim QA | 直接観測する結果 |
 | :--- | :--- | :--- |
-| TEST-LOAD-01〜07 | ``〜`` | 不正ヘッダ、section境界・順序、型・メモリ上限の拒否とアロケータwatermark復元 |
+| TEST-LOAD-01..TEST-LOAD-07 | ``〜`` | 不正ヘッダ、section境界・順序、型・メモリ上限の拒否とアロケータwatermark復元 |
 | `TEST-LOAD-10` | `` | 型レコードの範囲、引数型・戻り型・関数コードと原本バイナリの同一所有者参照 |
 | `TEST-LOAD-16` | `` | 原本上のData/Elementセクション範囲、インポート済みimmutable globalを使う初期化、メモリとテーブル状態 |
-| TEST-LOAD-20〜24 | ``〜`` | QA専用ハーネスによる未解決状態、関数リンク、シグネチャ拒否、部分リンク防止、登録上限 |
-| TEST-LOAD-30〜32 | ``〜`` | 関数上限、64件超のexport保持、u32/u64 LEB128のバイト上限 |
+| TEST-LOAD-20..TEST-LOAD-24 | ``〜`` | QA専用ハーネスによる未解決状態、関数リンク、シグネチャ拒否、部分リンク防止、登録上限 |
+| TEST-LOAD-30..TEST-LOAD-32 | ``〜`` | 関数上限、64件超のexport保持、u32/u64 LEB128のバイト上限 |
 | `TEST-LOAD-46` | `` | 既知のハッシュ衝突名をパーサのエクスポート検索で区別 |
-| TEST-LOAD-48、57、58、63 | ``、``、``、`test_wasm_reader.py::test_load_63_splits_at_control_transfers_and_branch_destinations` | 大規模BasicBlock索引、Runtime API命令を含むtrace範囲、BasicBlock単位のLEB128プール、分割位置・構造命令所属 |
-| TEST-LOAD-51〜53、55〜56 | 対応する`*` | 到達不能時の型検証、Custom名境界、LEB128/件数、メモリページ・整列上限 |
+| TEST-LOAD-48, TEST-LOAD-57, TEST-LOAD-58, TEST-LOAD-63 | ``、``、``、`test_wasm_reader.py::test_load_63_splits_at_control_transfers_and_branch_destinations` | 大規模BasicBlock索引、Runtime API命令を含むtrace範囲、BasicBlock単位のLEB128プール、分割位置・構造命令所属 |
+| TEST-LOAD-51..TEST-LOAD-53、TEST-LOAD-55..TEST-LOAD-56 | 対応する`*` | 到達不能時の型検証、Custom名境界、LEB128/件数、メモリページ・整列上限 |
 
-| TEST-LOAD-59〜60 | 対応する`*` | assert無効時の検証trapと内部assertの原因維持・watermark復元 |
+| TEST-LOAD-59..TEST-LOAD-60 | 対応する`*` | assert無効時の検証trapと内部assertの原因維持・watermark復元 |
 | `TEST-LOAD-61` | `` | 不変のopcode対応表の上書き拒否と解析結果 |
 
 ## 4. 未検証・スコープ外
@@ -121,7 +122,7 @@ Element/Data初期化定義を個別配列へ展開せず、パース時検証�
 
 - TEST-LOAD-43のDataセグメント位置登録・逆引きは、本pysimスイートでは未検証である。関数とグローバルの逆引き成功をDataの証拠にしない。
 - TEST-LOAD-45の多数インポート、TEST-LOAD-46の未登録名が既存名と衝突する条件は、本pysimスイートでは未検証である。
-- TEST-LOAD-49〜50のJIT候補判定と非候補touch/履歴バイパスは、本Pysimスイートでは検証しない。
+- TEST-LOAD-49..TEST-LOAD-50のJIT候補判定と非候補touch/履歴バイパスは、本Pysimスイートでは検証しない。
 - 名前・ファイル位置検索の計算量、物理ROMのコピー回数、全WASM命令の完全検証は、上記の局所機能検査では証明しない。
 
 可変LEB128命令の幅は255 byte以下に限る。256 byte以上は`ERR_WASM_UNSUPPORTED_FEATURE`で拒否し、確保領域を巻き戻す。固定幅命令はopcodeから長さを求め、`br_table`はlabel countとtarget列から長さを求める。型解析は関数ごとの最大オペランド高を記録し、i64/f64を2語として数える。 <!-- traceability: {DirectBytecodeExecution} -->

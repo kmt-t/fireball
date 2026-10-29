@@ -433,7 +433,7 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
 @pytest.mark.parametrize("capacity", (1, 2, 4))
 @pytest.mark.parametrize("overflow", (1, 4, 9))
 def test_event_sink_retains_latest_events_in_issue_order(capacity: int, overflow: int) -> None:
-    """TEST-OBS-03/05: 最新N件、累積欠落数、拒否後の保持と再充填を直接検査する。"""
+    """TEST-OBS-03, TEST-OBS-05: 最新N件、累積欠落数、拒否後の保持と再充填を直接検査する。"""
     sink = RuntimeEventSink(capacity=capacity)
     runtime_id = 27
     total_dropped = 0

@@ -144,7 +144,13 @@ W^Xの抽象不変条件は別途定義する。x64参照構成はRWXを初期�
 - **抽象W^X不変条件**: 書込可能状態と実行可能状態を同時に許可しない別方策の抽象状態遷移を [`jit_cache_model.py`](docs/components/tier3_plugins/formal/jit_cache_model.py) で表す。x64実行可能バッファはRWXを使用し、その実権限はJITテスト仕様で検証する。ARMv8-Mの物理保護方式と実機受け入れ条件はTBDである。形式モデルの3面バンク回転・2ビットホットスポットFSM・遅延チェイニングは [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)/[`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) の対象である。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントのテストケース（TEST-MEM-01〜TEST-MEM-19）の検証手順・期待結果は、[`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md) を正本とする。同書は、本書で定義する実装上の注意点を参照して検証する。
+本コンポーネントのテストケースIDを示す。
+
+- `TEST-MEM-06`, `TEST-MEM-07`, `TEST-MEM-10b`
+- `TEST-MEM-14..TEST-MEM-16`
+- `TEST-MEM-33..TEST-MEM-34`
+
+検証手順と期待結果は[`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md)に記載する。同書では、本書で定義する実装上の注意点を検証する。
 
 
 ## 8. 設計判断と参考実装

@@ -384,7 +384,7 @@ flowchart TD
 ### 7.2 テスト仕様書との連携
 本コンポーネントのテストケースは[`jit_runtime_test_spec.md`](docs/qa/tier3_plugins/jit_runtime_test_spec.md)を正本とする。キャッシュモデルは`formal/jit_cache_model.py`、履歴境界モデルは`formal/jit_hotspot_model.py`を参照する。
 
-QA専用の実行回数・退役記録の計測契約、抽象モデル、およびTEST-JITR-76〜79の対応は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)を正本とする。これらの検査を製品構成の計測機構の要求として扱わない。
+QA専用の実行回数・退役記録の計測契約、抽象モデル、およびTEST-JITR-76..TEST-JITR-79の対応は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)を正本とする。これらの検査を製品構成の計測機構の要求として扱わない。
 
 ## 8. 設計判断と参考実装
 

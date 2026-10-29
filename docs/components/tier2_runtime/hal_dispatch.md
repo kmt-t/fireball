@@ -168,7 +168,7 @@ Fireball の HAL は、WASI 0.3p と親和性のある汎用インターフェ�
 - **IPCルーティングと事前検査**: デバイスアクセスはIPCルータを迂回せず、バッファ転送は生ポインタを使わず、事前検査で拒否された要求は所有権を先取りして剥奪しないことを [`hal_dispatch_contract_model.py`](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) でCTL検証する。`guards=False` では各違反経路が反証されることを確認する。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントの契約テストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-15）は、[`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を正本として定義する。物理ドライバ実装のテストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08）は [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を参照する。実装上の注意点の定義は [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md)、対応する検証は同テスト仕様書を参照する。
+本コンポーネントの契約テストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09..TEST-HAL-15）は、[`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を正本として定義する。物理ドライバ実装のテストケース（TEST-HAL-03, TEST-HAL-05..TEST-HAL-08）は [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を参照する。実装上の注意点の定義は [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md)、対応する検証は同テスト仕様書を参照する。
 
 ## 8. 設計判断と参考実装
 

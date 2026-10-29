@@ -17,7 +17,7 @@
 | TEST-HAL-06 | HAL固定バッファプール(vMMIO/DYNAMIC)物理マッピングと境界検査 | - | I/O開始時に選択したスロットを`map-buffer`し、操作完了後に`unmap-buffer`する。同時に別スロットのマップを要求し、256バイトを超えるスライスも要求する | 選択したスロットだけがFC=13 DYNAMIC領域へマップされ、I/O終了後にアンマップされる。競合するマップ要求は`BUSY`を返し、上限超過スライスや不正ハンドルだけがassert対象となる（`GOTCHA-HAL-01`） | 「固定スロット」, runtime_vmmio.md |
 | TEST-HAL-07 | RSP Rawトランスポートの選択可能性 | - | UART/RTTそれぞれで接続し、受信・送信バイト列をそのまま渡す | 双方の物理層でRaw RSPバイト列の送受信が可能で、物理ドライバはパケット解析を行わない | platform_driver.md |
 | TEST-HAL-08 | RSP Parserの責務分離 | Raw RSPバイト列を受信 | platform_driverの出力をDebugger Pluginへ渡し、物理ドライバにチェックサム・ACK/NAK・コマンド解析がないことを確認 | platform_driverはRawバイトの物理入出力と専用Sinkへの受け渡しだけを行い、RSP ParserはDebugger Plugin側にだけ存在する | platform_driver.md |
-| TEST-HAL-15 | ファイルSinkへのロガー出力分離 | `FileLogSink`を`System`へ注入し、標準出力用ドライバを起動 | システムログを1行出力してフラッシュし、ゲストの標準出力へ別のバイト列を書く | ログ行は注入したファイルSinkだけに現れ、標準出力にはゲストのバイト列だけが残る。ログ出力にロガーHALタスクの起動を要求しない | `BufferedLogging`, `HAL_Interface` |
+| TEST-HAL-26 | ファイルSinkへのロガー出力分離 | `FileLogSink`を`System`へ注入し、標準出力用ドライバを起動 | システムログを1行出力してフラッシュし、ゲストの標準出力へ別のバイト列を書く | ログ行は注入したファイルSinkだけに現れ、標準出力にはゲストのバイト列だけが残る。ログ出力にロガーHALタスクの起動を要求しない | `BufferedLogging`, `HAL_Interface` |
 
 ### 実装上の注意点に対応する検証
 <!-- traceability: {GOTCHA-HAL-01} {GOTCHA-HAL-02} {GOTCHA-HAL-03} -->
@@ -49,8 +49,8 @@
 
 ## 4. 未検証・スコープ外
 
-- 契約レベルの振る舞い（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を参照。
+- 契約レベルの振る舞い（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09..TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を参照。
 - 実ハードウェア（UART/RTT/GPIO/I2C）そのものの電気的特性。
 - stdoutの2入力によるpysim統合試験は、固定プールの全slot・全offset・全長、物理DMAのCPU非介在性を網羅しない。
 
-契約レベルの動作`TEST-HAL-01`、`TEST-HAL-02`、`TEST-HAL-04`、`TEST-HAL-09〜TEST-HAL-13`は、[`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md)の責務とする。
+契約レベルの動作`TEST-HAL-01`、`TEST-HAL-02`、`TEST-HAL-04`、`TEST-HAL-09..TEST-HAL-13`は、[`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md)の責務とする。

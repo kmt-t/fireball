@@ -469,9 +469,9 @@ class HALFixedBufferManager:
 
 
 # =============================================================================
-# Test Suite: system_memory_test_spec.md (TEST-MEM-01 ~ TEST-MEM-13, contract-level) and
+# Test Suite: system_memory_test_spec.md (TEST-MEM-01..TEST-MEM-13, contract-level) and
 # runtime_memory_test_spec.md: software-contract and virtual mapping cases.
-# TEST-MEM-14/15/16 (page-granular isolation, vMMIO FC=14 PTE/TLB sync, owner-mismatch
+# TEST-MEM-14, TEST-MEM-15, TEST-MEM-16 (page-granular isolation, vMMIO FC=14 PTE/TLB sync, owner-mismatch
 # trap) are physical integration cases. Their expected results belong to
 # runtime_memory_test_spec.md and are outside this lightweight contract model.
 # =============================================================================
@@ -689,8 +689,8 @@ def test_mem_10b_shared_block_vmmio_pte_flight_and_claim() -> None:
     assert claimed_sb.get_owner() == 2
 
 
-def test_mem_10c_rollback_transfer_restores_mapping() -> None:
-    """TEST-MEM-10c: rollback_transfer() remaps PTE to original sender."""
+def test_mem_33_rollback_transfer_restores_mapping() -> None:
+    """TEST-MEM-33: rollback_transfer() remaps PTE to original sender."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x00010000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
@@ -774,7 +774,7 @@ if __name__ == "__main__":
     test_mem_10_shared_block_ownership_transfer()
     test_mem_gotcha_02_shared_block_release_owner_only()
     test_mem_10b_shared_block_vmmio_pte_flight_and_claim()
-    test_mem_10c_rollback_transfer_restores_mapping()
+    test_mem_33_rollback_transfer_restores_mapping()
     test_mem_11_shared_block_raii_auto_deallocate()
     test_mem_12_shm_id_kv_pair_encoding()
     test_mem_13_query_and_check_ownership_are_removed()

@@ -82,9 +82,9 @@ flowchart LR
 ### 7.1 検証対象の不変条件
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
-| 符号化対応 | 入退出を正しい辞書IDと3引数で記録し、tickを32ビットへ丸める。 | [`guest_profiler_model.py`](docs/components/tier3_plugins/formal/guest_profiler_model.py)、TEST-PROF-01/02 |
+| 符号化対応 | 入退出を正しい辞書IDと3引数で記録し、tickを32ビットへ丸める。 | [`guest_profiler_model.py`](docs/components/tier3_plugins/formal/guest_profiler_model.py)、TEST-PROF-01, TEST-PROF-02 |
 | 順序保存 | 入力された関数入退出の順をログレコードでも保つ。 | 形式モデル、TEST-PROF-03 |
-| ホスト集計 | 再帰・入れ子・tick循環の呼出数と時間を集計する。 | TEST-PROF-04/05/07 |
+| ホスト集計 | 再帰・入れ子・tick循環の呼出数と時間を集計する。 | TEST-PROF-04, TEST-PROF-05, TEST-PROF-07 |
 | 未対応退出 | スタックを変更せず件数だけ増やす。 | TEST-PROF-06 |
 | 非干渉 | プロファイルログ生成はゲスト結果・メモリ・globalを変えない。 | 統合TEST-PROF-08 |
 

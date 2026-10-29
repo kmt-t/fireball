@@ -103,7 +103,7 @@ def test_libfireball_rejects_non_u32_host_call_result(invalid: int) -> None:
 
 @pytest.mark.parametrize("result", (0, 17, 0xFFFF_FFFF))
 def test_libfireball_dedicated_host_calls(result: int) -> None:
-    """TEST-LIBFB-04 / TEST-WIT-12,13: 専用portの引数と戻り値を保ち、汎用portを呼ばない。"""
+    """TEST-LIBFB-04 / TEST-WIT-12, TEST-WIT-13: 専用portの引数と戻り値を保ち、汎用portを呼ばない。"""
     host_calls = RecordingHostCalls(result=result)
     lib = Libfireball(host_calls)
     assert lib.fireball_virq_register(5, 12) == result
@@ -256,7 +256,7 @@ def compiled_raw_guest(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.mark.parametrize("result", (0, 17, 0xFFFFFFFF))
 def test_wit_generated_static_guest_raw_four_imports(compiled_raw_guest: Path, result: int) -> None:
-    """TEST-WIT-10/14, TEST-LIBFB-01/04: 実guestでu32、引数配置、専用入口を観測する。"""
+    """TEST-WIT-10, TEST-WIT-14, TEST-LIBFB-01, TEST-LIBFB-04: 実guestでu32、引数配置、専用入口を観測する。"""
     from qa.shared.helpers import make_native_interpreter
     from scheduler import TaskState
     from system import System

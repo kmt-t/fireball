@@ -1,4 +1,4 @@
-"""TEST-INT-120..128: SDK/libc guest → real runtime/IPC/HAL → controlled endpoint.
+"""TEST-INT-120..TEST-INT-128: SDK/libc guest → real runtime/IPC/HAL → controlled endpoint.
 
 The Fireball linkage fixture tests the existing syscall ABI. It is not the
 unimplemented production libfireball Preview1/HAL adapter. Hardware and uvwasi

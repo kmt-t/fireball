@@ -106,7 +106,7 @@ def _run_immediate(
 
 
 def test_ipc_01_uri_lookup_and_permission_matrix():
-    """TEST-IPCR-02/05: 登録 URI の検索と、借用チャネルによるロール偽装の拒否。"""
+    """TEST-IPCR-02, TEST-IPCR-05: 登録 URI の検索と、借用チャネルによるロール偽装の拒否。"""
     sched = Scheduler()
     router = _make_router(sched)
     entry = router.find_service("fireball://hal/gpio/0")
@@ -147,7 +147,7 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
 
 
 def test_ipc_02_e2e_shared_block_transfer():
-    """TEST-IPCR-07/21/22/24: 実タスク間で同じメッセージを追加応答付きで返す。"""
+    """TEST-IPCR-07, TEST-IPCR-21, TEST-IPCR-22, TEST-IPCR-24: 実タスク間で同じメッセージを追加応答付きで返す。"""
     sysv = System()
     try:
         sent: list[IPCStatus] = []
@@ -209,7 +209,7 @@ def test_ipc_02_e2e_shared_block_transfer():
 
 @pytest.mark.parametrize("rejection", ("wrong_role_channel", "too_many_entries"))
 def test_send_preflight_rejection_preserves_shared_memory(rejection: str) -> None:
-    """TEST-IPCR-05/14/15, GOTCHA-IPCR-02: 拒否時は Revoke せず、後続の正規送信ができる。"""
+    """TEST-IPCR-05, TEST-IPCR-14, TEST-IPCR-15, GOTCHA-IPCR-02: 拒否時は Revoke せず、後続の正規送信ができる。"""
     sched = Scheduler()
     router = _make_router(sched)
     sender_id = sched.spawn("runtime_sender", role=Role.RUNTIME).unwrap()
@@ -276,7 +276,7 @@ def test_send_preflight_rejection_preserves_shared_memory(rejection: str) -> Non
 
 def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     """
-    TEST-IPCR-17/18: recv()'s guarded external choice (select) completes with
+    TEST-IPCR-17, TEST-IPCR-18: recv()'s guarded external choice (select) completes with
     whichever allowed sender arrives first -- CORE_SERVICE is reachable from
     both RUNTIME and DEBUGGER, so a receiver must not commit to just one
     upfront. After the select resolves, the losing edge must be cleared (not
@@ -401,7 +401,7 @@ def test_ipc_05_message_storage_ownership_and_access_check():
     )
 )
 def test_ipc_batch_sorted_unique_map_roundtrip(entries: list[tuple[int, int]]) -> None:
-    """TEST-IPCR-19/26: u32境界を含む一意なKVを、実共有ブロックへ格納して検索する。"""
+    """TEST-IPCR-19, TEST-IPCR-26: u32境界を含む一意なKVを、実共有ブロックへ格納して検索する。"""
     scheduler = Scheduler()
     router = _make_router(scheduler)
     owner_id = scheduler.spawn("owner").unwrap()
@@ -483,7 +483,7 @@ def test_ipc_borrow_and_narrowed_entries_read_live_shared_bytes(
 
 
 def test_ipc_old_borrows_fail_after_actual_handoff_and_reply() -> None:
-    """TEST-IPCR-07/19: Revoke前のviewはGrant後も失効し、新所有者は新たに借用する。"""
+    """TEST-IPCR-07, TEST-IPCR-19: Revoke前のviewはGrant後も失効し、新所有者は新たに借用する。"""
     scheduler = Scheduler()
     router = _make_router(scheduler)
     sender = scheduler.get_task(scheduler.spawn("sender", role=Role.RUNTIME).unwrap())
@@ -535,7 +535,7 @@ def test_ipc_corrupt_count_is_not_silently_clamped() -> None:
 
 
 def test_ipc_06_router_lookup_authorization():
-    """TEST-IPCR-02/05: lookup は登録 URI の RBAC を検査する。"""
+    """TEST-IPCR-02, TEST-IPCR-05: lookup は登録 URI の RBAC を検査する。"""
     sched = Scheduler()
     router = _make_router(sched)
 
@@ -566,7 +566,7 @@ def test_ipc_06_router_lookup_authorization():
 
 
 def test_ipc_07_message_in_shm_and_payload_shm_transfer():
-    """TEST-IPCR-07/19: メッセージ本体と埋込みリソースの所有権を往復移譲する。"""
+    """TEST-IPCR-07, TEST-IPCR-19: メッセージ本体と埋込みリソースの所有権を往復移譲する。"""
     from ipc_router import DataType, ScopeKind, pack_key32
 
     sysv = System()
@@ -649,7 +649,7 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
 def test_lookup_matches_specification_permission_matrix(
     sender_role: Role, target_role: Role, uri: str
 ) -> None:
-    """TEST-IPCR-02/04/05/06/15: 9 ロール × 8 登録 URI の許可表を独立に照合する。"""
+    """TEST-IPCR-02, TEST-IPCR-04, TEST-IPCR-05, TEST-IPCR-06, TEST-IPCR-15: 9 ロール × 8 登録 URI の許可表を独立に照合する。"""
     sched = Scheduler()
     router = _make_router(sched)
     sender_id = sched.spawn("caller", role=sender_role).unwrap()
@@ -717,7 +717,7 @@ def test_key_scope_type_and_identifier_have_independent_bit_positions(
 def test_request_reply_preserves_contents_and_transfers_exclusive_ownership(
     receiver_first: bool, extend_reply: bool
 ) -> None:
-    """TEST-IPCR-07/11/12/21/22/23/24/25: 各到達順で SHM・内容・応答待機を直接確認する。"""
+    """TEST-IPCR-07, TEST-IPCR-11, TEST-IPCR-12, TEST-IPCR-21, TEST-IPCR-22, TEST-IPCR-23, TEST-IPCR-24, TEST-IPCR-25: 各到達順で SHM・内容・応答待機を直接確認する。"""
     sched = Scheduler()
     router = _make_router(sched)
     manager = router.memory_manager
@@ -908,7 +908,7 @@ def test_router_role_matrix_is_immutable_after_build() -> None:
 
 @pytest.mark.parametrize("request_received", (False, True), ids=("request_wait", "reply_wait"))
 def test_second_send_cannot_overwrite_active_transaction(request_received: bool) -> None:
-    """TEST-IPCR-08/10, GOTCHA-IPCR-01: 要求待機・応答待機の双方で二重送信を拒否する。"""
+    """TEST-IPCR-08, TEST-IPCR-10, GOTCHA-IPCR-01: 要求待機・応答待機の双方で二重送信を拒否する。"""
     sched = Scheduler()
     router = _make_router(sched)
     first_id = sched.spawn("first_sender", role=Role.RUNTIME).unwrap()

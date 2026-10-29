@@ -5,7 +5,7 @@
 正本: [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md)（契約は [`system_memory.md`](docs/components/tier1_interface/system_memory.md) を正本とする）
 参考実装: [`runtime_memory_concept.py`](docs/components/tier2_runtime/concepts/runtime_memory_concept.py)
 
-`system_allocator`/`shm_allocator` のソフトウェア契約、共有ブロック所有権、および vMMIO PTE/TLB 通知を検証する。ARMv8-MのMPU/W^X物理実装はTBDであり、この仕様書の受け入れ対象に含めない。契約レベルの公開API振る舞い（TEST-MEM-01〜13）は [`system_memory_test_spec.md`](docs/qa/tier1_interface/system_memory_test_spec.md) の責務とする。
+`system_allocator`/`shm_allocator` のソフトウェア契約、共有ブロック所有権、および vMMIO PTE/TLB 通知を検証する。ARMv8-MのMPU/W^X物理実装はTBDであり、この仕様書の受け入れ対象に含めない。契約レベルの公開API振る舞い（TEST-MEM-01..TEST-MEM-13）は [`system_memory_test_spec.md`](docs/qa/tier1_interface/system_memory_test_spec.md) の責務とする。
 
 ## 2. テストケース一覧
 
@@ -13,12 +13,14 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| TEST-MEM-06 | ゲストRAM基点の64KB整列 | WASMページサイズに整列した基点と非整列基点 | 64KB整列基点で初期化後、4KBずれた基点で再初期化する | 整列基点では初期化に成功し、非整列基点では`AssertionError`となる | `runtime_memory_concept.py`, `test_memory.py` |
+| TEST-MEM-07 | 共有ブロック確保時のvMMIO PTE登録 | 初期化済みメモリマネージャと共有メモリ要求 | 512バイトの共有ブロックを確保し、割当ページの登録状態を確認する | 確保に成功し、対応するvMMIO PTEが登録済みとなる | `runtime_memory_concept.py` |
 | TEST-MEM-14 | 4KB仮想予約スロットの所有権分離 | タスク1とタスク2が`allocate-shared`実行 | 割り当てられた`page_idx`を比較 | 各ブロックは異なる4KB仮想予約スロット（異なる`page_idx`）を占有し、物理SHMバイト予算は要求サイズ分だけ増える | 「4KB仮想予約と可変長物理バック領域」, pysim `` |
 | TEST-MEM-15 | vMMIO FC=14マッピングとTLBフラッシュ連動 | 共有メモリ操作 | `allocate_shared`/`release`/`claim`/`drop`実行 | vMMIO FC=14 PTEのマップ／アンマップと連動して対応VPNのTLBスロットが即座にフラッシュされる | 「共有メモリマッピングと仮想化リスナーへのコールバック委譲」, pysim `` |
 | TEST-MEM-16 | 他タスク所有SHMページへのvMMIOアクセス遮断 | タスク1がSHM確保しPTEがマップ済み | タスク2のコンテキストで同じページへvMMIOアクセス | `OWNER_MISMATCH`により拒絶される。Revoke後にPTEがない場合は`UNREGISTERED_PAGE`となる | runtime_vmmio.md, pysim `` |
-| TEST-MEM-10d | RESOURCE Revoke後の古いハンドル無効化 | タスク1がSHMを確保し書き込み後、RESOURCE用にRevoke | 送信側の既存ハンドルで読み書きを試し、受信側へGrant/Claimする。同じ送信元へ再移譲する | 古いハンドル操作は再移譲後もアサーションで拒否される。正規の所有者は移譲前の内容を読める | runtime_memory.md, pysim `` |
+| TEST-MEM-34 | RESOURCE Revoke後の古いハンドル無効化 | タスク1がSHMを確保し書き込み後、RESOURCE用にRevoke | 送信側の既存ハンドルで読み書きを試し、受信側へGrant/Claimする。同じ送信元へ再移譲する | 古いハンドル操作は再移譲後もアサーションで拒否される。正規の所有者は移譲前の内容を読める | runtime_memory.md, pysim `` |
 | TEST-MEM-10b | 送信中共有ブロックのPTE/TLB遮断とclaim再マッピング | 送信タスクが`release()`を実行 | 送信中にアクセスし、受信タスクが`claim()` | 送信中は旧PTE/TLBが無効化され、`claim()`後は受信側へ再マッピングされる | `runtime_memory_concept.py` `` |
-| TEST-MEM-10c | 転送失敗時の所有権・PTEロールバック | `release()`済みで転送失敗 | `rollback_transfer(original_sender_id, shm_id)`を実行 | 所有権とPTEが送信元へ復元される | `runtime_memory_concept.py` `` |
+| TEST-MEM-33 | 転送失敗時の所有権・PTEロールバック | `release()`済みで転送失敗 | `rollback_transfer(original_sender_id, shm_id)`を実行 | 所有権とPTEが送信元へ復元される | `runtime_memory_concept.py` `` |
 
 ### ARMv8-M物理メモリ保護（TBD）
 
@@ -40,6 +42,6 @@
 ## 4. 未検証・スコープ外
 
 - ARMv8-Mの物理メモリ保護、領域配置、権限遷移、命令キャッシュ同期、および実機検証はすべてTBD。
-- 契約レベルの公開API振る舞い（TEST-MEM-01〜13）は [`system_memory_test_spec.md`](docs/qa/tier1_interface/system_memory_test_spec.md) を参照。
+- 契約レベルの公開API振る舞い（TEST-MEM-01..TEST-MEM-13）は [`system_memory_test_spec.md`](docs/qa/tier1_interface/system_memory_test_spec.md) を参照。
 
-契約レベルの公開API振る舞い`TEST-MEM-01〜13`は、[`system_memory_test_spec.md`](docs/qa/tier1_interface/system_memory_test_spec.md)の責務とする。
+契約レベルの公開API振る舞い`TEST-MEM-01..TEST-MEM-13`は、[`system_memory_test_spec.md`](docs/qa/tier1_interface/system_memory_test_spec.md)の責務とする。

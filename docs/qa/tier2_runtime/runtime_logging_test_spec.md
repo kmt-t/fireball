@@ -49,9 +49,9 @@
 
 
 
-同ファイルはTEST-LOG-01〜08、11〜18に対応する。旧コードの辞書書式検証、上書き、所有権、printkレコード互換性、割り込みのIDを、それぞれ03、04、11、14、07へ合わせた。
+同ファイルはTEST-LOG-01..TEST-LOG-08、TEST-LOG-11..TEST-LOG-18に対応する。旧コードの辞書書式検証、上書き、所有権、printkレコード互換性、割り込みのIDを、それぞれ03、04、11、14、07へ合わせた。
 
-TEST-LOG-01はu24 IDと`FB_CONF_LOG_MAX_ARGUMENTS`個の異なるu32を`FB_CONF_LOG_MAX_RECORD_SIZE`バイト列で照合する。辞書展開のspyで、投入とflush中の展開が0回であることを検査する。TEST-LOG-02はエンコーダーを使わない既知のバイト列でホスト側の展開と未知IDの拒否を検査する。TEST-LOG-15/16は転送長の`FB_CONF_LOG_MAX_ARGUMENTS + 1`個の境界と不正入力を検査する。TEST-LOG-04/07は全出力順序と残存状態を検査する。TEST-LOG-05/06はレベル境界と空flushの副作用を検査する。
+TEST-LOG-01はu24 IDと`FB_CONF_LOG_MAX_ARGUMENTS`個の異なるu32を`FB_CONF_LOG_MAX_RECORD_SIZE`バイト列で照合する。辞書展開のspyで、投入とflush中の展開が0回であることを検査する。TEST-LOG-02はエンコーダーを使わない既知のバイト列でホスト側の展開と未知IDの拒否を検査する。TEST-LOG-15, TEST-LOG-16は転送長の`FB_CONF_LOG_MAX_ARGUMENTS + 1`個の境界と不正入力を検査する。TEST-LOG-04, TEST-LOG-07は全出力順序と残存状態を検査する。TEST-LOG-05, TEST-LOG-06はレベル境界と空flushの副作用を検査する。
 
 TEST-LOG-12はPython参照とNativeで、直接呼出しとcallee呼出しの4構成を実行する。関数indexと命令オフセットはともに非0である。レコードのサイズや文字列の一部だけを根拠とせず、原因ID、PC、未使用引数の省略とホスト展開を照合する。TEST-LOG-13は登録間の同期検査であり、全トラップの実行検査ではない。
 

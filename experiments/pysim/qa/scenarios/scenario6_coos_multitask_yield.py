@@ -65,7 +65,7 @@ SCENARIO6_WAT = """
 
 
 def test_scenario_coos_multitask():
-    """TEST-INT-50/51: real native threshold handoffs preserve guest progress."""
+    """TEST-INT-50, TEST-INT-51: real native threshold handoffs preserve guest progress."""
     module = parse_standalone(wat_to_wasm(SCENARIO6_WAT))
     memory = bytearray(65536)
     producer = make_native_interpreter(module, memory=memory, yield_threshold=4)

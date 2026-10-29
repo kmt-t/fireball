@@ -44,7 +44,7 @@ class MockTransfer:
 
 
 class ControlledVdmaMock:
-    """TEST-VSOC-62/63/65/66/73: deterministic external service, not guest execution."""
+    """TEST-VSOC-62, TEST-VSOC-63, TEST-VSOC-65, TEST-VSOC-66, TEST-VSOC-73: deterministic external service, not guest execution."""
 
     def __init__(
         self,

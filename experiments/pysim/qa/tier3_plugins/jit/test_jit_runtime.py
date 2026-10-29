@@ -277,7 +277,7 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
 
 
 def test_hotspot_04_3bank_cache_hits_preserve_residency():
-    """TEST-HOTSPOT-04 / TEST-JITR-22, 23: Warm and Oldest hits execute in place."""
+    """TEST-HOTSPOT-04 / TEST-JITR-22, TEST-JITR-23: Warm and Oldest hits execute in place."""
     cache = JitRuntimeBoundary(bank_capacity=512)
     t1 = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=64)
     t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
@@ -536,7 +536,7 @@ def test_jitr_oldest_keeps_existing_chain_and_rejects_new_links():
 
 
 def test_jitr_cyclic_chain_body_count_is_finite_and_retirement_unlinks_both_edges():
-    """A two-trace cycle has a finite bound and loses both links on bank retirement."""
+    """TEST-JITR-89: A two-trace cycle is finite and loses both links on bank retirement."""
     cache = JitRuntimeBoundary(bank_capacity=512)
     first = JITTrace(head_pc=0x100, size_bytes=64, next_pc=0x200)
     second = JITTrace(head_pc=0x200, size_bytes=64, next_pc=0x100)
@@ -618,7 +618,7 @@ def test_jitr_native_trace_lookup_uses_resident_snapshot():
 
 
 def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
-    """TEST-JITR-31..35: Successor metadata for resident traces and O(k) unlinking on Oldest purge."""
+    """TEST-JITR-31..TEST-JITR-35: Successor metadata for resident traces and O(k) unlinking on Oldest purge."""
     cache = JitRuntimeBoundary(bank_capacity=512)
     # t1 falls through to t2
     t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
@@ -642,7 +642,7 @@ def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
 
 
 def test_jitc_20_trace_header_32byte_x64_physical_layout():
-    """TEST-JITC-20/23: the physical header carries code targets and runtime metadata."""
+    """TEST-JITC-20, TEST-JITC-23: the physical header carries code targets and runtime metadata."""
     hdr = JITTraceHeader()
     hdr.chain_target_addr = 0x20001000
     raw = hdr.pack()
@@ -961,7 +961,7 @@ def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
 
 
 def test_jitr_26_sorted_index_lookup_and_rotation():
-    """TEST-JITR-26 & GOTCHA-JITR-05: Native sorted-index lookup and rotation."""
+    """TEST-JITR-26 / TEST-JITR-82 & GOTCHA-JITR-05: Sorted lookup and rotation."""
     cache = JitRuntimeBoundary(bank_capacity=1024)
     # Code-section-relative instruction PC used to exercise hash folding.
     pc1 = 0x00010020
@@ -3373,7 +3373,7 @@ def test_jitr_api_lowered_operation_can_start_a_jit_trace():
 
 
 def test_jitr_trace_header_resolves_loader_block_by_index():
-    """TEST-JITR-82: runtime traces retain direct access to Loader metadata."""
+    """TEST-JITR-88: runtime traces retain direct access to Loader metadata."""
     module = parse_standalone(wat_to_wasm("(module (func (result i32) i32.const 1))"))
     engine = make_runtime_engine(jit_compiler=TraceCompiler())
     engine.register_module_blocks(module)

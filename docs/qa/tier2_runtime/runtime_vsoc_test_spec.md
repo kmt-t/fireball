@@ -32,7 +32,7 @@
 ### vDMAとBulk Memoryの転送契約
 <!-- traceability: {WasmFCSubset} {VDMA} {MemoryBoundaryCheck} {OwnershipTransfer} {GLOBAL_InterruptWakeup} -->
 
-本節は転送の振る舞いを検査し、専用importのABIはTEST-SYS-20〜22へ対応付ける。
+本節は転送の振る舞いを検査し、専用importのABIはTEST-SYS-20..TEST-SYS-22へ対応付ける。
 転送範囲の正本は[`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)である。
 内部の同期・非同期は転送対象と操作に応じる。
 成功復帰には、いずれの方式でも転送完了とCPU可視性を要する。
@@ -192,10 +192,10 @@ guest用の結果記録領域とmarkerは転送領域から分離する。
 
 | 技法 | 対象と生成範囲 | 各例で照合する結果 |
 | :--- | :--- | :--- |
-| 固定例・パラメータ化 | TEST-VSOC-60/61と64、67〜71。32構成と高リスク例を明示する | 入口別の結果、guest直後load、全バック領域、隣接byte、所有者、マッピング |
+| 固定例・パラメータ化 | TEST-VSOC-60、TEST-VSOC-61、TEST-VSOC-64、TEST-VSOC-67..TEST-VSOC-71。32構成と高リスク例を明示する | 入口別の結果、guest直後load、全バック領域、隣接byte、所有者、マッピング |
 | 制約付きpairwise | 正常転送の構成行N01〜N32。両入口、両端種別、長さ1/4/16、元offset 4/5、先offset 68/69、TLB状態を組み合わせる | 全行でTEST-VSOC-67の独立oracleを使う。入力設計の165有効ペアと32方向が、実行した行で覆われたかを記録する |
-| Hypothesisのbyte転送 | TEST-VSOC-67/69。RAM型領域の任意byte列、source/destination offset、残容量内の長さを生成する | 独立snapshotから導いた全領域との一致、隣接byte保存、完了直後のguest可視性 |
-| Hypothesisの拒否入力 | TEST-VSOC-64/68。一方を有効に保ち、もう一方の範囲か権限だけを違反させる | 開始前の拒否、全byte・所有者・マッピング保存、拒否後の有効転送成功 |
+| Hypothesisのbyte転送 | TEST-VSOC-67、TEST-VSOC-69。RAM型領域の任意byte列、source/destination offset、残容量内の長さを生成する | 独立snapshotから導いた全領域との一致、隣接byte保存、完了直後のguest可視性 |
+| Hypothesisの拒否入力 | TEST-VSOC-64、TEST-VSOC-68。一方を有効に保ち、もう一方の範囲か権限だけを違反させる | 開始前の拒否、全byte・所有者・マッピング保存、拒否後の有効転送成功 |
 | Hypothesisの状態履歴 | TEST-VSOC-72。既存APIの許すmap、転送、unmap、revoke、所有権移譲を生成する | 各操作後の単純な独立モデルと実状態の一致。所有権喪失後に古いviewを使用しない |
 | 形式検証 | [`wasm_bulk_memory_model.py`](docs/specs/formal/wasm_bulk_memory_model.py) の範囲外更新禁止、CPU経路、保留中再開禁止、可視化前再開禁止 | 通常モデルの性質成立と `guards=False` の反証。抽象状態の成立を実driverの証拠へ読み替えない |
 
@@ -211,14 +211,14 @@ guest用の結果記録領域とmarkerは転送領域から分離する。
 | :--- | :--- |
 | source/destinationの入替え、長さ・offsetの誤り、隣接byte破壊 | TEST-VSOC-67。異なる入力byte列と全領域oracleが不一致となる |
 | 開始アドレスだけ検査する、4KB PTEを実容量と誤認する、加算をラップする | TEST-VSOC-64。開始前拒否または全領域保存が失敗する |
-| sourceに書込み権限、destinationに読出し権限を使う、TLBで所有者検査を省く | TEST-VSOC-68/72。方向別の許可結果または拒否後の状態が不一致となる |
+| sourceに書込み権限、destinationに読出し権限を使う、TLBで所有者検査を省く | TEST-VSOC-68、TEST-VSOC-72。方向別の許可結果または拒否後の状態が不一致となる |
 | 仮想アドレスだけで重複を判定する、前向きコピーで元byteを破壊する | TEST-VSOC-69。独立した物理snapshotと一致しない |
-| 長さ0で検査を省く、FC=12や予約FCへ転送する | TEST-VSOC-70/71。必要なtrapがなく、後続markerが実行される |
-| 開始受理を成功と扱う、可視性確認を省く、開始後失敗を成功へ変換する | TEST-VSOC-62/63/65。guest進捗または直後loadが契約に違反する |
-| 拒否要求が先行転送を破壊する、ISRでタスクを直接READY化する | 適用対象のTEST-VSOC-66/73。先行状態または協調境界前の状態が変化する |
+| 長さ0で検査を省く、FC=12や予約FCへ転送する | TEST-VSOC-70、TEST-VSOC-71。必要なtrapがなく、後続markerが実行される |
+| 開始受理を成功と扱う、可視性確認を省く、開始後失敗を成功へ変換する | TEST-VSOC-62、TEST-VSOC-63、TEST-VSOC-65。guest進捗または直後loadが契約に違反する |
+| 拒否要求が先行転送を破壊する、ISRでタスクを直接READY化する | 適用対象のTEST-VSOC-66、TEST-VSOC-73。先行状態または協調境界前の状態が変化する |
 
 最初に、現行pysimの同期対象で64、67〜72と生成試験を実装する。
-TEST-VSOC-60/61には、現在の生成範囲外にある実メモリ末尾の固定例を補う。
+TEST-VSOC-60、TEST-VSOC-61には、現在の生成範囲外にある実メモリ末尾の固定例を補う。
 32構成の正常転送と両端の拒否を、実guestの両入口から検査する。
 62、63、66、73は、外部転送サービスのモックへ接続して検査する。
 65は、CPU側とDMA側の可視性を分離したモックで成功復帰の契約を検査する。
@@ -277,16 +277,24 @@ line/branch coverageは、抜けた経路を探す診断情報として記録す
 | GOTCHA-VSOC-02 | Interpreter設定によるLOOP後方分岐yield条件 | Interpreter単独またはHybrid JIT経路 | 分岐回数と実行状態を確認する | 実行contextのLOOP後方分岐数がInterpreter設定のしきい値に達した時だけInterpreterがyield statusをRuntimeEngineへ返す。両経路はInterpreter設定の同じ条件で復帰する | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md)、`{ADR_LoopBackedgeYield}` |
 | GOTCHA-VSOC-03 | `execution_context` レイアウトと委譲シグネチャ | WASMスタック初期化 | コンテキストoffsetと関数ポインタ型を確認する | 確認済みx86-64 ABIでは`execution_context`は160バイトであり、リニアメモリのホスト基点は`+0x78`、64bit有効サイズは`+0x80`、ローカル基点は`+0x90`、Interpreter定数カーソルは`+0x98`に置く。値スタックとローカル値領域の基点・現在位置・上限はポインタで保持する。Interpreter handlerと`exec_trace`は4引数`(ctx, ip*, sp*, rel*)`で呼び出し、TOS値を重複して渡さない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、`{ExecutionContext_Layout}`, `{EnvironmentPointer}`, `{VsocRuntime_Layout}` |
 
+### idle hookとJIT統合動作
+
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| TEST-IDLE-01 | scheduler idle時のJIT候補一括コンパイル | 3関数を登録し、最初の2つをHOTにしてコンパイル待ちへ積む | yield後にSystem schedulerをidleまで実行する | 待ち列が空になり、先に登録した2 traceがLIFO順でコンパイルされ、両カードが`COMPILED`となりtraceが常駐する | `test_vsoc.py::test_idle_01_jit_batch_compilation_on_idle` |
+| TEST-TIER-02 | Interpreter warm-up後のJIT trace実行 | 反復するfactorial loopを含むWASM関数 | 関数を実行し、結果、Interpreter/JIT実行数、loopカードとtrace常駐を確認する | 結果は120、Interpreter stepは3以上、JIT invocationは2となり、loopカードは`COMPILED`でtraceが常駐する | `test_vsoc.py::test_tier_02_interpreter_to_jit_trace_transition` |
+| TEST-TIER-03 | 分岐trace間のInterpreter CPS遷移 | 入れ子blockと複数のbranchを持つ関数、事前に常駐させたtrace | Interpreterから関数を実行し、chain有無、結果、JIT invocation、Interpreter stepを確認する | source traceはchainされず、結果は160、JIT invocationは2以上、Interpreter stepは1以上となる | `test_vsoc.py::test_tier_03_branch_transitions_use_interpreter_cps` |
+
 ## 3. テスト検証実績と網羅状況
 
 ### 同期copy経路の確認範囲
 
 | 実行入口 | 実際に観測する条件 | 設計との対応と限界 |
 | :--- | :--- | :--- |
-| `` | 実NativeInterpreter・既存COOS経路。offset 0〜192、長さ0〜64のHypothesisと重複・同一・非重複・ゼロ長の固定例。全65536byteと独立snapshotを比較し、vDMA呼出し0を確認する | TEST-VSOC-60/61。実メモリ末尾、vMMIO端点、非同期対象を含まない |
+| `` | 実NativeInterpreter・既存COOS経路。offset 0〜192、長さ0〜64のHypothesisと重複・同一・非重複・ゼロ長の固定例。全65536byteと独立snapshotを比較し、vDMA呼出し0を確認する | TEST-VSOC-60、TEST-VSOC-61。実メモリ末尾、vMMIO端点、非同期対象を含まない |
 | `` | 実guestの専用importと `memory.copy`。RAM→DYNAMIC、RAM→PASSTHROUGHの4構成で、4byteを転送し、直後loadと転送先全バッファ・隣接byteを確認する | TEST-SYS-20、TEST-VSOC-67の一部。32構成中4構成の実行に対応する。逆方向、SHM、vMMIO同士、物理cacheを含まない |
 | `` | ホストハンドラの直接呼出し。DYNAMIC転送先のoffset/長さを255/2、256/1、0/257にし、ゲストRAM全体、実バッファ全体、PTEとownerを保存する | TEST-VSOC-64の一部。実guestの入口、転送元側の違反、拒否後の有効転送は本ケースで検査しない |
-| `` | 専用importへ解決したハンドラを実タスクコンテキストから直接呼ぶ。TLB未充填・所有者アクセス後の2条件で、全ゲストRAM・物理領域・owner・mapping_sizeを保存し、その後の所有者転送を確認する | TEST-SYS-21、TEST-VSOC-68/72の一部。転送先SHMの非所有者拒否を検査する。実guest、転送元拒否、実所有権移譲を含まない |
+| `` | 専用importへ解決したハンドラを実タスクコンテキストから直接呼ぶ。TLB未充填・所有者アクセス後の2条件で、全ゲストRAM・物理領域・owner・mapping_sizeを保存し、その後の所有者転送を確認する | TEST-SYS-21、TEST-VSOC-68、TEST-VSOC-72の一部。転送先SHMの非所有者拒否を検査する。実guest、転送元拒否、実所有権移譲を含まない |
 | `wasm_bulk_memory_model.py` | 同期完了、非同期保留の自己ループ、完了、可視化、guest復帰を抽象状態で表す。通常モデルとガード無効化変異を検査する | TEST-VSOC-62などの安全性モデル。実対象の開始・待機・通知・cache処理の結線を証明しない |
 
 ### vDMA転送の検証
@@ -303,13 +311,13 @@ guestの借用ビューをunmap越しに保持しない。
 
 | 対象契約 | 実行入口と条件 | 直接観測する状態と限界 |
 | :--- | :--- | :--- |
-| TEST-VSOC-60/61 | `` | 既存の生成範囲に、65536byteメモリの最後の1byte、末尾同士のゼロ長、32768byteの重複copyを固定例で加えた。全byteとvDMA呼出し0を検査する |
+| TEST-VSOC-60、TEST-VSOC-61 | `` | 既存の生成範囲に、65536byteメモリの最後の1byte、末尾同士のゼロ長、32768byteの重複copyを固定例で加えた。全byteとvDMA呼出し0を検査する |
 | `TEST-VSOC-67、TEST-SYS-20` | ``のN01〜N32 | 両入口とL/D/S/Pの全32構成で、成功結果、直後guest load、marker、全バック領域を照合する。7因子の有効672構成に現れる165水準対を含む。実機cacheの証拠にはしない |
-| TEST-VSOC-67/72 | ``の両入口 | guestの非整列32bit store/load、実SharedBlockのbyte、SHMからguestへのDMAが同じ実体を使うことを照合する |
+| TEST-VSOC-67、TEST-VSOC-72 | ``の両入口 | guestの非整列32bit store/load、実SharedBlockのbyte、SHMからguestへのDMAが同じ実体を使うことを照合する |
 | `TEST-VSOC-64` | ``の88条件、両端不正の32構成、``の4条件 | 元と先を別々に検査する。末尾一致と有効隣接PTEから始まる要求は成功する。実容量越え、単一要求のページ越え、u32桁あふれは拒否し、全状態を保存する。拒否後に同じ端点種別を再利用する |
 | `TEST-VSOC-68、TEST-SYS-21` | ``の24条件、``の18条件 | PASSTHROUGHの方向別read/write許可をcold/warmで検査する。実DYNAMICとSHMの非所有者を、元と先、両入口で拒否する。SHMはTLB充填後も検査する。所有者からの再転送は成功する。bulkはゼロ長でも同じゲートを検査する |
 | `TEST-VSOC-69` | `` | 手動SHMマッピングとPASSTHROUGHが同じ物理RAMを指す。仮想順と物理順の逆転、同一範囲、前後重複を、転送前byte列から導く物理配列全体と比較する。専用importの重複保証へ拡大しない |
-| TEST-VSOC-70/71 | ``の20条件、ゼロ長の12条件 | 元と先でFC=12、予約FC、未マップD/S/Pを拒否する。全byteと制御レジスタを保存する。有効L/D/S/Pのゼロ長とリニア末尾は成功し、末尾+1はtrapとなる |
+| TEST-VSOC-70、TEST-VSOC-71 | ``の20条件、ゼロ長の12条件 | 元と先でFC=12、予約FC、未マップD/S/Pを拒否する。全byteと制御レジスタを保存する。有効L/D/S/Pのゼロ長とリニア末尾は成功し、末尾+1はtrapとなる |
 | `TEST-VSOC-72` | `` | 必須のunmap→拒否→map→転送を含む履歴を生成する。各操作後のbyte、PTE、所有者を独立した状態と比較する。冗長なmap/unmapは発行しない |
 | `TEST-VSOC-72` | ``の両入口 | 実SharedBlockのrelease→grant→claimを使う。TLB充填後の旧マッピングを撤去し、旧所有者を拒否する。データ保存と新所有者からの転送を照合する。所有権を失ったSharedBlockのビューは使わない |
 
@@ -341,8 +349,8 @@ COOSの待機登録、割り込みFIFO、配送、TCB、別READYタスクは実�
 
 | 対象契約 | 実行入口と因子 | 独立した期待値と実観測 |
 | :--- | :--- | :--- |
-| TEST-VSOC-62/65/73、TEST-SYS-22 | ``の36条件 | 両入口、転送先D/S/P、coherent/noncoherentモデル、即時完了または0/7回の保留を使う。保留中のguest全byteとTCBを照合し、デバイス役のREADYタスクが進む。部分転送を許し、成功markerとloadは可視化後だけ実行する |
-| TEST-VSOC-62/65/73 | `` | 長さ4〜32のbyte列、0〜24回の保留、入口、転送先、可視性モデルを生成する。各保留・進捗・通知・可視化時点で、範囲外を含む全byteを比較する。無条件の有限完了は主張しない |
+| TEST-VSOC-62、TEST-VSOC-65、TEST-VSOC-73、TEST-SYS-22 | ``の36条件 | 両入口、転送先D/S/P、coherent/noncoherentモデル、即時完了または0/7回の保留を使う。保留中のguest全byteとTCBを照合し、デバイス役のREADYタスクが進む。部分転送を許し、成功markerとloadは可視化後だけ実行する |
+| TEST-VSOC-62、TEST-VSOC-65、TEST-VSOC-73 | `` | 長さ4〜32のbyte列、0〜24回の保留、入口、転送先、可視性モデルを生成する。各保留・進捗・通知・可視化時点で、範囲外を含む全byteを比較する。無条件の有限完了は主張しない |
 | `TEST-VSOC-63` | ``の24条件 | 両入口、D/S/P、即時/遅延、開始後0/3byte更新を使う。専用importはモックが定めるIOを返す。bulkはその結果をWASM trapへ変換する。部分byteを保存し、成功markerを実行しない。ロールバックを要求しない |
 | `TEST-VSOC-66` | ``の6条件 | 先行するモック転送の部分byteとengine状態を保存する。占有時のAGAINはこのモック対象だけの契約である。拒否時の全状態を保存し、明示的な停止確認後に同じ端点で有効転送を行う |
 
@@ -387,10 +395,10 @@ LoaderとDebuggerの補助統合ケースには、実際に観測する操作と
 
 ## 4. 未検証・スコープ外
 
-- TEST-VSOC-60/61の生成範囲はoffset 0〜192・長さ0〜64である。実メモリ末尾と大きい重複copyは固定例で検査する。全入力・全履歴の網羅は未証明である。
+- TEST-VSOC-60、TEST-VSOC-61の生成範囲はoffset 0〜192・長さ0〜64である。実メモリ末尾と大きい重複copyは固定例で検査する。全入力・全履歴の網羅は未証明である。
 - TEST-VSOC-68のread/write切替はPASSTHROUGHで検査する。DYNAMICと実SHMは既存APIで定めた許可と非所有者拒否を検査し、独立した全許可組合せの証拠へ拡大しない。
 - TEST-VSOC-69のaliasは手動SHMとPASSTHROUGHの物理RAMマッピングを対象とする。全種別間のaliasを保証しない。TEST-VSOC-72のSHM移譲は固定のrelease→grant→claimであり、任意の所有権移譲履歴は未検証である。
-- TEST-VSOC-62/63/66/73は外部転送サービスモックと実client・COOSの境界で検査した。製品のSystem転送サービスへ実非同期driverを結線した証拠にはしない。下位サービスの開始・待機・停止を検査する場合も、デバイス境界をモックで制御できる。
+- TEST-VSOC-62、TEST-VSOC-63、TEST-VSOC-66、TEST-VSOC-73は外部転送サービスモックと実client・COOSの境界で検査した。製品のSystem転送サービスへ実非同期driverを結線した証拠にはしない。下位サービスの開始・待機・停止を検査する場合も、デバイス境界をモックで制御できる。
 - 非同期対象の安全性検証を、同期対象に非同期化を要求する根拠にしない。完了待ちの転送先は途中まで書き込まれ得るため、pending中の全byte不変を受入れ条件にしない。
 - DYNAMICの `map-buffer` が返すBUSYはマッピング占有の契約である。TEST-VSOC-66は対象driverが定める転送engineの開始拒否だけを検査し、全vDMA共通のBUSY結果を新設しない。
 - 通知の保持・ドロップは既存COOSの待機登録とFIFO契約に従う。未登録の通知を保持する追加経路や、ゲスト向け完了IRQを受入れ条件にしない。

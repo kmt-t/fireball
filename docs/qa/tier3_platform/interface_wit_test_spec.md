@@ -31,8 +31,8 @@
 <!-- traceability: {WIT_Interface_Spec} {GLOBAL_InterruptWakeup} {VDMA} -->
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-WIT-12 | vIRQ専用importの分離 | `fireball:host/virq` が公開されている | `register` / `unregister` を呼び出す | 汎用 `fireball_call` のIDディスパッチを経由せず、vSoCの保留表へ渡される | `.py`のTEST-SYS-30〜32、`` |
-| TEST-WIT-13 | vDMA専用importの分離 | `fireball:host/vdma` が公開されている | `start` を呼び出す | 汎用 `fireball_call` のIDディスパッチやVDMA vMMIOレジスタを経由せず、転送要求へ渡される | `.py`のTEST-SYS-20/21、`` |
+| TEST-WIT-12 | vIRQ専用importの分離 | `fireball:host/virq` が公開されている | `register` / `unregister` を呼び出す | 汎用 `fireball_call` のIDディスパッチを経由せず、vSoCの保留表へ渡される | `.py`のTEST-SYS-30..TEST-SYS-32、`` |
+| TEST-WIT-13 | vDMA専用importの分離 | `fireball:host/vdma` が公開されている | `start` を呼び出す | 汎用 `fireball_call` のIDディスパッチやVDMA vMMIOレジスタを経由せず、転送要求へ渡される | `.py`のTEST-SYS-20, TEST-SYS-21、`` |
 | TEST-WIT-14 | Core Wasm C ABI写像 | ホスト側のimport resolverがある | `fireball` moduleの4fieldを解決し、各引数と戻り値を照合する | 各操作が対応portへ渡る。別moduleと不明fieldは解決されない | ``、``、`` |
 
 ### コンソール生バイト出力経路 (`fireball://hal/stdout/0`)
@@ -56,9 +56,9 @@
 リカバリーの実行コマンドを示す。
 
 
-8ケースでTEST-WIT-01〜05の戦略選択、既定10msの待機値、3回上限、reset・panic通知順序を検査する。待機はspyで記録し、実時間を待たない。最大3回の初期操作とresetを区別する。reset成功後に元要求を再実行せず、元のエラーとRESTART戦略を返す。`TEST-RECOVERY-*`と存在しない`system_recovery_spec`への旧参照を、本書のTEST-WIT IDへ置き換えた。
+8ケースでTEST-WIT-01..TEST-WIT-05の戦略選択、既定10msの待機値、3回上限、reset・panic通知順序を検査する。待機はspyで記録し、実時間を待たない。最大3回の初期操作とresetを区別する。reset成功後に元要求を再実行せず、元のエラーとRESTART戦略を返す。`TEST-RECOVERY-*`と存在しない`system_recovery_spec`への旧参照を、本書のTEST-WIT IDへ置き換えた。
 
-TEST-WIT-12/13は専用ホスト入口の転送と状態を検査する。TEST-WIT-14はホスト側のCore Wasm名解決を検査する。TEST-WIT-15はコメントを除いたworld宣言のimport/export方向を検査する。TEST-WIT-23のpollable操作はコメントを除いたHAL WITの関数宣言を検査する。WITの構文検査と機能適合を区別する。
+TEST-WIT-12, TEST-WIT-13は専用ホスト入口の転送と状態を検査する。TEST-WIT-14はホスト側のCore Wasm名解決を検査する。TEST-WIT-15はコメントを除いたworld宣言のimport/export方向を検査する。TEST-WIT-23のpollable操作はコメントを除いたHAL WITの関数宣言を検査する。WITの構文検査と機能適合を区別する。
 
 実行コマンドを示す。
 
@@ -69,7 +69,7 @@ TEST-WIT-12/13は専用ホスト入口の転送と状態を検査する。TEST-W
 未登録ノード、無効関数、シグネチャ不一致、FIFO容量超過による合法な拒否・ドロップの必達は主張しない。
 COOS協調境界へ到達しない実行の公平性と実時間の配送上限は対象外である。
 
-- TEST-WIT-10/14はWIT由来bindingの生成、静的archive経由のguestリンク、raw 4 importの実NativeInterpreter実行で検査する。Component ModelのCanonical ABI、WASI Preview1およびHAL loweringのguest統合は対象外である。
+- TEST-WIT-10, TEST-WIT-14はWIT由来bindingの生成、静的archive経由のguestリンク、raw 4 importの実NativeInterpreter実行で検査する。Component ModelのCanonical ABI、WASI Preview1およびHAL loweringのguest統合は対象外である。
 
 - 個別デバイス（GPIO/タイマー/バス/ストリーム）のIPCコマンドID実装は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) / [`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を参照。
 - `input-stream`/`output-stream`の詳細な非同期セマンティクス（wasi:io標準への準拠度）。

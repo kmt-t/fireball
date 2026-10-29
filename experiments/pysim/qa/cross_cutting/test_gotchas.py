@@ -71,7 +71,7 @@ from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.vmmio.controller import TrapCode, VMMIOController, VmmioStatus
 
 # ==============================================================================
-# 1. Interpreter Gotchas (GOTCHA-INTP-01 ~ 04)
+# 1. Interpreter Gotchas (GOTCHA-INTP-01..GOTCHA-INTP-04)
 # ==============================================================================
 
 
@@ -281,12 +281,12 @@ def test_jitr_gotcha_03_lifo_reverse_compilation_order():
 
 
 # ==============================================================================
-# 3. vSoC Gotchas (GOTCHA-VSOC-01 ~ 03)
+# 3. vSoC Gotchas (GOTCHA-VSOC-01..GOTCHA-VSOC-03)
 # ==============================================================================
 
 
 def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
-    """GOTCHA-VSOC-01, 02: Interpreter is stateless; JIT check and dispatch occur in vSoC engine."""
+    """GOTCHA-VSOC-01, GOTCHA-VSOC-02: Interpreter is stateless; JIT check and dispatch occur in vSoC engine."""
     wat = """
     (module
       (func (export "sum") (param i32) (result i32)
@@ -320,7 +320,7 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
 
 
 # ==============================================================================
-# 4. vMMIO Gotchas (GOTCHA-VMMIO-01 ~ 03)
+# 4. vMMIO Gotchas (GOTCHA-VMMIO-01..GOTCHA-VMMIO-03)
 # ==============================================================================
 
 

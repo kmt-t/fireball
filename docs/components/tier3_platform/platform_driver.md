@@ -193,7 +193,7 @@ UART および SEGGER RTT は同一のRaw RSPバイトトランスポート契�
 - **32bitタイマー折り返し**: 1周期未満の測定区間に限り、符号なしモジュロ差分が経過tick数を返すこと（`platform_driver_concept.py` の `test_u32_timer_elapsed_handles_wraparound`）。物理タイマーの折り返しは対象ハードウェアとの統合時に検証する。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントの物理実装テストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, TEST-HAL-15）の検証手順・期待結果は、[`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を正本とする。本書で定義する実装上の注意点に対応する検証も同書を参照する。HAL契約レベルのテストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を参照する。TEST-HAL-15 は物理HALドライバの起動ではなく、ホスト側ファイルSinkの直接注入と標準出力分離を確認する。
+本コンポーネントの物理実装テストケース（TEST-HAL-03, TEST-HAL-05..TEST-HAL-08, TEST-HAL-26）の検証手順・期待結果は、[`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md) を正本とする。本書で定義する実装上の注意点に対応する検証も同書を参照する。HAL契約レベルのテストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09..TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/qa/tier2_runtime/hal_dispatch_test_spec.md) を参照する。TEST-HAL-26 は物理HALドライバの起動ではなく、ホスト側ファイルSinkの直接注入と標準出力分離を確認する。
 
 ## 8. 設計判断と参考実装
 

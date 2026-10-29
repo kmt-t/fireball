@@ -17,6 +17,7 @@
 | TEST-JITR-02 | 状態遷移: UNEXECUTED→EXECUTED→HOT | 新規カード | 1回touch、2回目touch | 1回目でEXECUTED、2回目でHOT | jit_runtime.md (Card Marking) |
 | TEST-JITR-03 | COMPILED後のtouchは状態を変えない | カードがCOMPILED | touch | 状態はCOMPILEDのまま | |
 | TEST-JITR-04 | 評価(Eviction)でUNEXECUTEDへ戻る（EXECUTEDではない） | カードがCOMPILED、対応トレースがキャッシュから追い出される | `mark_evicted` | 状態がUNEXECUTEDに戻る。 | `` |
+| TEST-JITR-05 | 履歴リング上書きとyield時の一度限りの分析 | 履歴容量8のJITランタイムに10個の追跡可能なblock headがある | 10件を記録してyieldを2回実行する | 上書き件数は2となり分析は近似扱いとなる。古い2件のカードは`UNEXECUTED`へ戻り、残り8件は`EXECUTED`となる。2回目のyieldで状態を再度消費しない | `test_jit_runtime.py::test_hotspot_02_history_ring_buffered_yield_drain` |
 | TEST-JITR-06 | 最小トレース長未満のブロックは共有カードを更新しない | 同一コード領域カード内に2つの短いベーシックブロック（推定コンパイル後サイズがカード幅未満） | 両方のPCを繰り返し実行 | 候補外PCは共有カード状態を更新せず、コンパイル待ち列にも追加されない。カード領域の共有有無にかかわらずカード状態は `UNEXECUTED` のままである。 | `jit_runtime.md`「最小トレース長フィルタ」、 `` |
 | TEST-JITR-07 | `COMPILED`カードの重複要求をC++ Runtimeが破棄する | トレースがキャッシュに常駐し、同PCのカードが`COMPILED`で、同PCが待ち列にも積まれている | idle_hookを実行 | C++ Runtimeはコンパイルせず要求を破棄し、カード状態と常駐トレースを保つ。 | `jit_runtime.md`「コンパイル待ち列」、 `` |
 | TEST-JITR-08 | JITエントリテーブル（バンクのトレース一覧）は常にhead_pcでソートされ、削除は削除フラグ（トンビストーン）で行う | 複数のトレースをPC順不同で挿入し、1件削除後に同じPCを再挿入 | 挿入・削除・再挿入後にトレース一覧と該当PCの取得結果を確認 | 一覧は常にhead_pc昇順。削除直後は取得結果がNone。再挿入は既存tombstone枠を再利用し、取得結果は新しいトレースそのものになる。 | jit_runtime.md「JITエントリ表」, [`jit_runtime.cxx`](experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx),|
@@ -92,6 +93,8 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-83 | current_block_indexとcard-stateによるJIT lookup抑止 | Interpreterのproviderに状態0〜3のカードを設定し、BasicBlock参照を未設定または既設定にする | 各状態のブロックをnative dispatcherから実行し、context index、PC照合、JIT provider callback、cache参照を確認する | dispatcherは`current_block_index`からBasicBlockを直接参照し、`head_pc`とPCの一致を検証する。状態0〜2ではJIT providerを呼ばずJIT参照も変更しない。状態3だけJIT providerへ進み、BasicBlock参照を使う。通常dispatchにLoader Radix・二分検索・block検索cacheはない | `jit_runtime.md`「BasicBlock indexによるJIT検索手順」、pysim ``, `` |
 | TEST-JITR-84 | 3面キャッシュ変更後のBasicBlock参照整合 | 有効なBasicBlock参照を持つtraceがActive/Warm/Oldestの移動・削除対象となる | insert、rotation、flushを各実行し、関連BasicBlockの参照とlookupを確認する | 移動した常駐traceの参照は新しいbank/entry位置へ更新され、退役traceの参照は`0xFF`へ戻る。参照から別PCのtraceへ到達しない | `jit_runtime.md`「JITエントリ表と全バンク索引」、`{GOTCHA-JITR-05}` |
 | TEST-JITR-87 | successor block indexによるchain lookup | Loader metadataを持つsourceとresident successor traceがある | sourceの`next_block_index`と`next_pc`でsuccessorを受け入れ、PC照合とchain targetを確認する | chain linkと候補受入れはBasicBlock indexから参照を引き、indexとPCを両方照合する。製品経路は`find_cached_trace_by_pc`を呼ばない。PC検索fixtureはTEST-JITR-82に分離する | `jit_runtime.md`「BasicBlock indexによるJIT検索手順」、``, `` |
+| TEST-JITR-88 | trace headerからLoader blockを直接参照する | moduleのLoader blockからtraceをコンパイルしてcacheへ挿入する | trace headerのblock indexとLoader配列の位置を比較し、JIT実行後の結果も検証する | headerのblock indexはLoader配列内の対象block indexと一致し、JIT実行結果もInterpreter実行結果と一致する | `jit_runtime.md`「trace headerとLoader block metadata」、`test_jit_runtime.py::test_jitr_trace_header_resolves_loader_block_by_index` |
+| TEST-JITR-89 | 循環chainの有限集計と退役時の相互unlink | 同一bankへ挿入する2 traceが互いを後続PCとして指す | 両traceの`chain_body_count`と`chain_words`を確認後、3回rotationする | 両traceのbody countは2、stack word数は1となる。Oldest bank退役後は双方のchain linkとheader targetが解除される | `jit_runtime.md`、`jit_loop_chain_model.py`、`test_jit_runtime.py::test_jitr_cyclic_chain_body_count_is_finite_and_retirement_unlinks_both_edges` |
 | TEST-JITR-85 | 内部契約違反の発生境界での停止 | 範囲外PC、不正chain target、Warmの重複PC、確定後のメモリ書込みを個別に与える | 各操作を子プロセスで実行する | 不正な値を使う前に責務境界のassertで停止する。既定値、cache miss、書込み拒否の通常結果へ変換しない | `` |
 | TEST-JITR-86 | Runtime API表の読み取り専用借用 | 独立した二つのJIT共通コード領域 | 共通領域の表参照とLinux実マッピングを確認する | 同じ読み取り専用表を借用する。表本体はどちらの可変キャッシュ領域にもない | ``、`{GLOBAL_Policy_Memory}` |
 
@@ -129,7 +132,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITR-44 | JIT終了ブロックからInterpreter return処理へ委譲 | JITトレースが`return`直前で終了する関数 | トレース後のInterpreter PCと共有スタックを確認する | JIT traceは`return`命令を生成しない。return処理はInterpreter仕様に従う | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、TEST-INTP-16、17 |
+| TEST-JITR-44 | JIT終了ブロックからInterpreter return処理へ委譲 | JITトレースが`return`直前で終了する関数 | トレース後のInterpreter PCと共有スタックを確認する | JIT traceは`return`命令を生成しない。return処理はInterpreter仕様に従う | [`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、TEST-INTP-16, TEST-INTP-17 |
 | TEST-JITR-45 | terminal call traceからTier 2 CPS handlerへの接続 | callerが定義済みcalleeを反復して呼び、callerのcall traceをJIT常駐させる | QAの`RuntimeStatsEngine.call()`でJIT拡張を接続した`NativeInterpreter`を実行し、Interpreter単独結果、stack、frame、`ip`、driver復帰数を比較する | call operationはtraceの最後に置く。x64 stencilは共通コード領域の借用function pointer tableのhandler slotからTier 2 CPS handlerへtail-callする。traceに関数の絶対アドレスを埋め込まない。呼出し意味論は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とする | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、[`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 | TEST-JITR-46 | JIT有効時のWASMスカラー結果型維持 | i32/i64/f32/f64のトップレベル関数 | QAの`RuntimeStatsEngine.call()`でJIT拡張を接続した`NativeInterpreter`を各関数に対して反復実行する | JITコンパイル可能な結果はJIT経由、未対応型はInterpreterへ委譲し、全結果の値を保持する。f32/f64を整数へ変換しない | `interpreter.md` 関数復帰, pysim `` |
 | TEST-JITR-47 | terminal direct callからCPS handlerへの直接tail-call | ゲスト関数がWASM importを呼び、戻り値をmemoryと後続命令で使う | caller traceとsuccessor traceを常駐させ、Interpreter単独とJIT有効の結果、memory、stack、復帰`ip`、trace exit数を比較する | call opcodeはtraceの最後のoperationである。共通コード領域のborrowed table pointerとslotを介してTier 2 CPS handlerへtail-callする。traceに関数の絶対アドレスを埋め込まない。最終状態はInterpreter単独実行と一致する | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、[`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
@@ -159,6 +162,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-72 | LIFOキューから元WASMコードをコンパイルする | 2つ以上の適格blockが`HOT`になり、元のWASMコードがLoader領域にある | Tier 3 JIT拡張のidle hookで逆順に処理する。Python opcodeの再構築経路を禁止する | C++ compilerは元のWASMコードを直接読み、trace本体を生成する。成功したtraceだけがcacheへ入る | `jit_runtime.md`「オンデマンドコンパイルキュー」、pysim `` |
 | TEST-JITR-73 | trace終端の`if`／`br`／`br_if`のInterpreter CPS処理 | 条件成立・不成立の両方を通る`br_if`とresident source traceを用意する | Interpreter dispatcherから実行し、結果、source traceのchain target、CPS handler回数とtrace exitを確認する | 分岐opcodeをRuntime APIで実行せず、traceを完了してからInterpreter CPS handlerで一度だけ処理する。source traceを未接続のまま保持し、結果をInterpreterと一致させる | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `` |
 | TEST-JITR-74 | terminal `call_indirect` stencilからCPS handlerへの接続 | 一致する型、不一致の型、table範囲外を含むtyped table fixture | Interpreter単独とJIT有効を比較し、結果、trap、memory、副作用、stack、復帰`ip`、trace metadataを確認する | `call_indirect`はtraceの最後のoperationであり、専用slotからTier 2 CPS handlerへtail-callする。traceに関数の絶対アドレスを埋め込まない。関数選択とtrapの意味論はInterpreter仕様に従う | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、TEST-INTP-78 |
+| TEST-JITR-75 | 無効な静的frame depthのtrace実行辞退 | 常駐前traceのnative frame depth metadataが範囲外 | metadata providerが`0xFFFF`を返すtraceをcacheへ挿入して関数を実行する | headerのframe depthは`0xFF`へ制限され、Interpreter実行の結果は`[5]`となる。trace実行回数とJIT invocation数はともに0となる | `test_jit_runtime.py::test_jitr_trace_execution_count_excludes_invalid_static_depth` |
 | TEST-JITR-90 | recursive call traceのterminal handler接続 | 再帰関数のcall traceを常駐させる | Interpreter単独とJIT有効の結果、active frame数、stack offset、復帰`ip`、chain状態を比較する | terminal call stencilはTier 2 CPS handlerへ直接tail-callする。結果と観測状態はInterpreter単独実行と一致する。呼出し意味論は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)に従う | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、[`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 | TEST-JITR-91 | terminal direct call traceとtrap結果の一致 | direct call先が`unreachable`を実行し、caller suffixにmemory書込みがある | Interpreter単独とJIT有効を比較し、trap、memory、frame、stack、trace chain状態を確認する | terminal call stencilはTier 2 CPS handlerへtail-callする。JIT有効時のtrapと観測状態はInterpreter単独実行と一致する。trap伝播はInterpreter仕様に従う | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、[`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 | TEST-JITR-92 | vMMIO後のterminal callでstack prefixを保持しcaller suffixを一度実行 | 関数index 0に未使用import、index 1にcalleeを置く。callerはvMMIO load前にstore addressをstackへ積み、vMMIO load後に注釈付き算術命令を実行してからcallする。call後のsuffixは結果をstoreし、mutable global counterを増やしてからmemoryをloadする | terminal call traceを常駐させ、Interpreter単独とJIT有効の結果、全linear memory、global counter、完了時のIP・frame/local stack・operand stack depthを比較する。terminal call後にsource traceのchainがないこととJIT trace実行を確認する | 両実行の結果、memory、global counter、完了時状態が一致する。結果は43、global counterは1、memory[0]は43であり、call直前のstore addressを保持してstoreする。global counterが1なのでcaller suffixは一度だけ実行された。完了時にframe、local stack、operand stackは残らずIPも一致する。terminal call stencilは借用function pointer tableからTier 2 CPS handlerへtail-callし、annotation cursorはJIT ABIに従う | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、[`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
@@ -193,6 +197,14 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 
 形式モデルは[`jit_trace_execution_model.py`](docs/components/tier3_plugins/formal/jit_trace_execution_model.py)を参照する。dispatcher外の低水準直接呼出しは計数対象外である。製品の計測状態の有無をこのモデルから要求しない。
 
+### コンパイル候補の待ち列処理
+<!-- traceability: {ADR_JitCompileScheduling} -->
+
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| TEST-JITR-80 | idle hookで候補待ち列の全件を処理する | 固定キューに複数のコンパイル可能な候補がある | 協調境界でidle hookを呼ぶ | 待ち列の全候補をLIFO順にコンパイルし、待ち列を空にする | `jit_runtime.md`「コンパイル時期と待ち列処理」 |
+| TEST-JITR-81 | キュー満杯時に全候補を同期処理する | 固定キューが容量に達する | 満杯契機の候補処理を実行する | 失敗・スキップを含めて全候補を処理し、待ち列を空にする | `jit_runtime.md`「コンパイル時期と待ち列処理」 |
+
 ## 3. テスト検証実績と網羅状況
 
 
@@ -204,22 +216,10 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 
 ## 4. 未検証・スコープ外
 
-`br_table`、structured control、call/returnなどの一般制御経路は各Interpreter復帰契約に従う。後方・自己chainの循環集計、しきい値yieldと退役時unlinkはTEST-JITR-63、67、89および[`jit_loop_chain_model.py`](docs/components/tier3_plugins/formal/jit_loop_chain_model.py)で検証する。TEST-JITR-44、73などのInterpreter復帰試験は、未実行命令をhandlerへ渡す経路の証拠に限定する。
+`br_table`、structured control、call/returnなどの一般制御経路は各Interpreter復帰契約に従う。後方・自己chainの循環集計、しきい値yieldと退役時unlinkはTEST-JITR-63, TEST-JITR-67, TEST-JITR-89および[`jit_loop_chain_model.py`](docs/components/tier3_plugins/formal/jit_loop_chain_model.py)で検証する。TEST-JITR-44, TEST-JITR-73などのInterpreter復帰試験は、未実行命令をhandlerへ渡す経路の証拠に限定する。
 
 - TEST-JITR-44は対象traceの実行と最終結果を確認する。独立した終了blockの試験ではNative trace実行1回とC++ return handler呼出し1回を診断値で確認する。最初のRuntime境界で論理PCの`-1`、Native contextの`0xffffffff`、共有stackの戻り値60、未完了のcall frameを直接観測する。次のRuntime境界でframe除去と関数完了を確認し、traceとhandlerの件数が増えないことを検査する。
 
 - ARMv8-Mでは共有スタックを値の正本とする。ABI引数の物理配置と命令内スクラッチレジスタの割当はTBD。
 - [`jit_cache_model.py`](docs/components/tier3_plugins/formal/jit_cache_model.py)による抽象的なW^X不変条件、3面キャッシュ代謝、2-bit FSMの形式検証そのもの。
 - ARMv8-Mの物理メモリ保護機構、JIT配置、命令同期、実機レイテンシ（すべてTBD）。
-
-### コンパイル候補の待ち列処理
-<!-- traceability: {ADR_JitCompileScheduling} -->
-
-| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-JITR-80 | idle hookで候補待ち列の全件を処理する | 固定キューに複数のコンパイル可能な候補がある | 協調境界でidle hookを呼ぶ | 待ち列の全候補をLIFO順にコンパイルし、待ち列を空にする | `jit_runtime.md`「コンパイル時期と待ち列処理」 |
-| TEST-JITR-81 | キュー満杯時に全候補を同期処理する | 固定キューが容量に達する | 満杯契機の候補処理を実行する | 失敗・スキップを含めて全候補を処理し、待ち列が空となる | `jit_runtime.md`「コンパイル時期と待ち列処理」 |
-| TEST-JITR-88 | trace headerからLoader blockを直接参照する | moduleのLoader blockからtraceをコンパイルしてcacheへ挿入する | trace headerのblock indexとLoader配列の位置を比較し、JIT実行後の結果も検証する | indexが一致し、trace終端のmetadataをPC検索せずに取得する | `jit_runtime.md`「trace headerとLoader block metadata」 |
-| TEST-JITR-89 | 循環chainの有限集計と退役時の相互unlink | 2 traceの循環linkと同じbankへの配置 | 常駐中の`chain_body_count`/`chain_words`を確認し、bankを退役させて両端のlinkを確認する | body数は相異なる2 trace、stack量は最大要件に一致する。循環探索は有限で終わり、退役時はresident inbound linkを解除する | `jit_runtime.md`、`jit_loop_chain_model.py`、pysim `` |
-
-TEST-JITR-80とTEST-JITR-81は、idle hookおよび満杯時に待ち列全体を処理する契約を検証する。

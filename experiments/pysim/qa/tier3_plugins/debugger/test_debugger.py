@@ -284,7 +284,7 @@ def test_dbg_11_native_execution_termination_response():
 
 
 def test_dbg_10_23_one_rsp_step_executes_only_one_wasm_instruction() -> None:
-    """TEST-DBG-10/23: RSP s must leave later instructions pending."""
+    """TEST-DBG-10, TEST-DBG-23: RSP s must leave later instructions pending."""
     engine = RuntimeEngineDebugDriver()
     module = engine.load_wasm(
         wat_to_wasm("(module (func (param i32) (result i32) local.get 0 i32.const 10 i32.add))")
@@ -369,7 +369,7 @@ def test_dbg_08c_breakpoint_pc_overflow_is_rejected_without_state_change(command
 
 
 def test_dbg_09_interior_breakpoint_stops_before_side_effect_and_resumes() -> None:
-    """TEST-DBG-09/10: Native hook stops inside a basic block and retains live values."""
+    """TEST-DBG-09, TEST-DBG-10: Native hook stops inside a basic block and retains live values."""
     execution, debugger, rsp = _debug_rsp(
         "(module (func (param i32) (result i32) local.get 0 i32.const 10 i32.add))", (5,)
     )
@@ -539,7 +539,7 @@ def test_dbg_10_immediate_is_one_instruction(
 def test_dbg_10_trap_stops_without_normal_exit_or_later_update(
     command: str, prefix: str, fault_pc: int
 ) -> None:
-    """TEST-DBG-10/11: Fault PC is retained; a trap is never reported as W00."""
+    """TEST-DBG-10, TEST-DBG-11: Fault PC is retained; a trap is never reported as W00."""
     from tier2_runtime.interpreter.interpreter import TrapCode
 
     execution, _, rsp = _debug_rsp(f"""(module (global (mut i32) (i32.const 0))
@@ -615,7 +615,7 @@ def test_dbg_12_disabled_composition_has_no_debug_state_or_weave() -> None:
 def test_dbg_12_continue_returns_to_python_only_at_actual_stop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TEST-DBG-12/13: Thousands of instructions run inside one existing native step."""
+    """TEST-DBG-12, TEST-DBG-13: Thousands of instructions run inside one existing native step."""
     from tier2_runtime.interpreter.interpreter import InterpreterCall, NativeInterpreter
 
     execution, _, rsp = _debug_rsp(
@@ -661,7 +661,7 @@ def test_dbg_13_debugger_disables_native_plugin_execution_without_rejecting_atta
 
 
 def test_dbg_13_two_compositions_keep_stop_state_and_storage_independent() -> None:
-    """TEST-DBG-12/13: A stopped debug runtime cannot alter another runtime."""
+    """TEST-DBG-12, TEST-DBG-13: A stopped debug runtime cannot alter another runtime."""
     from qa.shared.helpers import make_native_interpreter
 
     module = RuntimeEngineDebugDriver().load_wasm(

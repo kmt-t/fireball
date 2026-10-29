@@ -70,7 +70,7 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 | `FuelExhaustion_Yield`（旧表記） / `ADR_LoopBackedgeYield` | `interpreter.md`, `runtime_vsoc.md` | C++ dispatcherの継続実行、Interpreter設定のLOOP後方分岐しきい値到達時にInterpreter dispatcherがyield statusをRuntimeEngineへ返し、vSoCが協調yieldを発行する | `TEST-INT-50` | 観測あり。Scenario 6はInterpreterしきい値4で24境界の進捗を検査する |
 | `DictionaryBasedIPC` | `runtime_logging.md` | 危険書式（%s / %p）の登録時拒絶 | `TEST-INT-82` | 一部。%s拒絶を検査する。%pの独立ケースはない |
 | `BufferedLogging` | `runtime_logging.md` | リングバッファ蓄積からCOOS idle_hookでUARTへflushする | `TEST-INT-82` | 一部。logger.flushを直接呼ぶ。idle_hookからの実行は検査しない |
-| `WASI_ScatteredIO` | `libfireball.md` | ゲスト側アダプタによる多要素iovecの書込みと読込み | `TEST-INT-10`, `TEST-INT-104`, `TEST-INT-121`〜`TEST-INT-126` | 一部。SDK/libc guestの3要素writev、空要素、HAL分割、占有拒否、実IPC経路を追加検査する。製品ゲストadapterと多要素fd_readは未検証 |
+| `WASI_ScatteredIO` | `libfireball.md` | ゲスト側アダプタによる多要素iovecの書込みと読込み | `TEST-INT-10`, `TEST-INT-104`, `TEST-INT-121`..`TEST-INT-126` | 一部。SDK/libc guestの3要素writev、空要素、HAL分割、占有拒否、実IPC経路を追加検査する。製品ゲストadapterと多要素fd_readは未検証 |
 | `Syscall_ProcExit` | `runtime_syscall.md` | ゲスト終了と終了コード伝播 | `TEST-INT-11` | 観測あり。halted=Trueとexit_code=42を検査する。複数ゲストの終了隔離は検査しない |
 | `ThreeStageRouting` | `ipc_router.md` | URI検索、RBAC判定、CSP所有権移譲 | `TEST-INT-80`, `TEST-INT-81` | 観測あり。成功時のメッセージと所有権、URI/RBAC拒否を検査する |
 | `PreflightRejection` | `ipc_router.md` | RBAC拒否・サイズ超過で送信側所有権を維持する | `TEST-INT-81` | 観測あり。拒否ステータスとSENDER_OWNSを検査する |
@@ -79,13 +79,13 @@ Scenario 9、11、12はPythonからIPC、ドライバ、ホスト互換層を直
 | `OwnerMismatchTrap` | `runtime_vmmio.md` | 非所有者SHMアクセスの遮断 | `TEST-INT-93` | 一部。OWNER_MISMATCHを検査する。物理副作用不在の独立assertはない |
 | `UnregisteredPageTrap` | `runtime_vmmio.md` | Revoke後のSHMアクセスを遮断する | `TEST-INT-94` | 観測あり。Revoke後のUNREGISTERED_PAGEを検査する |
 | `ActiveDataSegments` | `runtime_loader.md` | Active dataセグメントをリニアメモリへ配置する | `TEST-INT-01` | 観測あり。2セグメントの文字列とバイト配列を検査する |
-| `CPS_3Args` | `interpreter.md` | 実行状態の`ctx`, `ip*`, `sp*`と定数プールの`rel*`を渡す4引数ディスパッチ。ローカル基点はctx内、頂点値は共有スタック内 | `TEST-INT-01`〜`TEST-INT-105` | 未検証。通常の計算結果だけでは引数配置とABI境界の違反を判別できない |
+| `CPS_3Args` | `interpreter.md` | 実行状態の`ctx`, `ip*`, `sp*`と定数プールの`rel*`を渡す4引数ディスパッチ。ローカル基点はctx内、頂点値は共有スタック内 | `TEST-INT-01`..`TEST-INT-105` | 未検証。通常の計算結果だけでは引数配置とABI境界の違反を判別できない |
 | `SignZeroExtension` | `interpreter.md` | メモリ命令の符号拡張とゼロ拡張 | `TEST-INT-70` | 一部。指定した8/16/32-bit入力の合成結果65757を検査する。各演算の独立結果と全境界値は検査しない |
 | `StaticBranchMetadata` | `interpreter.md` | Loaderが解決した分岐先とstack復元値 | `TEST-INT-20`, `TEST-INT-22` | 再帰呼出しの値とbr_tableの分岐先・結果を検査する。実行時制御フレーム配列は持たない |
-| `RSPMinimalSet` | `debugger.md`, `gdb_rsp_protocol.md` | RSP最小コマンドとsの1命令ステップ | `TEST-INT-60`〜`TEST-INT-64`, `TEST-INT-129` | 実TCPと構成済みnativeフックでs、ブレークポイント、停止状態の読書き、継続と正常終了を検査する。LLDB結合ケースはDWARF関数名からZ0設定と停止まで確認する |
+| `RSPMinimalSet` | `debugger.md`, `gdb_rsp_protocol.md` | RSP最小コマンドとsの1命令ステップ | `TEST-INT-60`..`TEST-INT-64`, `TEST-INT-129` | 実TCPと構成済みnativeフックでs、ブレークポイント、停止状態の読書き、継続と正常終了を検査する。LLDB結合ケースはDWARF関数名からZ0設定と停止まで確認する |
 | `DebuggerInterpreterComposition` | `debugger.md`, `runtime_vsoc.md` | Interpreter + Debugger構成とDebugger + JIT構成の拒否 | `TEST-DBG-13`, `TEST-VSOC-23` | 別スイート。`test_runtime_composer.py`と`test_vsoc.py`で検査する。結合12シナリオの合格数へ含めない |
-| `HAL_PeripheralDrivers` | `platform_driver.md` | GPIO、エッジIRQ、I2C、SPI、Timer | `TEST-INT-100`〜`TEST-INT-102` | 未検証。Scenario 11にGPIO/I2C/SPI操作がない。Timerはtick_countと時計の非減少だけを検査する |
-| `WASI_InMemVFS` | `libfireball.md` | ゲスト側WASI互換アダプタによるVFS、乱数、クロック委譲 | `TEST-INT-103`〜`TEST-INT-105`, `TEST-INT-125`〜`TEST-INT-128` | 一部。SDK/libc guestから既存バックエンド境界へ読書き、close、u64時計を委譲し、失敗結果も照合する。実uvwasi、製品ゲストadapter、乱数品質、時計の単調増加は別の検証である |
+| `HAL_PeripheralDrivers` | `platform_driver.md` | GPIO、エッジIRQ、I2C、SPI、Timer | `TEST-INT-100`..`TEST-INT-102` | 未検証。Scenario 11にGPIO/I2C/SPI操作がない。Timerはtick_countと時計の非減少だけを検査する |
+| `WASI_InMemVFS` | `libfireball.md` | ゲスト側WASI互換アダプタによるVFS、乱数、クロック委譲 | `TEST-INT-103`..`TEST-INT-105`, `TEST-INT-125`..`TEST-INT-128` | 一部。SDK/libc guestから既存バックエンド境界へ読書き、close、u64時計を委譲し、失敗結果も照合する。実uvwasi、製品ゲストadapter、乱数品質、時計の単調増加は別の検証である |
 | `Assembly_Stencil_Trace_JIT` | `jit_compiler.md` | assembly stencilから生成したtraceの生成と実行 | `TEST-INT-30`, `TEST-INT-40` | 一部。生成トレースの存在と戻り値を検査する。JIT実行回数を直接検査しない |
 | `TraceBoundaryInvariant` | `jit_compiler.md` | 境界のスタック自己完結性、状態同期、フォールバック | `TEST-INT-31`, `TEST-INT-41` | 未検証。戻り値の一致だけでは各境界の状態不変条件を実証できない |
 | `ThreeBankCacheEviction` | `jit_runtime.md` | Active/Warm/Oldest代謝とOldestのその場実行 | `TEST-INT-31`, `TEST-INT-41` | 未検証。バンクの世代交代と退役の状態を検査するassertがない |
@@ -318,7 +318,7 @@ RSPは静的構成のExecutionControlを呼び、nativeフックが命令位置�
 | TEST-INT-104 | WASI 標準ストリームバッファリング | stdin にデータ充填 | `fd_read(fd=0)` 実行 | ストリームバッファから指定バイト数が正しく読み込まれる | `WASI_ScatteredIO` |
 | TEST-INT-105 | WASI 乱数取得 & 高精度クロック | ゲストリニアメモリ指定 | `random_get`, `clock_time_get` | 乱数バッファが充填され、単調増加ナノ秒タイムスタンプが得られる | `WASI_InMemVFS` |
 
-現行スクリプトはstdioのDummyDriverとTimerをPythonから直接操作する。GPIO、I2C、SPI操作は存在せず、TEST-INT-100〜102は未検証である。TEST-INT-103〜105の一部はUvwasiReferenceContextへ直接呼び出す。WASMゲスト、libfireball、ゲストhost call経由の結線は未検証である。fd_readのiovecは1要素だけである。乱数は16バイトが全ゼロでないことだけを検査する。クロックは1回の値が0より大きいことだけを検査する。
+現行スクリプトはstdioのDummyDriverとTimerをPythonから直接操作する。GPIO、I2C、SPI操作は存在せず、TEST-INT-100..TEST-INT-102は未検証である。TEST-INT-103..TEST-INT-105の一部はUvwasiReferenceContextへ直接呼び出す。WASMゲスト、libfireball、ゲストhost call経由の結線は未検証である。fd_readのiovecは1要素だけである。乱数は16バイトが全ゼロでないことだけを検査する。クロックは1回の値が0より大きいことだけを検査する。
 
 ---
 
@@ -405,6 +405,19 @@ stdout長は固定7水準でバッファ境界を補い、生成履歴は各構�
 `_start`、argv/environ、stdioの初期化、printf、ファイルpreopen、Component Model Canonical ABIは未検証である。
 GPIO/I2C/SPIとIRQの製品ドライバはこの試験の対象外であり、個別の公開操作へ同じ方法で層横断試験を接続する。
 
+### 実行入口の試験
+
+| テストケースID | 契約 | 操作 | 期待結果 | 実行先 |
+| :--- | :--- | :--- | :--- | :--- |
+| TEST-ENTRY-01 | 読者向けデモの入口 | `main.py`を実行する | 実行を完了し、デモの出力を提示する。各機能の適合は個別契約テストで検査する | `test_entrypoint.py` |
+| TEST-ENTRY-02 | 登録された検証の実行 | 試験モジュールと通常ランナーを照合する | 全試験が一度ずつ登録される | `test_entrypoint_02_every_test_module_is_registered` |
+| TEST-ENTRY-03 | 未登録試験の検出 | 未登録の試験と補助モジュールを配置する | 試験だけを未登録として拒否する。登録後は受理する | `test_entrypoint_03_unregistered_test_module_fails_gate` |
+| TEST-ENTRY-04 | 登録一覧の整合 | 重複と試験ゼロの登録を与える | 実行前に拒否する | `test_entrypoint_04_duplicate_or_stale_registration_fails_gate` |
+| TEST-ENTRY-05 | 検証マトリクスの分母 | Tier階層とWASM階層に試験仕様を配置する | 両階層の試験仕様を集計する | `test_entrypoint_05_matrix_counts_tier_and_wasm_test_specs` |
+| TEST-ENTRY-06 | 製品とQA依存の分離 | 製品Tierのimport文を検査する | QAパッケージ、テストframework、WASM oracleのimportがない | `test_entrypoint_06_product_modules_do_not_import_qa_support` |
+| TEST-ENTRY-07 | テスト依存の配置 | Pythonプロジェクトmetadataとdependency groupsを読む | QA packageがproject runtime dependenciesに含まれない | `test_entrypoint_07_test_dependencies_are_dev_only` |
+| TEST-ENTRY-08 | QA import pathの分離 | `pytest.ini`の`pythonpath`を読む | QA rootをtop-level import pathに含めない | `test_entrypoint_08_qa_is_not_a_top_level_pytest_import_root` |
+
 ## 3. 実装検証環境と実証実績
 
 本書に定義された結合テストシナリオは、Fireball ハイパーバイザの本番実装および参照実装に対する共通の受入基準（Acceptance Criteria）として機能する。
@@ -435,19 +448,6 @@ Linux x86_64、CPython 3.14.6、WASI-SDK 27.0、Clang 20.1.8で52件が成功し
 ### 3.2 本番実装（C++ Hypervisor）への適用方針
 
 本番ハイパーバイザ（C++23 実装）の開発においては、本書の各シナリオで定義された WAT ゲストモジュール、前提条件、入力、および期待結果・不変条件をそのまま受入テストケースとして適用する。ホストテストハーネス上で同一の WAT バイナリを実行し、参照実装と同等の入出力整合性および状態遷移不変条件を満たすことを検証する。
-
-## 実行入口の試験
-
-| テストケースID | 契約 | 操作 | 期待結果 | 実行先 |
-| :--- | :--- | :--- | :--- | :--- |
-| TEST-ENTRY-01 | 読者向けデモの入口 | `main.py`を実行する | 実行を完了し、デモの出力を提示する。各機能の適合は個別契約テストで検査する | `test_entrypoint.py` |
-| TEST-ENTRY-02 | 登録された検証の実行 | 試験モジュールと通常ランナーを照合する | 全試験が一度ずつ登録される | `test_entrypoint_02_every_test_module_is_registered` |
-| TEST-ENTRY-03 | 未登録試験の検出 | 未登録の試験と補助モジュールを配置する | 試験だけを未登録として拒否する。登録後は受理する | `test_entrypoint_03_unregistered_test_module_fails_gate` |
-| TEST-ENTRY-04 | 登録一覧の整合 | 重複と試験ゼロの登録を与える | 実行前に拒否する | `test_entrypoint_04_duplicate_or_stale_registration_fails_gate` |
-| TEST-ENTRY-05 | 検証マトリクスの分母 | Tier階層とWASM階層に試験仕様を配置する | 両階層の試験仕様を集計する | `test_entrypoint_05_matrix_counts_tier_and_wasm_test_specs` |
-| TEST-ENTRY-06 | 製品とQA依存の分離 | 製品Tierのimport文を検査する | QAパッケージ、テストframework、WASM oracleのimportがない | `test_entrypoint_06_product_modules_do_not_import_qa_support` |
-| TEST-ENTRY-07 | テスト依存の配置 | Pythonプロジェクトmetadataとdependency groupsを読む | QA packageがproject runtime dependenciesに含まれない | `test_entrypoint_07_test_dependencies_are_dev_only` |
-| TEST-ENTRY-08 | QA import pathの分離 | `pytest.ini`の`pythonpath`を読む | QA rootをtop-level import pathに含めない | `test_entrypoint_08_qa_is_not_a_top_level_pytest_import_root` |
 
 実行可能な受入試験の配置と実行コマンドは、各実装の試験ランナーで管理する。
 

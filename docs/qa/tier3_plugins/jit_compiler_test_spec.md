@@ -99,10 +99,10 @@
 
 ## 3. テスト検証実績と網羅状況
 
-- **TEST-JITC-01〜09 (assembly stencil composition)**: build-time assembly raw stencilからのtrace composition、compact constant pool、即値とlocal offsetのtrace code埋め込み、連続trace blob、実行時codegen/次opcode fetch/operation dispatchの不在とRuntime API stencilの継続、Runtime APIによる除算・剰余、共通chain dispatcher、trace上限を検証対象とする。x64の検証対象に限定する。ARMv8-Mの実装と検証はTBDである。
+- **TEST-JITC-01..TEST-JITC-09 (assembly stencil composition)**: build-time assembly raw stencilからのtrace composition、compact constant pool、即値とlocal offsetのtrace code埋め込み、連続trace blob、実行時codegen/次opcode fetch/operation dispatchの不在とRuntime API stencilの継続、Runtime APIによる除算・剰余、共通chain dispatcher、trace上限を検証対象とする。x64の検証対象に限定する。ARMv8-Mの実装と検証はTBDである。
 - **TEST-JITC-05の反証確認**: 実権限をRWまたはRXへ変更した場合は、OS実権限の期待値`rwx`との不一致で失敗することを確認する。
 - **TEST-JITC-10 (entry signatureと定数cursor)**: Interpreterの`(ctx, ip*, sp*)`とJITの`(ctx, ip*, sp*, rel*)`の関数型を照合する。WASM数値即値とlocal offsetはnative codeへ埋め込み、`rel`はRuntime API argument recordを読むときだけ進める。pool先頭のtrace単位4-byte referenceを`ctx.rel` anchorに保持し、chain先ではanchorからrecord cursorを再初期化する。終端recordのannotation offsetで関数のInterpreter注釈を再参照する。
-- **TEST-JITC-20〜22 (x64 32バイト物理ヘッダ)**: x64の`jit_trace_header`は実行に必要なtrace targetとmetadataを保持し、header直後の`+0x20`からassembly trace entryとoperation stencil、alignment後の末尾に定数領域を配置する。追加のentry adapterは置かない。ARMv8-Mの配置はTBDである。
+- **TEST-JITC-20..TEST-JITC-22 (x64 32バイト物理ヘッダ)**: x64の`jit_trace_header`は実行に必要なtrace targetとmetadataを保持し、header直後の`+0x20`からassembly trace entryとoperation stencil、alignment後の末尾に定数領域を配置する。追加のentry adapterは置かない。ARMv8-Mの配置はTBDである。
 - **TEST-JITC-40 (PIC 位置独立性)**: トレースバイナリを別のメモリ領域・オフセットへコピーして再コンパイルなしで直接実行し、完全同一の演算結果を返すことを実証済み。
 - **TEST-JITC-42 (3面キャッシュ代謝 & 有界アンリンク)**: 3面マルチバッファキャッシュのローテーション、破棄バンク全体の消去、および被チェイン逆引きテーブルに基づく `O(n + k log n)` 処理を実証済み。
 
@@ -113,7 +113,7 @@
 
 ## 4. 未検証・スコープ外
 
-`if`、`br`、`br_if`をJIT機械語またはRuntime APIで直接処理する経路と、分岐先へのnative chainは対象外である。TEST-JITC-51、53、55、58はtrace終端後のInterpreter CPS処理を検証する。`br_table`、関数境界、および他の境界命令はそれぞれのInterpreter復帰契約に従う。
+`if`、`br`、`br_if`をJIT機械語またはRuntime APIで直接処理する経路と、分岐先へのnative chainは対象外である。TEST-JITC-51, TEST-JITC-53, TEST-JITC-55, TEST-JITC-58はtrace終端後のInterpreter CPS処理を検証する。`br_table`、関数境界、および他の境界命令はそれぞれのInterpreter復帰契約に従う。
 
 - TEST-JITC-22は本番C++ ABI probeと通常C ABIでコンパイルしたステンシルの関数型、header、body位置を確認する。`local_base`は`execution_context`から読み出す。異なるホストABIの検証は対応する環境で行う。ARMv8-Mの物理配置はTBDとする。
 

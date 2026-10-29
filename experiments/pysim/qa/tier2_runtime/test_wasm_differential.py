@@ -190,7 +190,7 @@ def test_differential_signed_division_overflow_trap(value_type: str, minimum: in
     ],
 )
 def test_differential_declared_instruction_traps(instruction: str, expected_trap: TrapCode):
-    """TEST-WASM-10/58: Semantic guest faults report their declared causes."""
+    """TEST-WASM-10, TEST-WASM-58: Semantic guest faults report their declared causes."""
     wat = f'(module (func (export "run") (result i32) {instruction}))'
     _run_differential(wat, "run", [], expected_trap=expected_trap)
 
@@ -198,7 +198,7 @@ def test_differential_declared_instruction_traps(instruction: str, expected_trap
 @pytest.mark.parametrize("func_name", ["load", "store"])
 @pytest.mark.parametrize("address", [65532, 65533, 65536, 0x7FFFFFFF])
 def test_differential_memory_boundary_and_side_effects(func_name: str, address: int):
-    """TEST-WASM-40/42/44: Last valid word succeeds; out-of-range accesses trap unchanged."""
+    """TEST-WASM-40, TEST-WASM-42, TEST-WASM-44: Last valid word succeeds; out-of-range accesses trap unchanged."""
     wat = """
     (module
       (memory (export "memory") 1)

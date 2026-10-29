@@ -151,14 +151,14 @@
 
 ## 3. テスト検証実績と網羅状況
 
-- **継続渡しディスパッチと2本の独立値領域 (TEST-INTP-01〜14)**: 3論理引数、共有オペランド領域のアンダー／オーバーフロー、ローカル値領域上の再帰呼出し、戻り値、値領域の容量独立性。CallFrameは固定CallStack上の呼出し記述子であり、制御ブロック用の実行時フレーム配列は持たない。
-- **命令実行とロード済みモジュール (TEST-INTP-06, 09)**: 命令別handlerの継続ディスパッチ、境界復帰、Loaderによる即値プール構築と実行時の順次消費。
+- **継続渡しディスパッチと2本の独立値領域 (TEST-INTP-01..TEST-INTP-14)**: 3論理引数、共有オペランド領域のアンダー／オーバーフロー、ローカル値領域上の再帰呼出し、戻り値、値領域の容量独立性。CallFrameは固定CallStack上の呼出し記述子であり、制御ブロック用の実行時フレーム配列は持たない。
+- **命令実行とロード済みモジュール (TEST-INTP-06, TEST-INTP-09)**: 命令別handlerの継続ディスパッチ、境界復帰、Loaderによる即値プール構築と実行時の順次消費。
 - **LOOP後方分岐のyield境界 (TEST-INTP-76)**: 共有しきい値へ達したときにyieldし、再開後に実行を完了すること。
 - **静的分岐先のstack復元 (TEST-INTP-82)**: 分岐先indexとPCを照合し、Loader注釈のstack baseへ復元して結果wordを保つこと。
-- **ラベルアリティ & プルーニング (TEST-INTP-20〜23)**: ブロック脱出、ループ背進辺、多重ネスト br_table。
-- **i64全演算 & メモリアクセス (TEST-INTP-30〜43)**: 64bit算術・シフト・ビットカウント・境界外トラップ。
-- **LOOP後方分岐の協調yield (TEST-INTP-50〜51)**: Interpreter設定の回数しきい値に達した時だけyield statusをRuntimeEngineへ返す。
-- **デバッグ構成 (TEST-INTP-60〜62, 65)**: インタープリタ専用構成、ブレークポイント停止、およびアタッチ中のJIT不使用。
+- **ラベルアリティ & プルーニング (TEST-INTP-20..TEST-INTP-23)**: ブロック脱出、ループ背進辺、多重ネスト br_table。
+- **i64全演算 & メモリアクセス (TEST-INTP-30..TEST-INTP-43)**: 64bit算術・シフト・ビットカウント・境界外トラップ。
+- **LOOP後方分岐の協調yield (TEST-INTP-50..TEST-INTP-51)**: Interpreter設定の回数しきい値に達した時だけyield statusをRuntimeEngineへ返す。
+- **デバッグ構成 (TEST-INTP-60..TEST-INTP-62, TEST-INTP-65)**: インタープリタ専用構成、ブレークポイント停止、およびアタッチ中のJIT不使用。
 
 ### native constの容量境界と原因の識別
 
@@ -183,7 +183,7 @@ Python参照実装のhandler表を検査した結果は、native dispatcherの�
 | TEST-INTP-72の静的制御表 | `` | void、i32、i64のblock終端とアリティ、および疎なPython lookupの固定容量cacheを比較する。Nativeのdense per-byte control mapがないことを確認する。TEST-INTP-04のJIT復帰経路へ紐付けない |
 | TEST-INTP-73の混在幅フレーム | `` | 混在型のローカルオフセット表とWASM型、引数の生ワード数、フレームのワード数と関数結果42を比較する |
 | ラベルアリティによる広幅結果の保存 | `` | i64、f32、f64のblockからの分岐結果42、1.5、2.5を比較する。関数呼出し記述子の分離を扱うTEST-INTP-18の証拠へ読み替えない |
-| TEST-INTP-18/75の記述子とlocal領域 | `` | 既存のフレーム構築後に40-byte native記述子のfunction viewとlocal baseを比較する。関数番号は共有function viewから読み、コードとlocal型はfunction viewから参照する。復帰後は記述子とlocal領域の長さが0へ戻ることを確認する |
+| TEST-INTP-18, TEST-INTP-75の記述子とlocal領域 | `` | 既存のフレーム構築後に40-byte native記述子のfunction viewとlocal baseを比較する。関数番号は共有function viewから読み、コードとlocal型はfunction viewから参照する。復帰後は記述子とlocal領域の長さが0へ戻ることを確認する |
 | 命令のTrap原因 | ``、``、``、`` | 対象呼出しだけの`AssertionError`を捕捉し、外側で`UNREACHABLE`、`MEMORY_OUT_OF_BOUNDS`、`INTEGER_DIVIDE_BY_ZERO`、`INVALID_CONVERSION`を比較する。境界外メモリアクセスでは全メモリの不変も比較する |
 | TEST-INTP-74のlocal容量 | `` | i32のみの8フレームは結果7を返し、f64を追加した8フレームは既存native入口から`LOCAL_STACK_CAPACITY`を返す。任意の内部assertを容量Trapの代替にしない |
 

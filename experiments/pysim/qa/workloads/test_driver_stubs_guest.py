@@ -269,7 +269,7 @@ def test_clang_bus_configuration_command_selects_subsequent_transfer_address(
     name: str,
     addresses: tuple[int, int],
 ) -> None:
-    """TEST-HAL-21/25: slave address is latched by BUS_CONFIG, never supplied as a pointer."""
+    """TEST-HAL-21, TEST-HAL-25: slave address is latched by BUS_CONFIG, never supplied as a pointer."""
     drivers = StubDrivers.create()
     driver = drivers.i2c if name == "i2c" else drivers.spi
     with stub_platform(drivers, (uri(name),)) as platform:

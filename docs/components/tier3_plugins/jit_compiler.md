@@ -146,7 +146,7 @@ call opcode以外の適格なopcodeは直接assembly variant、直接生成経�
 - **スタック状態**: すべてのWASM値を共有オペランド領域へ命令ごとに確定する。基本ブロック終端、API境界、トラップ時に別の値キャッシュを書き戻す処理は設けない。 `{ExecutionContext_Layout}`
 - **呼出し境界 ({GOTCHA-JITC-01}, `03`)**: Interpreter handlerとJIT trace entryは`ctx`, `ip`, `sp`, `rel`の4引数を受け取る。`rel`は定数プールポインタである。assembly sourceはSysV AMD64とWindows x64の引数レジスタを明示し、ABI probeが関数型と構造体offsetを照合する。ARMv8-MのABIはTBDとする。 <!-- definition: {GOTCHA-JITC-01} -->
 - **Runtime API呼出し**: opcodeからJIT Runtime API wrapperへの対応表と共通function pointer tableはTier 3 JITが所有する。通常API entryはJIT Runtime APIを指し、`call`と`call_indirect`用entryはTier 2 Interpreterの既存CPS handlerを指す。handler addressは初期化時にtableへ渡し、traceには添字だけを埋め込む。JIT stencilは共通コード領域の借用table pointerを通じてentryを呼ぶ。通常APIは次のoperationを選ばない。共通コード領域にはtableへの参照とchain dispatcherを置き、CPS handler本体はTier 2 Interpreterが所有する。共通コード領域にInterpreterの全opcode handler表を複製しない。
-- **継続先と境界検証 (`GOTCHA-JITC-05`)**: trace chain先はtrace headerの`chain_target_addr`で表す。trace builderは操作本体の成功link slotを後続operationのbytesで置き換える。成功経路のslot命令は完成traceから除かれ、operationごとのreturnやエピローグはない。abort slotだけをtrace共通abort resultへ接続する。trace末尾poolには操作間deltaを置かない。コンパイラは出力範囲のoffsetとサイズ、操作内分岐の再配置を検証する。ARMv8-Mの配置方式はTBDとする。
+- **継続先と境界検証 (`GOTCHA-JITC-05`)**: trace chain先はtrace headerの`chain_target_addr`で表す。trace builderは操作本体の成功link slotを後続operationのbytesで置き換える。成功経路のslot命令は完成traceから除かれ、operationごとのreturnやエピローグはない。abort slotだけをtrace共通abort resultへ接続する。trace末尾poolには操作間deltaを置かない。コンパイラは出力範囲のoffsetとサイズ、操作内分岐の再配置を検証する。ARMv8-Mの配置方式はTBDとする。 {GOTCHA-JITC-05} <!-- definition: {GOTCHA-JITC-05} -->
 
 #### ABIと共有値
 <!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {PositionIndependentCode} -->
@@ -396,7 +396,12 @@ ARMv8-Mのコンパイラと実機検証はTBDである。
 
 現行x64参照実装は直線後続の常駐traceを直接chainする。`if`、`br`、`br_if`はtraceへ含めず、Interpreter CPS handlerへ戻す。分岐先への直接chainは行わない。`br_table`、`return`、関数境界のその他経路も各Interpreter復帰契約に従う。chain更新時のbody数とstack要件は、`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下の常駐trace内で循環を検出し、相異なるtraceを一度ずつ集計する。
 
-直線chainの循環集計、退役時のリンク解除、QA計測はTEST-JITR-35、76、77および循環chain試験で検証する。分岐opcodeのtrace除外、Interpreter CPS処理、LOOP後方辺のyield判定はTEST-JITR-63、67、69、73と対応するInterpreter試験で検証する。既存の形式モデルはキャッシュ寿命とyield到達時の復帰を抽象検証する。条件評価、スタック巻き戻し、関数呼出しの生成コードまでは検証しない。
+次の機能をテストで検証する。
+
+- 直線chainの循環集計、退役時のリンク解除、QA計測: `TEST-JITR-35`, `TEST-JITR-76`, `TEST-JITR-77`、循環chain試験。
+- 分岐opcodeのtrace除外、Interpreter CPS処理、LOOP後方辺のyield判定: `TEST-JITR-63`, `TEST-JITR-67`, `TEST-JITR-69`, `TEST-JITR-73`、対応するInterpreter試験。
+
+形式モデルはキャッシュ寿命とyield到達時の復帰を抽象検証する。条件評価、スタック巻き戻し、関数呼出しの生成コードは対象に含まない。
 
 
 ## 8. 設計判断と参考実装

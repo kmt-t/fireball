@@ -329,7 +329,7 @@ def test_hal_06_rejection_preserves_mapping_and_all_slot_bytes(rejection: str) -
     ],
 )
 def test_hal_task_ipc_communication(offset: int, payload: bytes):
-    """TEST-HAL-01/02/16: IPC stream writes deliver exactly the selected fixed-buffer slice."""
+    """TEST-HAL-01, TEST-HAL-02, TEST-HAL-16: IPC stream writes deliver exactly the selected fixed-buffer slice."""
     from tier2_runtime.hal.dispatch import ARG_BUFFER_HANDLE, ARG_LENGTH, ARG_OFFSET
     from tier3_platform.drivers.wasi.context import Wasi03pEngine, WasiIpcCmd
 
@@ -438,8 +438,8 @@ def test_wasi_dummy_clock_time_get_writes_timestamp():
     assert int.from_bytes(memory[0:8], "little") > 0
 
 
-def test_hal_15_file_log_sink_receives_internal_logs():
-    """System logs go to the injected file sink, never to guest stdout."""
+def test_hal_26_file_log_sink_receives_internal_logs():
+    """TEST-HAL-26: System logs go to the injected file sink, never to guest stdout."""
     backing = io.BytesIO()
     sink = FileLogSink(backing)
     log_dictionary = LogDictionary(entries=((0x300, "TEST_LOG: v=%d"),))

@@ -1,4 +1,4 @@
-"""vDMA behavior tests: TEST-VSOC-62..73 and TEST-SYS-20..22.
+"""vDMA behavior tests: TEST-VSOC-62..TEST-VSOC-73 and TEST-SYS-20..TEST-SYS-22.
 
 Real NativeInterpreter, COOS, HAL buffers, and MemoryManager are used.
 Expected bytes come from pre-operation snapshots, never the transfer service.
@@ -454,7 +454,7 @@ def test_documented_rows_match_executable_matrix() -> None:
 
 @pytest.mark.parametrize("entry", tuple(Entry))
 def test_guest_store_and_dma_use_same_managed_shm(entry: Entry) -> None:
-    """TEST-VSOC-67/72: guest scalar store, SharedBlock and DMA share the actual backing."""
+    """TEST-VSOC-67, TEST-VSOC-72: guest scalar store, SharedBlock and DMA share the actual backing."""
 
     def scenario(fixture: VdmaFixture) -> Generator[tuple[ChannelAction, None], None, None]:
         before = fixture.snapshot()
@@ -807,7 +807,7 @@ def test_physical_alias_copy_has_memmove_semantics(
 def test_copy_rejects_unsupported_and_unmapped_endpoints(
     invalid_source: bool, count: int, address: int
 ) -> None:
-    """TEST-VSOC-70/71: zero length cannot bypass endpoint checks or touch IPCR."""
+    """TEST-VSOC-70, TEST-VSOC-71: zero length cannot bypass endpoint checks or touch IPCR."""
 
     def scenario(fixture: VdmaFixture) -> Generator[tuple[ChannelAction, None], None, None]:
         src, dst = (address, 2048) if invalid_source else (2048, address)
@@ -1095,7 +1095,7 @@ def exercise_controlled_completion(
 def test_controlled_target_completes_and_becomes_visible_before_guest_resumes(
     entry: Entry, destination: Region, deferred: bool, delay: int, coherent: bool
 ) -> None:
-    """TEST-VSOC-62/65/73 / TEST-SYS-22: real guest, gateway and COOS; external vDMA double."""
+    """TEST-VSOC-62, TEST-VSOC-65, TEST-VSOC-73 / TEST-SYS-22: real guest, gateway and COOS; external vDMA double."""
     exercise_controlled_completion(
         entry, destination, deferred, coherent, delay, b"\x71\x00\xff\xa7\x42\x19\xe5\x81"
     )
@@ -1112,7 +1112,7 @@ def test_controlled_target_completes_and_becomes_visible_before_guest_resumes(
 def test_generated_pending_prefixes_keep_guest_suspended(
     entry: Entry, destination: Region, coherent: bool, delay: int, data: bytes
 ) -> None:
-    """TEST-VSOC-62/65/73: bounded delayed histories do not assume finite external completion."""
+    """TEST-VSOC-62, TEST-VSOC-65, TEST-VSOC-73: bounded delayed histories do not assume finite external completion."""
     exercise_controlled_completion(entry, destination, True, coherent, delay, data)
 
 

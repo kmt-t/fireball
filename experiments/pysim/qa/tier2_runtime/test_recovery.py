@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """
 Unit tests for Tier 2 Runtime: Fault Recovery Strategies
-Traceability: docs/qa/tier3_platform/interface_wit_test_spec.md, TEST-WIT-01..05
+Traceability: docs/qa/tier3_platform/interface_wit_test_spec.md, TEST-WIT-01..TEST-WIT-05
 """
 
 import pytest
@@ -57,7 +57,7 @@ def test_recovery_01_retry_success_within_limit(success_attempt: int) -> None:
 
 
 def test_recovery_02_retry_exhaustion_escalates_to_restart():
-    """TEST-WIT-02/03: 初期3回で打ち切り、reset後も失敗要求を再実行しない。"""
+    """TEST-WIT-02, TEST-WIT-03: 初期3回で打ち切り、reset後も失敗要求を再実行しない。"""
     sleeps: list[float] = []
     timeline: list[str] = []
     panic_messages: list[str] = []
@@ -138,7 +138,7 @@ def test_recovery_03_panic_invokes_hook_immediately_without_retry_or_reset():
 
 
 def test_recovery_04_errorcode_to_strategy_mapping():
-    """TEST-WIT-01..05: {Errorcode_To_Strategy}の分類を具体例で照合する。"""
+    """TEST-WIT-01..TEST-WIT-05: {Errorcode_To_Strategy}の分類を具体例で照合する。"""
     # WASI Errno mappings
     assert classify_errno_strategy(0) == RecoveryStrategy.IGNORE  # SUCCESS
     assert classify_errno_strategy(6) == RecoveryStrategy.RETRY  # EAGAIN
@@ -225,7 +225,7 @@ def test_recovery_06_restart_skips_retry_backoff_and_invokes_reset_once():
     "reset_succeeds", [False, True], ids=["reset-fails", "reset-recovers-service-only"]
 )
 def test_recovery_07_unrecoverable_restart_escalates_to_panic_once(reset_succeeds: bool):
-    """TEST-WIT-03/05: reset成功は要求失敗を返し、reset失敗だけPANICへ進む。"""
+    """TEST-WIT-03, TEST-WIT-05: reset成功は要求失敗を返し、reset失敗だけPANICへ進む。"""
     sleeps: list[float] = []
     actions: list[str] = []
     panic_messages: list[str] = []

@@ -727,7 +727,7 @@ def test_intp_07_host_call_and_vmmio_separation():
 
 
 def test_wasm_01_to_06_unsupported_features_rejected():
-    """TEST-WASM-01..06: Unsupported features (SIMD, threads, tail-call) are rejected with error code."""
+    """TEST-WASM-01..TEST-WASM-06: Unsupported features (SIMD, threads, tail-call) are rejected with error code."""
     # Module with unsupported SIMD opcode 0xFD
     wasm_bytes = (
         b"\x00asm\x01\x00\x00\x00"
@@ -743,7 +743,7 @@ def test_wasm_01_to_06_unsupported_features_rejected():
 
 
 def test_wasm_10_to_15_control_flow_and_calls():
-    """TEST-WASM-10..15: Unreachable trap, block/loop/if/br_table, call, and call_indirect."""
+    """TEST-WASM-10..TEST-WASM-15: Unreachable trap, block/loop/if/br_table, call, and call_indirect."""
     wat = """
     (module
       (table 2 2 funcref)
@@ -798,7 +798,7 @@ def test_wasm_10_to_15_control_flow_and_calls():
 
 
 def test_wasm_20_21_drop_and_select():
-    """TEST-WASM-20..21: drop and select parametric instructions."""
+    """TEST-WASM-20..TEST-WASM-21: drop and select parametric instructions."""
     wat = """
     (module
       (func $sel (export "sel") (param $cond i32) (param $val1 i32) (param $val2 i32) (result i32)
@@ -818,7 +818,7 @@ def test_wasm_20_21_drop_and_select():
 
 
 def test_wasm_30_31_locals_and_globals():
-    """TEST-WASM-30..31: local.get/set/tee and global.get/set."""
+    """TEST-WASM-30..TEST-WASM-31: local.get/set/tee and global.get/set."""
     wat = """
     (module
       (global $g (mut i32) (i32.const 42))
@@ -841,7 +841,7 @@ def test_wasm_30_31_locals_and_globals():
 
 
 def test_wasm_40_to_46_memory_load_store_grow_and_data():
-    """TEST-WASM-40..46 & TEST-WASM-60: Linear memory load, store, size, grow, bounds traps, and Data segments."""
+    """TEST-WASM-40..TEST-WASM-46 & TEST-WASM-60: Linear memory load, store, size, grow, bounds traps, and Data segments."""
     wat = """
     (module
       (memory 1 2)
@@ -890,7 +890,7 @@ def test_wasm_40_to_46_memory_load_store_grow_and_data():
 
 
 def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
-    """TEST-WASM-50..56: 32-bit integer arithmetic, div-by-zero trap, popcnt, clz, rotl, rotr."""
+    """TEST-WASM-50..TEST-WASM-56: 32-bit integer arithmetic, div-by-zero trap, popcnt, clz, rotl, rotr."""
     wat = """
     (module
       (func $div_s (export "div_s") (param $a i32) (param $b i32) (result i32)
@@ -919,7 +919,7 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
     )
     # Normal div
     assert interp.call(mod.export_func_index("div_s"), [10, 2]).unwrap() == [5]
-    # TEST-WASM-52, 55, 56: Bit ops
+    # TEST-WASM-52, TEST-WASM-55, TEST-WASM-56: Bit ops
     # x = 0x80000001 -> popcnt=2, clz=0 -> sum=2. rotl(x, 4) = 0x00000018. 2 ^ 0x18 = 0x1A (26)
     assert interp.call(mod.export_func_index("bit_ops"), [0x80000001]).unwrap() == [26]
 
@@ -983,7 +983,7 @@ def test_wasm_f32_arithmetic_min_max_and_precision():
 
 
 def test_intp_70_to_72_direct_bytecode_execution():
-    """TEST-INTP-18/70/72/75: frame ABI, loaded code/control metadata, and reference result."""
+    """TEST-INTP-18, TEST-INTP-70, TEST-INTP-72, TEST-INTP-75: frame ABI, loaded code/control metadata, and reference result."""
     wat = """
     (module
       (func (export "calc") (param $x i32) (result i32)

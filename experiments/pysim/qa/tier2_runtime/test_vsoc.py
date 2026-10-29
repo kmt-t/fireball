@@ -881,7 +881,7 @@ def test_tier_03_branch_transitions_use_interpreter_cps():
 
 
 def test_guest_wasi_01_interpreter_fd_write():
-    """TEST-GUEST-WASI-01: WASM guest fd_write reaches the standard-I/O HAL task."""
+    """TEST-INT-10: WASM guest fd_write reaches the standard-I/O HAL task."""
     wat = """
     (module
       (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
@@ -920,7 +920,7 @@ def test_guest_wasi_01_interpreter_fd_write():
 
 
 def test_guest_wasi_02_interpreter_clock_and_random():
-    """TEST-GUEST-WASI-02: WASM guest invoking clock_time_get and random_get stores valid data in guest memory."""
+    """TEST-INT-105: WASM guest invoking clock_time_get and random_get stores valid data in guest memory."""
     wat = """
     (module
       (import "wasi_snapshot_preview1" "clock_time_get" (func $clock (param i32 i32 i32) (result i32)))
@@ -951,7 +951,7 @@ def test_guest_wasi_02_interpreter_clock_and_random():
 
 
 def test_guest_wasi_03_interpreter_proc_exit():
-    """TEST-GUEST-WASI-03: WASM guest invoking proc_exit(99) halts the host system with exit code."""
+    """TEST-INT-11: WASM guest invoking proc_exit(99) halts the host system with exit code."""
     wat = """
     (module
       (import "wasi_snapshot_preview1" "proc_exit" (func $exit (param i32)))
@@ -1130,7 +1130,7 @@ from hypothesis import strategies as st
 @example(source=65536, destination=65536, count=0)
 @example(source=0, destination=16384, count=32768)
 def test_linear_memory_copy_uses_cpu_memmove(source: int, destination: int, count: int) -> None:
-    """TEST-VSOC-60/61: 大小・重複・同一・ゼロ長のlinear copyでDMAを呼ばない。"""
+    """TEST-VSOC-60, TEST-VSOC-61: 大小・重複・同一・ゼロ長のlinear copyでDMAを呼ばない。"""
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 
     module = parse_standalone(

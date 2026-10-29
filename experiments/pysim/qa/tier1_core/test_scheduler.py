@@ -309,7 +309,7 @@ def test_sched_13_ready_queue_intrusive_ring_two_ended_fifo():
 
 
 def test_sched_08_ready_queue_link_operations_are_bounded():
-    """TEST-SCHED-08/13: Link accesses stay bounded as the READY ring grows."""
+    """TEST-SCHED-08, TEST-SCHED-13: Link accesses stay bounded as the READY ring grows."""
     for count in (0, 1, 4, 16, 64):
         queue = BoundedReadyQueue(capacity=count + 2)
         tasks = tuple(CountedReadyTask(task_id) for task_id in range(count + 3))

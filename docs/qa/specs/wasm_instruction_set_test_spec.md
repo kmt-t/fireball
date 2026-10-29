@@ -99,13 +99,13 @@
 
 | 仕様契約 | 実行関数 | 具体的な範囲とオラクル |
 | :--- | :--- | :--- |
-| TEST-WASM-52〜54/56 | `` | 既存11入力を維持する。正常値とゼロ除算の具体理由をwasmtimeと比較する |
+| TEST-WASM-52..TEST-WASM-54, TEST-WASM-56 | `` | 既存11入力を維持する。正常値とゼロ除算の具体理由をwasmtimeと比較する |
 | `TEST-WASM-54` | `` | 2整数幅×4除算・剰余形式の8組を全数実行する |
 | `TEST-WASM-57` | `` | i32/i64の2境界を実行する |
-| TEST-WASM-10/58 | `` | unreachableとNaN変換の2原因を区別する |
-| TEST-WASM-40/42/44 | `` | 1ページmemoryのload/store×4アドレスを全数実行する。65532は最終有効word、65533はword途中の越境、65536は先頭が境界外、0x7FFFFFFFは通常領域の上端である。全メモリbyteをwasmtimeと比較し、不正storeの部分更新を検出する |
+| TEST-WASM-10, TEST-WASM-58 | `` | unreachableとNaN変換の2原因を区別する |
+| TEST-WASM-40, TEST-WASM-42, TEST-WASM-44 | `` | 1ページmemoryのload/store×4アドレスを全数実行する。65532は最終有効word、65533はword途中の越境、65536は先頭が境界外、0x7FFFFFFFは通常領域の上端である。全メモリbyteをwasmtimeと比較し、不正storeの部分更新を検出する |
 | 浮動小数点意味論 | ``、`` | f32の13入力、f64の8入力を維持する。符号付きゼロはbit pattern、NaNは分類で比較する |
-| TEST-WASM-12/13/30 | `` | Collatzの入力6、1、27の3例を維持し、最終値をwasmtimeと比較する |
+| TEST-WASM-12, TEST-WASM-13, TEST-WASM-30 | `` | Collatzの入力6、1、27の3例を維持し、最終値をwasmtimeと比較する |
 
 この差分試験は列挙した契約の部分検証である。表に紐付けたケース全体の網羅を主張しない。行・分岐カバレッジ率は受入れ条件に使わない。
 

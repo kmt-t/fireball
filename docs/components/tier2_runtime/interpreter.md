@@ -449,7 +449,7 @@ sequenceDiagram
 #### 継続渡しハンドラの実行境界
 <!-- traceability: {ThreadedInterpreter} {ContextPointerRegister} -->
 
-C++命令意味論は各命令のRuntime APIに保持し、CPS命令ハンドラはそのAPIを呼んでからopcode handler表で次のhandlerを選び、末尾継続する。handler prototypeは`ctx`, `ip`, `sp`, `rel`の4引数で揃える。`rel`は第4引数の注釈領域ポインタであり、通常命令の注釈読出しに伴って前進する。命令ディスパッチは独立したopcode handler表を引く。末尾呼び出しで次のhandlerへ移るため、命令ごとにC++コールスタックを積み増さない（{InterpreterContextStackless}）。未対応命令や不正な命令状態はtrapで実行を停止する。Runtime APIが所有する外部処理だけを明示的なRuntime API境界でRuntimeへ渡す。 <!-- definition: {InterpreterContextStackless} -->
+C++命令意味論は各命令のRuntime APIに保持し、CPS命令ハンドラはそのAPIを呼んでからopcode handler表で次のhandlerを選び、末尾継続する。handler prototypeは`ctx`, `ip`, `sp`, `rel`の4引数で揃える。`rel`は第4引数の注釈領域ポインタであり、注釈から値を読む命令の読出しに伴って前進する。命令ディスパッチは独立したopcode handler表を引く。末尾呼び出しで次のhandlerへ移るため、命令ごとにC++コールスタックを積み増さない（{InterpreterContextStackless}）。未対応命令や不正な命令状態はtrapで実行を停止する。Runtime APIが所有する外部処理だけを明示的なRuntime API境界でRuntimeへ渡す。 <!-- definition: {InterpreterContextStackless} -->
 
 通常のブロック内命令はCPS handlerが対応するRuntime APIを呼んで実行する。`block`、`loop`、`end`は制御を移さない構文デリミタであり、CPSを止めない。`if`、`else`、`br`、`br_if`、`br_table`、`return`、`call`、`call_indirect`は制御を移す命令である。各Runtime APIは次の`ip`、BasicBlock index、`rel`を確定する。遷移先がJIT trace入口であるときだけ、Runtime APIは`false`を返してCPSを終える。Interpreter dispatcherは確定済み状態で次のhandlerを呼ぶ。dispatcherは先頭で遷移先を再判定せず、`rel`を再計算しない。ループ後方辺と関数復帰は、取得済み後方辺数が閾値に達したときだけ`false`を返す。命令表にない命令と不正な命令状態はtrapでインタープリタ実行を中断する。Runtime APIが所有する処理だけをRuntime API境界でRuntimeへ渡す。
 

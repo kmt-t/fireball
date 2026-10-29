@@ -388,12 +388,6 @@ code_ip_t instruction_offset(const execution_context &current, const std::uint8_
   return static_cast<std::uint32_t>(ip - current.code);
 }
 
-std::uint32_t peek_u32(const std::uint8_t *rel) {
-  std::uint32_t value = 0;
-  std::memcpy(&value, rel, sizeof(value));
-  return value;
-}
-
 std::int32_t read_s32(const std::uint8_t *&rel) { return static_cast<std::int32_t>(read_u32(rel)); }
 
 std::int64_t read_s64(const std::uint8_t *&rel) {
@@ -1063,87 +1057,12 @@ bool runtime_br_if(execution_context *context, const std::uint8_t *&instruction_
   return transfer_to_block<Direct>(current, next_ip, target_block_index, rel, backedge);
 }
 
-bool apply_local_get(execution_context *context, std::uint32_t *&sp, std::uint32_t *&local_base,
-                     const fireball_call_frame_native &frame, local_count_t index) {
-  [[maybe_unused]] auto &current = *context;
-  assert(sp >= current.stack_base && sp <= current.stack_limit);
-  assert(frame.function_view != nullptr);
-  const auto &function = *frame.function_view;
-  if (function.local_slot_count == function.local_count) {
-    assert(index < function.local_count);
-    assert(!(sp == current.stack_limit));
-    *sp++ = local_base[index];
-  } else {
-    const auto [offset, width] = local_span(frame, index);
-    assert(!(current.stack_limit - sp < width));
-    if (width == 1) {
-      *sp++ = local_base[offset];
-    } else {
-      sp[0] = local_base[offset];
-      sp[1] = local_base[offset + 1];
-      sp += 2;
-    }
-  }
-  return true;
-}
-
-bool apply_local_set(execution_context *context, std::uint32_t *&sp, std::uint32_t *&local_base,
-                     const fireball_call_frame_native &frame, local_count_t index) {
-  [[maybe_unused]] auto &current = *context;
-  const auto &function = *frame.function_view;
-  if (function.local_slot_count == function.local_count) {
-    assert(index < function.local_count);
-    assert(sp >= current.stack_base + 1);
-    local_base[index] = sp[-1];
-    --sp;
-  } else {
-    const auto [offset, width] = local_span(frame, index);
-    assert(sp >= current.stack_base + width);
-    if (width == 1) {
-      local_base[offset] = sp[-1];
-    } else {
-      local_base[offset] = sp[-2];
-      local_base[offset + 1] = sp[-1];
-    }
-    sp -= width;
-  }
-  return true;
-}
-
-bool apply_local_tee(execution_context *context, std::uint32_t *&sp, std::uint32_t *&local_base,
-                     const fireball_call_frame_native &frame, local_count_t index) {
-  [[maybe_unused]] auto &current = *context;
-  assert(frame.function_view != nullptr);
-  const auto &function = *frame.function_view;
-  if (function.local_slot_count == function.local_count) {
-    assert(index < function.local_count);
-    assert(sp >= current.stack_base + 1);
-    local_base[index] = sp[-1];
-  } else {
-    const auto [offset, width] = local_span(frame, index);
-    assert(sp >= current.stack_base + width);
-    if (width == 1) {
-      local_base[offset] = sp[-1];
-    } else {
-      local_base[offset] = sp[-2];
-      local_base[offset + 1] = sp[-1];
-    }
-  }
-  return true;
-}
-
 bool runtime_local_get_annotated(execution_context &current, std::uint32_t *&sp,
                                  std::uint32_t *local_base, frame_word_offset_t offset,
                                  operand_words_t width);
 bool runtime_local_set_annotated(execution_context &current, std::uint32_t *&sp,
                                  std::uint32_t *local_base, frame_word_offset_t offset,
                                  operand_words_t width, bool pop_value);
-
-bool runtime_local_get_decoded(execution_context *context, std::uint32_t *&sp,
-                               std::uint32_t *&local_base, local_count_t index) {
-  auto &current = *context;
-  return apply_local_get(context, sp, local_base, active_frame(current), index);
-}
 
 bool runtime_local_get(execution_context *context, const std::uint8_t *&instruction_ip,
                        std::uint32_t *&sp, std::uint32_t *&local_base,
@@ -1159,12 +1078,6 @@ bool runtime_local_get(execution_context *context, const std::uint8_t *&instruct
   return true;
 }
 
-bool runtime_local_set_decoded(execution_context *context, std::uint32_t *&sp,
-                               std::uint32_t *&local_base, local_count_t index) {
-  auto &current = *context;
-  return apply_local_set(context, sp, local_base, active_frame(current), index);
-}
-
 bool runtime_local_set(execution_context *context, const std::uint8_t *&instruction_ip,
                        std::uint32_t *&sp, std::uint32_t *&local_base,
                        [[maybe_unused]] const std::uint8_t *&rel) {
@@ -1177,12 +1090,6 @@ bool runtime_local_set(execution_context *context, const std::uint8_t *&instruct
   }
   instruction_ip += encoded_width;
   return true;
-}
-
-bool runtime_local_tee_decoded(execution_context *context, std::uint32_t *&sp,
-                               std::uint32_t *&local_base, local_count_t index) {
-  auto &current = *context;
-  return apply_local_tee(context, sp, local_base, active_frame(current), index);
 }
 
 bool runtime_local_get_annotated(execution_context &current, std::uint32_t *&sp,

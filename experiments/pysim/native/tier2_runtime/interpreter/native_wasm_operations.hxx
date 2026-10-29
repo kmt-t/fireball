@@ -90,8 +90,6 @@ std::uint32_t read_u32(const std::uint8_t *&rel);
 std::uint8_t peek_u8(const std::uint8_t *rel);
 /** @brief 有効な命令カーソルをコード先頭からの位置へ変換する。 */
 code_ip_t instruction_offset(const execution_context &current, const std::uint8_t *ip);
-/** @brief Interpreter注釈プールの固定幅値を読み出す。 */
-std::uint32_t peek_u32(const std::uint8_t *rel);
 
 /** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
 bool pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &value);
@@ -371,43 +369,16 @@ template <bool Direct>
 
 // These helpers mutate only the local and operand state. The instruction
 // wrapper advances ip after the operation succeeds.
-/** @brief `apply_local_get`に対応する実行状態または値を求める。 */
-bool apply_local_get(execution_context *context, std::uint32_t *&sp, std::uint32_t *&local_base,
-                     const fireball_call_frame_native &frame, local_count_t index);
-/** @brief `apply_local_set`に対応する実行状態または値を求める。 */
-bool apply_local_set(execution_context *context, std::uint32_t *&sp, std::uint32_t *&local_base,
-                     const fireball_call_frame_native &frame, local_count_t index);
-/** @brief `apply_local_tee`に対応する実行状態または値を求める。 */
-bool apply_local_tee(execution_context *context, std::uint32_t *&sp, std::uint32_t *&local_base,
-                     const fireball_call_frame_native &frame, local_count_t index);
-/** @brief
- * `runtime_local_get_decoded`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
-[[gnu::always_inline]] bool runtime_local_get_decoded(execution_context *context,
-                                                      std::uint32_t *&sp,
-                                                      std::uint32_t *&local_base,
-                                                      local_count_t index);
 /** @brief `runtime_local_get`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
 [[gnu::always_inline]] bool runtime_local_get(execution_context *context,
                                               const std::uint8_t *&instruction_ip,
                                               std::uint32_t *&sp, std::uint32_t *&local_base,
                                               [[maybe_unused]] const std::uint8_t *&rel);
-/** @brief
- * `runtime_local_set_decoded`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
-[[gnu::always_inline]] bool runtime_local_set_decoded(execution_context *context,
-                                                      std::uint32_t *&sp,
-                                                      std::uint32_t *&local_base,
-                                                      local_count_t index);
 /** @brief `runtime_local_set`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
 [[gnu::always_inline]] bool runtime_local_set(execution_context *context,
                                               const std::uint8_t *&instruction_ip,
                                               std::uint32_t *&sp, std::uint32_t *&local_base,
                                               [[maybe_unused]] const std::uint8_t *&rel);
-/** @brief
- * `runtime_local_tee_decoded`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
-[[gnu::always_inline]] bool runtime_local_tee_decoded(execution_context *context,
-                                                      std::uint32_t *&sp,
-                                                      std::uint32_t *&local_base,
-                                                      local_count_t index);
 /** @brief `runtime_local_tee`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
 [[gnu::always_inline]] bool runtime_local_tee(execution_context *context,
                                               const std::uint8_t *&instruction_ip,

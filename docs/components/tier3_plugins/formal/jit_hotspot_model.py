@@ -85,8 +85,8 @@ def build_model(*, guards: bool = True) -> Kripke:
     )
     labels = {
         "start": {"start"},
-        "control_pending": {"control_only", "saved_pc", "head_pending", "entry_or_control"},
-        "body_observed": {"ordinary_instruction", "saved_pc", "head_pending", "entry_or_control"},
+        "control_pending": {"control_only", "saved_pc", "head_pending", "judgment_entry"},
+        "body_observed": {"ordinary_instruction", "saved_pc", "head_pending", "judgment_entry"},
         "body_resuming": {"block_continuation"},
         "bad_resume_activity": {
             "block_continuation",
@@ -132,13 +132,13 @@ def properties():
     runtime_destroyed = AtomicProposition("runtime_destroyed")
     return [
         {
-            "name": "new_block_head_requires_function_or_control_entry",
+            "name": "new_block_head_requires_judgment_entry",
             "kind": "safety",
             "logic": "CTL",
             "formula": AG(
                 Imply(
                     AtomicProposition("head_pending"),
-                    AtomicProposition("entry_or_control"),
+                    AtomicProposition("judgment_entry"),
                 )
             ),
             "violation": AtomicProposition("block_continuation"),

@@ -90,6 +90,15 @@ scope: GLOBAL
 - **直交表による網羅性検討**:
   - 公開 API の各パラメータ、エラー種別、内部状態の組み合わせについて、直交表（Pairwise / All-Pairs）を用いて網羅性を検討・記録する。
 
+### 識別子の記法と採番
+
+- TEST、GOTCHA、BENCHMARK、FORMAL、ADR の識別子は `spec-integrator.yaml` の `identifiers.patterns` を正規表現の唯一の正本とする。接頭辞の後のCOMPは字句形式だけを検査し、接頭辞の登録一覧は設けない。
+- TEST の定義は `docs/qa/**/*_test_spec.md` と `docs/qa/integration_test_scenarios.md` の §2 に置く。FORMAL はテスト仕様書の §2、GOTCHA はコンポーネント設計書の `definition` コメント、BENCHMARK はベンチマーク仕様表、ADR は設計判断見出しに定義する。
+- 識別子の範囲参照は `ID..ID` とし、両端に省略のない識別子を置く。両端が記法に合う範囲だけを展開し、欠番は展開対象に含めない。
+- 欠番は許容する。新しい識別子には同じ系列の最大値+1を使い、一度使った番号を再利用しない。この再利用禁止は運用規則であり、機械検査はしない。
+- `REQ` は外部の依頼運用、`LINK` は文書リンク、`TEST-PAIR` と `PYSIM-INTP-FC` は生成物、vMMIO の `C-nn` は局所因子表の番号であり、この識別子ゲートの対象外とする。
+- テスト仕様書の構成は [`docs/qa/FORMAT.md`](../../docs/qa/FORMAT.md)、文書階層は [`docs/architecture/document_structure.md`](../../docs/architecture/document_structure.md) を参照する。
+
 ---
 
 ## 3. Mermaid 記法規約

@@ -1185,7 +1185,7 @@ int run_native_step_abi(const fb_native_step_call *call, fb_native_result *outpu
     break;
   case kComplete:
     execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
-    execution_context->ip = execution_context->code_size;
+    execution_context->ip = kNoPc;
     output->status = kComplete;
     break;
   default:

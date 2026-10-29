@@ -457,7 +457,7 @@ C++命令意味論は各命令のRuntime APIに保持し、CPS命令ハンドラ
 - ローカル変数命令: `local.get/set/tee`。
 - 数値命令: i32/i64の数値命令、およびf32/f64の定数・比較・算術・丸め・平方根・reinterpret/変換。
 
-定義済みゲスト関数への通常の`call`と`call_indirect`は、C++ handlerが呼ぶRuntime APIが呼出し先の関数呼出し記述子、コード位置、注釈位置を設定する。同じCPS handler列は確定済みの呼出し先入口から続き、呼出し先を再選択しない。呼出し先の入口でJIT判定を行い、判定がtrace入口のときだけ`false`を返す。`kCallBoundary`は呼出しのCPS終端に使わない。呼出し先復帰時はCallFrameの復帰BasicBlock indexからcaller metadataと`rel`を取得し、native dispatcherが呼出し元の次命令を再開する。呼出しと復帰の各遷移でBasicBlock indexとPCの一致をassertする。JIT trace末尾のcall stencilは専用Tier 2 CPS handlerへ直接tail-callし、定義済み呼出し先をそのCPS列から実行する。import、trap、yield、最上位関数の完了などは各境界契約に従って実行境界へ戻る。
+定義済みゲスト関数への通常の`call`と`call_indirect`は、C++ handlerが呼ぶRuntime APIがcalleeの関数呼出し記述子、コード位置、注釈位置を設定する。同じCPS handler列は確定済みのcallee入口から続き、呼出し先を再選択しない。呼出し先の入口でJIT判定を行い、判定が trace 入口のときだけ`false`を返す。`kCallBoundary`は呼出しのCPS終端に使わない。callee復帰時はCallFrameの復帰BasicBlock indexからcaller metadataと`rel`を取得し、native dispatcherが呼出し元の次命令を再開する。呼出しと復帰の各遷移でBasicBlock indexとPCの一致をassertする。JIT trace末尾のcall stencilは専用Tier 2 CPS handlerへ直接tail-callし、定義済みcalleeをそのCPS列から実行する。import、trap、yield、最上位関数の完了などは各境界契約に従って実行境界へ戻る。
 
 `call_indirect`は実行時に選択した関数だけを期待シグネチャと照合する。
 引数型列と結果型列が一致すれば、型定義の索引が異なっても適合する。

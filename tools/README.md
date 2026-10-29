@@ -22,7 +22,7 @@
 | 分類 | 対象・役割 | 主な入口 |
 | :--- | :--- | :--- |
 | **準備・更新** | フォーマッタはファイルを変更する。build は DocGraph と用語索引、整合性の基準データを更新する。どちらも合否を示す検査ではない。 | format-doc、format-src、build |
-| **決定的な品質ゲート** | ドキュメント構造・要求追跡・Tier・形式モデル・WIT・証跡・検証義務・整合性を機械判定する。コード規約や結線済みテストも対象にする。 | check-doc、check-src |
+| **決定的な品質ゲート** | ドキュメント構造・要求追跡・Tier・形式モデル・WIT・証跡・検証義務・整合性・識別子を機械判定する。コード規約や結線済みテストも対象にする。 | check-doc、check-src |
 | **証拠の実行** | 単体・結合テスト、形式モデル、シナリオ、ベンチマークを実行して動作や性質を確かめる。必要な証拠と登録先は製品仕様マトリクスまたは PySim QA マトリクスで確認する。 | 各検証成果物の実行入口。pysim は [experiments/pysim/README.md](../experiments/pysim/README.md) を参照。 |
 | **参考警告** | GiNZA の日本語可読性警告など、機械判定だけで合否を決められない箇所をレビュー候補として示す。 | check-doc の文章可読性警告 |
 | **意味・リスク監査** | LLM による用語揺れ、リスク、意味整合性を調べる。API 利用を伴う監査はユーザーの明示指示がある場合だけ実行する。 | risk、llm-word、llm-single-review、llm-keyword-review、llm-judge |
@@ -71,8 +71,9 @@ Windows は PowerShell、Linux / WSL は Bash の入口を使う。[files...] �
 | 検証マトリクスのみ | <code>powershell tools/check-verification-matrix.ps1</code> | <code>./tools/check-verification-matrix.sh</code> |
 | ソース整形 | <code>powershell tools/format-src.ps1 -group &lt;group&gt; [files...]</code> | <code>./tools/format-src.sh -g &lt;group&gt; [files...]</code> |
 | DocGraph・索引の更新 | <code>powershell tools/build.ps1</code> | <code>./tools/build.sh</code> |
+| 識別子の次番号確認 | <code>powershell tools/next-id.ps1 &lt;prefix&gt;</code> | <code>./tools/next-id.sh &lt;prefix&gt;</code> |
 
-ドキュメント検証では、Format、Traceability、Hierarchy、Formal、WIT、Evidence、Obligation、Consistency の各ゲートを確認する。
+ドキュメント検証では、Format、Traceability、Hierarchy、Formal、WIT、Evidence、Obligation、Consistency、Identifier の各ゲートを確認する。
 ソース検証では、選んだグループの規約とサボり検査を行う。結線済みの検証も実行する。
 詳しい検査項目は [spec-integrator のゲート仕様](spec-integrator/README.md) を参照する。
 

@@ -93,6 +93,37 @@ verification_matrix:
       pairwise_cases: 26
       pairwise_interactions: 288
 
+identifiers:
+  enabled: true
+  patterns:
+    TEST: '^TEST-(?P<comp>[A-Z][A-Z0-9]*)-(?P<serial>[0-9]{2,3})(?P<variant>[a-z]?)$'
+    GOTCHA: '^GOTCHA-(?P<comp>[A-Z][A-Z0-9]*)-(?P<serial>[0-9]{2})$'
+    BENCHMARK: '^BENCHMARK-(?P<comp>[A-Z][A-Z0-9]*)-(?P<serial>[0-9]{2})$'
+    FORMAL: '^FORMAL-(?P<comp>[A-Z][A-Z0-9]*)-(?P<serial>[0-9]{2})$'
+    ADR: '^ADR-(?P<name>[A-Z][A-Z0-9]*)-(?P<serial>[0-9]{2})$'
+  candidate_pattern: '(?i:\b(?:TEST(?!-PAIR)(?!-PYSIM-INTP-FC-)|GOTCHA|BENCHMARK|FORMAL|ADR)(?:-[A-Z0-9]+){2,}\b)'
+  range_notation: ".."
+  scan_globs:
+    - "docs/**/*.md"
+    - "experiments/pysim/**/*.py"
+    - "experiments/pysim/**/*.cxx"
+    - "experiments/pysim/**/*.c"
+    - "inc/**/*.hxx"
+    - "inc/**/*.c"
+    - "src/**/*.cxx"
+    - "src/**/*.c"
+  test_definition_globs:
+    - "docs/qa/**/*_test_spec.md"
+    - "docs/qa/integration_test_scenarios.md"
+  benchmark_definition_globs:
+    - "docs/components/**/benchmarks/*_spec.md"
+  formal_definition_globs:
+    - "docs/qa/**/*_test_spec.md"
+  gotcha_definition_globs:
+    - "docs/components/**/*.md"
+  adr_definition_globs:
+    - "docs/**/*.md"
+
 consistency:
   enabled: true
   symbol_patterns:

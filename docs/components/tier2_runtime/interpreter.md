@@ -419,7 +419,7 @@ sequenceDiagram
 
 #### 実行ステップ (`run_step`)
 
-デバッグ構成のCPSハンドラ表は、ブロック境界と一命令ごとに必ずCPSを出す。通常構成のCPSハンドラ表は、後方辺と関数復帰の閾値超過、JIT trace入口、trap、完了、ホスト境界、yield、デバッグ停止だけでCPSを出す。Debuggerの型引数は既存の選択軸を使い、デバッグ構成の表を選ぶ。通常構成の表に、全命令で`kStopAtBlockBoundaryFlag`を読む分岐を置かない。
+デバッグ構成のCPSハンドラ表は、ブロック境界と一命令ごとに必ずCPSを出す。通常構成のCPSハンドラ表は、後方辺と関数復帰の閾値超過、JIT trace入口、trap、完了、ホスト境界、yield、デバッグ停止だけでCPSを出す。定義済み関数への呼出しは、呼出し先の先頭ブロックへの遷移として扱い、呼出し専用の終了種別を持たない。Debuggerの型引数は既存の選択軸を使い、デバッグ構成の表を選ぶ。通常構成の表に、全命令で`kStopAtBlockBoundaryFlag`を読む分岐を置かない。
 <!-- traceability: {META_RecoveryStrategy} -->
 
 | 項目 | 内容 |

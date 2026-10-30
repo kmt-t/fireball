@@ -416,22 +416,20 @@ std::int64_t read_s64(const std::uint8_t *&rel) {
   return static_cast<std::int64_t>(value);
 }
 
-bool pop_u64([[maybe_unused]] execution_context &current, std::uint32_t *&sp,
+void pop_u64([[maybe_unused]] execution_context &current, std::uint32_t *&sp,
              std::uint64_t &value) {
   assert(sp >= current.stack_base + 2);
   const auto low = sp[-2];
   const auto high = sp[-1];
   sp -= 2;
   value = static_cast<std::uint64_t>(low) | (static_cast<std::uint64_t>(high) << 32);
-  return true;
 }
 
-bool push_u64([[maybe_unused]] execution_context &current, std::uint32_t *&sp,
+void push_u64([[maybe_unused]] execution_context &current, std::uint32_t *&sp,
               std::uint64_t value) {
   assert(current.stack_limit - sp >= 2);
   *sp++ = static_cast<std::uint32_t>(value);
   *sp++ = static_cast<std::uint32_t>(value >> 32);
-  return true;
 }
 
 std::uint64_t combine_u64(std::uint32_t low, std::uint32_t high) {
@@ -457,30 +455,24 @@ double f64_from_bits(std::uint64_t value) { return std::bit_cast<double>(value);
 
 std::uint64_t f64_to_bits(double value) { return std::bit_cast<std::uint64_t>(value); }
 
-bool pop_f32(execution_context &current, std::uint32_t *&sp, float &value) {
+void pop_f32(execution_context &current, std::uint32_t *&sp, float &value) {
   std::uint32_t raw = 0;
-  if (!pop(current, sp, raw)) {
-    return false;
-  }
+  pop(current, sp, raw);
   value = f32_from_bits(raw);
-  return true;
 }
 
-bool push_f32(execution_context &current, std::uint32_t *&sp, float value) {
-  return push(current, sp, f32_to_bits(value));
+void push_f32(execution_context &current, std::uint32_t *&sp, float value) {
+  push(current, sp, f32_to_bits(value));
 }
 
-bool pop_f64(execution_context &current, std::uint32_t *&sp, double &value) {
+void pop_f64(execution_context &current, std::uint32_t *&sp, double &value) {
   std::uint64_t raw = 0;
-  if (!pop_u64(current, sp, raw)) {
-    return false;
-  }
+  pop_u64(current, sp, raw);
   value = f64_from_bits(raw);
-  return true;
 }
 
-bool push_f64(execution_context &current, std::uint32_t *&sp, double value) {
-  return push_u64(current, sp, f64_to_bits(value));
+void push_f64(execution_context &current, std::uint32_t *&sp, double value) {
+  push_u64(current, sp, f64_to_bits(value));
 }
 
 fireball_call_frame_native &active_frame(execution_context &current) {
@@ -588,17 +580,15 @@ void branch(execution_context &current, std::uint32_t *&sp, block_index_t target
   sp = target_stack + result_words;
 }
 
-bool pop([[maybe_unused]] execution_context &current, std::uint32_t *&sp, std::uint32_t &value) {
+void pop([[maybe_unused]] execution_context &current, std::uint32_t *&sp, std::uint32_t &value) {
   assert(sp > current.stack_base);
   value = sp[-1];
   --sp;
-  return true;
 }
 
-bool push([[maybe_unused]] execution_context &current, std::uint32_t *&sp, std::uint32_t value) {
+void push([[maybe_unused]] execution_context &current, std::uint32_t *&sp, std::uint32_t value) {
   assert(sp < current.stack_limit);
   *sp++ = value;
-  return true;
 }
 
 std::uint64_t opcode_extend32_signed(std::uint64_t value) {
@@ -614,9 +604,8 @@ bool linear_memory_range_is_valid(const execution_context &current, std::uint64_
 bool conversion_i32_wrap_i64(execution_context &current, std::uint32_t *&sp,
                              std::uint32_t &trap_code) {
   std::uint64_t value = 0;
-  if (!pop_u64(current, sp, value) || !push(current, sp, static_cast<std::uint32_t>(value))) {
-    return false;
-  }
+  pop_u64(current, sp, value);
+  push(current, sp, static_cast<std::uint32_t>(value));
   trap_code = 0;
   return true;
 }
@@ -624,16 +613,14 @@ bool conversion_i32_wrap_i64(execution_context &current, std::uint32_t *&sp,
 bool conversion_i32_trunc_f32_s(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   float value = 0;
-  if (!pop_f32(current, sp, value) || !std::isfinite(value) || value < -kTwoPow31<float> ||
+  pop_f32(current, sp, value);
+  if (!std::isfinite(value) || value < -kTwoPow31<float> ||
       value >= kTwoPow31<float>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
   const auto result = static_cast<std::uint32_t>(static_cast<std::int32_t>(value));
-  if (!push(current, sp, result)) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
+  push(current, sp, result);
   trap_code = 0;
   return true;
 }
@@ -641,15 +628,13 @@ bool conversion_i32_trunc_f32_s(execution_context &current, std::uint32_t *&sp,
 bool conversion_i32_trunc_f32_u(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   float value = 0;
-  if (!pop_f32(current, sp, value) || !std::isfinite(value) || value <= -1.0f ||
+  pop_f32(current, sp, value);
+  if (!std::isfinite(value) || value <= -1.0f ||
       value >= kTwoPow32<float>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
-  if (!push(current, sp, static_cast<std::uint32_t>(value))) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
+  push(current, sp, static_cast<std::uint32_t>(value));
   trap_code = 0;
   return true;
 }
@@ -657,16 +642,14 @@ bool conversion_i32_trunc_f32_u(execution_context &current, std::uint32_t *&sp,
 bool conversion_i32_trunc_f64_s(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   double value = 0;
-  if (!pop_f64(current, sp, value) || !std::isfinite(value) || value < -kTwoPow31<double> ||
+  pop_f64(current, sp, value);
+  if (!std::isfinite(value) || value < -kTwoPow31<double> ||
       value >= kTwoPow31<double>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
   const auto result = static_cast<std::uint32_t>(static_cast<std::int32_t>(value));
-  if (!push(current, sp, result)) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
+  push(current, sp, result);
   trap_code = 0;
   return true;
 }
@@ -674,15 +657,13 @@ bool conversion_i32_trunc_f64_s(execution_context &current, std::uint32_t *&sp,
 bool conversion_i32_trunc_f64_u(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   double value = 0;
-  if (!pop_f64(current, sp, value) || !std::isfinite(value) || value <= -1.0 ||
+  pop_f64(current, sp, value);
+  if (!std::isfinite(value) || value <= -1.0 ||
       value >= kTwoPow32<double>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
-  if (!push(current, sp, static_cast<std::uint32_t>(value))) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
+  push(current, sp, static_cast<std::uint32_t>(value));
   trap_code = 0;
   return true;
 }
@@ -690,7 +671,8 @@ bool conversion_i32_trunc_f64_u(execution_context &current, std::uint32_t *&sp,
 bool conversion_i64_trunc_f32_s(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   float value = 0;
-  if (!pop_f32(current, sp, value) || !std::isfinite(value) || value < -kTwoPow63<float> ||
+  pop_f32(current, sp, value);
+  if (!std::isfinite(value) || value < -kTwoPow63<float> ||
       value >= kTwoPow63<float>) {
     trap_code = kTrapInvalidConversion;
     return false;
@@ -698,10 +680,7 @@ bool conversion_i64_trunc_f32_s(execution_context &current, std::uint32_t *&sp,
   const auto result = value == -kTwoPow63<float>
                           ? kI64SignBit
                           : static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
-  if (!push_u64(current, sp, result)) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
+  push_u64(current, sp, result);
   trap_code = 0;
   return true;
 }
@@ -709,15 +688,13 @@ bool conversion_i64_trunc_f32_s(execution_context &current, std::uint32_t *&sp,
 bool conversion_i64_trunc_f32_u(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   float value = 0;
-  if (!pop_f32(current, sp, value) || !std::isfinite(value) || value <= -1.0f ||
+  pop_f32(current, sp, value);
+  if (!std::isfinite(value) || value <= -1.0f ||
       value >= kTwoPow64<float>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
-  if (!push_u64(current, sp, static_cast<std::uint64_t>(value))) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
+  push_u64(current, sp, static_cast<std::uint64_t>(value));
   trap_code = 0;
   return true;
 }
@@ -725,7 +702,8 @@ bool conversion_i64_trunc_f32_u(execution_context &current, std::uint32_t *&sp,
 bool conversion_i64_trunc_f64_s(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   double value = 0;
-  if (!pop_f64(current, sp, value) || !std::isfinite(value) || value < -kTwoPow63<double> ||
+  pop_f64(current, sp, value);
+  if (!std::isfinite(value) || value < -kTwoPow63<double> ||
       value >= kTwoPow63<double>) {
     trap_code = kTrapInvalidConversion;
     return false;
@@ -733,10 +711,7 @@ bool conversion_i64_trunc_f64_s(execution_context &current, std::uint32_t *&sp,
   const auto result = value == -kTwoPow63<double>
                           ? kI64SignBit
                           : static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
-  if (!push_u64(current, sp, result)) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
+  push_u64(current, sp, result);
   trap_code = 0;
   return true;
 }
@@ -744,24 +719,20 @@ bool conversion_i64_trunc_f64_s(execution_context &current, std::uint32_t *&sp,
 bool conversion_i64_trunc_f64_u(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   double value = 0;
-  if (!pop_f64(current, sp, value) || !std::isfinite(value) || value <= -1.0 ||
+  pop_f64(current, sp, value);
+  if (!std::isfinite(value) || value <= -1.0 ||
       value >= kTwoPow64<double>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
-  if (!push_u64(current, sp, static_cast<std::uint64_t>(value))) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
+  push_u64(current, sp, static_cast<std::uint64_t>(value));
   trap_code = 0;
   return true;
 }
 
 bool conversion_i32_trunc_sat_f32_s(execution_context &current, std::uint32_t *&sp) {
   float value = 0;
-  if (!pop_f32(current, sp, value)) {
-    return false;
-  }
+  pop_f32(current, sp, value);
   std::uint32_t result = 0;
   if (std::isnan(value)) {
     result = 0;
@@ -772,14 +743,13 @@ bool conversion_i32_trunc_sat_f32_s(execution_context &current, std::uint32_t *&
   } else {
     result = static_cast<std::uint32_t>(static_cast<std::int32_t>(value));
   }
-  return push(current, sp, result);
+  push(current, sp, result);
+  return true;
 }
 
 bool conversion_i32_trunc_sat_f32_u(execution_context &current, std::uint32_t *&sp) {
   float value = 0;
-  if (!pop_f32(current, sp, value)) {
-    return false;
-  }
+  pop_f32(current, sp, value);
   std::uint32_t result = 0;
   if (std::isnan(value) || value <= 0.0f) {
     result = 0;
@@ -788,14 +758,13 @@ bool conversion_i32_trunc_sat_f32_u(execution_context &current, std::uint32_t *&
   } else {
     result = static_cast<std::uint32_t>(value);
   }
-  return push(current, sp, result);
+  push(current, sp, result);
+  return true;
 }
 
 bool conversion_i32_trunc_sat_f64_s(execution_context &current, std::uint32_t *&sp) {
   double value = 0;
-  if (!pop_f64(current, sp, value)) {
-    return false;
-  }
+  pop_f64(current, sp, value);
   std::uint32_t result = 0;
   if (std::isnan(value)) {
     result = 0;
@@ -806,14 +775,13 @@ bool conversion_i32_trunc_sat_f64_s(execution_context &current, std::uint32_t *&
   } else {
     result = static_cast<std::uint32_t>(static_cast<std::int32_t>(value));
   }
-  return push(current, sp, result);
+  push(current, sp, result);
+  return true;
 }
 
 bool conversion_i32_trunc_sat_f64_u(execution_context &current, std::uint32_t *&sp) {
   double value = 0;
-  if (!pop_f64(current, sp, value)) {
-    return false;
-  }
+  pop_f64(current, sp, value);
   std::uint32_t result = 0;
   if (std::isnan(value) || value <= 0.0) {
     result = 0;
@@ -822,14 +790,13 @@ bool conversion_i32_trunc_sat_f64_u(execution_context &current, std::uint32_t *&
   } else {
     result = static_cast<std::uint32_t>(value);
   }
-  return push(current, sp, result);
+  push(current, sp, result);
+  return true;
 }
 
 bool conversion_i64_trunc_sat_f32_s(execution_context &current, std::uint32_t *&sp) {
   float value = 0;
-  if (!pop_f32(current, sp, value)) {
-    return false;
-  }
+  pop_f32(current, sp, value);
   std::uint64_t result = 0;
   if (std::isnan(value)) {
     result = 0;
@@ -840,14 +807,13 @@ bool conversion_i64_trunc_sat_f32_s(execution_context &current, std::uint32_t *&
   } else {
     result = static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
   }
-  return push_u64(current, sp, result);
+  push_u64(current, sp, result);
+  return true;
 }
 
 bool conversion_i64_trunc_sat_f32_u(execution_context &current, std::uint32_t *&sp) {
   float value = 0;
-  if (!pop_f32(current, sp, value)) {
-    return false;
-  }
+  pop_f32(current, sp, value);
   std::uint64_t result = 0;
   if (std::isnan(value) || value <= 0.0f) {
     result = 0;
@@ -856,14 +822,13 @@ bool conversion_i64_trunc_sat_f32_u(execution_context &current, std::uint32_t *&
   } else {
     result = static_cast<std::uint64_t>(value);
   }
-  return push_u64(current, sp, result);
+  push_u64(current, sp, result);
+  return true;
 }
 
 bool conversion_i64_trunc_sat_f64_s(execution_context &current, std::uint32_t *&sp) {
   double value = 0;
-  if (!pop_f64(current, sp, value)) {
-    return false;
-  }
+  pop_f64(current, sp, value);
   std::uint64_t result = 0;
   if (std::isnan(value)) {
     result = 0;
@@ -874,14 +839,13 @@ bool conversion_i64_trunc_sat_f64_s(execution_context &current, std::uint32_t *&
   } else {
     result = static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
   }
-  return push_u64(current, sp, result);
+  push_u64(current, sp, result);
+  return true;
 }
 
 bool conversion_i64_trunc_sat_f64_u(execution_context &current, std::uint32_t *&sp) {
   double value = 0;
-  if (!pop_f64(current, sp, value)) {
-    return false;
-  }
+  pop_f64(current, sp, value);
   std::uint64_t result = 0;
   if (std::isnan(value) || value <= 0.0) {
     result = 0;
@@ -890,17 +854,16 @@ bool conversion_i64_trunc_sat_f64_u(execution_context &current, std::uint32_t *&
   } else {
     result = static_cast<std::uint64_t>(value);
   }
-  return push_u64(current, sp, result);
+  push_u64(current, sp, result);
+  return true;
 }
 
 bool conversion_i64_extend_i32_s(execution_context &current, std::uint32_t *&sp,
                                  std::uint32_t &trap_code) {
   std::uint32_t value = 0;
-  if (!pop(current, sp, value) || !push_u64(current, sp,
-                                            static_cast<std::uint64_t>(static_cast<std::int64_t>(
-                                                static_cast<std::int32_t>(value))))) {
-    return false;
-  }
+  pop(current, sp, value);
+  push_u64(current, sp,
+           static_cast<std::uint64_t>(static_cast<std::int64_t>(static_cast<std::int32_t>(value))));
   trap_code = 0;
   return true;
 }
@@ -908,9 +871,8 @@ bool conversion_i64_extend_i32_s(execution_context &current, std::uint32_t *&sp,
 bool conversion_i64_extend_i32_u(execution_context &current, std::uint32_t *&sp,
                                  std::uint32_t &trap_code) {
   std::uint32_t value = 0;
-  if (!pop(current, sp, value) || !push_u64(current, sp, value)) {
-    return false;
-  }
+  pop(current, sp, value);
+  push_u64(current, sp, value);
   trap_code = 0;
   return true;
 }
@@ -918,81 +880,72 @@ bool conversion_i64_extend_i32_u(execution_context &current, std::uint32_t *&sp,
 bool conversion_f32_convert_i32_s(execution_context &current, std::uint32_t *&sp,
                                   [[maybe_unused]] std::uint32_t &trap_code) {
   std::uint32_t value = 0;
-  if (!pop(current, sp, value)) {
-    return false;
-  }
-  return push_f32(current, sp, static_cast<float>(static_cast<std::int32_t>(value)));
+  pop(current, sp, value);
+  push_f32(current, sp, static_cast<float>(static_cast<std::int32_t>(value)));
+  return true;
 }
 
 bool conversion_f32_convert_i32_u(execution_context &current, std::uint32_t *&sp,
                                   [[maybe_unused]] std::uint32_t &trap_code) {
   std::uint32_t value = 0;
-  if (!pop(current, sp, value)) {
-    return false;
-  }
-  return push_f32(current, sp, static_cast<float>(value));
+  pop(current, sp, value);
+  push_f32(current, sp, static_cast<float>(value));
+  return true;
 }
 
 bool conversion_f64_convert_i32_s(execution_context &current, std::uint32_t *&sp,
                                   [[maybe_unused]] std::uint32_t &trap_code) {
   std::uint32_t value = 0;
-  if (!pop(current, sp, value)) {
-    return false;
-  }
-  return push_f64(current, sp, static_cast<double>(static_cast<std::int32_t>(value)));
+  pop(current, sp, value);
+  push_f64(current, sp, static_cast<double>(static_cast<std::int32_t>(value)));
+  return true;
 }
 
 bool conversion_f64_convert_i32_u(execution_context &current, std::uint32_t *&sp,
                                   [[maybe_unused]] std::uint32_t &trap_code) {
   std::uint32_t value = 0;
-  if (!pop(current, sp, value)) {
-    return false;
-  }
-  return push_f64(current, sp, static_cast<double>(value));
+  pop(current, sp, value);
+  push_f64(current, sp, static_cast<double>(value));
+  return true;
 }
 
 bool conversion_f32_convert_i64_s(execution_context &current, std::uint32_t *&sp,
                                   [[maybe_unused]] std::uint32_t &trap_code) {
   std::uint64_t value = 0;
-  if (!pop_u64(current, sp, value)) {
-    return false;
-  }
-  return push_f32(current, sp, static_cast<float>(static_cast<std::int64_t>(value)));
+  pop_u64(current, sp, value);
+  push_f32(current, sp, static_cast<float>(static_cast<std::int64_t>(value)));
+  return true;
 }
 
 bool conversion_f32_convert_i64_u(execution_context &current, std::uint32_t *&sp,
                                   [[maybe_unused]] std::uint32_t &trap_code) {
   std::uint64_t value = 0;
-  if (!pop_u64(current, sp, value)) {
-    return false;
-  }
-  return push_f32(current, sp, static_cast<float>(value));
+  pop_u64(current, sp, value);
+  push_f32(current, sp, static_cast<float>(value));
+  return true;
 }
 
 bool conversion_f64_convert_i64_s(execution_context &current, std::uint32_t *&sp,
                                   [[maybe_unused]] std::uint32_t &trap_code) {
   std::uint64_t value = 0;
-  if (!pop_u64(current, sp, value)) {
-    return false;
-  }
-  return push_f64(current, sp, static_cast<double>(static_cast<std::int64_t>(value)));
+  pop_u64(current, sp, value);
+  push_f64(current, sp, static_cast<double>(static_cast<std::int64_t>(value)));
+  return true;
 }
 
 bool conversion_f64_convert_i64_u(execution_context &current, std::uint32_t *&sp,
                                   [[maybe_unused]] std::uint32_t &trap_code) {
   std::uint64_t value = 0;
-  if (!pop_u64(current, sp, value)) {
-    return false;
-  }
-  return push_f64(current, sp, static_cast<double>(value));
+  pop_u64(current, sp, value);
+  push_f64(current, sp, static_cast<double>(value));
+  return true;
 }
 
 bool conversion_f64_promote_f32(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   float value = 0;
-  if (!pop_f32(current, sp, value) || !push_f64(current, sp, static_cast<double>(value))) {
-    return false;
-  }
+  pop_f32(current, sp, value);
+  push_f64(current, sp, static_cast<double>(value));
   trap_code = 0;
   return true;
 }
@@ -1000,9 +953,8 @@ bool conversion_f64_promote_f32(execution_context &current, std::uint32_t *&sp,
 bool conversion_f32_demote_f64(execution_context &current, std::uint32_t *&sp,
                                std::uint32_t &trap_code) {
   double value = 0;
-  if (!pop_f64(current, sp, value) || !push_f32(current, sp, static_cast<float>(value))) {
-    return false;
-  }
+  pop_f64(current, sp, value);
+  push_f32(current, sp, static_cast<float>(value));
   trap_code = 0;
   return true;
 }
@@ -1054,7 +1006,7 @@ bool runtime_br_if(execution_context *context, const std::uint8_t *&instruction_
   const auto target_block_index = static_cast<block_index_t>(read_u16(rel));
   const auto target_stack_base_words = read_u8(rel);
   const auto result_words = read_u8(rel);
-  (void)pop(current, sp, condition);
+  pop(current, sp, condition);
   if (condition == 0) {
     const auto next_ip = source_ip + width;
     const auto &frame = active_frame(current);
@@ -1279,7 +1231,7 @@ bool runtime_br_table(execution_context *context, const std::uint8_t *&instructi
   const auto *table_targets = rel + kBrTableCountBytes;
   const auto case_count = read_u16(rel);
   std::uint32_t selector = 0;
-  (void)pop(current, sp, selector);
+  pop(current, sp, selector);
 
   const auto selected_index = selector < case_count ? selector : case_count;
   const auto *selected_rel =
@@ -1304,7 +1256,7 @@ bool runtime_i32_const(execution_context *context, const std::uint8_t *&instruct
   auto &current = *context;
   const auto encoded_width = read_u8(rel);
   const auto value = read_s32(rel);
-  (void)push(current, sp, static_cast<std::uint32_t>(value));
+  push(current, sp, static_cast<std::uint32_t>(value));
   instruction_ip += encoded_width;
   return true;
 }
@@ -1329,7 +1281,7 @@ bool runtime_i64_const(execution_context *context, const std::uint8_t *&instruct
   auto &current = *context;
   const auto encoded_width = read_u8(rel);
   const auto value = read_s64(rel);
-  (void)push_u64(current, sp, static_cast<std::uint64_t>(value));
+  push_u64(current, sp, static_cast<std::uint64_t>(value));
   instruction_ip += encoded_width;
   return true;
 }
@@ -1339,7 +1291,7 @@ bool runtime_f32_const(execution_context *context, const std::uint8_t *&instruct
                        [[maybe_unused]] const std::uint8_t *&rel) {
   std::uint32_t bits = 0;
   std::memcpy(&bits, instruction_ip + 1, sizeof(bits));
-  (void)push(*context, sp, static_cast<std::uint32_t>(bits));
+  push(*context, sp, static_cast<std::uint32_t>(bits));
   instruction_ip += kF32ConstWidth;
   return true;
 }
@@ -1349,7 +1301,7 @@ bool runtime_f64_const(execution_context *context, const std::uint8_t *&instruct
                        [[maybe_unused]] const std::uint8_t *&rel) {
   std::uint64_t bits = 0;
   std::memcpy(&bits, instruction_ip + 1, sizeof(bits));
-  (void)push_u64(*context, sp, bits);
+  push_u64(*context, sp, bits);
   instruction_ip += kF64ConstWidth;
   return true;
 }
@@ -1745,7 +1697,7 @@ bool runtime_if(execution_context *context, const std::uint8_t *&instruction_ip,
                 [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
   std::uint32_t condition = 0;
-  (void)pop(current, sp, condition);
+  pop(current, sp, condition);
   const auto then_block_index = static_cast<block_index_t>(read_u16(rel));
   const auto else_block_index = static_cast<block_index_t>(read_u16(rel));
   const auto target_block_index = condition == 0 ? else_block_index : then_block_index;

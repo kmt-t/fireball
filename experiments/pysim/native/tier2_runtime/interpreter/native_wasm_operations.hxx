@@ -89,17 +89,17 @@ std::uint8_t peek_u8(const std::uint8_t *rel);
 code_ip_t instruction_offset(const execution_context &current, const std::uint8_t *ip);
 
 /** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
-bool pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &value);
+void pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &value);
 /** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
-bool push(execution_context &current, std::uint32_t *&sp, std::uint32_t value);
+void push(execution_context &current, std::uint32_t *&sp, std::uint32_t value);
 /** @brief Interpreter注釈プールの固定幅値を読み出す。 */
 std::int32_t read_s32(const std::uint8_t *&rel);
 /** @brief Interpreter注釈プールの固定幅値を読み出す。 */
 std::int64_t read_s64(const std::uint8_t *&rel);
 /** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
-bool pop_u64(execution_context &current, std::uint32_t *&sp, std::uint64_t &value);
+void pop_u64(execution_context &current, std::uint32_t *&sp, std::uint64_t &value);
 /** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
-bool push_u64(execution_context &current, std::uint32_t *&sp, std::uint64_t value);
+void push_u64(execution_context &current, std::uint32_t *&sp, std::uint64_t value);
 /** @brief `combine_u64`に対応する実行状態または値を求める。 */
 std::uint64_t combine_u64(std::uint32_t low, std::uint32_t high);
 template <bool ResultIsBool>
@@ -114,13 +114,13 @@ double f64_from_bits(std::uint64_t value);
 /** @brief `f64_to_bits`に対応する実行状態または値を求める。 */
 std::uint64_t f64_to_bits(double value);
 /** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
-bool pop_f32(execution_context &current, std::uint32_t *&sp, float &value);
+void pop_f32(execution_context &current, std::uint32_t *&sp, float &value);
 /** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
-bool push_f32(execution_context &current, std::uint32_t *&sp, float value);
+void push_f32(execution_context &current, std::uint32_t *&sp, float value);
 /** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
-bool pop_f64(execution_context &current, std::uint32_t *&sp, double &value);
+void pop_f64(execution_context &current, std::uint32_t *&sp, double &value);
 /** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
-bool push_f64(execution_context &current, std::uint32_t *&sp, double value);
+void push_f64(execution_context &current, std::uint32_t *&sp, double value);
 /** @brief 現在実行中の呼び出しフレームを参照する。 */
 fireball_call_frame_native &active_frame(execution_context &current);
 
@@ -153,9 +153,9 @@ local_value_span local_span(const fireball_call_frame_native &frame, local_count
 void branch(execution_context &current, std::uint32_t *&sp, block_index_t target_block_index,
             operand_words_t target_stack_base_words, operand_words_t result_words);
 /** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
-bool pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &value);
+void pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &value);
 /** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
-bool push(execution_context &current, std::uint32_t *&sp, std::uint32_t value);
+void push(execution_context &current, std::uint32_t *&sp, std::uint32_t value);
 
 // Named opcode operations keep the API catalog readable and independently
 // callable; no anonymous callable bodies are embedded in handler tables.

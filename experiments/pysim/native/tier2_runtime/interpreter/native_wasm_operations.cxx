@@ -1250,85 +1250,73 @@ bool runtime_i32_unary(execution_context *context, const std::uint8_t *&instruct
   instruction_ip += 1;
   return true;
 }
-template <bool Indirect, bool DirectCps>
-bool runtime_call(execution_context *context, const std::uint8_t *&instruction_ip,
-                  std::uint32_t *&sp, std::uint32_t *&local_stack,
-                  const std::uint8_t *&rel) {
-  auto &current = *context;
-  const auto source_ip = instruction_offset(current, instruction_ip);
-  const auto encoded_width = read_u8(rel);
-  function_index_t function_index = 0;
-  [[maybe_unused]] type_index_t expected_type_index = 0;
-  std::uint32_t table_index = 0;
-  std::uint32_t table_slot = 0;
-  const auto &caller = active_frame(current);
-  assert(caller.function_view->module_view != nullptr);
-  const auto &module = *caller.function_view->module_view;
-
+/**
+ * @brief 呼び出し先の関数番号を解決する。間接呼出しの表引きに失敗した場合はtrapし、falseを返す。
+ * @details 直接呼出しは命令の即値を、間接呼出しは表の要素を使う。期待する型番号は呼出し側へ返す。
+ */
+template <bool Indirect>
+bool resolve_callee(execution_context &current, code_ip_t source_ip, std::uint32_t *sp,
+                    const fireball_wasm_module_execution_view_native &module,
+                    const std::uint8_t *&rel, function_index_t &function_index,
+                    type_index_t &expected_type_index) {
   if constexpr (Indirect) {
     expected_type_index = static_cast<type_index_t>(read_u16(rel));
-    table_index = 0;
     // The loader requires a table for CALL_INDIRECT and accepts only table index zero.
-    assert(table_index < module.table_count && module.tables != nullptr);
-    const auto &table = module.tables[table_index];
+    constexpr std::uint32_t kTableIndex = 0;
+    assert(kTableIndex < module.table_count && module.tables != nullptr);
+    const auto &table = module.tables[kTableIndex];
     assert(sp != current.stack_base);
-    table_slot = sp[-1];
+    const auto table_slot = sp[-1];
     if (table_slot >= table.size || table.function_indices == nullptr) {
-      return trap(current, kTrapTableIndexOutOfBounds, instruction_offset(current, instruction_ip));
+      return trap(current, kTrapTableIndexOutOfBounds, source_ip);
     }
     const auto table_function_index = table.function_indices[table_slot];
     if (table_function_index == FIREBALL_INVALID_BLOCK_INDEX) {
-      return trap(current, kTrapTableSlotUninitialized, instruction_offset(current, instruction_ip));
+      return trap(current, kTrapTableSlotUninitialized, source_ip);
     }
     assert(table_function_index < module.function_count);
     function_index = static_cast<function_index_t>(table_function_index);
   } else {
     function_index = static_cast<function_index_t>(read_u16(rel));
   }
+  return true;
+}
 
-  const auto &target = module.functions[function_index];
-  const auto return_ip = source_ip + encoded_width;
-  const auto return_block_index = static_cast<block_index_t>(read_u16(rel));
-  // Imports cross the host-call boundary; defined guest functions stay in this
-  // native dispatcher and never return to Python opcode handling.
-  if (target.is_import != 0) {
-    current.current_block_index = return_block_index;
-    return runtime_api_boundary(current, source_ip, rel);
+/**
+ * @brief 間接呼出しの期待する型と呼出し先の型を比較する。不一致はtrapし、falseを返す。
+ * @details 型番号が一致する場合は署名を比較しない。一致しない場合は引数と結果の並びを比較する。
+ */
+bool check_indirect_signature(execution_context &current, code_ip_t source_ip,
+                              const fireball_wasm_module_execution_view_native &module,
+                              type_index_t expected_type_index, type_index_t actual_type_index) {
+  assert(expected_type_index < module.type_count && actual_type_index < module.type_count);
+  assert(module.types != nullptr && module.signature_bytes != nullptr);
+  if (expected_type_index == actual_type_index) {
+    return true;
   }
-  if constexpr (Indirect) {
-    // Imported calls are checked once by the host-call boundary. Defined
-    // calls validate only the selected target before entering its body.
-    assert(expected_type_index < module.type_count && target.type_index < module.type_count);
-    assert(module.types != nullptr && module.signature_bytes != nullptr);
-    if (expected_type_index != target.type_index) {
-      const auto &expected = module.types[expected_type_index];
-      const auto &actual = module.types[target.type_index];
-      if (expected.param_count != actual.param_count ||
-          expected.result_count != actual.result_count ||
-          std::memcmp(module.signature_bytes + expected.param_offset,
-                      module.signature_bytes + actual.param_offset, expected.param_count) != 0 ||
-          std::memcmp(module.signature_bytes + expected.result_offset,
-                      module.signature_bytes + actual.result_offset, expected.result_count) != 0) {
-        return trap(current, kTrapIndirectCallTypeMismatch, instruction_offset(current, instruction_ip));
-      }
-    }
+  const auto &expected = module.types[expected_type_index];
+  const auto &actual = module.types[actual_type_index];
+  if (expected.param_count != actual.param_count || expected.result_count != actual.result_count ||
+      std::memcmp(module.signature_bytes + expected.param_offset,
+                  module.signature_bytes + actual.param_offset, expected.param_count) != 0 ||
+      std::memcmp(module.signature_bytes + expected.result_offset,
+                  module.signature_bytes + actual.result_offset, expected.result_count) != 0) {
+    return trap(current, kTrapIndirectCallTypeMismatch, source_ip);
   }
-  if (current.call_stack->size >= FIREBALL_NATIVE_CALL_STACK_CAPACITY) {
-    return trap(current, kTrapCallStackCapacity, instruction_offset(current, instruction_ip));
-  }
-  if (current.local_stack_pointer + target.local_slot_count > current.local_stack_limit) {
-    return trap(current, kTrapLocalStackCapacity, instruction_offset(current, instruction_ip));
-  }
+  return true;
+}
 
-  const auto argument_words =
-      static_cast<operand_words_t>(target.param_packed_slot_count + (Indirect ? 1u : 0u));
-  assert(sp >= current.stack_base + argument_words);
-  const auto argument_base = sp - static_cast<std::ptrdiff_t>(argument_words);
-  if (target.max_operand_stack_words >
-      static_cast<std::uint32_t>(current.stack_limit - argument_base)) {
-    return trap(current, kTrapOperandStackCapacity, instruction_offset(current, instruction_ip));
-  }
-
+/**
+ * @brief 定義済みの呼出し先の呼び出しフレームを積み、その入口へ進む。
+ * @pre 呼出し先の局所変数領域と呼び出し階層の容量は、呼出し側で検査済みである。
+ * @details 引数は呼出し側のオペランドスタック末尾から局所変数領域へ複写する。
+ */
+template <bool DirectCps>
+bool push_call_frame(execution_context &current, const std::uint8_t *&instruction_ip,
+                     std::uint32_t *&sp, std::uint32_t *&local_stack, const std::uint8_t *&rel,
+                     const fireball_wasm_function_execution_view_native &target,
+                     std::uint32_t *argument_base, code_ip_t return_ip,
+                     block_index_t return_block_index) {
   auto *callee_local_base = current.local_stack_pointer;
   const auto local_end = callee_local_base + target.local_slot_count;
   for (frame_word_offset_t index = target.param_packed_slot_count;
@@ -1364,6 +1352,61 @@ bool runtime_call(execution_context *context, const std::uint8_t *&instruction_i
   } else {
     return block_boundary(current, 0, target.entry_block_index, rel);
   }
+}
+
+template <bool Indirect, bool DirectCps>
+bool runtime_call(execution_context *context, const std::uint8_t *&instruction_ip,
+                  std::uint32_t *&sp, std::uint32_t *&local_stack,
+                  const std::uint8_t *&rel) {
+  auto &current = *context;
+  const auto source_ip = instruction_offset(current, instruction_ip);
+  const auto encoded_width = read_u8(rel);
+  const auto &caller = active_frame(current);
+  assert(caller.function_view->module_view != nullptr);
+  const auto &module = *caller.function_view->module_view;
+
+  function_index_t function_index = 0;
+  type_index_t expected_type_index = 0;
+  if (!resolve_callee<Indirect>(current, source_ip, sp, module, rel, function_index,
+                                expected_type_index)) {
+    return false;
+  }
+
+  const auto &target = module.functions[function_index];
+  const auto return_ip = source_ip + encoded_width;
+  const auto return_block_index = static_cast<block_index_t>(read_u16(rel));
+  // Imports cross the host-call boundary; defined guest functions stay in this
+  // native dispatcher and never return to Python opcode handling.
+  if (target.is_import != 0) {
+    current.current_block_index = return_block_index;
+    return runtime_api_boundary(current, source_ip, rel);
+  }
+  // Imported calls are checked once by the host-call boundary. Defined
+  // calls validate only the selected target before entering its body.
+  if constexpr (Indirect) {
+    if (!check_indirect_signature(current, source_ip, module, expected_type_index,
+                                  target.type_index)) {
+      return false;
+    }
+  }
+  if (current.call_stack->size >= FIREBALL_NATIVE_CALL_STACK_CAPACITY) {
+    return trap(current, kTrapCallStackCapacity, source_ip);
+  }
+  if (current.local_stack_pointer + target.local_slot_count > current.local_stack_limit) {
+    return trap(current, kTrapLocalStackCapacity, source_ip);
+  }
+
+  const auto argument_words =
+      static_cast<operand_words_t>(target.param_packed_slot_count + (Indirect ? 1u : 0u));
+  assert(sp >= current.stack_base + argument_words);
+  auto *argument_base = sp - static_cast<std::ptrdiff_t>(argument_words);
+  if (target.max_operand_stack_words >
+      static_cast<std::uint32_t>(current.stack_limit - argument_base)) {
+    return trap(current, kTrapOperandStackCapacity, source_ip);
+  }
+
+  return push_call_frame<DirectCps>(current, instruction_ip, sp, local_stack, rel, target,
+                                    argument_base, return_ip, return_block_index);
 }
 template <auto Operation>
 bool runtime_i32_binary(execution_context *context, const std::uint8_t *&instruction_ip,

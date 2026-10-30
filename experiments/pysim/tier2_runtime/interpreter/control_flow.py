@@ -200,6 +200,7 @@ from tier2_runtime.wasm.opcodes import (
     RETURN,
     RPN_ELEM_BINOP_BASE,
     RPN_ELEM_END,
+    RPN_ELEM_LOCAL_PAIR_SUB,
     RPN_ELEM_PUSH_IMM,
     RPN_ELEM_PUSH_LOCAL,
     RPN_EXPR_HEAD,
@@ -931,6 +932,22 @@ class RpnExpression:
     elements: bytes  # PUSH_LOCAL / PUSH_IMM / BINOP elements; END is appended by the pool builder
 
 
+def _template_elements(elements: bytes) -> bytes:
+    """Collapse the run `local.get a; local.get b; i32.sub` into the LOCAL_PAIR_SUB template element.
+
+    The template element carries both offsets (5 bytes). Its handler reads the END element that
+    follows it, so the pair and the sub cost one dispatch.
+    """
+    if (
+        len(elements) == 7
+        and elements[0] == RPN_ELEM_PUSH_LOCAL
+        and elements[3] == RPN_ELEM_PUSH_LOCAL
+        and elements[6] == RPN_ELEM_BINOP_BASE + _RPN_BINOP_KIND[0x6B]
+    ):
+        return bytes([RPN_ELEM_LOCAL_PAIR_SUB]) + elements[1:3] + elements[4:6]
+    return elements
+
+
 def _scan_rpn_expression(
     code: memoryview,
     instructions: list[Instr],
@@ -977,7 +994,7 @@ def _scan_rpn_expression(
                 code_length=code_length,
                 target=local_layout.offset(instruction.operand),
                 max_depth=max_depth,
-                elements=bytes(elements),
+                elements=_template_elements(bytes(elements)),
             )
             return expression, position
         else:

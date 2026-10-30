@@ -9,6 +9,7 @@
 #include <functional>
 #include <limits>
 #include <type_traits>
+#include <utility>
 
 namespace fireball::wasm_runtime {
 
@@ -476,15 +477,8 @@ void push_f64(execution_context &current, std::uint32_t *&sp, double value) {
 }
 
 fireball_call_frame_native &active_frame(execution_context &current) {
-  assert(current.call_stack != nullptr);
-  assert(current.call_stack->size != 0);
-  assert(current.call_stack->size <= FIREBALL_NATIVE_CALL_STACK_CAPACITY);
-  assert(current.call_frame_base != nullptr);
-  assert(current.call_frame_base >= current.call_stack->frames);
-  assert(current.call_frame_base < current.call_stack->frames + current.call_stack->size);
-  auto &frame = current.call_stack->frames[current.call_stack->size - 1];
-  assert(frame.function_view != nullptr);
-  return frame;
+  // The const overload owns the checks; this view only restores mutability.
+  return const_cast<fireball_call_frame_native &>(active_frame(std::as_const(current)));
 }
 
 bool finish_current_function(execution_context &current, std::uint32_t *&local_base,

@@ -85,8 +85,6 @@ std::uint16_t read_u16(const std::uint8_t *&rel);
 std::uint32_t read_u32(const std::uint8_t *&rel);
 /** @brief Interpreter注釈プールのu8値を先読みする。 */
 std::uint8_t peek_u8(const std::uint8_t *rel);
-/** @brief 有効な命令カーソルをコード先頭からの位置へ変換する。 */
-code_ip_t instruction_offset(const execution_context &current, const std::uint8_t *ip);
 
 /** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
 void pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &value);
@@ -121,12 +119,6 @@ void push_f32(execution_context &current, std::uint32_t *&sp, float value);
 void pop_f64(execution_context &current, std::uint32_t *&sp, double &value);
 /** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
 void push_f64(execution_context &current, std::uint32_t *&sp, double value);
-/** @brief 現在実行中の呼び出しフレームを参照する。 */
-fireball_call_frame_native &active_frame(execution_context &current);
-
-/** @brief 現在実行中の呼び出しフレームを参照する。 */
-const fireball_call_frame_native &active_frame(const execution_context &current);
-
 /** @brief 基本ブロック入口のInterpreter注釈プールを参照する。 */
 const std::uint8_t *interpreter_rel_for_block_index(const fireball_call_frame_native &frame,
                                                     block_index_t block_index);
@@ -152,10 +144,6 @@ local_value_span local_span(const fireball_call_frame_native &frame, local_count
 /** @brief WASMの分岐を適用し、次の命令位置を返す。 */
 void branch(execution_context &current, std::uint32_t *&sp, block_index_t target_block_index,
             operand_words_t target_stack_base_words, operand_words_t result_words);
-/** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
-void pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &value);
-/** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
-void push(execution_context &current, std::uint32_t *&sp, std::uint32_t value);
 
 // Named opcode operations keep the API catalog readable and independently
 // callable; no anonymous callable bodies are embedded in handler tables.

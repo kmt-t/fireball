@@ -12,6 +12,16 @@
 #include <assert.h>
 #include <stdint.h>
 
+// The ABI layouts depend on the pointer width. The 64-bit values mirror the x86-64 host and the
+// 32-bit values mirror the ARMv8-M (AAPCS) target. Both are checked by the static asserts below.
+#if UINTPTR_MAX == UINT64_MAX
+#define FB_NATIVE_POINTER_BYTES 8
+#elif UINTPTR_MAX == UINT32_MAX
+#define FB_NATIVE_POINTER_BYTES 4
+#else
+#error "unsupported pointer width for the Fireball native ABI"
+#endif
+
 #ifndef FB_CONF_JIT_BLOCK_COUNTERS
 #define FB_CONF_JIT_BLOCK_COUNTERS 0
 #endif
@@ -211,13 +221,17 @@ using call_frame_native = ::fireball_call_frame_native;
 using call_stack_native = ::fireball_call_stack_native;
 using value_stack_native = ::fireball_value_stack_native;
 
-static_assert(sizeof(void *) == sizeof(uint64_t));
+static_assert(sizeof(void *) == FB_NATIVE_POINTER_BYTES);
 
 static_assert(__is_standard_layout(execution_context_native));
 static_assert(__is_trivially_copyable(execution_context_native));
 static_assert(__is_standard_layout(wasm_function_execution_view_native));
 static_assert(__is_trivially_copyable(wasm_function_execution_view_native));
+#if FB_NATIVE_POINTER_BYTES == 8
 static_assert(offsetof(wasm_function_execution_view_native, code_pc_offset) == 12);
+#else
+static_assert(offsetof(wasm_function_execution_view_native, code_pc_offset) == 8);
+#endif
 static_assert(__is_standard_layout(wasm_function_type_execution_view_native));
 static_assert(__is_trivially_copyable(wasm_function_type_execution_view_native));
 static_assert(__is_standard_layout(wasm_table_execution_view_native));
@@ -249,6 +263,7 @@ static_assert(sizeof(jit_stack_words_t) == 1);
 static_assert(sizeof(jit_body_count_t) == 1);
 static_assert(sizeof(card_index_t) == 4);
 
+#if FB_NATIVE_POINTER_BYTES == 8
 static_assert(sizeof(execution_context_native) == 144);
 static_assert(offsetof(execution_context_native, ip) == 0x00);
 static_assert(offsetof(execution_context_native, stack_base) == 0x08);
@@ -271,7 +286,32 @@ static_assert(offsetof(execution_context_native, local_base) == 0x78);
 static_assert(offsetof(execution_context_native, rel) == 0x80);
 static_assert(offsetof(execution_context_native, current_block_index) == 0x88);
 static_assert(sizeof(execution_context_native) == 0x90);
+#else
+static_assert(sizeof(execution_context_native) == 88);
+static_assert(offsetof(execution_context_native, ip) == 0x00);
+static_assert(offsetof(execution_context_native, stack_base) == 0x04);
+static_assert(offsetof(execution_context_native, stack_pointer) == 0x08);
+static_assert(offsetof(execution_context_native, stack_limit) == 0x0C);
+static_assert(offsetof(execution_context_native, local_stack_base) == 0x10);
+static_assert(offsetof(execution_context_native, local_stack_pointer) == 0x14);
+static_assert(offsetof(execution_context_native, local_stack_limit) == 0x18);
+static_assert(offsetof(execution_context_native, runtime_flags) == 0x1C);
+static_assert(offsetof(execution_context_native, code_size) == 0x20);
+static_assert(offsetof(execution_context_native, code) == 0x24);
+static_assert(offsetof(execution_context_native, call_stack) == 0x28);
+static_assert(offsetof(execution_context_native, call_frame_base) == 0x2C);
+static_assert(offsetof(execution_context_native, loop_jump_count) == 0x30);
+static_assert(offsetof(execution_context_native, loop_jump_threshold) == 0x34);
+static_assert(offsetof(execution_context_native, linear_memory_host_base) == 0x38);
+static_assert(offsetof(execution_context_native, linear_memory_size) == 0x40);
+static_assert(offsetof(execution_context_native, trap_code) == 0x48);
+static_assert(offsetof(execution_context_native, local_base) == 0x4C);
+static_assert(offsetof(execution_context_native, rel) == 0x50);
+static_assert(offsetof(execution_context_native, current_block_index) == 0x54);
+static_assert(sizeof(execution_context_native) == 0x58);
+#endif
 static_assert(sizeof(wasm_function_type_execution_view_native) == 16);
+#if FB_NATIVE_POINTER_BYTES == 8
 static_assert(sizeof(wasm_function_execution_view_native) == 72);
 static_assert(offsetof(wasm_function_execution_view_native, local_offsets) == 16);
 static_assert(offsetof(wasm_function_execution_view_native, local_types) == 24);
@@ -281,7 +321,22 @@ static_assert(offsetof(wasm_function_execution_view_native, interpreter_annotati
 static_assert(offsetof(wasm_function_execution_view_native, function_index) == 56);
 static_assert(offsetof(wasm_function_execution_view_native, entry_block_index) == 60);
 static_assert(offsetof(wasm_function_execution_view_native, max_operand_stack_words) == 65);
+#else
+static_assert(sizeof(wasm_function_execution_view_native) == 52);
+static_assert(offsetof(wasm_function_execution_view_native, local_offsets) == 12);
+static_assert(offsetof(wasm_function_execution_view_native, local_types) == 16);
+static_assert(offsetof(wasm_function_execution_view_native, module_view) == 20);
+static_assert(offsetof(wasm_function_execution_view_native, interpreter_annotation_pool) == 24);
+static_assert(offsetof(wasm_function_execution_view_native, interpreter_annotation_byte_count) == 28);
+static_assert(offsetof(wasm_function_execution_view_native, function_index) == 36);
+static_assert(offsetof(wasm_function_execution_view_native, entry_block_index) == 40);
+static_assert(offsetof(wasm_function_execution_view_native, max_operand_stack_words) == 45);
+#endif
+#if FB_NATIVE_POINTER_BYTES == 8
 static_assert(sizeof(wasm_table_execution_view_native) == 16);
+#else
+static_assert(sizeof(wasm_table_execution_view_native) == 8);
+#endif
 static_assert(sizeof(wasm_block_execution_view_native) == 32);
 static_assert(offsetof(wasm_block_execution_view_native, frame_depth) == 16);
 static_assert(offsetof(wasm_block_execution_view_native, jit_cache_reference) == 17);
@@ -289,14 +344,23 @@ static_assert(offsetof(wasm_block_execution_view_native, byte_span) == 20);
 static_assert(offsetof(wasm_block_execution_view_native, interpreter_annotation_byte_offset) == 24);
 static_assert(offsetof(wasm_block_execution_view_native, next_block_index) == 28);
 static_assert(offsetof(wasm_block_execution_view_native, loops_to_block_index) == 30);
+#if FB_NATIVE_POINTER_BYTES == 8
 static_assert(sizeof(wasm_module_execution_view_native) == 104);
 static_assert(offsetof(wasm_module_execution_view_native, globals) == 56);
 static_assert(offsetof(wasm_module_execution_view_native, global_widths) == 64);
 static_assert(offsetof(wasm_module_execution_view_native, global_count) == 72);
 static_assert(offsetof(wasm_module_execution_view_native, block_execution_counts) == 96);
+#else
+static_assert(sizeof(wasm_module_execution_view_native) == 60);
+static_assert(offsetof(wasm_module_execution_view_native, globals) == 32);
+static_assert(offsetof(wasm_module_execution_view_native, global_widths) == 36);
+static_assert(offsetof(wasm_module_execution_view_native, global_count) == 40);
+static_assert(offsetof(wasm_module_execution_view_native, block_execution_counts) == 56);
+#endif
 static_assert(sizeof(value_stack_native) == 520);
 static_assert(offsetof(value_stack_native, values) == 0);
 static_assert(offsetof(value_stack_native, size) == 512);
+#if FB_NATIVE_POINTER_BYTES == 8
 static_assert(sizeof(call_frame_native) == 40);
 static_assert(offsetof(call_frame_native, function_view) == 0);
 static_assert(offsetof(call_frame_native, local_base) == 8);
@@ -305,9 +369,25 @@ static_assert(offsetof(call_frame_native, return_ip) == 24);
 static_assert(offsetof(call_frame_native, boundary_next_pc) == 28);
 static_assert(offsetof(call_frame_native, boundary_loops_to) == 32);
 static_assert(offsetof(call_frame_native, return_block_index) == 36);
+#else
+static_assert(sizeof(call_frame_native) == 28);
+static_assert(offsetof(call_frame_native, function_view) == 0);
+static_assert(offsetof(call_frame_native, local_base) == 4);
+static_assert(offsetof(call_frame_native, operand_stack_base) == 8);
+static_assert(offsetof(call_frame_native, return_ip) == 12);
+static_assert(offsetof(call_frame_native, boundary_next_pc) == 16);
+static_assert(offsetof(call_frame_native, boundary_loops_to) == 20);
+static_assert(offsetof(call_frame_native, return_block_index) == 24);
+#endif
+#if FB_NATIVE_POINTER_BYTES == 8
 static_assert(sizeof(call_stack_native) == 1288);
 static_assert(offsetof(call_stack_native, frames) == 0);
 static_assert(offsetof(call_stack_native, size) == 1280);
+#else
+static_assert(sizeof(call_stack_native) == 904);
+static_assert(offsetof(call_stack_native, frames) == 0);
+static_assert(offsetof(call_stack_native, size) == 896);
+#endif
 
 } // namespace fireball::runtime
 #endif

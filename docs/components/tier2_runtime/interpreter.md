@@ -15,6 +15,7 @@
 -->
 
 ## 1. コンセプト
+<!-- traceability: TEST-INTP-89 TEST-INTP-90 TEST-INTP-91 -->
 <!-- traceability: {ThreadedInterpreter} {LowLatencyJIT} {InterpreterContextStackless} {RuntimeHotspotProfiler} {RuntimeEventSink} -->
 Interpreter は、WASM命令をスレッドインタープリタ方式で実行する。低レイテンシと小フットプリントを設計目標とする。本コンポーネントは Execution Engine (`executor`) の一部として設計する。JITと実行状態を共有する。実行環境は `execution_context` の論理フィールドとして参照する。独立した `vsoc_runtime* env` 引数は設けない。
 
@@ -81,6 +82,7 @@ graph TD
 2本の値領域は互いに独立した固定容量バッファであり、それぞれ自身の容量に対してオーバーフローを検知する。関数実行記述子領域は値領域とは別に容量を検査する。`オペランドスタック`は関数呼び出しを跨いで連続するため、戻り値を呼出元へコピーする必要がない。呼出先の戻り値は共有`オペランドスタック`に残り、関数復帰処理が記述子を破棄して呼出元の実行を再開する。
 
 ### 3.3 主要なクラス・構造体・配列・定数
+<!-- traceability: TEST-INTP-92 -->
 
 #### インタープリタ（Interpreter）クラス
 依存関係（vSoC環境等）と実行状態、命令属性情報をカプセル化する。
@@ -618,11 +620,12 @@ OSRフォールバック、即時トラップと後続命令の抑止、3論理�
 
 - **ステータス**: 提案 (Proposed)
 - **コンテキスト**:
-  構文だけの命令を注釈の長さで飛ばせるかを検討した。`end`は遷移先BasicBlock indexを持ち、`br`は遷移元BasicBlockのstack情報を`current_block_index`から読むため、BasicBlockを越える遷移ではindexの更新が必要である。AO（96×54、1フレーム）の`end` 486,819件の内訳は、関数復帰426,292件、直後が別BasicBlockの先頭58,146件、BasicBlock先頭2,381件、同一BasicBlock内のno-op 0件である。
+  構文だけの命令を注釈の長さで飛ばせるかを検討した。`end`は遷移先BasicBlock indexを持つ。`br`は遷移元BasicBlockのstack情報を`current_block_index`から読む。そのため、BasicBlockを越える遷移ではindexの更新が必要である。
+  AO（96×54、1フレーム）の`end` 486,819件の内訳は、関数復帰426,292件である。直後が別BasicBlockの先頭である場合は58,146件である。BasicBlockの先頭である場合は2,381件である。同一BasicBlock内のno-opは0件である。
 - **決定事項**:
   `{ADR_EndNotSkipped}`として、`end`は注釈で飛ばさない。遷移先BasicBlock indexは`end`自身の注釈に持つ。`end`のハンドラは、同一BasicBlockならCPSを継続し、別BasicBlockへの遷移または関数復帰ならCPSを終了する。遷移先indexを直前の命令または次の命令の注釈へ移す方式は採らない。
 - **理由**:
-  (1) 直前の命令へ移す場合、通常の命令のハンドラがすべてindexを更新する必要があり、その費用（AO 320×180 換算で約107M件の各1命令のstore。仮定）が、飛ばしの利益（fall-throughの`end`約0.65M件、約8.7M命令。仮定）を上回る。
+  (1) 直前の命令へ移す場合、通常の命令のハンドラがすべてindexを更新する必要がある。その費用は、AO 320×180 換算で約107M件の各1命令のstoreである（仮定）。これは、飛ばしの利益（fall-throughの`end`約0.65M件、約8.7M命令。仮定）を上回る。
   (2) 次の命令へ移す場合、BasicBlock先頭がfall-throughと分岐のどちらで入ったかを判別する処理が要る。
 - **影響**:
   注釈の増加は0バイトである。CPSの終了の扱い（別BasicBlockへの遷移と関数復帰で終了、同一BasicBlockで継続）は変わらない。命令ごとのoffset表は設けない。固定幅命令の幅はopcodeから判定しない。既存の制約は変わらない。

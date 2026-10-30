@@ -282,11 +282,10 @@ inline FIREBALL_CPS_CALL void h_rpn_end(execution_context *context,
                                         const std::uint8_t *rel) {
   const std::uint8_t *cursor = rel + 1;
   const auto target = static_cast<frame_word_offset_t>(read_u16(cursor));
-  const auto continuation = read_u16(cursor);
+  const auto continuation = static_cast<std::ptrdiff_t>(read_s32(cursor));
   const auto code_length = read_u8(cursor);
-  const auto &frame = active_frame(*context);
   context->local_base[target] = sp[-1];
-  const std::uint8_t *after_set = frame.function_view->interpreter_annotation_pool + continuation;
+  const std::uint8_t *after_set = rel + continuation;
   [[clang::musttail]] return dispatch_next<void, WithJit>(
       context, instruction_ip + code_length, sp - 1, after_set);
 }
@@ -331,10 +330,8 @@ inline FIREBALL_CPS_CALL void h_rpn_expr(execution_context *context,
 #endif
   assert(context->stack_limit - sp >= static_cast<std::ptrdiff_t>(kRpnMaxDepth));
   const std::uint8_t *cursor = rel + 4;  // width, offset (u16), slot width precede the ext
-  const auto program = read_u16(cursor);
-  const auto &frame = active_frame(*context);
-  const std::uint8_t *elements = frame.function_view->interpreter_annotation_pool + program;
-  [[clang::musttail]] return rpn_next<WithJit>(context, instruction_ip, sp, elements);
+  const auto distance = read_u16(cursor);
+  [[clang::musttail]] return rpn_next<WithJit>(context, instruction_ip, sp, rel + distance);
 }
 
 template <typename Debugger, bool WithJit> constexpr auto make_opcode_handlers() {

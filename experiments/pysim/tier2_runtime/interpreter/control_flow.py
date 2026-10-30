@@ -916,7 +916,7 @@ def _count_interpreter_annotation_pool_bytes(code: memoryview) -> int:
 # RPN expression annotations (REQ-097 D). A run is a local.get head, then i32.const, local.get and
 # binary i32 operators (k = add, sub, shl, shr_u), that ends at an i32 local.set with one value left.
 _RPN_BINOP_KIND = {0x6A: 0, 0x6B: 1, 0x74: 2, 0x76: 3}
-_RPN_END_BYTES = 6  # END element: [RPN_ELEM_END][target u16][continuation u16][code_length u8]
+_RPN_END_BYTES = 8  # END element: [RPN_ELEM_END][target u16][continuation i32 delta][code_length u8]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1107,10 +1107,13 @@ def build_interpreter_annotation_pool(
     block_offsets: StaticVector[annotation_offset_t] = StaticVector(capacity=len(block_heads))
 
     def rpn_ext_for(opcode: int, function_offset: int) -> int:
-        # LOCAL_GET heads store the program position; other local.get store 0; local.set stores
-        # the program position only through the program region, so its ext is unused.
+        # The expression head stores the distance from its own annotation start to the program, so the
+        # native head needs no pool base. Other local.get store 0; local.set stores 0xFFFF.
         if opcode == LOCAL_GET:
-            return program_positions.get(function_offset, 0)
+            if function_offset not in program_positions:
+                return 0
+            annotation_start = len(annotations) - 4  # width, offset (u16), slot width precede the ext
+            return program_positions[function_offset] - annotation_start
         return 0xFFFF
 
     def append_u32(value: int) -> None:
@@ -1305,9 +1308,10 @@ def build_interpreter_annotation_pool(
     for expression in rpn_expressions:
         for element_byte in expression.elements:
             annotations.append_byte(element_byte)
+        end_position = len(annotations)
         annotations.append_byte(RPN_ELEM_END)
         append_u16(expression.target)
-        append_u16(set_ends[expression.set_offset])
+        append_u32((set_ends[expression.set_offset] - end_position) & 0xFFFF_FFFF)
         annotations.append_byte(expression.code_length)
     return annotations, block_offsets
 

@@ -683,7 +683,6 @@ dispatch_next(execution_context *context, const std::uint8_t *ip, std::uint32_t 
 // Depends on utilities and the opcode handler tables.
 namespace fireball::interpreter {
 
-constexpr std::uint32_t kNoPc = 0xFFFF'FFFFu;
 constexpr block_index_t kNoBlockIndex = FIREBALL_INVALID_BLOCK_INDEX;
 
 struct native_dispatch_stats {
@@ -973,8 +972,8 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
   // Boundary overrides are valid only within one Runtime dispatch.
   for (frame_depth_t index = 0; index < context.call_stack->size; ++index) {
     auto &frame = context.call_stack->frames[index];
-    frame.boundary_next_pc = kNoPc;
-    frame.boundary_loops_to = kNoPc;
+    frame.boundary_next_pc = kSentinel;
+    frame.boundary_loops_to = kSentinel;
   }
 
   const auto previous_runtime_flags = context.runtime_flags;
@@ -1066,8 +1065,8 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
     // Keep JIT targets for the Runtime API operation that resumes this segment.
     if constexpr (WithJit) {
       if (executed_bodies != 0 && exit_kind != kRuntimeApiBoundary) {
-        frame.boundary_next_pc = kNoPc;
-        frame.boundary_loops_to = kNoPc;
+        frame.boundary_next_pc = kSentinel;
+        frame.boundary_loops_to = kSentinel;
       }
     }
     // Every stopped iteration has a WASM execution status in the shared state.

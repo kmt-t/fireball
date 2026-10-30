@@ -12,6 +12,23 @@
 
 namespace fireball::wasm_runtime {
 
+constexpr std::uint32_t kValueTypeI64 = 0x7E;
+constexpr std::uint32_t kValueTypeF64 = 0x7C;
+constexpr std::uint32_t kI32SignBit = 0x8000'0000u;
+constexpr std::uint64_t kI64SignBit = 0x8000'0000'0000'0000ull;
+constexpr std::uint32_t kLinearAddressHighBit = 0x8000'0000u;
+// 命令コード 1 バイトと loader の f32.const の即値 4 バイトの和。
+constexpr std::uint32_t kF32ConstWidth = 1 + sizeof(std::uint32_t);
+// 命令コード 1 バイトと loader の f64.const の即値 8 バイトの和。
+constexpr std::uint32_t kF64ConstWidth = 1 + sizeof(std::uint64_t);
+// 符号化された CPS exit の最大値。kind は +1 して格納するため、最大 kind の符号化値となる。
+constexpr std::uint32_t kCpsExitEncodedMax = kRuntimeApiBoundary + 1;
+// 浮動小数点の変換範囲の境界値（2 の冪）。f32 と f64 の双方で厳密に表せる。
+template <typename Float> constexpr Float kTwoPow31 = static_cast<Float>(2147483648.0);
+template <typename Float> constexpr Float kTwoPow32 = static_cast<Float>(4294967296.0);
+template <typename Float> constexpr Float kTwoPow63 = static_cast<Float>(9223372036854775808.0);
+template <typename Float> constexpr Float kTwoPow64 = static_cast<Float>(18446744073709551616.0);
+
 const fireball_call_frame_native &active_frame(const execution_context &current) {
   assert(current.call_stack != nullptr);
   assert(current.call_stack->size != 0);
@@ -240,7 +257,7 @@ void record_cps_exit(execution_context &current, std::uint32_t kind) {
 
 std::uint32_t cps_exit_kind(const execution_context &current) {
   const auto encoded = (current.runtime_flags & kCpsExitMask) >> kCpsExitShift;
-  assert(encoded != 0 && encoded <= 9);
+  assert(encoded != 0 && encoded <= kCpsExitEncodedMax);
   return encoded - 1;
 }
 
@@ -536,7 +553,7 @@ local_value_span local_span(const fireball_call_frame_native &frame, local_count
   const frame_word_offset_t offset = function.local_offsets[index];
   const auto value_type = function.local_types[index];
   const operand_words_t width =
-      static_cast<operand_words_t>(value_type == 0x7Eu || value_type == 0x7Cu ? 2u : 1u);
+      static_cast<operand_words_t>(value_type == kValueTypeI64 || value_type == kValueTypeF64 ? 2u : 1u);
   assert(width == 1 || width == 2);
   assert(offset + width <= function.local_slot_count);
   return {offset, width};
@@ -607,8 +624,8 @@ bool conversion_i32_wrap_i64(execution_context &current, std::uint32_t *&sp,
 bool conversion_i32_trunc_f32_s(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   float value = 0;
-  if (!pop_f32(current, sp, value) || !std::isfinite(value) || value < -2147483648.0f ||
-      value >= 2147483648.0f) {
+  if (!pop_f32(current, sp, value) || !std::isfinite(value) || value < -kTwoPow31<float> ||
+      value >= kTwoPow31<float>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
@@ -625,7 +642,7 @@ bool conversion_i32_trunc_f32_u(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   float value = 0;
   if (!pop_f32(current, sp, value) || !std::isfinite(value) || value <= -1.0f ||
-      value >= 4294967296.0f) {
+      value >= kTwoPow32<float>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
@@ -640,8 +657,8 @@ bool conversion_i32_trunc_f32_u(execution_context &current, std::uint32_t *&sp,
 bool conversion_i32_trunc_f64_s(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   double value = 0;
-  if (!pop_f64(current, sp, value) || !std::isfinite(value) || value < -2147483648.0 ||
-      value >= 2147483648.0) {
+  if (!pop_f64(current, sp, value) || !std::isfinite(value) || value < -kTwoPow31<double> ||
+      value >= kTwoPow31<double>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
@@ -658,7 +675,7 @@ bool conversion_i32_trunc_f64_u(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   double value = 0;
   if (!pop_f64(current, sp, value) || !std::isfinite(value) || value <= -1.0 ||
-      value >= 4294967296.0) {
+      value >= kTwoPow32<double>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
@@ -673,13 +690,13 @@ bool conversion_i32_trunc_f64_u(execution_context &current, std::uint32_t *&sp,
 bool conversion_i64_trunc_f32_s(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   float value = 0;
-  if (!pop_f32(current, sp, value) || !std::isfinite(value) || value < -9223372036854775808.0f ||
-      value >= 9223372036854775808.0f) {
+  if (!pop_f32(current, sp, value) || !std::isfinite(value) || value < -kTwoPow63<float> ||
+      value >= kTwoPow63<float>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
-  const auto result = value == -9223372036854775808.0f
-                          ? 0x8000'0000'0000'0000ull
+  const auto result = value == -kTwoPow63<float>
+                          ? kI64SignBit
                           : static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
   if (!push_u64(current, sp, result)) {
     trap_code = kTrapInvalidConversion;
@@ -693,7 +710,7 @@ bool conversion_i64_trunc_f32_u(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   float value = 0;
   if (!pop_f32(current, sp, value) || !std::isfinite(value) || value <= -1.0f ||
-      value >= 18446744073709551616.0f) {
+      value >= kTwoPow64<float>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
@@ -708,13 +725,13 @@ bool conversion_i64_trunc_f32_u(execution_context &current, std::uint32_t *&sp,
 bool conversion_i64_trunc_f64_s(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   double value = 0;
-  if (!pop_f64(current, sp, value) || !std::isfinite(value) || value < -9223372036854775808.0 ||
-      value >= 9223372036854775808.0) {
+  if (!pop_f64(current, sp, value) || !std::isfinite(value) || value < -kTwoPow63<double> ||
+      value >= kTwoPow63<double>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
-  const auto result = value == -9223372036854775808.0
-                          ? 0x8000'0000'0000'0000ull
+  const auto result = value == -kTwoPow63<double>
+                          ? kI64SignBit
                           : static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
   if (!push_u64(current, sp, result)) {
     trap_code = kTrapInvalidConversion;
@@ -728,7 +745,7 @@ bool conversion_i64_trunc_f64_u(execution_context &current, std::uint32_t *&sp,
                                 std::uint32_t &trap_code) {
   double value = 0;
   if (!pop_f64(current, sp, value) || !std::isfinite(value) || value <= -1.0 ||
-      value >= 18446744073709551616.0) {
+      value >= kTwoPow64<double>) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
@@ -748,9 +765,9 @@ bool conversion_i32_trunc_sat_f32_s(execution_context &current, std::uint32_t *&
   std::uint32_t result = 0;
   if (std::isnan(value)) {
     result = 0;
-  } else if (value <= -2147483648.0f) {
-    result = 0x8000'0000u;
-  } else if (value >= 2147483648.0f) {
+  } else if (value <= -kTwoPow31<float>) {
+    result = kI32SignBit;
+  } else if (value >= kTwoPow31<float>) {
     result = 0x7FFF'FFFFu;
   } else {
     result = static_cast<std::uint32_t>(static_cast<std::int32_t>(value));
@@ -766,7 +783,7 @@ bool conversion_i32_trunc_sat_f32_u(execution_context &current, std::uint32_t *&
   std::uint32_t result = 0;
   if (std::isnan(value) || value <= 0.0f) {
     result = 0;
-  } else if (value >= 4294967296.0f) {
+  } else if (value >= kTwoPow32<float>) {
     result = 0xFFFF'FFFFu;
   } else {
     result = static_cast<std::uint32_t>(value);
@@ -782,9 +799,9 @@ bool conversion_i32_trunc_sat_f64_s(execution_context &current, std::uint32_t *&
   std::uint32_t result = 0;
   if (std::isnan(value)) {
     result = 0;
-  } else if (value <= -2147483648.0) {
-    result = 0x8000'0000u;
-  } else if (value >= 2147483648.0) {
+  } else if (value <= -kTwoPow31<double>) {
+    result = kI32SignBit;
+  } else if (value >= kTwoPow31<double>) {
     result = 0x7FFF'FFFFu;
   } else {
     result = static_cast<std::uint32_t>(static_cast<std::int32_t>(value));
@@ -800,7 +817,7 @@ bool conversion_i32_trunc_sat_f64_u(execution_context &current, std::uint32_t *&
   std::uint32_t result = 0;
   if (std::isnan(value) || value <= 0.0) {
     result = 0;
-  } else if (value >= 4294967296.0) {
+  } else if (value >= kTwoPow32<double>) {
     result = 0xFFFF'FFFFu;
   } else {
     result = static_cast<std::uint32_t>(value);
@@ -816,9 +833,9 @@ bool conversion_i64_trunc_sat_f32_s(execution_context &current, std::uint32_t *&
   std::uint64_t result = 0;
   if (std::isnan(value)) {
     result = 0;
-  } else if (value <= -9223372036854775808.0f) {
-    result = 0x8000'0000'0000'0000ull;
-  } else if (value >= 9223372036854775808.0f) {
+  } else if (value <= -kTwoPow63<float>) {
+    result = kI64SignBit;
+  } else if (value >= kTwoPow63<float>) {
     result = 0x7FFF'FFFF'FFFF'FFFFull;
   } else {
     result = static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
@@ -834,7 +851,7 @@ bool conversion_i64_trunc_sat_f32_u(execution_context &current, std::uint32_t *&
   std::uint64_t result = 0;
   if (std::isnan(value) || value <= 0.0f) {
     result = 0;
-  } else if (value >= 18446744073709551616.0f) {
+  } else if (value >= kTwoPow64<float>) {
     result = 0xFFFF'FFFF'FFFF'FFFFull;
   } else {
     result = static_cast<std::uint64_t>(value);
@@ -850,9 +867,9 @@ bool conversion_i64_trunc_sat_f64_s(execution_context &current, std::uint32_t *&
   std::uint64_t result = 0;
   if (std::isnan(value)) {
     result = 0;
-  } else if (value <= -9223372036854775808.0) {
-    result = 0x8000'0000'0000'0000ull;
-  } else if (value >= 9223372036854775808.0) {
+  } else if (value <= -kTwoPow63<double>) {
+    result = kI64SignBit;
+  } else if (value >= kTwoPow63<double>) {
     result = 0x7FFF'FFFF'FFFF'FFFFull;
   } else {
     result = static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
@@ -868,7 +885,7 @@ bool conversion_i64_trunc_sat_f64_u(execution_context &current, std::uint32_t *&
   std::uint64_t result = 0;
   if (std::isnan(value) || value <= 0.0) {
     result = 0;
-  } else if (value >= 18446744073709551616.0) {
+  } else if (value >= kTwoPow64<double>) {
     result = 0xFFFF'FFFF'FFFF'FFFFull;
   } else {
     result = static_cast<std::uint64_t>(value);
@@ -1323,7 +1340,7 @@ bool runtime_f32_const(execution_context *context, const std::uint8_t *&instruct
   std::uint32_t bits = 0;
   std::memcpy(&bits, instruction_ip + 1, sizeof(bits));
   (void)push(*context, sp, static_cast<std::uint32_t>(bits));
-  instruction_ip += 5;
+  instruction_ip += kF32ConstWidth;
   return true;
 }
 
@@ -1333,7 +1350,7 @@ bool runtime_f64_const(execution_context *context, const std::uint8_t *&instruct
   std::uint64_t bits = 0;
   std::memcpy(&bits, instruction_ip + 1, sizeof(bits));
   (void)push_u64(*context, sp, bits);
-  instruction_ip += 9;
+  instruction_ip += kF64ConstWidth;
   return true;
 }
 
@@ -1634,7 +1651,7 @@ bool runtime_memory_load_decoded(execution_context *context, std::uint32_t *&sp,
   assert(sp != current.stack_base);
 
   const auto address = sp[-1];
-  if ((address & 0x8000'0000u) != 0) {
+  if ((address & kLinearAddressHighBit) != 0) {
     return runtime_api_boundary(current, source_ip, rel);
   }
   const auto effective_address = static_cast<std::uint64_t>(address) + offset;
@@ -1687,7 +1704,7 @@ bool runtime_memory_store_decoded(execution_context *context, std::uint32_t *&sp
 
   auto *address_stack_pointer = sp - ValueWords - 1;
   const auto address = sp[-static_cast<std::ptrdiff_t>(ValueWords + 1)];
-  if ((address & 0x8000'0000u) != 0) {
+  if ((address & kLinearAddressHighBit) != 0) {
     return runtime_api_boundary(current, source_ip, rel);
   }
   const auto effective_address = static_cast<std::uint64_t>(address) + offset;
@@ -1769,7 +1786,7 @@ bool runtime_fc_memory_copy_decoded(execution_context *context, std::uint32_t *&
   const auto destination = sp[-3];
   const auto source = sp[-2];
   const auto length = sp[-1];
-  if (((destination | source) & 0x8000'0000u) != 0) {
+  if (((destination | source) & kLinearAddressHighBit) != 0) {
     return runtime_api_boundary(current, source_ip, rel);
   }
   if (!linear_memory_range_is_valid(current, destination, length) ||
@@ -1794,7 +1811,7 @@ bool runtime_fc_memory_copy(execution_context *context, const std::uint8_t *&ins
   auto &current = *context;
   const auto encoded_width = read_u8(rel);
   [[maybe_unused]] const auto subopcode = read_u8(rel);
-  assert(subopcode == 0x0A);
+  assert(subopcode == kFcMemoryCopySubopcode);
   const auto source_ip = instruction_offset(current, instruction_ip);
   const auto next_ip = source_ip + encoded_width;
   if (!runtime_fc_memory_copy_decoded(context, sp, instruction_ip, source_ip, next_ip, rel)) {
@@ -1833,7 +1850,7 @@ bool runtime_fc_memory_fill(execution_context *context, const std::uint8_t *&ins
   auto &current = *context;
   const auto encoded_width = read_u8(rel);
   [[maybe_unused]] const auto subopcode = read_u8(rel);
-  assert(subopcode == 0x0B);
+  assert(subopcode == kFcMemoryFillSubopcode);
   const auto source_ip = instruction_offset(current, instruction_ip);
   const auto next_ip = source_ip + encoded_width;
   if (!runtime_fc_memory_fill_decoded(context, sp, instruction_ip, source_ip, next_ip, rel)) {

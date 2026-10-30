@@ -37,6 +37,8 @@ constexpr std::uint32_t kTrapInvalidConversion = 17;
 constexpr std::uint32_t kSentinel = 0xFFFF'FFFFu;
 constexpr block_index_t kInvalidBlockIndex = FIREBALL_INVALID_BLOCK_INDEX;
 constexpr std::uint32_t kOpcodeFcPrefix = 0xFC;
+constexpr std::uint32_t kFcMemoryCopySubopcode = 0x0A;
+constexpr std::uint32_t kFcMemoryFillSubopcode = 0x0B;
 
 using execution_context = fireball_execution_context_native;
 

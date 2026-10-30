@@ -2062,7 +2062,8 @@ int fireball::compile_wasm_trace(
       if (!read_unsigned_leb(code, cursor, end, operand)) {
         return -1;
       }
-      interpreter_rel_bytes += 4; // width byte, frame word offset, and local width
+      // width byte, frame word offset, local width, and the RPN ext (get and set only)
+      interpreter_rel_bytes += opcode == kLocalTee ? 4u : 6u;
       instruction.has_operand = 1;
       instruction.operand = operand;
     } else if (opcode == 0x23 || opcode == 0x24 || opcode == 0x25 || opcode == 0x26 ||

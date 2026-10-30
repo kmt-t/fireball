@@ -69,6 +69,11 @@ TEST_SUITES = [
     ),
     (
         "Tier 2 Runtime",
+        "RPN Expression Annotations",
+        TEST_DIR / "tier2_runtime" / "interpreter" / "test_rpn_expressions.py",
+    ),
+    (
+        "Tier 2 Runtime",
         "Python/C++ ABI Native Layout",
         TEST_DIR / "tier2_runtime" / "test_interpreter_abi.py",
     ),

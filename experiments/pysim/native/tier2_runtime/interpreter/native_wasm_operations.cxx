@@ -943,6 +943,7 @@ bool runtime_local_get(execution_context *context, const std::uint8_t *&instruct
   const auto encoded_width = read_u8(rel);
   const auto offset = static_cast<frame_word_offset_t>(read_u16(rel));
   const auto width = read_u8(rel);
+  (void)read_u16(rel);  // RPN ext: read by expression heads and terminals only
   if (!runtime_local_get_annotated(current, sp, local_base, offset, width)) {
     return false;
   }
@@ -957,6 +958,7 @@ bool runtime_local_set(execution_context *context, const std::uint8_t *&instruct
   const auto encoded_width = read_u8(rel);
   const auto offset = static_cast<frame_word_offset_t>(read_u16(rel));
   const auto width = read_u8(rel);
+  (void)read_u16(rel);  // RPN ext: read by expression heads and terminals only
   if (!runtime_local_set_annotated(current, sp, local_base, offset, width, true)) {
     return false;
   }

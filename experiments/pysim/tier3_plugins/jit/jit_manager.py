@@ -41,6 +41,8 @@ class JITRuntimeManager:
         if self.module is module:
             return
         self.close()
+        # The JIT reads the original bytecode, so native views must not use the expression copy.
+        module.drop_native_code_copies()
         self.module = module
 
     def bind_execution(self, execution: NativeModuleExecution) -> int:

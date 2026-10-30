@@ -37,6 +37,13 @@ constexpr std::uint32_t kTrapInvalidConversion = 17;
 constexpr std::uint32_t kSentinel = 0xFFFF'FFFFu;
 constexpr block_index_t kInvalidBlockIndex = FIREBALL_INVALID_BLOCK_INDEX;
 constexpr std::uint32_t kOpcodeFcPrefix = 0xFC;
+// RPN expression protocol (REQ-097 D). The values mirror tier2_runtime/wasm/opcodes.py; the loader owns them.
+constexpr std::uint32_t kRpnExprHead = 0xD3;
+constexpr std::uint32_t kRpnElemPushLocal = 0x00;
+constexpr std::uint32_t kRpnElemPushImm = 0x01;
+constexpr std::uint32_t kRpnElemBinopBase = 0x02;
+constexpr std::uint32_t kRpnElemEnd = 0x06;
+constexpr std::uint32_t kRpnMaxDepth = 8;
 constexpr std::uint32_t kFcMemoryCopySubopcode = 0x0A;
 constexpr std::uint32_t kFcMemoryFillSubopcode = 0x0B;
 

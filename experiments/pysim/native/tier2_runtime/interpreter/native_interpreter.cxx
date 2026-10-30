@@ -227,6 +227,116 @@ inline FIREBALL_CPS_CALL void h_fc_dispatch(execution_context *context,
 
 static_assert(std::is_same_v<decltype(&h_fc_dispatch<void, false>), native_opcode_handler>);
 
+// RPN expression thread (REQ-097 D). Each element is one handler; it chains to the next element
+// with a musttail call through kRpnElementHandlers, indexed by the element byte. The temporaries
+// live above the VM stack pointer, so the VM stack pointer is unchanged inside the expression.
+template <bool WithJit>
+inline FIREBALL_CPS_CALL void rpn_next(execution_context *context, const std::uint8_t *ip,
+                                       std::uint32_t *sp, const std::uint8_t *rel);
+
+template <bool WithJit>
+inline FIREBALL_CPS_CALL void h_rpn_push_local(execution_context *context,
+                                               const std::uint8_t *instruction_ip,
+                                               std::uint32_t *sp, const std::uint8_t *rel) {
+  const std::uint8_t *cursor = rel + 1;
+  const auto offset = static_cast<frame_word_offset_t>(read_u16(cursor));
+  sp[0] = context->local_base[offset];
+  rpn_next<WithJit>(context, instruction_ip, sp + 1, cursor);
+}
+
+template <bool WithJit>
+inline FIREBALL_CPS_CALL void h_rpn_push_imm(execution_context *context,
+                                             const std::uint8_t *instruction_ip, std::uint32_t *sp,
+                                             const std::uint8_t *rel) {
+  const std::uint8_t *cursor = rel + 1;
+  sp[0] = static_cast<std::uint32_t>(read_s32(cursor));
+  rpn_next<WithJit>(context, instruction_ip, sp + 1, cursor);
+}
+
+// The four binary i32 operators of the expression ISA; shift counts are taken modulo 32.
+template <std::uint32_t K> std::uint32_t rpn_apply(std::uint32_t lhs, std::uint32_t rhs) {
+  if constexpr (K == 0) {
+    return lhs + rhs;
+  } else if constexpr (K == 1) {
+    return lhs - rhs;
+  } else if constexpr (K == 2) {
+    return lhs << (rhs & 31u);
+  } else {
+    return lhs >> (rhs & 31u);
+  }
+}
+
+template <bool WithJit, std::uint32_t K>
+inline FIREBALL_CPS_CALL void h_rpn_binop(execution_context *context,
+                                          const std::uint8_t *instruction_ip, std::uint32_t *sp,
+                                          const std::uint8_t *rel) {
+  sp[-2] = rpn_apply<K>(sp[-2], sp[-1]);
+  rpn_next<WithJit>(context, instruction_ip, sp - 1, rel + 1);
+}
+
+// The terminal element stores the expression value into the local and continues the VM after the
+// terminal local.set annotation. The VM stack pointer is the base of the temporaries.
+template <bool WithJit>
+inline FIREBALL_CPS_CALL void h_rpn_end(execution_context *context,
+                                        const std::uint8_t *instruction_ip, std::uint32_t *sp,
+                                        const std::uint8_t *rel) {
+  const std::uint8_t *cursor = rel + 1;
+  const auto target = static_cast<frame_word_offset_t>(read_u16(cursor));
+  const auto continuation = read_u16(cursor);
+  const auto code_length = read_u8(cursor);
+  const auto &frame = active_frame(*context);
+  context->local_base[target] = sp[-1];
+  const std::uint8_t *after_set = frame.function_view->interpreter_annotation_pool + continuation;
+  [[clang::musttail]] return dispatch_next<void, WithJit>(
+      context, instruction_ip + code_length, sp - 1, after_set);
+}
+
+template <bool WithJit> constexpr auto make_rpn_element_handlers() {
+  std::array<native_opcode_handler, 7> handlers{};
+  handlers[kRpnElemPushLocal] = &h_rpn_push_local<WithJit>;
+  handlers[kRpnElemPushImm] = &h_rpn_push_imm<WithJit>;
+  handlers[kRpnElemBinopBase + 0] = &h_rpn_binop<WithJit, 0>;
+  handlers[kRpnElemBinopBase + 1] = &h_rpn_binop<WithJit, 1>;
+  handlers[kRpnElemBinopBase + 2] = &h_rpn_binop<WithJit, 2>;
+  handlers[kRpnElemBinopBase + 3] = &h_rpn_binop<WithJit, 3>;
+  handlers[kRpnElemEnd] = &h_rpn_end<WithJit>;
+  return handlers;
+}
+
+template <bool WithJit>
+inline constexpr auto kRpnElementHandlers = make_rpn_element_handlers<WithJit>();
+
+template <bool WithJit>
+inline FIREBALL_CPS_CALL void rpn_next(execution_context *context, const std::uint8_t *ip,
+                                       std::uint32_t *sp, const std::uint8_t *rel) {
+  [[clang::musttail]] return kRpnElementHandlers<WithJit>[*rel](context, ip, sp, rel);
+}
+
+// The expression head (the local.get opcode rewritten in the native code copy) reads its program
+// position from its ext and starts the thread at the first element.
+// RPN expression entries (counting build only).
+#ifdef FB_RPN_COUNT
+std::uint64_t g_rpn_expression_entries = 0;
+__attribute__((visibility("default"))) extern "C" std::uint64_t fireball_rpn_expression_entries() {
+  return g_rpn_expression_entries;
+}
+#endif
+
+template <bool WithJit>
+inline FIREBALL_CPS_CALL void h_rpn_expr(execution_context *context,
+                                         const std::uint8_t *instruction_ip, std::uint32_t *sp,
+                                         const std::uint8_t *rel) {
+#ifdef FB_RPN_COUNT
+  ++g_rpn_expression_entries;
+#endif
+  assert(context->stack_limit - sp >= static_cast<std::ptrdiff_t>(kRpnMaxDepth));
+  const std::uint8_t *cursor = rel + 4;  // width, offset (u16), slot width precede the ext
+  const auto program = read_u16(cursor);
+  const auto &frame = active_frame(*context);
+  const std::uint8_t *elements = frame.function_view->interpreter_annotation_pool + program;
+  [[clang::musttail]] return rpn_next<WithJit>(context, instruction_ip, sp, elements);
+}
+
 template <typename Debugger, bool WithJit> constexpr auto make_opcode_handlers() {
   // Interpreter-only dispatch (no JIT, no debugger) continues through control transfers.
   constexpr bool kDirect = !WithJit && std::is_void_v<Debugger>;
@@ -640,6 +750,11 @@ template <typename Debugger, bool WithJit> constexpr auto make_opcode_handlers()
       runtime_api_handler<Debugger, WithJit,
                           &runtime_i64_unary<&opcode_extend32_signed, false>>; // i64.extend32_s
   handlers[kOpcodeFcPrefix] = &h_fc_dispatch<Debugger, WithJit>;
+  if constexpr (std::is_void_v<Debugger>) {
+    handlers[kRpnExprHead] = &h_rpn_expr<WithJit>;
+  } else {
+    handlers[kRpnExprHead] = runtime_api_handler<Debugger, WithJit, &runtime_local_get>;
+  }
   return handlers;
 }
 

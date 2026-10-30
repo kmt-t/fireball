@@ -598,8 +598,10 @@ class CallFrame:
             function_view = native_function_view
             if function_view is None:
                 function_view = FunctionExecutionViewNative()
-            function_view.code = _native_buffer_address(self.code)
-            function_view.code_size = len(self.code)
+            native_code = None if module.native_code_disabled else function.native_code
+            native_bytes = self.code if native_code is None else memoryview(native_code)
+            function_view.code = _native_buffer_address(native_bytes)
+            function_view.code_size = len(native_bytes)
             function_view.code_pc_offset = self.code_pc_offset
             function_view.local_offsets = self.local_layout.offsets_address
             function_view.local_types = self.local_layout.types_address
@@ -1830,6 +1832,7 @@ class NativeInterpreter(_NativeInterpreterBase):
         self._module_execution: NativeModuleExecution | None = None
         self._native_dispatch_started = False
         if execution_plugin is not None:
+            module.drop_native_code_copies()
             native_dispatcher = execution_plugin.native_entry
         super().__init__(
             module,
@@ -1880,6 +1883,7 @@ class NativeInterpreter(_NativeInterpreterBase):
         if self._execution_plugin is plugin:
             return
         assert not self._native_dispatch_started
+        self.module.drop_native_code_copies()
         if self._module_execution is not None:
             plugin.register_module(self.module)
             self._module_execution.jit_provider = plugin.bind_execution(self._module_execution)
@@ -1930,6 +1934,7 @@ class NativeInterpreter(_NativeInterpreterBase):
                 self.bump_allocator,
             )
             if self._execution_plugin is not None:
+                self.module.drop_native_code_copies()
                 self._execution_plugin.register_module(self.module)
                 self._module_execution.jit_provider = self._execution_plugin.bind_execution(
                     self._module_execution

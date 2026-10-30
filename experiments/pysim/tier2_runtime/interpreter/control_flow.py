@@ -198,6 +198,12 @@ from tier2_runtime.wasm.opcodes import (
     MEMORY_SIZE,
     NOP,
     RETURN,
+    RPN_ELEM_BINOP_BASE,
+    RPN_ELEM_END,
+    RPN_ELEM_PUSH_IMM,
+    RPN_ELEM_PUSH_LOCAL,
+    RPN_EXPR_HEAD,
+    RPN_MAX_DEPTH,
     SELECT,
     UNREACHABLE,
 )
@@ -863,6 +869,8 @@ def _count_interpreter_annotation_pool_bytes(code: memoryview) -> int:
         opcode = instruction.opcode
         if opcode == LOCAL_GET or opcode == LOCAL_SET or opcode == LOCAL_TEE:
             annotation_bytes += 3  # frame word offset and local width
+            if opcode != LOCAL_TEE:
+                annotation_bytes += 2  # RPN ext (expression head or terminal)
         elif opcode == GLOBAL_GET or opcode == GLOBAL_SET:
             annotation_bytes += 2  # global index
         elif opcode == I32_CONST:
@@ -905,6 +913,146 @@ def _count_interpreter_annotation_pool_bytes(code: memoryview) -> int:
     return annotation_bytes
 
 
+# RPN expression annotations (REQ-097 D). A run is a local.get head, then i32.const, local.get and
+# binary i32 operators (k = add, sub, shl, shr_u), that ends at an i32 local.set with one value left.
+_RPN_BINOP_KIND = {0x6A: 0, 0x6B: 1, 0x74: 2, 0x76: 3}
+_RPN_END_BYTES = 6  # END element: [RPN_ELEM_END][target u16][continuation u16][code_length u8]
+
+
+@dataclass(frozen=True, slots=True)
+class RpnExpression:
+    """One loader-decided expression. Offsets are function-relative code offsets."""
+
+    head_offset: int
+    set_offset: int
+    code_length: int
+    target: int
+    max_depth: int
+    elements: bytes  # PUSH_LOCAL / PUSH_IMM / BINOP elements; END is appended by the pool builder
+
+
+def _scan_rpn_expression(
+    code: memoryview,
+    instructions: list[Instr],
+    start: int,
+    heads: set[int],
+    local_layout: LocalLayout,
+    depth_limit: int,
+) -> tuple[RpnExpression, int] | None:
+    depth = 0
+    max_depth = 0
+    elements = bytearray()
+    for position in range(start, len(instructions)):
+        instruction = instructions[position]
+        if position > start and instruction.offset in heads:
+            return None
+        opcode = instruction.opcode
+        if opcode == LOCAL_GET:
+            if local_layout.size_words(instruction.operand) != 1:
+                return None
+            frame = local_layout.offset(instruction.operand)
+            elements.append(RPN_ELEM_PUSH_LOCAL)
+            elements += frame.to_bytes(2, "little")
+            depth += 1
+        elif opcode == I32_CONST:
+            value, _ = decode_signed_full(code, instruction.offset + 1, bits=32)
+            elements.append(RPN_ELEM_PUSH_IMM)
+            elements += (value & 0xFFFF_FFFF).to_bytes(4, "little")
+            depth += 1
+        elif opcode in _RPN_BINOP_KIND:
+            if depth < 2:
+                return None
+            elements.append(RPN_ELEM_BINOP_BASE + _RPN_BINOP_KIND[opcode])
+            depth -= 1
+        elif opcode == LOCAL_SET:
+            if depth != 1 or local_layout.size_words(instruction.operand) != 1:
+                return None
+            head = instructions[start]
+            code_length = instruction.end_offset - head.offset
+            if code_length > 0xFF:
+                return None
+            expression = RpnExpression(
+                head_offset=head.offset,
+                set_offset=instruction.offset,
+                code_length=code_length,
+                target=local_layout.offset(instruction.operand),
+                max_depth=max_depth,
+                elements=bytes(elements),
+            )
+            return expression, position
+        else:
+            return None
+        max_depth = max(max_depth, depth)
+        if depth > depth_limit:
+            return None
+    return None
+
+
+def find_rpn_expressions(
+    code: memoryview,
+    block_heads: list[int],
+    local_layout: LocalLayout,
+    stack_capacity: int,
+) -> tuple[RpnExpression, ...]:
+    """Find the RPN expressions of one function, in code order, never crossing a block head.
+
+    An expression's temporaries sit above the VM stack pointer, so its depth may not exceed the
+    function's operand stack capacity (RPN_MAX_DEPTH bounds it as well).
+    """
+
+    heads = set(block_heads)
+    depth_limit = min(RPN_MAX_DEPTH, stack_capacity)
+    instructions = list(iter_scan_instrs(code))
+    found: list[RpnExpression] = []
+    index = 0
+    while index < len(instructions):
+        if instructions[index].opcode != LOCAL_GET:
+            index += 1
+            continue
+        scanned = _scan_rpn_expression(code, instructions, index, heads, local_layout, depth_limit)
+        if scanned is None:
+            index += 1
+            continue
+        expression, last = scanned
+        found.append(expression)
+        index = last + 1
+    return tuple(found)
+
+
+def fit_rpn_expressions(
+    code: memoryview,
+    block_heads: list[int],
+    local_layout: LocalLayout,
+    expressions: tuple[RpnExpression, ...],
+) -> tuple[RpnExpression, ...]:
+    """Keep the leading expressions whose program region stays addressable by a u16 position."""
+
+    block_bytes = 0
+    for block_number, start in enumerate(block_heads):
+        end = block_heads[block_number + 1] if block_number + 1 < len(block_heads) else len(code)
+        block_bytes += _count_interpreter_annotation_pool_bytes(code[start:end])
+    kept: list[RpnExpression] = []
+    cursor = block_bytes
+    for expression in expressions:
+        size = len(expression.elements) + _RPN_END_BYTES
+        if cursor + size > 0xFFFF:
+            break
+        kept.append(expression)
+        cursor += size
+    return tuple(kept)
+
+
+def rpn_native_code(code: memoryview, expressions: tuple[RpnExpression, ...]) -> bytearray | None:
+    """Native-only code copy whose expression heads carry RPN_EXPR_HEAD (None when no expression)."""
+
+    if not expressions:
+        return None
+    copy = bytearray(code)
+    for expression in expressions:
+        copy[expression.head_offset] = RPN_EXPR_HEAD
+    return copy
+
+
 def build_interpreter_annotation_pool(
     code: memoryview,
     block_heads: SequenceView[int],
@@ -915,6 +1063,7 @@ def build_interpreter_annotation_pool(
     local_layout: LocalLayout,
     drop_widths: ReadOnlyFlatMapStorage[int, int] | None = None,
     select_widths: ReadOnlyFlatMapStorage[int, int] | None = None,
+    rpn_expressions: tuple[RpnExpression, ...] = (),
 ) -> tuple[InterpreterAnnotationPool, StaticVector[annotation_offset_t]]:
     """Store runtime-derived operands and control edges in the annotation pool.
 
@@ -931,8 +1080,26 @@ def build_interpreter_annotation_pool(
         assert 0 <= start <= end <= len(code)
         total_bytes += _count_interpreter_annotation_pool_bytes(code[start:end])
 
+    program_positions: dict[int, int] = {}
+    set_offsets = {expression.set_offset for expression in rpn_expressions}
+    cursor = total_bytes
+    for expression in rpn_expressions:
+        program_positions[expression.head_offset] = cursor
+        cursor += len(expression.elements) + _RPN_END_BYTES
+    assert not rpn_expressions or cursor <= 0xFFFF, "fit_rpn_expressions must bound the program region"
+    set_ends: dict[int, int] = {}
+    block_bytes = total_bytes
+    total_bytes = cursor
+
     annotations = InterpreterAnnotationPool(capacity=total_bytes, allocator=allocator)
     block_offsets: StaticVector[annotation_offset_t] = StaticVector(capacity=len(block_heads))
+
+    def rpn_ext_for(opcode: int, function_offset: int) -> int:
+        # LOCAL_GET heads store the program position; other local.get store 0; local.set stores
+        # the program position only through the program region, so its ext is unused.
+        if opcode == LOCAL_GET:
+            return program_positions.get(function_offset, 0)
+        return 0xFFFF
 
     def append_u32(value: int) -> None:
         assert 0 <= value <= 0xFFFF_FFFF
@@ -1022,6 +1189,10 @@ def build_interpreter_annotation_pool(
                 assert frame_offset <= 0xFFFF and local_width <= 0xFF
                 append_u16(frame_offset)
                 annotations.append_byte(local_width)
+                if opcode != LOCAL_TEE:
+                    append_u16(rpn_ext_for(opcode, function_offset))
+                if opcode == LOCAL_SET and function_offset in set_offsets:
+                    set_ends[function_offset] = len(annotations)
             elif opcode == DROP:
                 width = 1 if drop_widths is None else drop_widths.view().find(function_offset) or 1
                 assert width == 1 or width == 2
@@ -1118,7 +1289,14 @@ def build_interpreter_annotation_pool(
             elif opcode == CALL or opcode == CALL_INDIRECT:
                 append_u16(block_index_for_offset(start + instruction.end_offset))
 
-    assert len(annotations) == total_bytes
+    assert len(annotations) == block_bytes
+    for expression in rpn_expressions:
+        for element_byte in expression.elements:
+            annotations.append_byte(element_byte)
+        annotations.append_byte(RPN_ELEM_END)
+        append_u16(expression.target)
+        append_u16(set_ends[expression.set_offset])
+        annotations.append_byte(expression.code_length)
     return annotations, block_offsets
 
 

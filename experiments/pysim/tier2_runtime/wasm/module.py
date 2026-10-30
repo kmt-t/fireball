@@ -605,6 +605,7 @@ class Function:
     code_pc_offset: wasm_pc_t
     control_map: ControlMap | None = None
     interpreter_annotation_pool: InterpreterAnnotationPool | None = None
+    native_code: bytearray | None = None  # native-only copy with RPN expression heads
     entry_block_index: block_index_t = INVALID_BLOCK_INDEX
     select_widths: ReadOnlyFlatMapStorage[int, int] | None = None
     drop_widths: ReadOnlyFlatMapStorage[int, int] | None = None
@@ -668,6 +669,7 @@ class Module:
     types: FuncTypeStorage = field(default_factory=lambda: FuncTypeStorage(capacity=0))
     imports: StaticVector[Import] = field(default_factory=lambda: StaticVector(capacity=0))
     global_import_count: int = 0
+    native_code_disabled: bool = False  # set when a JIT provider needs the original bytecode
     functions: StaticVector[Function] = field(default_factory=lambda: StaticVector(capacity=0))
     exports: StaticVector[Export] = field(default_factory=lambda: StaticVector(capacity=0))
     memory: Memory | None = None
@@ -914,6 +916,10 @@ class Module:
     def is_import(self, func_index: int) -> bool:
         return func_index < len(self.imports)
 
+    def drop_native_code_copies(self) -> None:
+        """New native views use the original bytecode; existing copies stay alive for old views."""
+        self.native_code_disabled = True
+
     def code_for(self, func_index: int) -> memoryview:
         """Raw bytecode for a locally-defined function, by unified function index."""
         function = self.functions[func_index - len(self.imports)]
@@ -1042,6 +1048,9 @@ class Module:
         from tier2_runtime.interpreter.control_flow import (
             build_interpreter_annotation_pool,
             extract_basic_blocks,
+            find_rpn_expressions,
+            fit_rpn_expressions,
+            rpn_native_code,
         )
 
         n_imports = len(self.imports)
@@ -1063,6 +1072,19 @@ class Module:
             block_heads: StaticVector[int] = StaticVector(capacity=len(extracted))
             for block in extracted:
                 block_heads.append(block[0] - function_pc_offset)
+            expressions = fit_rpn_expressions(
+                code,
+                list(block_heads),
+                function.local_layout_cache,
+                find_rpn_expressions(
+                    code,
+                    list(block_heads),
+                    function.local_layout_cache,
+                    function.max_operand_stack_words,
+                ),
+            )
+            for expression in expressions:
+                assert expression.max_depth <= function.max_operand_stack_words
             annotations, block_annotation_offsets = build_interpreter_annotation_pool(
                 code,
                 block_heads,
@@ -1072,9 +1094,11 @@ class Module:
                 local_layout=function.local_layout_cache,
                 drop_widths=function.drop_widths,
                 select_widths=function.select_widths,
+                rpn_expressions=expressions,
             )
             function.branch_layouts = None
             function.interpreter_annotation_pool = annotations
+            function.native_code = rpn_native_code(code, expressions)
             assert len(block_annotation_offsets) == len(extracted)
             for block_index, (head_pc, next_pc, loops_to, frame_depth, byte_span) in enumerate(
                 extracted

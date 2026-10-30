@@ -209,3 +209,12 @@ FC_MEMORY_FILL = 0x0B
 # control-flow scanner also accepts the four single-result value types; type
 # indices and multi-value block signatures remain unsupported here.
 BLOCKTYPE_EMPTY = 0x40
+
+# RPN expressions (REQ-097 D). The head opcode and the element codes exist only in the native
+# code copy and in the annotation pool; they are not WASM opcodes.
+RPN_EXPR_HEAD = 0xD3
+RPN_ELEM_PUSH_LOCAL = 0x00
+RPN_ELEM_PUSH_IMM = 0x01
+RPN_ELEM_BINOP_BASE = 0x02
+RPN_ELEM_END = 0x06
+RPN_MAX_DEPTH = 8

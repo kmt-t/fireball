@@ -988,16 +988,6 @@ def _scan_rpn_expression(
     return None
 
 
-def _is_pair(elements: bytes) -> bool:
-    """True for the element shape PUSH_LOCAL, PUSH_LOCAL, BINOP(sub)."""
-    return (
-        len(elements) == 7
-        and elements[0] == RPN_ELEM_PUSH_LOCAL
-        and elements[3] == RPN_ELEM_PUSH_LOCAL
-        and elements[6] == RPN_ELEM_BINOP_BASE + 1  # i32.sub (AO has no local.get; local.get; i32.add; local.set)
-    )
-
-
 def find_rpn_expressions(
     code: memoryview,
     block_heads: list[int],
@@ -1012,7 +1002,6 @@ def find_rpn_expressions(
 
     heads = set(block_heads)
     depth_limit = min(RPN_MAX_DEPTH, stack_capacity)
-    # Measurement-only restriction (REQ-097 D, one pair): local.get; local.get; i32.sub; local.set.
     instructions = list(iter_scan_instrs(code))
     found: list[RpnExpression] = []
     index = 0
@@ -1025,8 +1014,7 @@ def find_rpn_expressions(
             index += 1
             continue
         expression, last = scanned
-        if _is_pair(expression.elements):
-            found.append(expression)
+        found.append(expression)
         index = last + 1
     return tuple(found)
 

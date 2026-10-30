@@ -1555,7 +1555,7 @@ bool runtime_memory_load_decoded(execution_context *context, std::uint32_t *&sp,
     return runtime_api_boundary(current, source_ip, rel);
   }
 
-  assert(current.stack_limit - (sp - 1) >= ResultWords);
+  assert(current.stack_limit - (sp - 1) >= static_cast<std::ptrdiff_t>(ResultWords));
   std::uint64_t value = 0;
   for (std::uint32_t byte = 0; byte < Width; ++byte) {
     value |= static_cast<std::uint64_t>(current.linear_memory_host_base[effective_address + byte])

@@ -899,35 +899,12 @@ template <bool CollectStats, bool WithJit, bool WithExtension, typename Debugger
 inline bool handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, WithExtension,
                                                       ResultType> &state,
                                 std::uint32_t exit_kind) {
+  // The exit helper has already written the pending flag, the instruction pointer, and the
+  // trap code. Exit kinds and statuses share their values, so the kind is the status.
   auto &context = state.context;
+  state.status = exit_kind;
   switch (exit_kind) {
-  case kDebugStop:
-    context.runtime_flags &= ~kPendingBlockHeadFlag;
-    if constexpr (!std::is_void_v<Debugger>) {
-      state.status = kDebugStop;
-      return false;
-    } else {
-      assert(false && "debug stop requires a debugger handler table");
-      __builtin_unreachable();
-    }
-  case kTrap:
-    context.runtime_flags &= ~kPendingBlockHeadFlag;
-    state.status = kTrap;
-    return false;
-  case kRuntimeApiBoundary:
-    context.runtime_flags &= ~kPendingBlockHeadFlag;
-    state.status = kRuntimeApiBoundary;
-    return false;
-  case kComplete:
-    context.runtime_flags &= ~kPendingBlockHeadFlag;
-    context.ip = kNoPc;
-    if constexpr (CollectStats) {
-      ++state.metrics.stats.control_handler_count;
-    }
-    state.status = kComplete;
-    return false;
-  case kBlockBoundary: {
-    context.runtime_flags |= kPendingBlockHeadFlag;
+  case kBlockBoundary:
     if constexpr (CollectStats) {
       ++state.metrics.stats.control_handler_count;
       state.metrics.stats.control_handler_pending_trace = true;
@@ -937,7 +914,21 @@ inline bool handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, Wit
       return false;
     }
     return true;
-  }
+  case kComplete:
+    if constexpr (CollectStats) {
+      ++state.metrics.stats.control_handler_count;
+    }
+    return false;
+  case kDebugStop:
+    if constexpr (!std::is_void_v<Debugger>) {
+      return false;
+    } else {
+      assert(false && "debug stop requires a debugger handler table");
+      __builtin_unreachable();
+    }
+  case kTrap:
+  case kRuntimeApiBoundary:
+    return false;
   default:
     assert(false && "unknown CPS exit kind");
     __builtin_unreachable();
@@ -1163,27 +1154,9 @@ int run_native_step_abi(const fb_native_step_call *call, fb_native_result *outpu
   (void)dispatch_next<block_step_aspect, false>(execution_context, raw_code + call->ip, sp,
                                                 call->rel);
   const auto exit_kind = cps_exit_kind(*execution_context);
-  switch (exit_kind) {
-  case kRuntimeApiBoundary:
-    output->status = kRuntimeApiBoundary;
-    break;
-  case kBlockBoundary:
-    execution_context->runtime_flags |= kPendingBlockHeadFlag;
-    output->status = kBlockBoundary;
-    break;
-  case kTrap:
-    execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
-    output->status = kTrap;
-    break;
-  case kComplete:
-    execution_context->runtime_flags &= ~kPendingBlockHeadFlag;
-    execution_context->ip = kNoPc;
-    output->status = kComplete;
-    break;
-  default:
-    assert(false && "single-step CPS returned at an invalid execution boundary");
-    __builtin_unreachable();
-  }
+  assert(exit_kind == kBlockBoundary || exit_kind == kComplete || exit_kind == kTrap ||
+         exit_kind == kRuntimeApiBoundary);
+  output->status = exit_kind;
   clear_cps_exit(*execution_context);
   return 1;
 }

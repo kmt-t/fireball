@@ -740,7 +740,6 @@ struct native_dispatch_state {
   const fb_native_jit_provider *jit_provider;
   execution_context &context;
   std::uint32_t status = kNativeErrorInternal;
-  std::uint32_t trap_code = 0;
   [[no_unique_address]] native_dispatch_metrics<
       CollectStats, WithExtension && !std::is_same_v<ResultType, fb_native_result>> metrics;
 };
@@ -913,7 +912,6 @@ inline bool handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, Wit
     }
   case kTrap:
     context.runtime_flags &= ~kPendingBlockHeadFlag;
-    state.trap_code = context.trap_code;
     state.status = kTrap;
     return false;
   case kRuntimeApiBoundary:
@@ -979,7 +977,7 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
   }
   auto &context = *static_cast<execution_context *>(call.context);
   native_dispatch_state<CollectStats, WithJit, WithExtension, ResultType>
-      state{call, extension, jit_provider, context, kNativeErrorInternal, 0, {}};
+      state{call, extension, jit_provider, context, kNativeErrorInternal, {}};
   prepare_native_dispatch(state);
   // Boundary overrides are valid only within one Runtime dispatch.
   for (frame_depth_t index = 0; index < context.call_stack->size; ++index) {
@@ -1095,7 +1093,6 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
   result->status = state.status;
   // Internal block boundaries stay in this loop; publish the stack only at the
   // Runtime handoff.
-  context.trap_code = state.trap_code;
   if constexpr (CollectStats) {
     result->trace_count = state.metrics.stats.trace_count;
     result->body_count = state.metrics.stats.body_count;

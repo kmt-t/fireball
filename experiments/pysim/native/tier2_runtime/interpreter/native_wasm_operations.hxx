@@ -57,11 +57,8 @@ fireball_call_frame_native &active_frame(execution_context &current);
 /** @brief 現在実行中の呼び出しフレームを参照する。 */
 const fireball_call_frame_native &active_frame(const execution_context &current);
 
-static_assert(sizeof(void *) == 8, "native interpreter requires a 64-bit host ABI");
-static_assert(sizeof(execution_context) == 144,
-              "x86-64 execution_context ABI layout must remain 144 bytes");
-static_assert(offsetof(execution_context, trap_code) == 0x70);
-static_assert(offsetof(execution_context, local_base) == 0x78);
+// The execution_context layout (size, trap_code, local_base) is asserted per pointer width in
+// interpreter_abi.hxx, the single definition of the ABI values.
 /** @brief CPSの実行境界理由を状態へ記録する。 */
 void record_cps_exit(execution_context &current, std::uint32_t kind);
 /** @brief 記録されたCPSの実行境界理由を取得する。 */

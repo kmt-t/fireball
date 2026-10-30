@@ -311,8 +311,25 @@ inline FIREBALL_CPS_CALL void h_rpn_local_pair_sub(execution_context *context,
       context, instruction_ip + code_length, sp, after_set);
 }
 
+// A BINOP fused with the END element (REQ-097 D). The value is computed from the two temporaries,
+// stored into the END target, and the thread continues after the local.set annotation. The END
+// fields follow the element byte, so they are read at rel + 1 as in h_rpn_end.
+template <bool WithJit, std::uint32_t K>
+inline FIREBALL_CPS_CALL void h_rpn_binop_end(execution_context *context,
+                                              const std::uint8_t *instruction_ip, std::uint32_t *sp,
+                                              const std::uint8_t *rel) {
+  const std::uint8_t *cursor = rel + 1;
+  const auto target = static_cast<frame_word_offset_t>(read_u16(cursor));
+  const auto continuation = static_cast<std::ptrdiff_t>(read_s32(cursor));
+  const auto code_length = read_u8(cursor);
+  context->local_base[target] = rpn_apply<K>(sp[-2], sp[-1]);
+  const std::uint8_t *after_set = rel + continuation;
+  [[clang::musttail]] return dispatch_next<void, WithJit>(
+      context, instruction_ip + code_length, sp - 2, after_set);
+}
+
 template <bool WithJit> constexpr auto make_rpn_element_handlers() {
-  std::array<native_opcode_handler, 8> handlers{};
+  std::array<native_opcode_handler, 12> handlers{};
   handlers[kRpnElemPushLocal] = &h_rpn_push_local<WithJit>;
   handlers[kRpnElemPushImm] = &h_rpn_push_imm<WithJit>;
   handlers[kRpnElemBinopBase + 0] = &h_rpn_binop<WithJit, 0>;
@@ -321,6 +338,10 @@ template <bool WithJit> constexpr auto make_rpn_element_handlers() {
   handlers[kRpnElemBinopBase + 3] = &h_rpn_binop<WithJit, 3>;
   handlers[kRpnElemEnd] = &h_rpn_end<WithJit>;
   handlers[kRpnElemLocalPairSub] = &h_rpn_local_pair_sub<WithJit>;
+  handlers[kRpnElemBinopEndBase + 0] = &h_rpn_binop_end<WithJit, 0>;
+  handlers[kRpnElemBinopEndBase + 1] = &h_rpn_binop_end<WithJit, 1>;
+  handlers[kRpnElemBinopEndBase + 2] = &h_rpn_binop_end<WithJit, 2>;
+  handlers[kRpnElemBinopEndBase + 3] = &h_rpn_binop_end<WithJit, 3>;
   return handlers;
 }
 

@@ -199,6 +199,7 @@ from tier2_runtime.wasm.opcodes import (
     NOP,
     RETURN,
     RPN_ELEM_BINOP_BASE,
+    RPN_ELEM_BINOP_END_BASE,
     RPN_ELEM_END,
     RPN_ELEM_LOCAL_PAIR_SUB,
     RPN_ELEM_PUSH_IMM,
@@ -930,6 +931,7 @@ class RpnExpression:
     target: int
     max_depth: int
     elements: bytes  # PUSH_LOCAL / PUSH_IMM / BINOP elements; END is appended by the pool builder
+    end_element: int  # RPN_ELEM_END, or RPN_ELEM_BINOP_END_BASE + k when the last BINOP is fused
 
 
 def _template_elements(elements: bytes) -> bytes:
@@ -959,6 +961,7 @@ def _scan_rpn_expression(
     depth = 0
     max_depth = 0
     elements = bytearray()
+    last_binop: int | None = None  # kind of the BINOP that is the last element, if any
     for position in range(start, len(instructions)):
         instruction = instructions[position]
         if position > start and instruction.offset in heads:
@@ -968,18 +971,21 @@ def _scan_rpn_expression(
             if local_layout.size_words(instruction.operand) != 1:
                 return None
             frame = local_layout.offset(instruction.operand)
+            last_binop = None
             elements.append(RPN_ELEM_PUSH_LOCAL)
             elements += frame.to_bytes(2, "little")
             depth += 1
         elif opcode == I32_CONST:
             value, _ = decode_signed_full(code, instruction.offset + 1, bits=32)
+            last_binop = None
             elements.append(RPN_ELEM_PUSH_IMM)
             elements += (value & 0xFFFF_FFFF).to_bytes(4, "little")
             depth += 1
         elif opcode in _RPN_BINOP_KIND:
             if depth < 2:
                 return None
-            elements.append(RPN_ELEM_BINOP_BASE + _RPN_BINOP_KIND[opcode])
+            last_binop = _RPN_BINOP_KIND[opcode]
+            elements.append(RPN_ELEM_BINOP_BASE + last_binop)
             depth -= 1
         elif opcode == LOCAL_SET:
             if depth != 1 or local_layout.size_words(instruction.operand) != 1:
@@ -988,13 +994,21 @@ def _scan_rpn_expression(
             code_length = instruction.end_offset - head.offset
             if code_length > 0xFF:
                 return None
+            raw = bytes(elements)
+            packed = _template_elements(raw)
+            end_element = RPN_ELEM_END
+            if packed is raw and last_binop is not None:
+                # Fuse the last BINOP into END: its handler computes the value and stores it.
+                packed = raw[:-1]
+                end_element = RPN_ELEM_BINOP_END_BASE + last_binop
             expression = RpnExpression(
                 head_offset=head.offset,
                 set_offset=instruction.offset,
                 code_length=code_length,
                 target=local_layout.offset(instruction.operand),
                 max_depth=max_depth,
-                elements=_template_elements(bytes(elements)),
+                elements=packed,
+                end_element=end_element,
             )
             return expression, position
         else:
@@ -1314,7 +1328,7 @@ def build_interpreter_annotation_pool(
         for element_byte in expression.elements:
             annotations.append_byte(element_byte)
         end_position = len(annotations)
-        annotations.append_byte(RPN_ELEM_END)
+        annotations.append_byte(expression.end_element)
         append_u16(expression.target)
         append_u32((set_ends[expression.set_offset] - end_position) & 0xFFFF_FFFF)
         annotations.append_byte(expression.code_length)

@@ -204,6 +204,8 @@ from tier2_runtime.wasm.opcodes import (
     RPN_ELEM_LOCAL_PAIR_SUB,
     RPN_ELEM_PUSH_IMM,
     RPN_ELEM_PUSH_LOCAL,
+    NATIVE_LOCAL_GET_W1,
+    NATIVE_LOCAL_SET_W1,
     RPN_EXPR_HEAD,
     RPN_MAX_DEPTH,
     SELECT,
@@ -1073,13 +1075,31 @@ def fit_rpn_expressions(
     return tuple(kept)
 
 
-def rpn_native_code(code: memoryview, expressions: tuple[RpnExpression, ...]) -> bytearray | None:
-    """Native-only code copy whose expression heads carry RPN_EXPR_HEAD (None when no expression)."""
+def rpn_native_code(
+    code: memoryview,
+    expressions: tuple[RpnExpression, ...],
+    local_layout: LocalLayout,
+) -> bytearray | None:
+    """Native-only code copy: one-word local accesses get their own opcodes, and expression heads
+    carry RPN_EXPR_HEAD. Returns None when the copy would equal the original code.
 
-    if not expressions:
-        return None
-    copy = bytearray(code)
+    The width of a local access is fixed by the loader, so the one-word handlers need no width test.
+    Only opcode bytes change, so instruction boundaries and annotation offsets are unchanged.
+    """
+    copy: bytearray | None = None
+    for instruction in iter_scan_instrs(code):
+        if instruction.opcode != LOCAL_GET and instruction.opcode != LOCAL_SET:
+            continue
+        if local_layout.size_words(instruction.operand) != 1:
+            continue
+        if copy is None:
+            copy = bytearray(code)
+        copy[instruction.offset] = (
+            NATIVE_LOCAL_GET_W1 if instruction.opcode == LOCAL_GET else NATIVE_LOCAL_SET_W1
+        )
     for expression in expressions:
+        if copy is None:
+            copy = bytearray(code)
         copy[expression.head_offset] = RPN_EXPR_HEAD
     return copy
 

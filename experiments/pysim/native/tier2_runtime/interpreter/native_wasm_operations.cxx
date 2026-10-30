@@ -951,6 +951,34 @@ bool runtime_local_get(execution_context *context, const std::uint8_t *&instruct
   return true;
 }
 
+bool runtime_local_get_w1(execution_context *context, const std::uint8_t *&instruction_ip,
+                          std::uint32_t *&sp, std::uint32_t *&local_base,
+                          const std::uint8_t *&rel) {
+  auto &current = *context;
+  const auto encoded_width = read_u8(rel);
+  const auto offset = static_cast<frame_word_offset_t>(read_u16(rel));
+  rel += 3;  // width (always one word for this opcode) and the RPN ext
+  assert(current.stack_limit - sp >= 1);
+  sp[0] = local_base[offset];
+  sp += 1;
+  instruction_ip += encoded_width;
+  return true;
+}
+
+bool runtime_local_set_w1(execution_context *context, const std::uint8_t *&instruction_ip,
+                          std::uint32_t *&sp, std::uint32_t *&local_base,
+                          const std::uint8_t *&rel) {
+  auto &current = *context;
+  const auto encoded_width = read_u8(rel);
+  const auto offset = static_cast<frame_word_offset_t>(read_u16(rel));
+  rel += 3;  // width (always one word for this opcode) and the RPN ext
+  assert(current.stack_limit - sp >= 1);
+  sp -= 1;
+  local_base[offset] = sp[0];
+  instruction_ip += encoded_width;
+  return true;
+}
+
 bool runtime_local_set(execution_context *context, const std::uint8_t *&instruction_ip,
                        std::uint32_t *&sp, std::uint32_t *&local_base,
                        [[maybe_unused]] const std::uint8_t *&rel) {

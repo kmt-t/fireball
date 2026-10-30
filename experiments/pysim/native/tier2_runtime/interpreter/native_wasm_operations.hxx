@@ -39,6 +39,8 @@ constexpr block_index_t kInvalidBlockIndex = FIREBALL_INVALID_BLOCK_INDEX;
 constexpr std::uint32_t kOpcodeFcPrefix = 0xFC;
 // RPN expression protocol (REQ-097 D). The values mirror tier2_runtime/wasm/opcodes.py; the loader owns them.
 constexpr std::uint32_t kRpnExprHead = 0xD3;
+constexpr std::uint32_t kNativeLocalGetW1 = 0xD4;
+constexpr std::uint32_t kNativeLocalSetW1 = 0xD5;
 constexpr std::uint32_t kRpnElemPushLocal = 0x00;
 constexpr std::uint32_t kRpnElemPushImm = 0x01;
 constexpr std::uint32_t kRpnElemBinopBase = 0x02;
@@ -370,6 +372,16 @@ template <bool Direct>
                                               const std::uint8_t *&instruction_ip,
                                               std::uint32_t *&sp, std::uint32_t *&local_base,
                                               [[maybe_unused]] const std::uint8_t *&rel);
+/** @brief One-word `runtime_local_get` (native copy opcode 0xD4); the width is fixed to 1. */
+[[gnu::always_inline]] bool runtime_local_get_w1(execution_context *context,
+                                                 const std::uint8_t *&instruction_ip,
+                                                 std::uint32_t *&sp, std::uint32_t *&local_base,
+                                                 const std::uint8_t *&rel);
+/** @brief One-word `runtime_local_set` (native copy opcode 0xD5); the width is fixed to 1. */
+[[gnu::always_inline]] bool runtime_local_set_w1(execution_context *context,
+                                                 const std::uint8_t *&instruction_ip,
+                                                 std::uint32_t *&sp, std::uint32_t *&local_base,
+                                                 const std::uint8_t *&rel);
 /** @brief `runtime_local_tee`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。 */
 [[gnu::always_inline]] bool runtime_local_tee(execution_context *context,
                                               const std::uint8_t *&instruction_ip,

@@ -1098,7 +1098,7 @@ class Module:
             )
             function.branch_layouts = None
             function.interpreter_annotation_pool = annotations
-            function.native_code = rpn_native_code(code, expressions)
+            function.native_code = rpn_native_code(code, expressions, function.local_layout_cache)
             assert len(block_annotation_offsets) == len(extracted)
             for block_index, (head_pc, next_pc, loops_to, frame_depth, byte_span) in enumerate(
                 extracted

@@ -400,6 +400,8 @@ template <typename Debugger, bool WithJit> constexpr auto make_opcode_handlers()
   handlers[0x1B] = runtime_api_handler<Debugger, WithJit, &runtime_select>;
   handlers[0x20] = runtime_api_handler<Debugger, WithJit, &runtime_local_get>;
   handlers[0x21] = runtime_api_handler<Debugger, WithJit, &runtime_local_set>;
+  handlers[kNativeLocalGetW1] = runtime_api_handler<Debugger, WithJit, &runtime_local_get_w1>;
+  handlers[kNativeLocalSetW1] = runtime_api_handler<Debugger, WithJit, &runtime_local_set_w1>;
   handlers[0x22] = runtime_api_handler<Debugger, WithJit, &runtime_local_tee>;
   handlers[0x23] = runtime_api_handler<Debugger, WithJit, &runtime_global_get>;
   handlers[0x24] = runtime_api_handler<Debugger, WithJit, &runtime_global_set>;

@@ -213,6 +213,9 @@ BLOCKTYPE_EMPTY = 0x40
 # RPN expressions (REQ-097 D). The head opcode and the element codes exist only in the native
 # code copy and in the annotation pool; they are not WASM opcodes.
 RPN_EXPR_HEAD = 0xD3
+# Native code copy only: one-word local.get/local.set (the loader fixes the width).
+NATIVE_LOCAL_GET_W1 = 0xD4
+NATIVE_LOCAL_SET_W1 = 0xD5
 RPN_ELEM_PUSH_LOCAL = 0x00
 RPN_ELEM_PUSH_IMM = 0x01
 RPN_ELEM_BINOP_BASE = 0x02

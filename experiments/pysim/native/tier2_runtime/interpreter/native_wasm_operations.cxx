@@ -604,252 +604,150 @@ bool conversion_i32_wrap_i64(execution_context &current, std::uint32_t *&sp,
   return true;
 }
 
-bool conversion_i32_trunc_f32_s(execution_context &current, std::uint32_t *&sp,
-                                std::uint32_t &trap_code) {
-  float value = 0;
+// Truncation to an integer of Bits width. Signed targets trap or saturate outside
+// [-2^(Bits-1), 2^(Bits-1)), unsigned targets outside (-1, 2^Bits). NaN and infinities
+// trap in the checked form and saturate to zero in the saturating form.
+template <typename Float, bool Signed, int Bits>
+constexpr Float trunc_upper_bound() {
+  if constexpr (Bits == 32) {
+    return Signed ? kTwoPow31<Float> : kTwoPow32<Float>;
+  } else {
+    return Signed ? kTwoPow63<Float> : kTwoPow64<Float>;
+  }
+}
+
+template <int Bits>
+using trunc_result_t = std::conditional_t<Bits == 32, std::uint32_t, std::uint64_t>;
+
+void pop_float(execution_context &current, std::uint32_t *&sp, float &value) {
   pop_f32(current, sp, value);
-  if (!std::isfinite(value) || value < -kTwoPow31<float> ||
-      value >= kTwoPow31<float>) {
+}
+
+void pop_float(execution_context &current, std::uint32_t *&sp, double &value) {
+  pop_f64(current, sp, value);
+}
+
+void push_truncated(execution_context &current, std::uint32_t *&sp, std::uint32_t value) {
+  push(current, sp, value);
+}
+
+void push_truncated(execution_context &current, std::uint32_t *&sp, std::uint64_t value) {
+  push_u64(current, sp, value);
+}
+
+template <typename Float, bool Signed, int Bits>
+bool trunc_checked(execution_context &current, std::uint32_t *&sp, std::uint32_t &trap_code) {
+  using Result = trunc_result_t<Bits>;
+  using SignedInt = std::conditional_t<Bits == 32, std::int32_t, std::int64_t>;
+  constexpr Float upper = trunc_upper_bound<Float, Signed, Bits>();
+  Float value = 0;
+  pop_float(current, sp, value);
+  const bool below = Signed ? value < -upper : value <= Float(-1);
+  if (!std::isfinite(value) || below || value >= upper) {
     trap_code = kTrapInvalidConversion;
     return false;
   }
-  const auto result = static_cast<std::uint32_t>(static_cast<std::int32_t>(value));
-  push(current, sp, result);
+  const auto result = Signed ? static_cast<Result>(static_cast<SignedInt>(value))
+                             : static_cast<Result>(value);
+  push_truncated(current, sp, result);
   trap_code = 0;
   return true;
+}
+
+template <typename Float, bool Signed, int Bits>
+bool trunc_saturating(execution_context &current, std::uint32_t *&sp) {
+  using Result = trunc_result_t<Bits>;
+  using SignedInt = std::conditional_t<Bits == 32, std::int32_t, std::int64_t>;
+  constexpr Float upper = trunc_upper_bound<Float, Signed, Bits>();
+  constexpr Result kMinimum =
+      Bits == 32 ? static_cast<Result>(kI32SignBit) : static_cast<Result>(kI64SignBit);
+  constexpr Result kMaximum = Signed ? static_cast<Result>(~kMinimum) : static_cast<Result>(~Result{0});
+  Float value = 0;
+  pop_float(current, sp, value);
+  Result result = 0;
+  if (std::isnan(value) || (!Signed && value <= Float(0))) {
+    result = 0;
+  } else if (value >= upper) {
+    result = kMaximum;
+  } else if (Signed && value <= -upper) {
+    result = kMinimum;
+  } else {
+    result = Signed ? static_cast<Result>(static_cast<SignedInt>(value)) : static_cast<Result>(value);
+  }
+  push_truncated(current, sp, result);
+  return true;
+}
+
+bool conversion_i32_trunc_f32_s(execution_context &current, std::uint32_t *&sp,
+                 std::uint32_t &trap_code) {
+  return trunc_checked<float, true, 32>(current, sp, trap_code);
 }
 
 bool conversion_i32_trunc_f32_u(execution_context &current, std::uint32_t *&sp,
-                                std::uint32_t &trap_code) {
-  float value = 0;
-  pop_f32(current, sp, value);
-  if (!std::isfinite(value) || value <= -1.0f ||
-      value >= kTwoPow32<float>) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
-  push(current, sp, static_cast<std::uint32_t>(value));
-  trap_code = 0;
-  return true;
+                 std::uint32_t &trap_code) {
+  return trunc_checked<float, false, 32>(current, sp, trap_code);
 }
 
 bool conversion_i32_trunc_f64_s(execution_context &current, std::uint32_t *&sp,
-                                std::uint32_t &trap_code) {
-  double value = 0;
-  pop_f64(current, sp, value);
-  if (!std::isfinite(value) || value < -kTwoPow31<double> ||
-      value >= kTwoPow31<double>) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
-  const auto result = static_cast<std::uint32_t>(static_cast<std::int32_t>(value));
-  push(current, sp, result);
-  trap_code = 0;
-  return true;
+                 std::uint32_t &trap_code) {
+  return trunc_checked<double, true, 32>(current, sp, trap_code);
 }
 
 bool conversion_i32_trunc_f64_u(execution_context &current, std::uint32_t *&sp,
-                                std::uint32_t &trap_code) {
-  double value = 0;
-  pop_f64(current, sp, value);
-  if (!std::isfinite(value) || value <= -1.0 ||
-      value >= kTwoPow32<double>) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
-  push(current, sp, static_cast<std::uint32_t>(value));
-  trap_code = 0;
-  return true;
+                 std::uint32_t &trap_code) {
+  return trunc_checked<double, false, 32>(current, sp, trap_code);
 }
 
 bool conversion_i64_trunc_f32_s(execution_context &current, std::uint32_t *&sp,
-                                std::uint32_t &trap_code) {
-  float value = 0;
-  pop_f32(current, sp, value);
-  if (!std::isfinite(value) || value < -kTwoPow63<float> ||
-      value >= kTwoPow63<float>) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
-  const auto result = value == -kTwoPow63<float>
-                          ? kI64SignBit
-                          : static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
-  push_u64(current, sp, result);
-  trap_code = 0;
-  return true;
+                 std::uint32_t &trap_code) {
+  return trunc_checked<float, true, 64>(current, sp, trap_code);
 }
 
 bool conversion_i64_trunc_f32_u(execution_context &current, std::uint32_t *&sp,
-                                std::uint32_t &trap_code) {
-  float value = 0;
-  pop_f32(current, sp, value);
-  if (!std::isfinite(value) || value <= -1.0f ||
-      value >= kTwoPow64<float>) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
-  push_u64(current, sp, static_cast<std::uint64_t>(value));
-  trap_code = 0;
-  return true;
+                 std::uint32_t &trap_code) {
+  return trunc_checked<float, false, 64>(current, sp, trap_code);
 }
 
 bool conversion_i64_trunc_f64_s(execution_context &current, std::uint32_t *&sp,
-                                std::uint32_t &trap_code) {
-  double value = 0;
-  pop_f64(current, sp, value);
-  if (!std::isfinite(value) || value < -kTwoPow63<double> ||
-      value >= kTwoPow63<double>) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
-  const auto result = value == -kTwoPow63<double>
-                          ? kI64SignBit
-                          : static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
-  push_u64(current, sp, result);
-  trap_code = 0;
-  return true;
+                 std::uint32_t &trap_code) {
+  return trunc_checked<double, true, 64>(current, sp, trap_code);
 }
 
 bool conversion_i64_trunc_f64_u(execution_context &current, std::uint32_t *&sp,
-                                std::uint32_t &trap_code) {
-  double value = 0;
-  pop_f64(current, sp, value);
-  if (!std::isfinite(value) || value <= -1.0 ||
-      value >= kTwoPow64<double>) {
-    trap_code = kTrapInvalidConversion;
-    return false;
-  }
-  push_u64(current, sp, static_cast<std::uint64_t>(value));
-  trap_code = 0;
-  return true;
+                 std::uint32_t &trap_code) {
+  return trunc_checked<double, false, 64>(current, sp, trap_code);
 }
 
 bool conversion_i32_trunc_sat_f32_s(execution_context &current, std::uint32_t *&sp) {
-  float value = 0;
-  pop_f32(current, sp, value);
-  std::uint32_t result = 0;
-  if (std::isnan(value)) {
-    result = 0;
-  } else if (value <= -kTwoPow31<float>) {
-    result = kI32SignBit;
-  } else if (value >= kTwoPow31<float>) {
-    result = 0x7FFF'FFFFu;
-  } else {
-    result = static_cast<std::uint32_t>(static_cast<std::int32_t>(value));
-  }
-  push(current, sp, result);
-  return true;
+  return trunc_saturating<float, true, 32>(current, sp);
 }
 
 bool conversion_i32_trunc_sat_f32_u(execution_context &current, std::uint32_t *&sp) {
-  float value = 0;
-  pop_f32(current, sp, value);
-  std::uint32_t result = 0;
-  if (std::isnan(value) || value <= 0.0f) {
-    result = 0;
-  } else if (value >= kTwoPow32<float>) {
-    result = 0xFFFF'FFFFu;
-  } else {
-    result = static_cast<std::uint32_t>(value);
-  }
-  push(current, sp, result);
-  return true;
+  return trunc_saturating<float, false, 32>(current, sp);
 }
 
 bool conversion_i32_trunc_sat_f64_s(execution_context &current, std::uint32_t *&sp) {
-  double value = 0;
-  pop_f64(current, sp, value);
-  std::uint32_t result = 0;
-  if (std::isnan(value)) {
-    result = 0;
-  } else if (value <= -kTwoPow31<double>) {
-    result = kI32SignBit;
-  } else if (value >= kTwoPow31<double>) {
-    result = 0x7FFF'FFFFu;
-  } else {
-    result = static_cast<std::uint32_t>(static_cast<std::int32_t>(value));
-  }
-  push(current, sp, result);
-  return true;
+  return trunc_saturating<double, true, 32>(current, sp);
 }
 
 bool conversion_i32_trunc_sat_f64_u(execution_context &current, std::uint32_t *&sp) {
-  double value = 0;
-  pop_f64(current, sp, value);
-  std::uint32_t result = 0;
-  if (std::isnan(value) || value <= 0.0) {
-    result = 0;
-  } else if (value >= kTwoPow32<double>) {
-    result = 0xFFFF'FFFFu;
-  } else {
-    result = static_cast<std::uint32_t>(value);
-  }
-  push(current, sp, result);
-  return true;
+  return trunc_saturating<double, false, 32>(current, sp);
 }
 
 bool conversion_i64_trunc_sat_f32_s(execution_context &current, std::uint32_t *&sp) {
-  float value = 0;
-  pop_f32(current, sp, value);
-  std::uint64_t result = 0;
-  if (std::isnan(value)) {
-    result = 0;
-  } else if (value <= -kTwoPow63<float>) {
-    result = kI64SignBit;
-  } else if (value >= kTwoPow63<float>) {
-    result = 0x7FFF'FFFF'FFFF'FFFFull;
-  } else {
-    result = static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
-  }
-  push_u64(current, sp, result);
-  return true;
+  return trunc_saturating<float, true, 64>(current, sp);
 }
 
 bool conversion_i64_trunc_sat_f32_u(execution_context &current, std::uint32_t *&sp) {
-  float value = 0;
-  pop_f32(current, sp, value);
-  std::uint64_t result = 0;
-  if (std::isnan(value) || value <= 0.0f) {
-    result = 0;
-  } else if (value >= kTwoPow64<float>) {
-    result = 0xFFFF'FFFF'FFFF'FFFFull;
-  } else {
-    result = static_cast<std::uint64_t>(value);
-  }
-  push_u64(current, sp, result);
-  return true;
+  return trunc_saturating<float, false, 64>(current, sp);
 }
 
 bool conversion_i64_trunc_sat_f64_s(execution_context &current, std::uint32_t *&sp) {
-  double value = 0;
-  pop_f64(current, sp, value);
-  std::uint64_t result = 0;
-  if (std::isnan(value)) {
-    result = 0;
-  } else if (value <= -kTwoPow63<double>) {
-    result = kI64SignBit;
-  } else if (value >= kTwoPow63<double>) {
-    result = 0x7FFF'FFFF'FFFF'FFFFull;
-  } else {
-    result = static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
-  }
-  push_u64(current, sp, result);
-  return true;
+  return trunc_saturating<double, true, 64>(current, sp);
 }
 
 bool conversion_i64_trunc_sat_f64_u(execution_context &current, std::uint32_t *&sp) {
-  double value = 0;
-  pop_f64(current, sp, value);
-  std::uint64_t result = 0;
-  if (std::isnan(value) || value <= 0.0) {
-    result = 0;
-  } else if (value >= kTwoPow64<double>) {
-    result = 0xFFFF'FFFF'FFFF'FFFFull;
-  } else {
-    result = static_cast<std::uint64_t>(value);
-  }
-  push_u64(current, sp, result);
-  return true;
+  return trunc_saturating<double, false, 64>(current, sp);
 }
 
 bool conversion_i64_extend_i32_s(execution_context &current, std::uint32_t *&sp,

@@ -253,6 +253,7 @@ void clear_cps_exit(execution_context &current) { current.runtime_flags &= ~kCps
 bool runtime_api_boundary(execution_context &current, code_ip_t ip, const std::uint8_t *rel) {
   current.ip = ip;
   current.rel = rel;
+  current.runtime_flags &= ~kPendingBlockHeadFlag;
   current.runtime_flags |= kRelCursorReadyFlag;
   current.trap_code = 0;
   record_cps_exit(current, kRuntimeApiBoundary);
@@ -289,10 +290,16 @@ void set_block_cursor(execution_context &current, code_ip_t ip, block_index_t bl
   current.trap_code = 0;
 }
 
+// The next block head is pending for the dispatcher after every block exit.
+void exit_block_boundary(execution_context &current) {
+  current.runtime_flags |= kPendingBlockHeadFlag;
+  record_cps_exit(current, kBlockBoundary);
+}
+
 bool block_boundary(execution_context &current, code_ip_t ip, block_index_t block_index,
                     const std::uint8_t *&rel) {
   set_block_cursor(current, ip, block_index, rel);
-  record_cps_exit(current, kBlockBoundary);
+  exit_block_boundary(current);
   return false;
 }
 
@@ -306,7 +313,7 @@ bool transfer_to_block(execution_context &current, code_ip_t ip, block_index_t b
   } else {
     set_block_cursor(current, ip, block_index, rel);
     if (backedge && current.loop_jump_count >= current.loop_jump_threshold) {
-      record_cps_exit(current, kBlockBoundary);
+      exit_block_boundary(current);
       return false;
     }
     return true;
@@ -317,7 +324,7 @@ bool continue_to_block(execution_context &current, code_ip_t ip, block_index_t b
                        const std::uint8_t *&rel) {
   set_block_cursor(current, ip, block_index, rel);
   if ((current.runtime_flags & (kSingleControlStepFlag | kJitDispatchFlag)) != 0) {
-    record_cps_exit(current, kBlockBoundary);
+    exit_block_boundary(current);
     return false;
   }
   return true;
@@ -332,7 +339,7 @@ bool continue_within_block(execution_context &current, code_ip_t ip,
   current.rel = rel;
   current.runtime_flags |= kRelCursorReadyFlag;
   current.trap_code = 0;
-  record_cps_exit(current, kBlockBoundary);
+  exit_block_boundary(current);
   return false;
 }
 
@@ -345,14 +352,16 @@ bool complete(execution_context &current) {
   return false;
 }
 
-bool trap(execution_context &current, std::uint32_t code) {
+bool trap(execution_context &current, std::uint32_t code, code_ip_t ip) {
+  current.ip = ip;
   current.trap_code = code;
-  current.runtime_flags &= ~kRelCursorReadyFlag;
+  current.runtime_flags &= ~(kPendingBlockHeadFlag | kRelCursorReadyFlag);
   record_cps_exit(current, kTrap);
   return false;
 }
 
 bool debug_stop(execution_context &current) {
+  current.runtime_flags &= ~kPendingBlockHeadFlag;
   current.trap_code = 0;
   record_cps_exit(current, kDebugStop);
   return false;
@@ -1291,7 +1300,7 @@ bool runtime_conversion(execution_context *context, const std::uint8_t *&instruc
   std::uint32_t trap_code = 0;
   if (!Operation(current, sp, trap_code)) {
     assert(trap_code != 0);
-    return trap(current, trap_code);
+    return trap(current, trap_code, instruction_offset(current, instruction_ip));
   }
   instruction_ip += 1;
   return true;
@@ -1400,11 +1409,11 @@ bool runtime_call(execution_context *context, const std::uint8_t *&instruction_i
     assert(!(sp == current.stack_base));
     table_slot = sp[-1];
     if (table_slot >= table.size || table.function_indices == nullptr) {
-      return trap(current, kTrapTableIndexOutOfBounds);
+      return trap(current, kTrapTableIndexOutOfBounds, instruction_offset(current, instruction_ip));
     }
     const auto table_function_index = table.function_indices[table_slot];
     if (table_function_index == FIREBALL_INVALID_BLOCK_INDEX) {
-      return trap(current, kTrapTableSlotUninitialized);
+      return trap(current, kTrapTableSlotUninitialized, instruction_offset(current, instruction_ip));
     }
     assert(table_function_index < module.function_count);
     function_index = static_cast<function_index_t>(table_function_index);
@@ -1435,15 +1444,15 @@ bool runtime_call(execution_context *context, const std::uint8_t *&instruction_i
                       module.signature_bytes + actual.param_offset, expected.param_count) != 0 ||
           std::memcmp(module.signature_bytes + expected.result_offset,
                       module.signature_bytes + actual.result_offset, expected.result_count) != 0) {
-        return trap(current, kTrapIndirectCallTypeMismatch);
+        return trap(current, kTrapIndirectCallTypeMismatch, instruction_offset(current, instruction_ip));
       }
     }
   }
   if (current.call_stack->size >= FIREBALL_NATIVE_CALL_STACK_CAPACITY) {
-    return trap(current, kTrapCallStackCapacity);
+    return trap(current, kTrapCallStackCapacity, instruction_offset(current, instruction_ip));
   }
   if (current.local_stack_pointer + target.local_slot_count > current.local_stack_limit) {
-    return trap(current, kTrapLocalStackCapacity);
+    return trap(current, kTrapLocalStackCapacity, instruction_offset(current, instruction_ip));
   }
 
   const auto argument_words =
@@ -1452,7 +1461,7 @@ bool runtime_call(execution_context *context, const std::uint8_t *&instruction_i
   const auto argument_base = sp - static_cast<std::ptrdiff_t>(argument_words);
   if (target.max_operand_stack_words >
       static_cast<std::uint32_t>(current.stack_limit - argument_base)) {
-    return trap(current, kTrapOperandStackCapacity);
+    return trap(current, kTrapOperandStackCapacity, instruction_offset(current, instruction_ip));
   }
 
   auto *callee_local_base = current.local_stack_pointer;
@@ -1512,7 +1521,7 @@ bool runtime_i32_checked_binary(execution_context *context, const std::uint8_t *
   std::uint32_t result = 0;
   std::uint32_t trap_code = 0;
   if (!Operation(sp[-2], sp[-1], result, trap_code)) {
-    return trap(current, trap_code);
+    return trap(current, trap_code, instruction_offset(current, instruction_ip));
   }
   --sp;
   sp[-1] = result;
@@ -1543,7 +1552,7 @@ bool runtime_i64_checked_binary(execution_context *context, const std::uint8_t *
   std::uint64_t result = 0;
   std::uint32_t trap_code = 0;
   if (!Operation(lhs, rhs, result, trap_code)) {
-    return trap(current, trap_code);
+    return trap(current, trap_code, instruction_offset(current, instruction_ip));
   }
   replace_u64_operands<ResultIsBool>(sp, result, 4);
   instruction_ip += 1;
@@ -1630,7 +1639,7 @@ bool runtime_memory_load_decoded(execution_context *context, std::uint32_t *&sp,
   }
   const auto effective_address = static_cast<std::uint64_t>(address) + offset;
   if (!linear_memory_range_is_valid(current, effective_address, Width)) {
-    return trap(current, kTrapMemoryOutOfBounds);
+    return trap(current, kTrapMemoryOutOfBounds, instruction_offset(current, instruction_ip));
   }
   if (current.linear_memory_host_base == nullptr) {
     return runtime_api_boundary(current, source_ip, rel);
@@ -1683,7 +1692,7 @@ bool runtime_memory_store_decoded(execution_context *context, std::uint32_t *&sp
   }
   const auto effective_address = static_cast<std::uint64_t>(address) + offset;
   if (!linear_memory_range_is_valid(current, effective_address, Width)) {
-    return trap(current, kTrapMemoryOutOfBounds);
+    return trap(current, kTrapMemoryOutOfBounds, instruction_offset(current, instruction_ip));
   }
   if (current.linear_memory_host_base == nullptr) {
     return runtime_api_boundary(current, source_ip, rel);
@@ -1765,7 +1774,7 @@ bool runtime_fc_memory_copy_decoded(execution_context *context, std::uint32_t *&
   }
   if (!linear_memory_range_is_valid(current, destination, length) ||
       !linear_memory_range_is_valid(current, source, length)) {
-    return trap(current, kTrapMemoryOutOfBounds);
+    return trap(current, kTrapMemoryOutOfBounds, instruction_offset(current, instruction_ip));
   }
   if (length != 0) {
     if (current.linear_memory_host_base == nullptr) {
@@ -1805,7 +1814,7 @@ bool runtime_fc_memory_fill_decoded(execution_context *context, std::uint32_t *&
   const auto value = static_cast<std::uint8_t>(sp[-2]);
   const auto length = sp[-1];
   if (!linear_memory_range_is_valid(current, destination, length)) {
-    return trap(current, kTrapMemoryOutOfBounds);
+    return trap(current, kTrapMemoryOutOfBounds, instruction_offset(current, instruction_ip));
   }
   if (length != 0) {
     if (current.linear_memory_host_base == nullptr) {

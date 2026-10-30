@@ -92,9 +92,8 @@ template <typename Debugger>
 inline FIREBALL_CPS_CALL void h_unreachable(execution_context *context,
                                             const std::uint8_t *instruction_ip, std::uint32_t *sp,
                                             [[maybe_unused]] const std::uint8_t *rel) {
-  context->ip = instruction_offset(*context, instruction_ip);
   context->stack_pointer = sp;
-  trap(*context, kTrapUnreachable);
+  trap(*context, kTrapUnreachable, instruction_offset(*context, instruction_ip));
   return;
 }
 
@@ -125,9 +124,8 @@ template <typename Debugger>
 inline FIREBALL_CPS_CALL void
 h_unsupported_opcode(execution_context *context, const std::uint8_t *instruction_ip,
                      std::uint32_t *sp, [[maybe_unused]] const std::uint8_t *rel) {
-  context->ip = instruction_offset(*context, instruction_ip);
   context->stack_pointer = sp;
-  trap(*context, kTrapUnreachable);
+  trap(*context, kTrapUnreachable, instruction_offset(*context, instruction_ip));
   return;
 }
 
@@ -141,9 +139,6 @@ h_runtime_api(execution_context *context, const std::uint8_t *instruction_ip, st
   const bool should_continue = RuntimeApi(context, instruction_ip, sp, local_base, rel);
   context->local_base = local_base;
   if (!should_continue) {
-    if (cps_exit_kind(*context) == kTrap) {
-      context->ip = instruction_offset(*context, instruction_ip);
-    }
     context->rel = rel;
     context->stack_pointer = sp;
     assert(cps_exit_pending(*context));

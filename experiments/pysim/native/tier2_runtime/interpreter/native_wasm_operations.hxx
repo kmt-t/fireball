@@ -72,7 +72,7 @@ bool continue_to_block(execution_context &current, code_ip_t ip, block_index_t b
 /** @brief WASM関数の完了を記録する。 */
 bool complete(execution_context &current);
 /** @brief WASMのtrap理由を記録し、通常継続を停止する。 */
-bool trap(execution_context &current, std::uint32_t code);
+bool trap(execution_context &current, std::uint32_t code, code_ip_t ip);
 /** @brief `debug_stop`に対応する実行状態または値を求める。 */
 bool debug_stop(execution_context &current);
 /** @brief Interpreter注釈プールの固定幅値を読み出す。 */

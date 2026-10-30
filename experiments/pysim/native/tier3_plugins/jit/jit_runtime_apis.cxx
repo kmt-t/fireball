@@ -47,7 +47,7 @@ inline bool jit_runtime_api_counted(execution_context *context, std::uint32_t *&
 inline bool jit_runtime_unreachable(execution_context *context, [[maybe_unused]] std::uint32_t *&sp,
                                     [[maybe_unused]] std::uint32_t *&local_base,
                                     [[maybe_unused]] const std::uint8_t *rel) {
-  return trap(*context, kTrapUnreachable);
+  return trap(*context, kTrapUnreachable, context->ip);
 }
 
 /**

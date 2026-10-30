@@ -411,7 +411,7 @@ bool pop_u64([[maybe_unused]] execution_context &current, std::uint32_t *&sp,
 
 bool push_u64([[maybe_unused]] execution_context &current, std::uint32_t *&sp,
               std::uint64_t value) {
-  assert(!(current.stack_limit - sp < 2));
+  assert(current.stack_limit - sp >= 2);
   *sp++ = static_cast<std::uint32_t>(value);
   *sp++ = static_cast<std::uint32_t>(value >> 32);
   return true;
@@ -579,7 +579,7 @@ bool pop([[maybe_unused]] execution_context &current, std::uint32_t *&sp, std::u
 }
 
 bool push([[maybe_unused]] execution_context &current, std::uint32_t *&sp, std::uint32_t value) {
-  assert(!(sp >= current.stack_limit));
+  assert(sp < current.stack_limit);
   *sp++ = value;
   return true;
 }
@@ -1099,7 +1099,7 @@ bool runtime_local_get_annotated(execution_context &current, std::uint32_t *&sp,
                                  operand_words_t width) {
   [[maybe_unused]] const auto &function = *active_frame(current).function_view;
   assert((width == 1 || width == 2) && offset + width <= function.local_slot_count);
-  assert(!(current.stack_limit - sp < width));
+  assert(current.stack_limit - sp >= width);
   sp[0] = local_base[offset];
   if (width == 2) {
     sp[1] = local_base[offset + 1];
@@ -1154,7 +1154,7 @@ bool runtime_global_get(execution_context *context, const std::uint8_t *&instruc
 
   const auto width = module->global_widths[index];
   assert(width == 1u || width == 2u);
-  assert(!(current.stack_limit - sp < width));
+  assert(current.stack_limit - sp >= width);
   const auto value = module->globals[index];
   *sp++ = static_cast<std::uint32_t>(value);
   if (width == 2u) {
@@ -1178,7 +1178,7 @@ bool runtime_global_set(execution_context *context, const std::uint8_t *&instruc
 
   const auto width = module->global_widths[index];
   assert(width == 1u || width == 2u);
-  assert(!(sp < current.stack_base + width));
+  assert(sp >= current.stack_base + width);
   auto value = static_cast<std::uint64_t>(sp[-static_cast<std::ptrdiff_t>(width)]);
   if (width == 2u) {
     value |= static_cast<std::uint64_t>(sp[-1]) << 32;
@@ -1380,7 +1380,7 @@ bool runtime_i32_unary(execution_context *context, const std::uint8_t *&instruct
                        std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                        [[maybe_unused]] const std::uint8_t *&rel) {
   [[maybe_unused]] auto &current = *context;
-  assert(!(sp == current.stack_base));
+  assert(sp != current.stack_base);
   sp[-1] = Operation(sp[-1]);
   instruction_ip += 1;
   return true;
@@ -1406,7 +1406,7 @@ bool runtime_call(execution_context *context, const std::uint8_t *&instruction_i
     // The loader requires a table for CALL_INDIRECT and accepts only table index zero.
     assert(table_index < module.table_count && module.tables != nullptr);
     const auto &table = module.tables[table_index];
-    assert(!(sp == current.stack_base));
+    assert(sp != current.stack_base);
     table_slot = sp[-1];
     if (table_slot >= table.size || table.function_indices == nullptr) {
       return trap(current, kTrapTableIndexOutOfBounds, instruction_offset(current, instruction_ip));
@@ -1505,7 +1505,7 @@ bool runtime_i32_binary(execution_context *context, const std::uint8_t *&instruc
                         std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                         [[maybe_unused]] const std::uint8_t *&rel) {
   [[maybe_unused]] auto &current = *context;
-  assert(!(sp < current.stack_base + 2));
+  assert(sp >= current.stack_base + 2);
   const auto result = Operation(sp[-2], sp[-1]);
   --sp;
   sp[-1] = result;
@@ -1517,7 +1517,7 @@ bool runtime_i32_checked_binary(execution_context *context, const std::uint8_t *
                                 std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                                 [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  assert(!(sp < current.stack_base + 2));
+  assert(sp >= current.stack_base + 2);
   std::uint32_t result = 0;
   std::uint32_t trap_code = 0;
   if (!Operation(sp[-2], sp[-1], result, trap_code)) {
@@ -1533,7 +1533,7 @@ bool runtime_i64_binary(execution_context *context, const std::uint8_t *&instruc
                         std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                         [[maybe_unused]] const std::uint8_t *&rel) {
   [[maybe_unused]] auto &current = *context;
-  assert(!(sp < current.stack_base + 4));
+  assert(sp >= current.stack_base + 4);
   const auto lhs = combine_u64(sp[-4], sp[-3]);
   const auto rhs = combine_u64(sp[-2], sp[-1]);
   const auto result = Operation(lhs, rhs);
@@ -1546,7 +1546,7 @@ bool runtime_i64_checked_binary(execution_context *context, const std::uint8_t *
                                 std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                                 [[maybe_unused]] const std::uint8_t *&rel) {
   auto &current = *context;
-  assert(!(sp < current.stack_base + 4));
+  assert(sp >= current.stack_base + 4);
   const auto lhs = combine_u64(sp[-4], sp[-3]);
   const auto rhs = combine_u64(sp[-2], sp[-1]);
   std::uint64_t result = 0;
@@ -1563,7 +1563,7 @@ bool runtime_i64_unary(execution_context *context, const std::uint8_t *&instruct
                        std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                        [[maybe_unused]] const std::uint8_t *&rel) {
   [[maybe_unused]] auto &current = *context;
-  assert(!(sp < current.stack_base + 2));
+  assert(sp >= current.stack_base + 2);
   const auto value = combine_u64(sp[-2], sp[-1]);
   const auto result = Operation(value);
   replace_u64_operands<ResultIsBool>(sp, result, 2);
@@ -1575,7 +1575,7 @@ bool runtime_f32_binary(execution_context *context, const std::uint8_t *&instruc
                         std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                         [[maybe_unused]] const std::uint8_t *&rel) {
   [[maybe_unused]] auto &current = *context;
-  assert(!(sp < current.stack_base + 2));
+  assert(sp >= current.stack_base + 2);
   const auto result = Operation(f32_from_bits(sp[-2]), f32_from_bits(sp[-1]));
   --sp;
   if constexpr (ResultIsBool) {
@@ -1591,7 +1591,7 @@ bool runtime_f64_binary(execution_context *context, const std::uint8_t *&instruc
                         std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                         [[maybe_unused]] const std::uint8_t *&rel) {
   [[maybe_unused]] auto &current = *context;
-  assert(!(sp < current.stack_base + 4));
+  assert(sp >= current.stack_base + 4);
   const auto lhs = f64_from_bits(combine_u64(sp[-4], sp[-3]));
   const auto rhs = f64_from_bits(combine_u64(sp[-2], sp[-1]));
   const auto result = Operation(lhs, rhs);
@@ -1608,7 +1608,7 @@ bool runtime_f32_unary(execution_context *context, const std::uint8_t *&instruct
                        std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                        [[maybe_unused]] const std::uint8_t *&rel) {
   [[maybe_unused]] auto &current = *context;
-  assert(!(sp == current.stack_base));
+  assert(sp != current.stack_base);
   sp[-1] = f32_to_bits(Operation(f32_from_bits(sp[-1])));
   instruction_ip += 1;
   return true;
@@ -1618,7 +1618,7 @@ bool runtime_f64_unary(execution_context *context, const std::uint8_t *&instruct
                        std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                        [[maybe_unused]] const std::uint8_t *&rel) {
   [[maybe_unused]] auto &current = *context;
-  assert(!(sp < current.stack_base + 2));
+  assert(sp >= current.stack_base + 2);
   const auto value = f64_from_bits(combine_u64(sp[-2], sp[-1]));
   replace_u64_operands<false>(sp, f64_to_bits(Operation(value)), 2);
   instruction_ip += 1;
@@ -1631,7 +1631,7 @@ bool runtime_memory_load_decoded(execution_context *context, std::uint32_t *&sp,
                                  code_ip_t next_pc, std::uint32_t offset,
                                  const std::uint8_t *rel) {
   auto &current = *context;
-  assert(!(sp == current.stack_base));
+  assert(sp != current.stack_base);
 
   const auto address = sp[-1];
   if ((address & 0x8000'0000u) != 0) {
@@ -1645,7 +1645,7 @@ bool runtime_memory_load_decoded(execution_context *context, std::uint32_t *&sp,
     return runtime_api_boundary(current, source_ip, rel);
   }
 
-  assert(!(current.stack_limit - (sp - 1) < ResultWords));
+  assert(current.stack_limit - (sp - 1) >= ResultWords);
   std::uint64_t value = 0;
   for (std::uint32_t byte = 0; byte < Width; ++byte) {
     value |= static_cast<std::uint64_t>(current.linear_memory_host_base[effective_address + byte])
@@ -1683,7 +1683,7 @@ bool runtime_memory_store_decoded(execution_context *context, std::uint32_t *&sp
                                   code_ip_t next_pc, std::uint32_t offset,
                                   const std::uint8_t *rel) {
   auto &current = *context;
-  assert(!(sp < current.stack_base + ValueWords + 1));
+  assert(sp >= current.stack_base + ValueWords + 1);
 
   auto *address_stack_pointer = sp - ValueWords - 1;
   const auto address = sp[-static_cast<std::ptrdiff_t>(ValueWords + 1)];
@@ -1763,7 +1763,7 @@ bool runtime_fc_memory_copy_decoded(execution_context *context, std::uint32_t *&
                                     const std::uint8_t *&instruction_ip, code_ip_t source_ip,
                                     code_ip_t next_pc, const std::uint8_t *rel) {
   auto &current = *context;
-  assert(!(sp < current.stack_base + 3));
+  assert(sp >= current.stack_base + 3);
 
   auto *destination_stack_pointer = sp - 3;
   const auto destination = sp[-3];
@@ -1807,7 +1807,7 @@ bool runtime_fc_memory_fill_decoded(execution_context *context, std::uint32_t *&
                                     const std::uint8_t *&instruction_ip, code_ip_t source_ip,
                                     code_ip_t next_pc, const std::uint8_t *rel) {
   auto &current = *context;
-  assert(!(sp < current.stack_base + 3));
+  assert(sp >= current.stack_base + 3);
 
   auto *destination_stack_pointer = sp - 3;
   const auto destination = sp[-3];

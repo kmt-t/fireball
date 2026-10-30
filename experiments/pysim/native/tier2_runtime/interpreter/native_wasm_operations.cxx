@@ -42,6 +42,16 @@ const fireball_call_frame_native &active_frame(const execution_context &current)
   return frame;
 }
 
+// A function without an annotation pool has no annotation bytes, so its only valid offset is 0.
+const std::uint8_t *annotation_rel_at(const fireball_wasm_function_execution_view_native &function,
+                                      annotation_offset_t byte_offset) {
+  if (function.interpreter_annotation_pool == nullptr) {
+    assert(byte_offset == 0 && function.interpreter_annotation_byte_count == 0);
+    return nullptr;
+  }
+  return function.interpreter_annotation_pool + byte_offset;
+}
+
 const std::uint8_t *interpreter_rel_for_block_index(const fireball_call_frame_native &frame,
                                                     block_index_t block_index) {
   assert(frame.function_view != nullptr);
@@ -57,11 +67,7 @@ const std::uint8_t *interpreter_rel_for_block_index(const fireball_call_frame_na
   const auto offset = block.interpreter_annotation_byte_offset;
   assert(offset != kSentinel);
   assert(offset <= function.interpreter_annotation_byte_count);
-  if (function.interpreter_annotation_pool == nullptr) {
-    assert(offset == 0 && function.interpreter_annotation_byte_count == 0);
-    return nullptr;
-  }
-  return function.interpreter_annotation_pool + offset;
+  return annotation_rel_at(function, offset);
 }
 
 const std::uint8_t *interpreter_rel_after_jit_trace(const fireball_call_frame_native &frame,
@@ -79,11 +85,7 @@ const std::uint8_t *interpreter_rel_after_jit_trace(const fireball_call_frame_na
   assert(block_offset <= function.interpreter_annotation_byte_count);
   assert(consumed_bytes <= function.interpreter_annotation_byte_count - block_offset);
   const auto byte_offset = block_offset + consumed_bytes;
-  if (function.interpreter_annotation_pool == nullptr) {
-    assert(byte_offset == 0 && function.interpreter_annotation_byte_count == 0);
-    return nullptr;
-  }
-  return function.interpreter_annotation_pool + byte_offset;
+  return annotation_rel_at(function, byte_offset);
 }
 
 template <typename T> bool opcode_eqz(T value) { return value == 0; }
@@ -387,19 +389,17 @@ bool debug_stop(execution_context &current) {
 
 std::uint8_t read_u8(const std::uint8_t *&rel) { return *rel++; }
 
-std::uint16_t read_u16(const std::uint8_t *&rel) {
-  std::uint16_t value;
+// Reads a fixed-width little-endian field and advances the cursor past it.
+template <typename T> T read_fixed(const std::uint8_t *&rel) {
+  T value;
   std::memcpy(&value, rel, sizeof(value));
   rel += sizeof(value);
   return value;
 }
 
-std::uint32_t read_u32(const std::uint8_t *&rel) {
-  std::uint32_t value;
-  std::memcpy(&value, rel, sizeof(value));
-  rel += sizeof(value);
-  return value;
-}
+std::uint16_t read_u16(const std::uint8_t *&rel) { return read_fixed<std::uint16_t>(rel); }
+
+std::uint32_t read_u32(const std::uint8_t *&rel) { return read_fixed<std::uint32_t>(rel); }
 
 std::uint8_t peek_u8(const std::uint8_t *rel) { return *rel; }
 
@@ -411,10 +411,7 @@ code_ip_t instruction_offset(const execution_context &current, const std::uint8_
 std::int32_t read_s32(const std::uint8_t *&rel) { return static_cast<std::int32_t>(read_u32(rel)); }
 
 std::int64_t read_s64(const std::uint8_t *&rel) {
-  std::uint64_t value;
-  std::memcpy(&value, rel, sizeof(value));
-  rel += sizeof(value);
-  return static_cast<std::int64_t>(value);
+  return static_cast<std::int64_t>(read_fixed<std::uint64_t>(rel));
 }
 
 void pop_u64([[maybe_unused]] execution_context &current, std::uint32_t *&sp,
@@ -863,6 +860,23 @@ bool runtime_nop(execution_context *, const std::uint8_t *&instruction_ip,
   return true;
 }
 
+/**
+ * @brief 分岐先の基本ブロックへ継続する。分岐先が関数の境界なら関数の終了を処理する。
+ * @details br、br_if、br_table が共有する末尾。後方分岐は継続前にループの戻りを記録する。
+ */
+template <bool Direct>
+bool continue_at_branch_target(execution_context &current, const std::uint8_t *&instruction_ip,
+                               std::uint32_t *&local_base, const std::uint8_t *&rel,
+                               code_ip_t source_ip, block_index_t target_block_index) {
+  if (target_block_index == kInvalidBlockIndex) {
+    return finish_function_boundary<Direct>(current, local_base, instruction_ip, rel);
+  }
+  const auto next_ip = code_ip_for_block_index(current, target_block_index);
+  const auto backedge = record_loop_backedge(current, source_ip, next_ip);
+  instruction_ip = current.code + next_ip;
+  return transfer_to_block<Direct>(current, next_ip, target_block_index, rel, backedge);
+}
+
 bool runtime_else(execution_context *context, const std::uint8_t *&instruction_ip,
                   [[maybe_unused]] std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
                   [[maybe_unused]] const std::uint8_t *&rel) {
@@ -911,13 +925,8 @@ bool runtime_br_if(execution_context *context, const std::uint8_t *&instruction_
     return transfer_to_block<Direct>(current, next_ip, source_block.next_block_index, rel, false);
   }
   branch(current, sp, target_block_index, target_stack_base_words, result_words);
-  if (target_block_index == kInvalidBlockIndex) {
-    return finish_function_boundary<Direct>(current, local_base, instruction_ip, rel);
-  }
-  const auto next_ip = code_ip_for_block_index(current, target_block_index);
-  const auto backedge = record_loop_backedge(current, source_ip, next_ip);
-  instruction_ip = current.code + next_ip;
-  return transfer_to_block<Direct>(current, next_ip, target_block_index, rel, backedge);
+  return continue_at_branch_target<Direct>(current, instruction_ip, local_base, rel,
+                                           source_ip, target_block_index);
 }
 
 bool runtime_local_get_annotated(execution_context &current, std::uint32_t *&sp,
@@ -1133,13 +1142,8 @@ bool runtime_br_table(execution_context *context, const std::uint8_t *&instructi
   const auto selected_stack_base_words = read_u8(selected_block_rel);
   const auto selected_result_words = read_u8(selected_block_rel);
   branch(current, sp, selected_block_index, selected_stack_base_words, selected_result_words);
-  if (selected_block_index == kInvalidBlockIndex) {
-    return finish_function_boundary<Direct>(current, local_base, instruction_ip, rel);
-  }
-  const auto next_ip = code_ip_for_block_index(current, selected_block_index);
-  const auto backedge = record_loop_backedge(current, source_ip, next_ip);
-  instruction_ip = current.code + next_ip;
-  return transfer_to_block<Direct>(current, next_ip, selected_block_index, rel, backedge);
+  return continue_at_branch_target<Direct>(current, instruction_ip, local_base, rel,
+                                           source_ip, selected_block_index);
 }
 
 bool runtime_i32_const(execution_context *context, const std::uint8_t *&instruction_ip,
@@ -1611,13 +1615,8 @@ bool runtime_br(execution_context *context, const std::uint8_t *&instruction_ip,
   const auto target_stack_base_words = read_u8(rel);
   const auto result_words = read_u8(rel);
   branch(current, sp, target_block_index, target_stack_base_words, result_words);
-  if (target_block_index == kInvalidBlockIndex) {
-    return finish_function_boundary<Direct>(current, local_base, instruction_ip, rel);
-  }
-  const auto next_ip = code_ip_for_block_index(current, target_block_index);
-  const auto backedge = record_loop_backedge(current, source_ip, next_ip);
-  instruction_ip = current.code + next_ip;
-  return transfer_to_block<Direct>(current, next_ip, target_block_index, rel, backedge);
+  return continue_at_branch_target<Direct>(current, instruction_ip, local_base, rel,
+                                           source_ip, target_block_index);
 }
 
 bool runtime_fc_memory_copy_decoded(execution_context *context, std::uint32_t *&sp,

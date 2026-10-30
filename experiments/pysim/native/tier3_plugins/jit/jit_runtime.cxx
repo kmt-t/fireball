@@ -661,6 +661,11 @@ bool jit_runtime<Measurement>::can_chain_to(jit_cache_entry value, jit_cache_ent
   if (!can_chain_from(value) || trace_successor_pc(value) != target.head_pc) {
     return false;
   }
+  // A call-terminated target exits through an Interpreter CPS handler. A chain only links
+  // straight-line continuations, so such a target is never a chain successor.
+  if (trace_header(target)->exit_kind == jit_trace_exit_kind::call_cps) {
+    return false;
+  }
   const auto successor_index = trace_successor_block_index(value);
   if (successor_index != jit_invalid_block_index &&
       successor_index != trace_header(target)->block_index) {

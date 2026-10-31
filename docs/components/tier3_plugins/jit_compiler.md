@@ -170,7 +170,7 @@ InterpreterはWASM値を共有オペランドスタックに保持する。
 trace builderは各成功link slotを除いて後続operationを配置するため、合成後の成功経路に操作間call/jumpはない。
 生成器は各operation stencilに`ret`、スタック操作、Runtime API stencil以外のcallがないことを検査し、操作単位のエピローグ生成を拒否する。
 trapを検出したoperationはabort link slotから一つのtrace共通terminal resultへ移る。
-trace entry wrapperはtrace bodyの実行結果を復元する。未接続chain targetに到達した場合だけ終端dispatcherが末尾境界metadata pointerを`ctx.rel`へ置き、`body_end_ip`を`ctx.ip`に設定して`true`を返す。trap/CPS exitではtrace entryが`false`を返す。Interpreter dispatcherは正常復帰後にmetadataから実行状態を確定し、未実行の終端命令と次BasicBlockを処理する。
+trace entry wrapperは、trace bodyの実行結果を、`execution_context` の終了状態（trap 状態と CPS 終了状態）から判定する。未接続chain targetに到達した場合だけ終端dispatcherが末尾境界metadata pointerを`ctx.rel`へ置き、`body_end_ip`を`ctx.ip`に設定して`true`を返す。trap/CPS exitではtrace entryが`false`を返す。戻り値の内部表現（レジスタの使い方）は規定しない。Interpreter dispatcherは正常復帰後にmetadataから実行状態を確定し、未実行の終端命令と次BasicBlockを処理する。
 ARMv8-MのABIはTBDである。
 
 #### トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)
@@ -410,7 +410,7 @@ ARMv8-Mのコンパイラと実機検証はTBDである。
 <!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} {JIT_LazyChaining} -->
 
 **Trace境界の値返却 (`{GOTCHA-JITC-07}`)**: <!-- definition: {GOTCHA-JITC-07} -->
-WASM値は共有オペランドスタックに残し、JIT traceの`bool`戻り値には使わない。通常完了では未接続chain targetの終端dispatcherだけが境界metadata pointerを`ctx.rel`へ置き、`body_end_ip`を`ctx.ip`に設定して`true`を返す。trapまたはCPS exitでは`false`を返すため、Interpreter dispatcherは状態判定を先に行う。共通chain dispatcher経由では同じ共有スタックを引き継ぎ、entry保存処理を重ねない。
+WASM値は共有オペランドスタックに残し、JIT traceの`bool`戻り値には使わない。`bool`戻り値の判定は、`execution_context` の終了状態で行い、値の受け渡しに戻り値の内部表現を使わない。通常完了では未接続chain targetの終端dispatcherだけが境界metadata pointerを`ctx.rel`へ置き、`body_end_ip`を`ctx.ip`に設定して`true`を返す。trapまたはCPS exitでは`false`を返すため、Interpreter dispatcherは状態判定を先に行う。共通chain dispatcher経由では同じ共有スタックを引き継ぎ、entry保存処理を重ねない。
 
 - **決定事項**:
   - **背景**: 現行x64参照構成のコードキャッシュは `FB_CONF_JIT_CACHE_SIZE` である。生成コードは可変長であり、すべてのtraceの開始位置が一定の命令アライメントを満たす保証はない。

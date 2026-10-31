@@ -341,7 +341,7 @@ flowchart TD
 
 - **分岐条件の扱い**: `br_if`と`if`の条件値は実行した経路が一度だけ消費する。JITで消費済みの条件値をInterpreter handlerへ再度渡さない。
 - **関数終了 (`{GOTCHA-JITR-08}`)**: JIT traceは`return`を生成せず、関数復帰は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)へ委譲する。 <!-- definition: {GOTCHA-JITR-08} -->
-- **分岐境界の整合 (`{GOTCHA-JITR-06}`)**: `if`、`br`、`br_if`はtraceに含めず、Interpreter CPS handlerが条件値、stack、frame、PCを一度だけ更新する。trace完了後にopcodeを処理し、実行済み命令を再実行しない。trap/CPS exitは記録済みの終了理由から処理する。 <!-- definition: {GOTCHA-JITR-06} -->
+- **分岐境界の整合 (`{GOTCHA-JITR-06}`)**: `if`、`br`、`br_if`はtraceに含めず、Interpreter CPS handlerが条件値、stack、frame、PCを一度だけ更新する。trace完了後にopcodeを処理し、実行済み命令を再実行しない。trap/CPS exitは記録済みの終了理由から処理する。trace の入口は、同じ終了理由を`execution_context`から読んで`false`を返す（戻り値の内部表現を介さない）。 <!-- definition: {GOTCHA-JITR-06} -->
 - **短小判定の符号 (`{GOTCHA-JITR-07}`)**: ブロックの足切り判定は自身の命令バイト数で行う。後続アドレスとの差分で代用すると、後方分岐ブロックで差分が負になり、高頻度ブロックが永久に除外されてしまう。 <!-- definition: {GOTCHA-JITR-07} -->
 - **エイジングと常駐状態の分離 (`{GOTCHA-JITR-09}`)**: エイジングスイープは `EXECUTED` のカードだけを変更する。`COMPILED` まで戻すと、常駐トレースのカードが `UNEXECUTED` になり、lookup が常駐コードを見逃す。`HOT` まで戻すと、コンパイル待ち列の要求とカード状態が食い違う。常駐性の正本はキャッシュ、待ち列の正本は待ち列であり、スイープはどちらも書き換えない。 <!-- definition: {GOTCHA-JITR-09} -->
 - **押し出し量の入口契約**: Loaderが記録する関数の最大オペランド高を関数入口で検査する。Interpreter命令列とJIT traceの双方は、この予約済み容量内で検証済みのスタック遷移を実行する。関数途中のtrace入口ではオペランド容量を再検査しない。入口予約の安全性と拒否時の本体不実行は[interpreter_stack_model.py](docs/components/tier2_runtime/formal/interpreter_stack_model.py)で検証する。`if`、`br`、`br_if`はtraceに含めず、対応するInterpreter CPS handlerへ渡す。

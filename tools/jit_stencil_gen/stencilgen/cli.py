@@ -7,8 +7,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from .branch_records import read_branch_records
 from .build_inputs import compile_abi_probe, optimized_assembly_source, repo_root, role_definitions
-from .disassembly_branches import parse_disassembly
 from .elf_reader import read_object
 from .emit_outputs import emit_common_header, emit_stencil_header
 from .hole_table import collect_stencils
@@ -19,7 +19,6 @@ from .toolchain import command_output, find_tool
 def generate(args: argparse.Namespace) -> None:
     clang = find_tool(args.clang, ("clang",))
     clangxx = find_tool(args.clangxx, ("clang++",))
-    objdump = find_tool(args.objdump, ("llvm-objdump", "objdump"))
     source = args.source.resolve()
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -63,7 +62,7 @@ def generate(args: argparse.Namespace) -> None:
         if args.role == "common":
             emit_common_header(header, raw, symbols)
         else:
-            branches = parse_disassembly(objdump, object_path, symbols)
+            branches = read_branch_records(object_path, symbols)
             stencils, arrays = collect_stencils(args.role, symbols, branches)
             emit_stencil_header(args.namespace, header, raw, stencils, arrays)
 

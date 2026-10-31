@@ -147,6 +147,10 @@ def optimized_assembly_source(role: str, source: Path, directory: Path) -> Path:
     """Apply stencil-layout optimizations without editing the hand-authored LIR."""
     if role not in ("operations", "trace"):
         return source
+    if role == "trace":
+        # The trace return stubs are hand-written as plain `ret`: the wrapper decides the
+        # outcome from execution_context, so the abort stub needs no link slot.
+        return source
 
     text = source.read_text(encoding="utf-8")
     if role == "operations":
@@ -579,6 +583,8 @@ def role_definitions(role: str, abi: tuple[int, ...], config_path: Path) -> dict
     if role == "trace":
         return {
             "FB_CONTEXT_TRAP_CODE_OFFSET": trap_code,
+            "FB_CONTEXT_RUNTIME_FLAGS_OFFSET": context_flags,
+            "FB_CPS_EXIT_MASK": 0xF00,
             "FB_TRACE_COMMON_RELATIVE_OFFSET": common_relative,
             "FB_CONTEXT_REL_OFFSET": context_rel,
         }

@@ -827,37 +827,16 @@ struct trace_builder {
       }
     }
 
-    const auto *success_code =
-        generated::fb_jit_stencils_start.data() + success_stencil.code_offset;
-#if defined(_WIN32)
-    constexpr std::array<std::uint8_t, 4> kSuccessStatusInstruction{0x49, 0x83, 0xc8, 0x01};
-#else
-    constexpr std::array<std::uint8_t, 4> kSuccessStatusInstruction{0x48, 0x83, 0xca, 0x01};
-#endif
-    if (success_stencil.size <= kSuccessStatusInstruction.size() ||
-        !std::equal(kSuccessStatusInstruction.begin(), kSuccessStatusInstruction.end(),
-                    success_code)) {
-      return false;
-    }
-
     std::size_t terminal_size = 0;
     if (abort_slot_count != 0) {
+      // The abort result is the standalone return stub: the trap or CPS reason is
+      // already in execution_context, so no status is packed or tested here.
       const auto *abort_code = generated::fb_jit_stencils_start.data() + abort_stencil.code_offset;
-      if (abort_stencil.size == 0 || abort_stencil.next_slot_offset == kNoLinkSlot ||
-          abort_stencil.next_slot_offset > abort_stencil.size ||
-          kX64Rel32SlotBytes > abort_stencil.size - abort_stencil.next_slot_offset ||
-          abort_code[abort_stencil.next_slot_offset] != 0xe9 ||
-          abort_stencil.size > sequence_capacity - sequence_size) {
+      if (abort_stencil.size == 0 || abort_stencil.size > sequence_capacity - sequence_size) {
         return false;
       }
       terminal_size = abort_stencil.size;
       std::copy_n(abort_code, abort_stencil.size, trace_body + sequence_size);
-      const auto abort_tail = sequence_size + abort_stencil.next_slot_offset;
-      const auto shared_return_tail = success_offset + kSuccessStatusInstruction.size();
-      if (!write_rel32(trace_body, sequence_size + terminal_size, abort_tail + 1,
-                       shared_return_tail)) {
-        return false;
-      }
       const auto abort_target = wrapper_size + sequence_size;
       const auto total_body_size = wrapper_size + sequence_size + terminal_size;
       for (std::size_t index = 0; index < operation_count; ++index) {

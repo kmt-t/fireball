@@ -223,32 +223,33 @@ FB_TRACE_BEGIN fb_trace_entry
   mov qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET], FB_REL_REG
   add FB_REL_REG, 4
   FB_SLOT_MARK fb_jit_start_slot__fb_trace_entry, 0xe8
-  movq r10, xmm0
-  test r10b, 1
-  jnz .Ltrace_entry_success
+  /* The body returns with sp in FB_SP_REG and rel in FB_REL_REG. A trap or a CPS exit
+     always stores its termination reason in execution_context before the abort slot,
+     so the decision reads that state, not the return value (jit_abi.md, jit_compiler.md).
+     The abort block sits before the exit slot; both branch targets lie at or before the
+     exit slot, so the stencil builder maps them without shifting. */
+  cmp dword ptr [r12 + FB_CONTEXT_TRAP_CODE_OFFSET], 0
+  .byte 0x0f, 0x85
+  .long .Ltrace_entry_abort - . - 4
+  test dword ptr [r12 + FB_CONTEXT_RUNTIME_FLAGS_OFFSET], FB_CPS_EXIT_MASK
+  .byte 0x0f, 0x84
+  .long .Ltrace_entry_exit - . - 4
+.Ltrace_entry_abort:
   xor eax, eax
   add rsp, 8
   pop r12
   ret
-.Ltrace_entry_success:
-  pshufd xmm1, xmm0, 238
-  movq FB_REL_REG, xmm1
-  and r10, -2
-  mov FB_SP_REG, r10
+.Ltrace_entry_exit:
   FB_SLOT_MARK fb_jit_exit_slot__fb_trace_entry, 0xe9
 FB_TRACE_END fb_trace_entry
 
+/* Normal completion of a body: sp and rel are already in FB_SP_REG and FB_REL_REG.
+   The wrapper decides success from execution_context, so nothing is packed here. */
 FB_TRACE_BEGIN fb_trace_return_success
-  or FB_SP_REG, 1
-  movq xmm0, FB_SP_REG
-  movq xmm1, FB_REL_REG
-  punpcklqdq xmm0, xmm1
   ret
 FB_TRACE_END fb_trace_return_success
 
+/* Abort of a body: the trap or CPS reason is already in execution_context. */
 FB_TRACE_BEGIN fb_trace_return_abort
-  movq xmm0, FB_SP_REG
-  movq xmm1, FB_REL_REG
-  punpcklqdq xmm0, xmm1
   ret
 FB_TRACE_END fb_trace_return_abort

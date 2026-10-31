@@ -18,8 +18,8 @@ JIT の Linux/WSL と Windows の build script は同じ生成器を三度実行
 
 1. `abi_probe.cxx` を Clang C++ で対象 ABI 向けにコンパイルする。関数型の `static_assert` と `.fb_abi` section から本番 ABI の構造体 offset を取得する。
 2. Clang integrated assembler で入力 `.S` を PIC object にする。ABI probe と Tier 1 構成から得た値を assembly macro に渡す。
-3. `objdump` で relocation を検査し、`.text` に残る relocation、GOT、PLT、絶対64-bit relocation を拒否する。
-4. `objcopy` で `.text` を raw binary に抽出し、`nm` と `objdump` から symbol 範囲、接続 marker、即値slot、local instruction slot、内部分岐の再配置 metadata を得る。
+3. `pyelftools` で目的 object を読み、`.text` の raw bytes、定義済み symbol の範囲、`.fb_abi` を得る。`.text` に残る relocation、GOT、PLT、絶対64-bit relocation は拒否する。
+4. symbol 範囲から接続 marker、即値slot、local instruction slot を得る。内部分岐は、マクロが出力する `.fb_branch_records` section から再配置 metadata として読む。
 5. raw binary と metadata を `.bin` と C++ `.hxx` に出力する。C++ 配列は native JIT build に含まれる。
 
 生成された操作列の成功接続 marker は trace compile 時に次の操作本体で置き換わる。現行実装は即値slotにコンパイル時に確定した数値を書き、local instruction slotに型とcompact offsetに応じたx64 memory instructionを書き込む。完成後にこれらの命令byteは書き換えない。内部条件分岐は合成後の位置に合わせて C++ trace builder が再配置する。生成コードは trace 間の接続でのみ共通 chain dispatcher を使う。
@@ -67,4 +67,4 @@ python3 tools/jit_stencil_gen/generate_assembly.py \
 
 生成 object は一時ディレクトリで削除される。実行時共有ライブラリには LLVM runtime や IR payload を含めない。
 
-生成には Clang 17 以降、Clang C++、および `objcopy`、`objdump`、`nm` が必要である。LLVM 配布物の `llvm-objcopy`、`llvm-objdump`、`llvm-nm` と GNU binutils のどちらも使える。
+生成には Clang 17 以降と Clang C++ が必要である。ELF の読み取りには `pyelftools`（`shared` dependency group）を使う。外部の binutils（`objcopy`、`objdump`、`nm`）は使わない。

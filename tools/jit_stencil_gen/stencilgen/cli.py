@@ -81,7 +81,6 @@ def main() -> int:
     parser.add_argument("--config-source", type=Path)
     parser.add_argument("--clang")
     parser.add_argument("--clangxx")
-    parser.add_argument("--objdump")
     parser.add_argument("--target")
     args = parser.parse_args()
     try:

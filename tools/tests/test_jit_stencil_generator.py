@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import stat
 import sys
 from pathlib import Path
@@ -14,20 +14,18 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_generator() -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        "generate_assembly", ROOT / "tools/jit_stencil_gen/generate_assembly.py"
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    """Import the stencilgen package and return the disassembly module that owns the parser."""
+    package_dir = str(ROOT / "tools/jit_stencil_gen")
+    if package_dir not in sys.path:
+        sys.path.insert(0, package_dir)
+    return importlib.import_module("stencilgen.disassembly_branches")
 
 
 generator = load_generator()
-Symbol = generator.Symbol
-BranchFixup = generator.BranchFixup
-GenerationError = generator.GenerationError
+stencil_model = importlib.import_module("stencilgen.stencil_model")
+Symbol = stencil_model.Symbol
+BranchFixup = stencil_model.BranchFixup
+GenerationError = stencil_model.GenerationError
 
 
 def canned_objdump(tmp_path: Path) -> Path:

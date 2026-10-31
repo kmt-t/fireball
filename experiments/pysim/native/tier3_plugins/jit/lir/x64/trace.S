@@ -22,7 +22,9 @@
 #error "FB_CONTEXT_REL_OFFSET must come from the production C++ ABI probe"
 #endif
 .intel_syntax noprefix
+#include "branch_records.inc"
 .text
+.Ltext_base:
 
 .macro FB_SLOT_MARK name, opcode
   .globl \name
@@ -130,12 +132,12 @@ FB_TRACE_BEGIN fb_stencil_i32_div_s
   mov r10d, dword ptr [FB_SP_REG - 4]
   mov r11d, 15
   test r10d, r10d
-  jz .Ldiv_s_trap
+  FB_LOCAL_BRANCH_REL8 0x74, .Ldiv_s_trap
   mov eax, dword ptr [FB_SP_REG - 8]
   cmp eax, 0x80000000
-  jne .Ldiv_s_normal
+  FB_LOCAL_BRANCH_REL8 0x75, .Ldiv_s_normal
   cmp r10d, -1
-  jne .Ldiv_s_normal
+  FB_LOCAL_BRANCH_REL8 0x75, .Ldiv_s_normal
   mov r11d, 16
 .Ldiv_s_trap:
   mov dword ptr [FB_CTX_REG + FB_CONTEXT_TRAP_CODE_OFFSET], r11d
@@ -153,7 +155,7 @@ FB_TRACE_BEGIN fb_stencil_i32_div_u
   mov FB_IP_REG, FB_SP_REG
   mov r10d, dword ptr [FB_SP_REG - 4]
   test r10d, r10d
-  jnz .Ldiv_u_normal
+  FB_LOCAL_BRANCH_REL8 0x75, .Ldiv_u_normal
   mov dword ptr [FB_CTX_REG + FB_CONTEXT_TRAP_CODE_OFFSET], 15
   FB_SLOT_MARK fb_jit_abort_slot__fb_stencil_i32_div_u, 0xe9
 .Ldiv_u_normal:
@@ -169,17 +171,17 @@ FB_TRACE_BEGIN fb_stencil_i32_rem_s
   mov FB_IP_REG, FB_SP_REG
   mov r10d, dword ptr [FB_SP_REG - 4]
   test r10d, r10d
-  jnz .Lrem_s_check_overflow
+  FB_LOCAL_BRANCH_REL8 0x75, .Lrem_s_check_overflow
   mov dword ptr [FB_CTX_REG + FB_CONTEXT_TRAP_CODE_OFFSET], 15
   FB_SLOT_MARK fb_jit_abort_slot__fb_stencil_i32_rem_s, 0xe9
 .Lrem_s_check_overflow:
   mov eax, dword ptr [FB_IP_REG - 8]
   cmp eax, 0x80000000
-  jne .Lrem_s_normal
+  FB_LOCAL_BRANCH_REL8 0x75, .Lrem_s_normal
   cmp r10d, -1
-  jne .Lrem_s_normal
+  FB_LOCAL_BRANCH_REL8 0x75, .Lrem_s_normal
   mov dword ptr [FB_IP_REG - 8], 0
-  jmp .Lrem_s_done
+  FB_LOCAL_BRANCH_REL8 0xeb, .Lrem_s_done
 .Lrem_s_normal:
   mov eax, dword ptr [FB_IP_REG - 8]
   cdq
@@ -194,7 +196,7 @@ FB_TRACE_BEGIN fb_stencil_i32_rem_u
   mov FB_IP_REG, FB_SP_REG
   mov r10d, dword ptr [FB_SP_REG - 4]
   test r10d, r10d
-  jnz .Lrem_u_normal
+  FB_LOCAL_BRANCH_REL8 0x75, .Lrem_u_normal
   mov dword ptr [FB_CTX_REG + FB_CONTEXT_TRAP_CODE_OFFSET], 15
   FB_SLOT_MARK fb_jit_abort_slot__fb_stencil_i32_rem_u, 0xe9
 .Lrem_u_normal:
@@ -229,11 +231,9 @@ FB_TRACE_BEGIN fb_trace_entry
      The abort block sits before the exit slot; both branch targets lie at or before the
      exit slot, so the stencil builder maps them without shifting. */
   cmp dword ptr [r12 + FB_CONTEXT_TRAP_CODE_OFFSET], 0
-  .byte 0x0f, 0x85
-  .long .Ltrace_entry_abort - . - 4
+  FB_LOCAL_BRANCH_REL32 0x85, .Ltrace_entry_abort
   test dword ptr [r12 + FB_CONTEXT_RUNTIME_FLAGS_OFFSET], FB_CPS_EXIT_MASK
-  .byte 0x0f, 0x84
-  .long .Ltrace_entry_exit - . - 4
+  FB_LOCAL_BRANCH_REL32 0x84, .Ltrace_entry_exit
 .Ltrace_entry_abort:
   xor eax, eax
   add rsp, 8

@@ -34,6 +34,7 @@ def generate(args: argparse.Namespace) -> None:
         definitions = role_definitions(args.role, abi, config_path)
         assembly_source = optimized_assembly_source(args.role, source, directory)
         compile_command = [clang, "-c", "-fPIC", str(assembly_source), "-o", str(object_path)]
+        compile_command.append(f"-I{source.parent}")
         if args.target is not None:
             compile_command.extend(("--target", args.target))
         for name, value in definitions.items():
@@ -51,6 +52,7 @@ def generate(args: argparse.Namespace) -> None:
                 "assembler-with-cpp",
                 str(assembly_source),
             ]
+            preprocess_command.append(f"-I{source.parent}")
             if args.target is not None:
                 preprocess_command.extend(("--target", args.target))
             preprocess_command.extend(f"-D{name}={value}" for name, value in definitions.items())

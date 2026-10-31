@@ -55,11 +55,11 @@ RUNTIME_API_STENCIL_OPTIMIZATION = r"""/* Resolve the API slot, prepare the nati
   mov r10, qword ptr [rsp + 40]
   mov qword ptr [r11 + FB_CONTEXT_LOCAL_BASE_OFFSET], r10
   test al, al
-  jz .Lruntime_api_abort_sync\@
+  FB_LOCAL_BRANCH_REL8 0x74, .Lruntime_api_abort_sync\@
   mov r10, qword ptr [rsp + 56]
   mov qword ptr [r11 + FB_CONTEXT_SP_OFFSET], r10
   xor r8d, r8d
-  jmp .Lruntime_api_exit\@
+  FB_LOCAL_BRANCH_REL8 0xeb, .Lruntime_api_exit\@
 .Lruntime_api_abort_sync\@:
   mov r10, qword ptr [rsp + 32]
   mov qword ptr [r11 + FB_CONTEXT_SP_OFFSET], r10
@@ -77,8 +77,8 @@ RUNTIME_API_STENCIL_OPTIMIZATION = r"""/* Resolve the API slot, prepare the nati
   mov FB_SP_REG, r10
   mov FB_REL_REG, r11
   test r8d, r8d
-  jnz .Lruntime_api_abort\@
-  jmp .Lruntime_api_continue\@
+  FB_LOCAL_BRANCH_REL8 0x75, .Lruntime_api_abort\@
+  FB_LOCAL_BRANCH_REL8 0xeb, .Lruntime_api_continue\@
 .Lruntime_api_abort\@:
   FB_SLOT_MARK fb_jit_abort_slot__\name, 0xe9
 .Lruntime_api_continue\@:

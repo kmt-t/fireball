@@ -12,7 +12,7 @@
 <!-- traceability: {LowLatencyJIT} {JIT_AssemblyStencilCodegen} {SimpleJITArchitecture} {PositionIndependentCode} -->
 JIT Compilerは、Tier 2 Interpreterの任意拡張としてWASM命令列をネイティブコードへ変換するTier 3コンポーネントである。
 x64の操作、trace entry/exit、共通chain dispatcherを手書きアセンブリで記述する。
-Clang integrated assemblerがPIC objectを生成し、`objcopy`が`.text`をraw binaryとして抽出する。
+Clang integrated assemblerがPIC objectを生成し、生成器がELFとして読み（pyelftools）、`.text`をraw binaryとして抽出する。
 生成器はsymbol範囲と分岐metadataを含むC++ byte array headerを出力する。
 
 実行時のC++コンパイラはWASM命令をデコードして操作variantを選ぶ。
@@ -204,10 +204,10 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
 <!-- traceability: {META_ZeroCostAbstraction} {JIT_MultiBuffer_Cache} {Runtime_BumpAllocator} -->
 本実装はClang 17以降でビルドするx64 trace builderである。
 `generate_assembly.py`は本番C++ ABI probeから構造体offsetを得て、`operations.S`、`trace.S`、`common.S`をPIC objectへ変換する。
-生成器は`objcopy`で`.text`を抽出し、GOT参照と予期しないrelocationを検査する。
+生成器はELFを読み（pyelftools）、`.text`を抽出し、GOT参照と予期しないrelocationを検査する。
 実行時のC++ trace builderはraw binaryのentry/exit/resultと選択済みステンシルを固定長出力へ連結する。
 operationの成功link slotを次のstencil本体で置き換え、slotの命令自体を完成traceから除く。
-operation stencil内の条件分岐はdisassembly metadataを使い、合成後の位置に合わせて再配置する。
+operation stencil内の条件分岐は、マクロが`.fb_branch_records` sectionへ出す分岐記録を使い、合成後の位置に合わせて再配置する。
 現行実装は数値即値を生成slotへtrace compile時に書き込む。
 local offsetは固定長instruction slotへx64 memory instructionとしてエンコードする。
 `rel` poolを使うのはtrace単位のheader相対参照とRuntime API引数recordである。終端record内のannotation offsetからInterpreter注釈を読み、trace側に注釈bytesを複製しない。

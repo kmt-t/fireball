@@ -53,7 +53,7 @@ DISASSEMBLY_LINE = re.compile(
     r"^\s*([0-9a-fA-F]+):\s*((?:[0-9a-fA-F]{2}\s+)+)"
     r"([A-Za-z][A-Za-z0-9.]*)\s*(.*?)\s*$"
 )
-DIRECT_TARGET = re.compile(r"^\s*([0-9a-fA-F]+)\b")
+DIRECT_TARGET = re.compile(r"^\s*(?:0x)?([0-9a-fA-F]+)\b")
 WORD_SUFFIX = re.compile(r"^(?P<base>.+)_word_(?P<word>[0-9]+)$")
 PATCH_SLOT_PREFIXES = (1, 4, 8)
 RUNTIME_API_STENCIL_OPTIMIZATION = r"""/* Resolve the API slot, prepare the native ABI arguments, and call the API. */
@@ -276,12 +276,9 @@ def parse_disassembly(
         encoded = bytes(int(value, 16) for value in match.group(2).split())
         mnemonic = match.group(3).lower()
         operand = match.group(4)
-        if not mnemonic.startswith("j") or operand.startswith("*"):
+        # FF /4 is an indirect jump through a register or memory operand; it has no fixup.
+        if not mnemonic.startswith("j") or operand.startswith("*") or encoded[0] == 0xFF:
             continue
-        target_match = DIRECT_TARGET.match(operand)
-        if target_match is None:
-            continue
-        target = int(target_match.group(1), 16)
         owner = next(
             (
                 symbol
@@ -290,16 +287,23 @@ def parse_disassembly(
             ),
             None,
         )
-        if owner is None or not (owner.address <= target < owner.address + owner.size):
-            continue
+        if owner is None:
+            raise GenerationError(f"direct branch at 0x{address:x} lies outside every stencil")
         if address in markers.get("next", set()) | markers.get("abort", set()) | {
             *markers.get("start", set()),
             *markers.get("exit", set()),
         }:
             continue
-        if len(encoded) not in (2, 5, 6):
+        # A direct branch that cannot be recorded fails generation; it is never dropped silently.
+        target_match = DIRECT_TARGET.match(operand)
+        if target_match is None or len(encoded) not in (2, 5, 6):
             raise GenerationError(
-                f"unsupported direct branch encoding at {owner.name}+0x{address - owner.address:x}"
+                f"unsupported direct branch {operand!r} at {owner.name}+0x{address - owner.address:x}"
+            )
+        target = int(target_match.group(1), 16)
+        if not (owner.address <= target < owner.address + owner.size):
+            raise GenerationError(
+                f"direct branch at {owner.name}+0x{address - owner.address:x} leaves its stencil"
             )
         branch_map.setdefault(owner.name, []).append(
             BranchFixup(address - owner.address, len(encoded), target - owner.address)

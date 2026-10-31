@@ -17,6 +17,8 @@ shared = [
   "lizard>=1.24.1",
   "pyright>=1.1.390",
   "pygments>=2.19.0",
+  # ELF reader for JIT stencil generation (ELF32 for M33 and ELF64 for x64).
+  "pyelftools>=0.32",
 ]
 # Test framework packages shared by the unit, integration, and workload suites.
 qa-shared = [

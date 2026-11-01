@@ -12,6 +12,7 @@
 #include "jit_runtime_apis.hxx"
 #include "stencils_x64.hxx"
 #include "trace_compiler_abi.hxx"
+#include "../../tier2_runtime/interpreter/annotation_read.hxx"
 
 using namespace fireball::pysim::jit;
 using fireball::kMaxBodyBytes;
@@ -1526,6 +1527,17 @@ bool is_trace_terminator_opcode(std::uint8_t opcode) {
   }
 }
 
+// Reads one field of the Interpreter annotation pool and advances the cursor past it. The readers are
+// the Interpreter's own (annotation_read.hxx), so the cursor follows the handler's rel exactly.
+template <typename T>
+bool take_annotation_field(const std::uint8_t *&cursor, const std::uint8_t *limit, T &value) {
+  if (cursor == nullptr || limit == nullptr || static_cast<std::size_t>(limit - cursor) < sizeof(T)) {
+    return false;
+  }
+  value = fireball::wasm_runtime::read_fixed<T>(cursor);
+  return true;
+}
+
 int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8_t *code,
                                         code_offset_t code_bytes, code_ip_t source_ip,
                                         code_ip_t trace_start_ip,
@@ -1561,12 +1573,25 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
     }
     const auto annotation_offset_64 =
         static_cast<std::uint64_t>(interpreter_annotation_byte_offset) + interpreter_rel_bytes;
-    const auto annotation_after_64 = annotation_offset_64 + 5u;
-    if (annotation_after_64 > std::numeric_limits<annotation_offset_t>::max() ||
+    if (annotation_offset_64 > std::numeric_limits<annotation_offset_t>::max() ||
         interpreter_annotations == nullptr ||
-        annotation_after_64 > interpreter_annotation_byte_count || source_ip < trace_start_ip) {
+        annotation_offset_64 > interpreter_annotation_byte_count || source_ip < trace_start_ip) {
       return -1;
     }
+    // The call annotation: width record, function index, and continuation block index.
+    const std::uint8_t *call_cursor =
+        interpreter_annotations + static_cast<std::size_t>(annotation_offset_64);
+    const std::uint8_t *call_limit = interpreter_annotations + interpreter_annotation_byte_count;
+    std::uint8_t call_width_record = 0;
+    std::uint16_t call_function_field = 0;
+    std::uint16_t call_continuation_field = 0;
+    if (!take_annotation_field(call_cursor, call_limit, call_width_record) ||
+        !take_annotation_field(call_cursor, call_limit, call_function_field) ||
+        !take_annotation_field(call_cursor, call_limit, call_continuation_field)) {
+      return -1;
+    }
+    const auto annotation_after_64 =
+        static_cast<std::uint64_t>(call_cursor - interpreter_annotations);
     std::uint8_t handler_slot = 0;
     if (!fb_jit_cps_call_handler_slot(opcode, &handler_slot)) {
       return 0;
@@ -1603,7 +1628,31 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
       }
     }
     // One target is index u16, stack base u8, and result words u8: four bytes (control_flow.py).
-    annotation_bytes = sizeof(std::uint16_t) + (case_count + 1u) * 4u;
+    // The annotation is u16 label count, then (count + 1) target records of u16, u8, and u8.
+    if (interpreter_annotations == nullptr) {
+      return -1;
+    }
+    const std::uint8_t *target_start = interpreter_annotations +
+                                       static_cast<std::size_t>(interpreter_annotation_byte_offset) +
+                                       interpreter_rel_bytes;
+    const std::uint8_t *target_cursor = target_start;
+    const std::uint8_t *target_limit = interpreter_annotations + interpreter_annotation_byte_count;
+    std::uint16_t annotated_count = 0;
+    if (!take_annotation_field(target_cursor, target_limit, annotated_count) ||
+        annotated_count != case_count) {
+      return -1;
+    }
+    for (std::uint32_t index = 0; index <= case_count; ++index) {
+      std::uint16_t target_index = 0;
+      std::uint8_t target_stack_base = 0;
+      std::uint8_t target_result_words = 0;
+      if (!take_annotation_field(target_cursor, target_limit, target_index) ||
+          !take_annotation_field(target_cursor, target_limit, target_stack_base) ||
+          !take_annotation_field(target_cursor, target_limit, target_result_words)) {
+        return -1;
+      }
+    }
+    annotation_bytes = static_cast<std::uint32_t>(target_cursor - target_start);
     break;
   }
   default:
@@ -1701,6 +1750,22 @@ int fireball::compile_wasm_trace(
   std::array<annotation_offset_t, kMaxTraceInstructions> interpreter_rel_after_offsets{};
   jit_body_count_t instruction_count = 0;
   annotation_offset_t interpreter_rel_bytes = 0;
+  // The annotation cursor walks the Interpreter pool from the block start, reading each field the
+  // Interpreter handler reads. interpreter_rel_bytes is the cursor's offset from the block start.
+  const std::uint8_t *annotation_block_start = nullptr;
+  const std::uint8_t *annotation_cursor = nullptr;
+  const std::uint8_t *annotation_limit = nullptr;
+  if (interpreter_annotations != nullptr) {
+    if (interpreter_annotation_byte_offset > interpreter_annotation_byte_count) {
+      return -1;
+    }
+    annotation_block_start = interpreter_annotations + interpreter_annotation_byte_offset;
+    annotation_cursor = annotation_block_start;
+    annotation_limit = interpreter_annotations + interpreter_annotation_byte_count;
+  }
+  const auto sync_annotation_rel = [&]() {
+    interpreter_rel_bytes = static_cast<annotation_offset_t>(annotation_cursor - annotation_block_start);
+  };
   code_ip_t cursor = code_offset;
   const code_ip_t end = code_offset + byte_span;
   auto trace_end = end;
@@ -1721,12 +1786,20 @@ int fireball::compile_wasm_trace(
         return -1;
       }
       if (opcode == 0x03) {
-        interpreter_rel_bytes += sizeof(std::uint16_t);
+        std::uint16_t loop_block_field = 0;
+        if (!take_annotation_field(annotation_cursor, annotation_limit, loop_block_field)) {
+          return -1;
+        }
+        sync_annotation_rel();
       }
       continue;
     }
     if (opcode == 0x05 || opcode == 0x0B) {
-      interpreter_rel_bytes += sizeof(std::uint16_t);
+      std::uint16_t structural_field = 0;
+      if (!take_annotation_field(annotation_cursor, annotation_limit, structural_field)) {
+        return -1;
+      }
+      sync_annotation_rel();
       continue;
     }
     if (instruction_count == instructions.size()) {
@@ -1740,7 +1813,11 @@ int fireball::compile_wasm_trace(
     instruction.operand = 0;
 
     if (opcode == kDrop || opcode == kSelect) {
-      ++interpreter_rel_bytes;
+      std::uint8_t operand_width_field = 0;
+      if (!take_annotation_field(annotation_cursor, annotation_limit, operand_width_field)) {
+        return -1;
+      }
+      sync_annotation_rel();
     }
 
     if (opcode == kFcPrefix) {
@@ -1756,7 +1833,13 @@ int fireball::compile_wasm_trace(
                  (subopcode >= 0x0F && subopcode <= 0x11)) {
         immediate_count = 1;
       }
-      interpreter_rel_bytes += 2; // width byte and subopcode
+      std::uint8_t fc_width_field = 0;
+      std::uint8_t fc_subopcode_field = 0;
+      if (!take_annotation_field(annotation_cursor, annotation_limit, fc_width_field) ||
+          !take_annotation_field(annotation_cursor, annotation_limit, fc_subopcode_field)) {
+        return -1;
+      }
+      sync_annotation_rel();
       if (subopcode == 0x0A) {
         std::uint32_t destination_memory = 0;
         std::uint32_t source_memory = 0;
@@ -1798,7 +1881,18 @@ int fireball::compile_wasm_trace(
         return -1;
       }
       // width byte, frame word offset, local width, and the RPN ext (get and set only)
-      interpreter_rel_bytes += opcode == kLocalTee ? 4u : 6u;
+      std::uint8_t local_width_record = 0;
+      std::uint16_t local_frame_offset = 0;
+      std::uint8_t local_width = 0;
+      std::uint16_t local_ext = 0;
+      if (!take_annotation_field(annotation_cursor, annotation_limit, local_width_record) ||
+          !take_annotation_field(annotation_cursor, annotation_limit, local_frame_offset) ||
+          !take_annotation_field(annotation_cursor, annotation_limit, local_width) ||
+          (opcode != kLocalTee &&
+           !take_annotation_field(annotation_cursor, annotation_limit, local_ext))) {
+        return -1;
+      }
+      sync_annotation_rel();
       instruction.has_operand = 1;
       instruction.operand = operand;
     } else if (opcode == 0x23 || opcode == 0x24 || opcode == 0x25 || opcode == 0x26 ||
@@ -1808,7 +1902,13 @@ int fireball::compile_wasm_trace(
         return -1;
       }
       if (opcode == 0x23 || opcode == 0x24) {
-        interpreter_rel_bytes += 3; // width byte and global index
+        std::uint8_t global_width_field = 0;
+        std::uint16_t global_index_field = 0;
+        if (!take_annotation_field(annotation_cursor, annotation_limit, global_width_field) ||
+            !take_annotation_field(annotation_cursor, annotation_limit, global_index_field)) {
+          return -1;
+        }
+        sync_annotation_rel();
       }
       instruction.operand = operand;
     } else if (opcode >= 0x28 && opcode <= 0x3E) {
@@ -1818,14 +1918,35 @@ int fireball::compile_wasm_trace(
           !read_unsigned_leb(code, cursor, end, offset)) {
         return -1;
       }
-      interpreter_rel_bytes += 5; // width byte and effective memory offset
+      std::uint8_t memory_width_field = 0;
+      std::uint32_t memory_offset_field = 0;
+      if (!take_annotation_field(annotation_cursor, annotation_limit, memory_width_field) ||
+          !take_annotation_field(annotation_cursor, annotation_limit, memory_offset_field)) {
+        return -1;
+      }
+      sync_annotation_rel();
       instruction.operand = offset;
     } else if (opcode == kI32Const || opcode == kI64Const) {
       std::uint64_t operand = 0;
       if (!read_signed_leb(code, cursor, end, operand, opcode == kI32Const ? 32u : 64u)) {
         return -1;
       }
-      interpreter_rel_bytes += opcode == kI32Const ? 5u : 9u;
+      std::uint8_t const_width_field = 0;
+      if (!take_annotation_field(annotation_cursor, annotation_limit, const_width_field)) {
+        return -1;
+      }
+      if (opcode == kI32Const) {
+        std::int32_t const_value_field = 0;
+        if (!take_annotation_field(annotation_cursor, annotation_limit, const_value_field)) {
+          return -1;
+        }
+      } else {
+        std::int64_t const_value_field = 0;
+        if (!take_annotation_field(annotation_cursor, annotation_limit, const_value_field)) {
+          return -1;
+        }
+      }
+      sync_annotation_rel();
       instruction.has_operand = 1;
       instruction.operand = operand;
     } else if (opcode == kF32Const || opcode == kF64Const) {

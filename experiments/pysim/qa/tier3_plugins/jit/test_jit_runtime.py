@@ -673,6 +673,8 @@ def test_jitc_20_trace_header_32byte_x64_physical_layout():
 def test_jitc_trace_header_stores_u8_frame_depth_and_u16_block_index():
     """The compact trace header stores bounded loader indexes at their ABI widths."""
     code = (ctypes.c_uint8 * 3)(0x41, 0x07, 0x0B)
+    # The i32.const annotation the loader writes: width record (1) and the i32 value (4).
+    annotations = ctypes.create_string_buffer(bytes(5))
     block = native_abi.WasmBlock(
         head_pc=0x100,
         code=native_abi.NativeByteView(ctypes.addressof(code), len(code)),
@@ -688,6 +690,9 @@ def test_jitc_trace_header_stores_u8_frame_depth_and_u16_block_index():
         ),
         frame_depth=0x20,
         block_index=0x4321,
+        interpreter_annotations=native_abi.NativeByteView(
+            ctypes.addressof(annotations), len(bytes(5))
+        ),
     )
     trace = native_abi.TraceQaState()
 
@@ -2358,8 +2363,11 @@ def test_jit_structural_delimiters_are_loader_metadata_and_emit_no_operations():
         return trace
 
     annotation_bytes = b"\x00" * 6
-    plain = compile_raw(b"\x41\x07\x02\x40", 2)
-    with_delimiters = compile_raw(b"\x41\x07\x02\x40\x03\x40\x05\x0b", 8, annotation_bytes)
+    # The i32.const annotation (5 bytes) precedes the delimiters' annotations in the block's pool.
+    plain = compile_raw(b"\x41\x07\x02\x40", 2, b"\x00" * 5)
+    with_delimiters = compile_raw(
+        b"\x41\x07\x02\x40\x03\x40\x05\x0b", 8, b"\x00" * 5 + annotation_bytes
+    )
     assert plain.code_blob is not None and with_delimiters.code_blob is not None
     plain_header = native_abi.NativeTraceHeader.from_buffer_copy(
         plain.code_blob[:JIT_TRACE_HEADER_BYTES]
@@ -4268,3 +4276,56 @@ def test_jitr_br_table_terminal_record_resumes_after_the_loader_annotation():
     (resume,) = struct.unpack_from("<I", pool, record + 11)
     assert annotation == annotation_position
     assert resume == resume_position
+
+
+CURSOR_PREFIXES = (
+    "local.get 0 i32.const 3 i32.add local.set 1",
+    "i64.const 5 drop i32.const 9 drop",
+    "i32.const 0 i32.load offset=4 i32.const 1 i32.store offset=8",
+    "local.get 0 local.get 0 local.get 0 local.tee 1 select drop",
+    "loop i32.const 1 drop end",
+)
+
+
+@pytest.mark.parametrize("prefix", CURSOR_PREFIXES)
+def test_jitr_compiler_cursor_matches_the_loader_annotation_layout(prefix):
+    """The trace compiler's annotation cursor reaches the terminal at the loader's position.
+
+    The expected size is the loader's own annotation count for the instructions before the br_table
+    (_count_interpreter_annotation_pool_bytes), not the compiler's cursor arithmetic.
+    """
+    from tier2_runtime.interpreter.control_flow import (
+        _count_interpreter_annotation_pool_bytes,
+        iter_scan_instrs,
+    )
+    from tier2_runtime.wasm.opcodes import BR_TABLE
+
+    body = (
+        "(module (memory 1) (global $g (mut i32) (i32.const 0)) "
+        '(func (export "main") (param i32) (result i32) (local i32 i32) '
+        "(block $a (block $b (block $c "
+        f"{prefix} local.get 0 br_table $a $b $c))) i32.const 1))"
+    )
+    module = parse_standalone(wat_to_wasm(body))
+    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), candidate_threshold=0)
+    engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
+    engine.register_module_blocks(module)
+    function_index = module.export_func_index("main")
+    code = module.code_for(function_index)
+    function_base = module.function_pc_offset(function_index)
+    br_table = next(ins for ins in iter_scan_instrs(code) if ins.opcode == BR_TABLE)
+    br_table_pc = function_base + br_table.offset
+    block = next(
+        candidate
+        for candidate in module.blocks
+        if candidate.head_pc <= br_table_pc <= candidate.head_pc + candidate.byte_span
+    )
+    block_offset = block.head_pc - function_base
+    expected = _count_interpreter_annotation_pool_bytes(code[block_offset : br_table.offset])
+    trace = TraceCompiler.compile_wasm(manager._block_input(block.head_pc, block))
+    assert trace is not None and trace.code_blob is not None
+    header = native_abi.NativeTraceHeader.from_buffer_copy(trace.code_blob)
+    exit_offset = header.const_rel_offset - ctypes.sizeof(native_abi.NativeTraceExit)
+    trace_exit = native_abi.NativeTraceExit.from_buffer_copy(trace.code_blob, exit_offset)
+    assert trace_exit.body_end_ip == br_table.offset
+    assert trace_exit.interpreter_rel_bytes == expected

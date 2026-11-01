@@ -492,7 +492,7 @@ source_verification:
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: extract_basic_blocks
-        line: 1788
+        line: 1847
         ccn: 37
         plan_req: REQ-042
       - group: python_pysim

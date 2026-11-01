@@ -1180,6 +1180,77 @@ class _RpnScan:
         return self.checkpoint
 
 
+_RPN_OPERAND_PAYLOAD_BYTES = {"L": 2, "I": 4, "T": 0}
+
+
+def _rpn_record_count(elements: bytes) -> int:
+    """Count the element records of an element byte string. Each record is one runtime dispatch."""
+    count = 0
+    position = 0
+    while position < len(elements):
+        code = elements[position]
+        count += 1
+        if code == RPN_ELEM_PUSH_LOCAL:
+            position += 1 + _RPN_OPERAND_PAYLOAD_BYTES["L"]
+        elif code == RPN_ELEM_PUSH_IMM:
+            position += 1 + _RPN_OPERAND_PAYLOAD_BYTES["I"]
+        elif code < RPN_ELEM_UNARY_BASE:
+            # A checked binary operator carries one byte of offset after its code.
+            checked = code - RPN_ELEM_BINOP_BASE in _RPN_CHECKED_BINOP_KINDS
+            position += 2 if checked else 1
+        elif code < RPN_ELEM_SPEC_BASE:
+            position += 1
+        else:
+            _kind, left, right, dest = RPN_SPECIALISED_FORMS[code - RPN_ELEM_SPEC_BASE]
+            target_bytes = 2 if dest == "L" else 0
+            position += (
+                1
+                + _RPN_OPERAND_PAYLOAD_BYTES[left]
+                + _RPN_OPERAND_PAYLOAD_BYTES[right]
+                + target_bytes
+            )
+    assert position == len(elements), "element records must tile the element bytes"
+    return count
+
+
+def _rpn_dispatch_count(elements: bytes, has_end_record: bool) -> int:
+    """The runtime dispatches of an expression: the head, its element records, and its END record.
+
+    has_end_record is true when the terminal is an END or END_STACK element. A specialised tail
+    write has no terminal record of its own.
+    """
+    return 1 + _rpn_record_count(elements) + (1 if has_end_record else 0)
+
+
+def _rpn_set_expression(
+    scan: _RpnScan, head: Instr, instruction: Instr, local_layout: LocalLayout
+) -> RpnExpression | None:
+    """The expression that ends at the one-word local.set (END or TAIL), or None when refused.
+
+    The local.set is covered too. The expression is kept only when its dispatches are fewer than the
+    covered instructions.
+    """
+    code_length = instruction.end_offset - head.offset
+    if code_length > 0xFF or scan.covered + 1 < _RPN_MIN_INSTRUCTIONS:
+        return None
+    target = local_layout.offset(instruction.operand)
+    tail = scan.rewrite_last_op_to_local(target)
+    terminal = RPN_TERMINAL_TAIL if tail else RPN_TERMINAL_END
+    dispatches = _rpn_dispatch_count(bytes(scan.elements), terminal == RPN_TERMINAL_END)
+    if dispatches >= scan.covered + 1:
+        return None
+    return RpnExpression(
+        head_offset=head.offset,
+        code_length=code_length,
+        max_depth=scan.max_depth,
+        elements=bytes(scan.elements),
+        terminal=terminal,
+        set_offset=instruction.offset,
+        target=target,
+        resume_offset=instruction.offset,
+    )
+
+
 def _scan_rpn_expression(
     code: memoryview,
     instructions: list[Instr],
@@ -1203,22 +1274,8 @@ def _scan_rpn_expression(
         if instruction.opcode == LOCAL_SET:
             if not scan.local_write_ends_here(instruction):
                 break
-            code_length = instruction.end_offset - head.offset
-            if code_length > 0xFF or scan.covered + 1 < _RPN_MIN_INSTRUCTIONS:
-                return None
-            target = local_layout.offset(instruction.operand)
-            tail = scan.rewrite_last_op_to_local(target)
-            expression = RpnExpression(
-                head_offset=head.offset,
-                code_length=code_length,
-                max_depth=scan.max_depth,
-                elements=bytes(scan.elements),
-                terminal=RPN_TERMINAL_TAIL if tail else RPN_TERMINAL_END,
-                set_offset=instruction.offset,
-                target=target,
-                resume_offset=instruction.offset,
-            )
-            return expression, position
+            expression = _rpn_set_expression(scan, head, instruction, local_layout)
+            return None if expression is None else (expression, position)
         if not scan.step(instruction):
             break
         position += 1
@@ -1238,6 +1295,8 @@ def _scan_rpn_expression(
     if scan.rewrite_last_op_to_vm(length):
         elements = bytes(scan.elements)
         terminal = RPN_TERMINAL_STACK_TAIL
+    if _rpn_dispatch_count(elements, terminal == RPN_TERMINAL_STACK) >= covered_count:
+        return None
     expression = RpnExpression(
         head_offset=head.offset,
         code_length=code_length,

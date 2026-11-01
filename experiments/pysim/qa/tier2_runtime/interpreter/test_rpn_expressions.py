@@ -83,19 +83,13 @@ def test_rpn_03_loader_finds_expressions_and_bounds_them_by_block_and_capacity()
     expressions = find_rpn_expressions(
         code, heads, function.local_layout_cache, function.max_operand_stack_words
     )
-    # Two END expressions (local.set) and one END_STACK expression (the compare before br_if).
-    assert len(expressions) == 3
-    end_expressions = [expression for expression in expressions if expression.writes_local]
-    stack_expressions = [expression for expression in expressions if not expression.writes_local]
-    assert len(end_expressions) == 2 and len(stack_expressions) == 1
-    for expression in end_expressions:
+    # Two END expressions (local.set). The compare before br_if covers 3 instructions and costs 3
+    # dispatches (head, element, END_STACK), so the loader drops it (TEST-RPN-08 checks the boundary).
+    assert len(expressions) == 2
+    assert all(expression.writes_local for expression in expressions)
+    for expression in expressions:
         assert expression.max_depth == 2
         assert expression.code_length == expression.set_offset + 2 - expression.head_offset
-    assert stack_expressions[0].max_depth == 2
-    assert (
-        stack_expressions[0].resume_offset
-        == stack_expressions[0].head_offset + stack_expressions[0].code_length
-    )
     # A stack capacity of 1 cannot hold the depth-2 expressions.
     assert find_rpn_expressions(code, heads, function.local_layout_cache, 1) == ()
 
@@ -147,20 +141,27 @@ def _operator_module(operator: str):
     return _loop_module(body)
 
 
+# Operators with a (local, local) specialised form: their two-operand body covers 4 instructions
+# and costs 2 or 3 dispatches, so the loader keeps it. Every other operator is dropped (TEST-RPN-08).
+I32_LOCAL_LOCAL_SPECIALISED = ("i32.add", "i32.sub", "i32.mul", "i32.lt_s", "i32.gt_u")
+
+
 @pytest.mark.parametrize(
     "operator", I32_BINARY_OPERATORS + I32_UNARY_OPERATORS + I32_CHECKED_OPERATORS
 )
 def test_rpn_04_every_i32_operator_matches_reference(operator: str):
-    """TEST-RPN-04: each i32 operator of the expression ISA agrees with the reference, including
-    the shift counts modulo 32, the signed and unsigned comparisons, and the rotations."""
+    """TEST-RPN-04: each i32 operator agrees with the reference, including the shift counts modulo
+    32, the signed and unsigned comparisons, and the rotations. The loader keeps the expression
+    only for the operators with a (local, local) specialised form."""
     module = _operator_module(operator)
     code, function = _function_code(module)
     from tier2_runtime.interpreter.control_flow import extract_basic_blocks
 
     heads = [block[0] for block in extract_basic_blocks(code, function.control_map, pc_base=0)]
-    assert find_rpn_expressions(
+    kept = find_rpn_expressions(
         code, heads, function.local_layout_cache, function.max_operand_stack_words
     )
+    assert bool(kept) == (operator in I32_LOCAL_LOCAL_SPECIALISED)
     native = make_native_interpreter(module)
     reference = Interpreter(module)
     arguments = (
@@ -201,7 +202,7 @@ def test_rpn_06_end_stack_hands_the_temporaries_to_the_vm_stack():
     call consumes it, and the value below the expression survives."""
     body = """
         i32.const 7
-        local.get 0 i32.const 3 i32.add
+        local.get 0 local.get 0 i32.add i32.const 3 i32.shr_s
         call $twice
         i32.add
     """
@@ -235,53 +236,30 @@ def test_rpn_06_end_stack_hands_the_temporaries_to_the_vm_stack():
 
 
 SPECIALISED_CASES = (
-    # (form index in RPN_SPECIALISED_FORMS, body)
-    (0, "local.get 0 local.get 1 i32.mul i32.const 7 i32.add local.set 2 local.get 2"),
-    (
-        1,
-        "local.get 0 local.get 1 i32.mul i32.const 2 i32.shr_s i32.const 3 i32.add local.set 2 local.get 2",
-    ),
+    # (form index in RPN_SPECIALISED_FORMS, body). Each body keeps its expression: covered
+    # instructions exceed the dispatches (TEST-RPN-08).
+    (0, "local.get 0 local.get 0 i32.mul local.get 0 i32.add local.set 2 local.get 2"),
+    (1, "local.get 0 local.get 0 i32.add i32.const 3 i32.shr_s local.set 2 local.get 2"),
     (2, "local.get 0 i32.const 3 i32.shr_u local.set 2 local.get 2"),
     (3, "local.get 0 local.get 1 i32.sub local.set 2 local.get 2"),
-    (4, "local.get 0 local.get 1 i32.add i32.const 5 i32.mul local.set 2 local.get 2"),
-    (5, "local.get 0 local.get 1 i32.mul local.get 0 i32.sub local.set 2 local.get 2"),
-    (
-        6,
-        "local.get 0 i32.const 3 i32.gt_s i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
-    ),
-    (
-        7,
-        "local.get 0 i32.const 3 i32.lt_s i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
-    ),
-    (
-        8,
-        "local.get 0 local.get 1 i32.gt_u i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
-    ),
+    (4, "local.get 0 local.get 0 i32.add local.get 0 i32.add local.set 2 local.get 2"),
+    (5, "local.get 0 local.get 0 i32.add local.get 0 i32.sub local.set 2 local.get 2"),
+    (6, "local.get 0 i32.const 3 i32.gt_s local.get 0 i32.add local.set 2 local.get 2"),
+    (7, "local.get 0 i32.const 3 i32.lt_s local.get 0 i32.add local.set 2 local.get 2"),
+    (8, "local.get 0 local.get 0 i32.gt_u local.get 0 i32.add local.set 2 local.get 2"),
     # destination VM: the operator ends the expression, the VM takes its result
     (
         9,
-        "local.get 0 local.get 1 i32.mul i32.const 2 i32.shr_s if (result i32) i32.const 9 else i32.const 0 end",
+        "local.get 0 local.get 0 i32.add i32.const 3 i32.shr_s if (result i32) i32.const 9 else i32.const 0 end",
     ),
     (10, "local.get 0 i32.const 3 i32.lt_s if (result i32) i32.const 9 else i32.const 0 end"),
     (11, "local.get 0 i32.const 3 i32.gt_s if (result i32) i32.const 9 else i32.const 0 end"),
-    (
-        12,
-        "local.get 0 local.get 1 i32.lt_s i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
-    ),
-    (
-        13,
-        "local.get 0 i32.const 3 i32.shr_u i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
-    ),
-    (
-        14,
-        "local.get 0 i32.const 3 i32.shl i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
-    ),
-    (
-        15,
-        "local.get 0 i32.const 3 i32.shr_s i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
-    ),
+    (12, "local.get 0 local.get 0 i32.lt_s local.get 0 i32.add local.set 2 local.get 2"),
+    (13, "local.get 0 i32.const 3 i32.shr_u local.get 0 i32.add local.set 2 local.get 2"),
+    (14, "local.get 0 i32.const 3 i32.shl local.get 0 i32.add local.set 2 local.get 2"),
+    (15, "local.get 0 i32.const 3 i32.shr_s local.get 0 i32.add local.set 2 local.get 2"),
     (16, "local.get 0 i32.const 3 i32.add local.set 2 local.get 2"),
-    (17, "local.get 0 local.get 1 i32.mul local.get 0 i32.add local.set 2 local.get 2"),
+    (17, "local.get 0 local.get 0 i32.add local.get 0 i32.add local.set 2 local.get 2"),
 )
 
 
@@ -338,5 +316,39 @@ def test_rpn_07_specialised_forms_match_reference(form_index: int, body: str):
         (5, 0xFFFF_FFF0),
         (3, 3),
     ]:
+        expected = reference.call(0, [a, b]).unwrap()
+        assert native.call(0, [a, b]).unwrap() == expected
+
+
+DROP_CASES = (
+    # (body, whether the loader keeps an expression). The dispatches of an expression are its head,
+    # its element records and its END or END_STACK record; it is kept only when that count is below
+    # the number of wasm instructions it covers.
+    # 3 dispatches (head, specialised element, END_STACK) cover 3 instructions: dropped at the boundary.
+    # The form has no VM destination, so its terminal is END_STACK.
+    ("local.get 0 local.get 0 i32.lt_s drop local.get 0", False),
+    # 4 dispatches cover 5 instructions: kept.
+    ("local.get 0 local.get 0 i32.add i32.const 3 i32.shr_s drop local.get 0", True),
+    # The generic and operator costs more dispatches than the instructions it covers: dropped.
+    ("local.get 0 local.get 1 i32.and drop local.get 0", False),
+)
+
+
+@pytest.mark.parametrize("body, kept", DROP_CASES)
+def test_rpn_08_loader_drops_expressions_that_do_not_save_dispatches(body: str, kept: bool):
+    """TEST-RPN-08: an expression with dispatches equal to or above its covered instructions is not
+    formed, and the reference result is unchanged either way."""
+    module = _loop_module(body)
+    code, function = _function_code(module)
+    from tier2_runtime.interpreter.control_flow import extract_basic_blocks
+
+    heads = [block[0] for block in extract_basic_blocks(code, function.control_map, pc_base=0)]
+    expressions = find_rpn_expressions(
+        code, heads, function.local_layout_cache, function.max_operand_stack_words
+    )
+    assert bool(expressions) == kept
+    native = make_native_interpreter(module)
+    reference = Interpreter(module)
+    for a, b in [(0, 0), (1, 2), (7, 9), (0xFFFF_FFFF, 1), (5, 0xFFFF_FFF0)]:
         expected = reference.call(0, [a, b]).unwrap()
         assert native.call(0, [a, b]).unwrap() == expected

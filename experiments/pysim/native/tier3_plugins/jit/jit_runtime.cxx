@@ -102,7 +102,8 @@ jit_runtime<Measurement>::make_compiler_block_view(block_index_t index,
             b.next_block_index,
             b.loops_to_block_index,
             {f.interpreter_annotation_pool, f.interpreter_annotation_byte_count},
-            b.interpreter_annotation_byte_offset};
+            b.interpreter_annotation_byte_offset,
+            {module_view->global_widths, module_view->global_count}};
   return &output;
 }
 

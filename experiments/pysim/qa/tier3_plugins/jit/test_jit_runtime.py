@@ -4296,3 +4296,38 @@ def test_jit_compiles_blocks_with_global_access_for_i32_and_i64_globals(body):
     for block in blocks:
         trace = compile_module_block(TraceCompiler(), module, block)
         assert trace is not None, f"block at pc {block.head_pc:#x} did not compile: {body}"
+
+
+def test_native_plugin_compiles_global_access_blocks_with_the_module_global_widths():
+    """The native compiler reads 32- and 64-bit global widths from the module it compiles."""
+    wat = """(module
+      (global $g (mut i32) (i32.const 5))
+      (global $h (mut i64) (i64.const 9))
+      (func (export "f") (result i32)
+        (global.set $g (i32.const 3))
+        (global.set $h (i64.add (global.get $h) (i64.const 1)))
+        (i32.wrap_i64 (global.get $h))))"""
+    wasm = wat_to_wasm(wat)
+    store = wasmtime.Store(wasmtime.Engine())
+    reference = wasmtime.Instance(store, wasmtime.Module(store.engine, wasm), []).exports(store)["f"]
+    module = parse_standalone(wasm)
+    backings: list[mmap.mmap] = []
+
+    def allocate_region(size: int, alignment: int) -> memoryview:
+        backing = mmap.mmap(-1, size, access=mmap.ACCESS_WRITE)
+        backings.append(backing)
+        return memoryview(backing)
+
+    plugin = NativeJitPlugin(allocate_region)
+    interp = Interpreter(module, execution_plugin=plugin)
+    function_index = module.export_func_index("f")
+    try:
+        for _ in range(8):
+            assert interp.call(function_index, []).unwrap() == [reference(store) & 0xFFFF_FFFF]
+        assert plugin.idle_hook() == 1
+        for _ in range(2):
+            assert interp.call(function_index, []).unwrap() == [reference(store) & 0xFFFF_FFFF]
+    finally:
+        plugin.close()
+        for backing in backings:
+            backing.close()

@@ -85,7 +85,7 @@ verification_matrix:
     workload_runner: "experiments/pysim/qa/workloads/run_all.py"
     pairwise_test: "experiments/pysim/qa/integration/test_pairwise_combinations.py"
     expected:
-      unit_suites: 31
+      unit_suites: 32
       integration_suites: 4
       workload_suites: 3
       scenarios: 12

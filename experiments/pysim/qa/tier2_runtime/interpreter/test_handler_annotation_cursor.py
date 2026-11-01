@@ -9,6 +9,8 @@ it stops before every instruction and records the pc and rel at each stop. For t
 
 from __future__ import annotations
 
+import itertools
+
 import pytest
 from qa.shared.helpers import make_interpreter_bindings, wat_to_wasm
 from tier2_runtime.interpreter.control_flow import _count_interpreter_annotation_pool_bytes
@@ -70,7 +72,7 @@ def _check_stops(module, stops) -> int:
     """Return the number of checked consecutive pairs; fail on the first disagreement."""
     heads = {block.head_pc: block for block in module.blocks}
     checked = 0
-    for (pc_before, rel_before), (pc_after, rel_after) in zip(stops, stops[1:]):
+    for (pc_before, rel_before), (pc_after, rel_after) in itertools.pairwise(stops):
         index_before = module.function_index_for_pc(pc_before)
         index_after = module.function_index_for_pc(pc_after)
         assert index_before is not None and index_after is not None

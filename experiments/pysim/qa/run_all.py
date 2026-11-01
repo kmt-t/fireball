@@ -74,6 +74,11 @@ TEST_SUITES = [
     ),
     (
         "Tier 2 Runtime",
+        "Handler Annotation Cursor",
+        TEST_DIR / "tier2_runtime" / "interpreter" / "test_handler_annotation_cursor.py",
+    ),
+    (
+        "Tier 2 Runtime",
         "Python/C++ ABI Native Layout",
         TEST_DIR / "tier2_runtime" / "test_interpreter_abi.py",
     ),

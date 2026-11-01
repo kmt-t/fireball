@@ -21,7 +21,7 @@
 | システムシナリオ | [`run_all.py`](experiments/pysim/qa/scenarios/run_all.py) |
 | WASMワークロード | [`run_all.py`](experiments/pysim/qa/workloads/run_all.py) |
 
-### 2.2 コンポーネント単体スイート（31件）
+### 2.2 コンポーネント単体スイート（32件）
 
 | 実行ファイル |
 | :--- |
@@ -34,6 +34,7 @@
 | [`test_cps_interpreter.py`](experiments/pysim/qa/tier2_runtime/interpreter/test_cps_interpreter.py) |
 | [`test_interpreter.py`](experiments/pysim/qa/tier2_runtime/interpreter/test_interpreter.py) |
 | [`test_rpn_expressions.py`](experiments/pysim/qa/tier2_runtime/interpreter/test_rpn_expressions.py) |
+| [`test_handler_annotation_cursor.py`](experiments/pysim/qa/tier2_runtime/interpreter/test_handler_annotation_cursor.py) |
 | [`test_interpreter_abi.py`](experiments/pysim/qa/tier2_runtime/test_interpreter_abi.py) |
 | [`test_logging.py`](experiments/pysim/qa/tier2_runtime/test_logging.py) |
 | [`test_recovery.py`](experiments/pysim/qa/tier2_runtime/test_recovery.py) |

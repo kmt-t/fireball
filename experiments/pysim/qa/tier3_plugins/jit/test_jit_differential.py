@@ -623,3 +623,24 @@ if __name__ == "__main__":
     test_jitr_58_generated_control_flow_matches_wasmtime_and_tier2()
     test_jitr_59_clang_kernel_suite_matches_wasmtime_on_the_jit()
     print("[PASS] All 9 Tier 3 JIT differential tests passed.")
+
+
+# A memory operation that does not end its trace is followed by nodes that read their immediates
+# from the constant pool. Each node must read its own record, so the results match the reference.
+MEMORY_THEN_POOLED_NODES_WAT = """
+(module (memory 1)
+  (func (export "main") (param $n i32) (result i32) (local $i i32)
+    (block $exit
+      (loop $l
+        (br_if $exit (i32.ge_s (local.get $i) (local.get $n)))
+        (i32.store (local.get $i) (i32.const 7))
+        (i32.store (i32.const 4) (local.get $i))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $l)))
+    (i32.add (i32.load (i32.const 0)) (i32.load (i32.const 4)))))
+"""
+
+
+def test_jitr_memory_operation_followed_by_pooled_nodes_keeps_each_record():
+    """A continuing memory helper leaves each following node to read its own constant-pool record."""
+    _assert_jit_ran(_check_three_ways(MEMORY_THEN_POOLED_NODES_WAT, "main", [40]))

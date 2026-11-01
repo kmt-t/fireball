@@ -130,6 +130,8 @@ C++ trace compilerは操作を直接実行するassembly stencilか、共通コ�
 
 APIを呼ぶ操作では、コンパイラがopcodeに対応するu8 API table slot、u8 immediate個数、u8 immediate byte span、元の命令位置を表すu32 `code_ip_t`、型付きimmediate payloadをpoolへ出力する。header相対参照、slot/count/span、source IPの各値は固定幅である。immediate payloadは命令に応じてu8/u16/u32/u64を使い、数値即値やlocal offsetのtrace内注釈複製を作らない。終端API recordはInterpreterへ戻るための関数注釈pool byte offsetを一つ持ち、API wrapperは関数viewから注釈poolを参照する。`operations.S`の`runtime_api` stencilは共通コード領域の借用参照から読み取り専用表を引いてAPIを呼び出す。ローカル操作はRuntime APIを呼ばない。WASM型とcompact byte offsetから型・操作別の単一テンプレートを選び、x64命令エンコーダがローカルbase registerと`disp8`をtraceへ直接書く。どちらもtraceへコンパイルされ、`ctx.ip`を進めない。Runtime APIを呼ぶ操作では、APIがtrapやruntime境界を記録しなければstencilは後続の合成済みoperationへfall-throughする。APIがCPS exitを記録した場合だけtrace共通abort経路へ移り、C++ dispatcherがそのexit種別を処理する。
 
+Runtime API 記録の形の正本は [jit_abi.md](docs/components/tier2_runtime/jit_abi.md) の trace 末尾の節である。この節には定義を書かない。
+
 Interpreterでも同じRuntime APIを使う。Interpreter側のopcode handlerは統一された`(ctx, instruction_ip, sp, rel)` prototypeを持ち、テンプレート`h_runtime_api`がopcode固有のRuntime APIを呼んでからCPS継続へ渡す。JIT stencilから呼ぶAPIはCPSを実行せず、次のoperationを選択しない。
 
 | 命令経路 | 実行方法 | 次の処理 |

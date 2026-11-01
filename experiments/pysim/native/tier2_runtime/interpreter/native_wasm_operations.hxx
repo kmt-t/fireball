@@ -5,6 +5,7 @@
  */
 #include "../../../tier2_runtime/abi/interpreter_abi.hxx"
 #include "../../../tier2_runtime/abi/native_abi.hxx"
+#include "annotation_read.hxx"
 #include <cstdint>
 
 namespace fireball::wasm_runtime {
@@ -95,23 +96,11 @@ bool complete(execution_context &current);
 bool trap(execution_context &current, std::uint32_t code, code_ip_t ip);
 /** @brief `debug_stop`に対応する実行状態または値を求める。 */
 bool debug_stop(execution_context &current);
-/** @brief Interpreter注釈プールの固定幅値を読み出す。 */
-std::uint8_t read_u8(const std::uint8_t *&rel);
-/** @brief Interpreter注釈プールのlittle-endian u16を読み出す。 */
-std::uint16_t read_u16(const std::uint8_t *&rel);
-/** @brief Interpreter注釈プールの固定幅値を読み出す。 */
-std::uint32_t read_u32(const std::uint8_t *&rel);
-/** @brief Interpreter注釈プールのu8値を先読みする。 */
-std::uint8_t peek_u8(const std::uint8_t *rel);
 
 /** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
 void pop(execution_context &current, std::uint32_t *&sp, std::uint32_t &value);
 /** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */
 void push(execution_context &current, std::uint32_t *&sp, std::uint32_t value);
-/** @brief Interpreter注釈プールの固定幅値を読み出す。 */
-std::int32_t read_s32(const std::uint8_t *&rel);
-/** @brief Interpreter注釈プールの固定幅値を読み出す。 */
-std::int64_t read_s64(const std::uint8_t *&rel);
 /** @brief 検証済みの下限をassertし、共有オペランドスタックから値を取り出す。 */
 void pop_u64(execution_context &current, std::uint32_t *&sp, std::uint64_t &value);
 /** @brief 関数入口で保証した上限をassertし、共有オペランドスタックへ値を積む。 */

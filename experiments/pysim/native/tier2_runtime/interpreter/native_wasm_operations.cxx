@@ -387,31 +387,9 @@ bool debug_stop(execution_context &current) {
   return false;
 }
 
-std::uint8_t read_u8(const std::uint8_t *&rel) { return *rel++; }
-
-// Reads a fixed-width little-endian field and advances the cursor past it.
-template <typename T> T read_fixed(const std::uint8_t *&rel) {
-  T value;
-  std::memcpy(&value, rel, sizeof(value));
-  rel += sizeof(value);
-  return value;
-}
-
-std::uint16_t read_u16(const std::uint8_t *&rel) { return read_fixed<std::uint16_t>(rel); }
-
-std::uint32_t read_u32(const std::uint8_t *&rel) { return read_fixed<std::uint32_t>(rel); }
-
-std::uint8_t peek_u8(const std::uint8_t *rel) { return *rel; }
-
 code_ip_t instruction_offset(const execution_context &current, const std::uint8_t *ip) {
   assert(current.code != nullptr && ip >= current.code && ip <= current.code + current.code_size);
   return static_cast<std::uint32_t>(ip - current.code);
-}
-
-std::int32_t read_s32(const std::uint8_t *&rel) { return static_cast<std::int32_t>(read_u32(rel)); }
-
-std::int64_t read_s64(const std::uint8_t *&rel) {
-  return static_cast<std::int64_t>(read_fixed<std::uint64_t>(rel));
 }
 
 void pop_u64([[maybe_unused]] execution_context &current, std::uint32_t *&sp,

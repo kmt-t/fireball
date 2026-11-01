@@ -31,6 +31,8 @@ struct jit_wasm_block {
   block_index_t loops_to_block_index = FIREBALL_INVALID_BLOCK_INDEX;
   jit_byte_view interpreter_annotations;
   annotation_offset_t interpreter_annotation_byte_offset = 0;
+  // Module global value widths in words, one byte per global; bytes is the global count.
+  jit_byte_view global_widths;
 };
 static_assert(sizeof(jit_local_layout) == 40);
 static_assert(offsetof(jit_wasm_block, jit_score) == 24);
@@ -40,7 +42,8 @@ static_assert(offsetof(jit_wasm_block, extension_data) == 88);
 static_assert(offsetof(jit_wasm_block, block_index) == 96);
 static_assert(offsetof(jit_wasm_block, interpreter_annotations) == 104);
 static_assert(offsetof(jit_wasm_block, interpreter_annotation_byte_offset) == 120);
-static_assert(sizeof(jit_wasm_block) == 128);
+static_assert(offsetof(jit_wasm_block, global_widths) == 128);
+static_assert(sizeof(jit_wasm_block) == 144);
 struct jit_instruction_block {
   wasm_pc_t head_pc, next_pc, loops_to;
   code_offset_t byte_span;

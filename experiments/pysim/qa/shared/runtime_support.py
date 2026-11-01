@@ -128,6 +128,7 @@ def compile_module_block(
     code = module.code_for(function_index)
     code_lease = BufferLease(memoryview(code))
     layout = function.local_layout_cache
+    module.build_native_global_widths()
     return compiler.compile_wasm_standalone(
         native_abi.WasmBlock(
             head_pc=block.head_pc,
@@ -151,6 +152,9 @@ def compile_module_block(
                 0 if annotations is None else len(annotations),
             ),
             interpreter_annotation_byte_offset=block.interpreter_annotation_byte_offset,
+            global_widths=native_abi.NativeByteView(
+                module.global_widths_address, len(module.globals)
+            ),
         )
     )
 

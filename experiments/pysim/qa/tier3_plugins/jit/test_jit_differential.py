@@ -644,3 +644,30 @@ MEMORY_THEN_POOLED_NODES_WAT = """
 def test_jitr_memory_operation_followed_by_pooled_nodes_keeps_each_record():
     """A continuing memory helper leaves each following node to read its own constant-pool record."""
     _assert_jit_ran(_check_three_ways(MEMORY_THEN_POOLED_NODES_WAT, "main", [40]))
+
+
+GLOBAL_LOOP_WAT = """
+(module
+  (global $acc32 (mut i32) (i32.const 1))
+  (global $acc64 (mut i64) (i64.const 3))
+  (func (export "f") (param $n i32) (result i32) (local $i i32)
+    (block $done
+      (loop $again
+        (br_if $done (i32.ge_u (local.get $i) (local.get $n)))
+        (global.set $acc32
+          (i32.add (global.get $acc32) (i32.mul (local.get $i) (i32.const 7))))
+        (global.set $acc64
+          (i64.add (global.get $acc64) (i64.extend_i32_u (global.get $acc32))))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $again)))
+    (i32.wrap_i64 (i64.xor (global.get $acc64) (i64.extend_i32_u (global.get $acc32))))))
+"""
+
+
+def test_jit_global_access_traces_match_wasmtime_for_i32_and_i64_globals():
+    """Hot traces that read and write 32- and 64-bit globals compute the reference result."""
+    wasm = wat_to_wasm(GLOBAL_LOOP_WAT)
+    expected = _wasmtime_result(wasm, "f", [4000])
+    result, engine = _tier3(wasm, "f", [4000])
+    assert result == expected
+    assert engine.stat_jit_invocations > 0

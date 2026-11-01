@@ -4267,3 +4267,32 @@ def test_jitr_compiler_cursor_matches_the_loader_annotation_layout(prefix):
     trace_exit = native_abi.NativeTraceExit.from_buffer_copy(trace.code_blob, exit_offset)
     assert trace_exit.body_end_ip == br_table.offset
     assert trace_exit.interpreter_rel_bytes == expected
+
+
+GLOBAL_ACCESS_BODIES = (
+    "(drop (global.get $g32))",
+    "(global.set $g32 (i32.add (global.get $g32) (local.get 0)))",
+    "(drop (global.get $g64))",
+    "(global.set $g64 (i64.add (global.get $g64) (i64.const 1)))",
+    "(global.set $g64 (i64.extend_i32_u (local.get 0))) (drop (i32.wrap_i64 (global.get $g64)))",
+)
+
+
+@pytest.mark.parametrize("body", GLOBAL_ACCESS_BODIES)
+def test_jit_compiles_blocks_with_global_access_for_i32_and_i64_globals(body):
+    """A block with global.get or global.set compiles from its loader metadata, for 32- and 64-bit globals."""
+    wat = (
+        "(module (global $g32 (mut i32) (i32.const 5)) (global $g64 (mut i64) (i64.const 9))"
+        f' (func (export "f") (param i32) {body}))'
+    )
+    module = parse_standalone(wat_to_wasm(wat))
+    function_index = module.export_func_index("f")
+    blocks = [
+        block
+        for block in module.blocks
+        if block.func_index == function_index and block.byte_span > 0
+    ]
+    assert blocks
+    for block in blocks:
+        trace = compile_module_block(TraceCompiler(), module, block)
+        assert trace is not None, f"block at pc {block.head_pc:#x} did not compile: {body}"

@@ -208,7 +208,8 @@ extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block *block, std::
       block->code.data, block->code.bytes, block->offset, block->byte_span, next != UINT32_MAX,
       static_cast<std::uint32_t>(next), 0, 0, block->interpreter_annotations.data,
       block->interpreter_annotations.bytes, block->interpreter_annotation_byte_offset,
-      reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data), block->locals.types.data,
+      block->global_widths, reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data),
+      block->locals.types.data,
       block->locals.count, block->locals.total_words, body_scratch, kMaxBodyBytes, &result);
   if (status != 1) {
     return status;

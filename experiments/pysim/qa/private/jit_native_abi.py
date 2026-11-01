@@ -63,6 +63,8 @@ class WasmBlock:
     loops_to_block_index: int | None = None
     interpreter_annotations: NativeByteView = NativeByteView(0, 0)
     interpreter_annotation_byte_offset: int = 0
+    # Module global value widths in words, one byte per global; byte_length is the global count.
+    global_widths: NativeByteView = NativeByteView(0, 0)
 
 
 class CacheField(IntEnum):
@@ -221,6 +223,7 @@ class _NativeWasmBlock(ctypes.Structure):
         ("loops_to_block_index", ctypes.c_uint16),
         ("interpreter_annotations", _NativeByteView),
         ("interpreter_annotation_byte_offset", ctypes.c_uint32),
+        ("global_widths", _NativeByteView),
     )
 
 
@@ -233,7 +236,8 @@ assert _NativeWasmBlock.extension_data.offset == 88
 assert _NativeWasmBlock.block_index.offset == 96
 assert _NativeWasmBlock.interpreter_annotations.offset == 104
 assert _NativeWasmBlock.interpreter_annotation_byte_offset.offset == 120
-assert ctypes.sizeof(_NativeWasmBlock) == 128
+assert _NativeWasmBlock.global_widths.offset == 128
+assert ctypes.sizeof(_NativeWasmBlock) == 144
 
 
 RUNTIME_BIND_BLOCKS = _NATIVE_LIBRARY.fb_qa_runtime_bind_blocks
@@ -903,6 +907,7 @@ def marshal_block(block: WasmBlock) -> _NativeWasmBlock:
             block.interpreter_annotations.byte_length,
         ),
         block.interpreter_annotation_byte_offset,
+        _NativeByteView(block.global_widths.address, block.global_widths.byte_length),
     )
 
 

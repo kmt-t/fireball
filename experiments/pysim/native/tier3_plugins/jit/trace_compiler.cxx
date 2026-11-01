@@ -1150,12 +1150,22 @@ bool emit_constant(trace_builder &builder, stack_model &stack, int op, std::uint
 
 bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_ip_t source_ip,
                       const std::uint64_t *immediates, const std::uint8_t *immediate_widths,
-                      std::uint8_t immediate_count,
-                      annotation_offset_t interpreter_rel_after);
+                      std::uint8_t immediate_count, annotation_offset_t interpreter_rel_after,
+                      std::uint8_t global_width);
+std::uint8_t global_value_width(int op, std::uint64_t operand, const fireball::jit_byte_view &global_widths) {
+  if (op != 0x23 && op != 0x24) {
+    return 0;
+  }
+  assert(operand < global_widths.bytes);
+  const auto width = global_widths.data[operand];
+  assert(width == 1 || width == 2);
+  return width;
+}
 bool compile_instructions(trace_builder &builder, const fireball::jit_instruction *instructions,
                           std::uint32_t instruction_count, const frame_word_offset_t *local_offsets,
                           const std::uint8_t *local_types, local_count_t local_count,
                           local_count_t local_slot_count, stack_model &stack,
+                          const fireball::jit_byte_view &global_widths,
                           const code_ip_t *source_offsets = nullptr,
                           const code_ip_t *source_end_offsets = nullptr,
                           const annotation_offset_t *interpreter_rel_after_offsets = nullptr) {
@@ -1275,7 +1285,7 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
                                              ? std::numeric_limits<annotation_offset_t>::max()
                                              : interpreter_rel_after_offsets[index];
       if (!emit_runtime_api(builder, stack, op, source_ip, nullptr, nullptr, 0,
-                            interpreter_rel_after)) {
+                            interpreter_rel_after, 0)) {
         return false;
       }
       return true;
@@ -1309,7 +1319,7 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       if (!emit_runtime_api(builder, stack, op, source_offsets[index],
                             immediate_count == 0 ? nullptr : immediates,
                             immediate_count == 0 ? nullptr : immediate_widths,
-                            static_cast<std::uint8_t>(immediate_count), interpreter_rel_after)) {
+                            static_cast<std::uint8_t>(immediate_count), interpreter_rel_after, 0)) {
         return false;
       }
       ++index;
@@ -1337,7 +1347,8 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
     if (!emit_runtime_api(builder, stack, op, source_offsets[index],
                           runtime_rel_count == 0 ? nullptr : runtime_rel.data(),
                           runtime_rel_count == 0 ? nullptr : runtime_rel_widths.data(),
-                          static_cast<std::uint8_t>(runtime_rel_count), interpreter_rel_after)) {
+                          static_cast<std::uint8_t>(runtime_rel_count), interpreter_rel_after,
+                          global_value_width(op, instruction.operand, global_widths))) {
       return false;
     }
     ++index;
@@ -1370,9 +1381,15 @@ bool pop_values(stack_model &stack, std::uint32_t count, std::uint8_t width) {
   return true;
 }
 
-bool apply_runtime_api_stack_effect(int op, stack_model &stack) {
+bool apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_model &stack) {
   if (op == 0x00) {
     return true;
+  }
+  if (op == 0x23) {
+    return stack.push(global_width);
+  }
+  if (op == 0x24) {
+    return stack.pop(global_width);
   }
   if ((op & 0xFF00) == 0xFC00) {
     const auto subopcode = op & 0xFF;
@@ -1496,14 +1513,14 @@ bool apply_runtime_api_stack_effect(int op, stack_model &stack) {
 
 bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_ip_t source_ip,
                       const std::uint64_t *immediates, const std::uint8_t *immediate_widths,
-                      std::uint8_t immediate_count,
-                      annotation_offset_t interpreter_rel_after) {
+                      std::uint8_t immediate_count, annotation_offset_t interpreter_rel_after,
+                      std::uint8_t global_width) {
   std::uint8_t slot = 0;
   if ((immediate_count != 0 && (immediates == nullptr || immediate_widths == nullptr)) ||
       !runtime_api_slot(op, slot)) {
     return false;
   }
-  if (!apply_runtime_api_stack_effect(op, stack)) {
+  if (!apply_runtime_api_stack_effect(op, global_width, stack)) {
     return false;
   }
   return builder.append_runtime_api(slot, source_ip, immediates, immediate_widths, immediate_count,
@@ -1711,7 +1728,7 @@ int fireball::compile_instruction_body(
   stack_model stack{};
   if (!builder.begin_trace() ||
       !compile_instructions(builder, instructions, instruction_count, local_offsets, local_types,
-                            local_count, local_slot_count, stack)) {
+                            local_count, local_slot_count, stack, fireball::jit_byte_view{})) {
     return 0;
   }
   return finish_trace(builder, stack, result);
@@ -1722,7 +1739,7 @@ int fireball::compile_wasm_trace(
     code_offset_t byte_span, std::uint32_t has_next_pc, wasm_pc_t next_pc,
     std::uint32_t has_loops_to, wasm_pc_t loops_to, const std::uint8_t *interpreter_annotations,
     annotation_offset_t interpreter_annotation_byte_count,
-    annotation_offset_t interpreter_annotation_byte_offset,
+    annotation_offset_t interpreter_annotation_byte_offset, const jit_byte_view &global_widths,
     const frame_word_offset_t *local_offsets, const std::uint8_t *local_types,
     local_count_t local_count, local_count_t local_slot_count, std::uint8_t *output,
     code_offset_t output_capacity, fireball::jit_compile_result *result) {
@@ -1968,7 +1985,7 @@ int fireball::compile_wasm_trace(
   stack_model stack{};
   if (!builder.begin_trace() ||
       !compile_instructions(builder, instructions.data(), instruction_count, local_offsets,
-                            local_types, local_count, local_slot_count, stack,
+                            local_types, local_count, local_slot_count, stack, global_widths,
                             source_offsets.data(), source_end_offsets.data(),
                             interpreter_rel_after_offsets.data())) {
     return 0;

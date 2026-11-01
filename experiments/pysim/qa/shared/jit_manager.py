@@ -208,6 +208,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             if counters_enabled
             else (ctypes.c_uint32 * 0)()
         )
+        module.build_native_global_widths()
         for index, block in enumerate(module.blocks):
             function = module.functions[block.func_index - len(module.imports)]
             assert function.local_layout_cache is not None
@@ -246,6 +247,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
                     0 if annotations is None else len(annotations),
                 ),
                 block.interpreter_annotation_byte_offset,
+                native_abi._NativeByteView(module.global_widths_address, len(module.globals)),
             )
         self._bind_profile()
         self._bind_test_views(_module_code_lengths(module), _module_function_pc_bases(module))
@@ -327,6 +329,9 @@ class JITRuntimeManager(NativeJITRuntimeManager):
                 0 if annotations is None else len(annotations),
             ),
             interpreter_annotation_byte_offset=block.interpreter_annotation_byte_offset,
+            global_widths=native_abi.NativeByteView(
+                self.module.global_widths_address, len(self.module.globals)
+            ),
         )
         return block_input
 

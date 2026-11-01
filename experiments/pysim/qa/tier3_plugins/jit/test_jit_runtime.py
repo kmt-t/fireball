@@ -4399,3 +4399,43 @@ def test_jit_compiles_continuation_blocks_that_consume_values_from_before_the_bl
     assert len(blocks) >= 2
     for block in blocks:
         assert compile_module_block(TraceCompiler(), module, block) is not None, hex(block.head_pc)
+
+
+IF_ELSE_JOIN_WAT = (
+    '(module (func (export "f") (param i32) (result i32) (if (result i32) (local.get 0) '
+    "(then (i32.const 1) (drop) (i32.const 3)) (else (i32.const 2) (drop) (i32.const 4))) "
+    "(drop) (i32.const 7)))"
+)
+
+
+def _if_else_traces():
+    """Compile the loader's then, else and join blocks of an if/else; then and else both fall into join."""
+    module = parse_standalone(wat_to_wasm(IF_ELSE_JOIN_WAT))
+    function_index = module.export_func_index("f")
+    blocks = [
+        block
+        for block in module.blocks
+        if block.func_index == function_index and block.byte_span > 0
+    ]
+    then_block, else_block, join_block = blocks[1], blocks[2], blocks[3]
+    assert then_block.next_pc == join_block.head_pc
+    assert else_block.next_pc == join_block.head_pc
+    traces = {
+        name: compile_module_block(TraceCompiler(), module, block)
+        for name, block in (("then", then_block), ("else", else_block), ("join", join_block))
+    }
+    assert all(trace is not None for trace in traces.values())
+    return traces
+
+
+def test_jitr_if_else_arms_do_not_chain_into_the_join_at_a_shallower_frame_depth():
+    """A chain needs equal frame depth: the then and else arms (depth 1) do not link into the join (depth 0)."""
+    traces = _if_else_traces()
+    then, other, join = traces["then"], traces["else"], traces["join"]
+    assert then.header._native.frame_depth == other.header._native.frame_depth == 1
+    assert join.header._native.frame_depth == 0
+    cache = JitRuntimeBoundary(bank_capacity=512)
+    assert cache.insert(join)
+    assert cache.insert(then) and cache.insert(other)
+    assert then.chain_next is None and other.chain_next is None
+    assert then.header.chain_target_addr == 0 and other.header.chain_target_addr == 0

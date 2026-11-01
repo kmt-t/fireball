@@ -85,7 +85,7 @@ verification_matrix:
     workload_runner: "experiments/pysim/qa/workloads/run_all.py"
     pairwise_test: "experiments/pysim/qa/integration/test_pairwise_combinations.py"
     expected:
-      unit_suites: 30
+      unit_suites: 31
       integration_suites: 4
       workload_suites: 3
       scenarios: 12
@@ -480,31 +480,31 @@ source_verification:
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: build_control_map
-        line: 596
+        line: 605
         ccn: 42
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: iter_scan_instrs
-        line: 762
+        line: 771
         ccn: 17
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: _count_interpreter_annotation_pool_bytes
-        line: 860
+        line: 869
         ccn: 26
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: build_interpreter_annotation_pool
-        line: 908
+        line: 1095
         ccn: 44
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: extract_basic_blocks
-        line: 1243
+        line: 1468
         ccn: 37
         plan_req: REQ-042
       - group: python_pysim
@@ -516,25 +516,25 @@ source_verification:
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
         function: step_native_boundary
-        line: 1268
+        line: 1270
         ccn: 16
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
         function: _try_native_step_to_boundary
-        line: 1540
+        line: 1542
         ccn: 19
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
         function: _step
-        line: 1619
+        line: 1621
         ccn: 21
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
         function: _enter_or_resolve_call
-        line: 1716
+        line: 1718
         ccn: 22
         plan_req: REQ-042
       - group: python_pysim

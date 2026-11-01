@@ -339,9 +339,7 @@ def test_intp_88_trap_code_is_set_only_by_a_trap() -> None:
     The expected codes come from the WASM trap definitions in TrapCode, not from the output.
     """
     trapping = parse_standalone(
-        wat_to_wasm(
-            '(module (func (export "run") (result i32) i32.const 1 i32.const 0 i32.div_s))'
-        )
+        wat_to_wasm('(module (func (export "run") (result i32) i32.const 1 i32.const 0 i32.div_s))')
     )
     interpreter = make_native_interpreter(trapping)
     call = interpreter.start(0, [])
@@ -350,7 +348,9 @@ def test_intp_88_trap_code_is_set_only_by_a_trap() -> None:
     assert call.trap is not None and call.trap.code == TrapCode.INTEGER_DIVIDE_BY_ZERO
     assert call.context.trap_code == TrapCode.INTEGER_DIVIDE_BY_ZERO
 
-    returning = parse_standalone(wat_to_wasm('(module (func (export "run") (result i32) i32.const 7))'))
+    returning = parse_standalone(
+        wat_to_wasm('(module (func (export "run") (result i32) i32.const 7))')
+    )
     interpreter = make_native_interpreter(returning)
     call = interpreter.start(0, [])
     call.context.trap_code = 99

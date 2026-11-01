@@ -196,6 +196,8 @@ from tier2_runtime.wasm.opcodes import (
     LOOP,
     MEMORY_GROW,
     MEMORY_SIZE,
+    NATIVE_LOCAL_GET_W1,
+    NATIVE_LOCAL_SET_W1,
     NOP,
     RETURN,
     RPN_ELEM_BINOP_BASE,
@@ -203,8 +205,6 @@ from tier2_runtime.wasm.opcodes import (
     RPN_ELEM_LOCAL_PAIR_SUB,
     RPN_ELEM_PUSH_IMM,
     RPN_ELEM_PUSH_LOCAL,
-    NATIVE_LOCAL_GET_W1,
-    NATIVE_LOCAL_SET_W1,
     RPN_EXPR_HEAD,
     RPN_MAX_DEPTH,
     SELECT,
@@ -919,7 +919,9 @@ def _count_interpreter_annotation_pool_bytes(code: memoryview) -> int:
 # RPN expression annotations (REQ-097 D). A run is a local.get head, then i32.const, local.get and
 # binary i32 operators (k = add, sub, shl, shr_u), that ends at an i32 local.set with one value left.
 _RPN_BINOP_KIND = {0x6A: 0, 0x6B: 1, 0x74: 2, 0x76: 3}
-_RPN_END_BYTES = 8  # END element: [RPN_ELEM_END][target u16][continuation i32 delta][code_length u8]
+_RPN_END_BYTES = (
+    8  # END element: [RPN_ELEM_END][target u16][continuation i32 delta][code_length u8]
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1123,7 +1125,9 @@ def build_interpreter_annotation_pool(
     for expression in rpn_expressions:
         program_positions[expression.head_offset] = cursor
         cursor += len(expression.elements) + _RPN_END_BYTES
-    assert not rpn_expressions or cursor <= 0xFFFF, "fit_rpn_expressions must bound the program region"
+    assert not rpn_expressions or cursor <= 0xFFFF, (
+        "fit_rpn_expressions must bound the program region"
+    )
     set_ends: dict[int, int] = {}
     block_bytes = total_bytes
     total_bytes = cursor
@@ -1137,7 +1141,9 @@ def build_interpreter_annotation_pool(
         if opcode == LOCAL_GET:
             if function_offset not in program_positions:
                 return 0
-            annotation_start = len(annotations) - 4  # width, offset (u16), slot width precede the ext
+            annotation_start = (
+                len(annotations) - 4
+            )  # width, offset (u16), slot width precede the ext
             return program_positions[function_offset] - annotation_start
         return 0xFFFF
 

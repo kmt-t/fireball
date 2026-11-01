@@ -1152,7 +1152,8 @@ bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_i
                       const std::uint64_t *immediates, const std::uint8_t *immediate_widths,
                       std::uint8_t immediate_count, annotation_offset_t interpreter_rel_after,
                       std::uint8_t global_width);
-std::uint8_t global_value_width(int op, std::uint64_t operand, const fireball::jit_byte_view &global_widths) {
+std::uint8_t global_value_width(int op, std::uint64_t operand,
+                                const fireball::jit_byte_view &global_widths) {
   if (op != 0x23 && op != 0x24) {
     return 0;
   }
@@ -1184,10 +1185,9 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       continue;
     }
 
-    if ((op == kI32Const || op == kI64Const || op == kF32Const || op == kF64Const ||
-         op == kLocalGet || op == kLocalSet || op == kLocalTee) != has_operand) {
-      return false;
-    }
+    // The scanner attaches an operand to exactly these opcodes; the instruction list must agree.
+    assert((op == kI32Const || op == kI64Const || op == kF32Const || op == kF64Const ||
+            op == kLocalGet || op == kLocalSet || op == kLocalTee) == has_operand);
 
     if (op == kI32Const || op == kI64Const || op == kF32Const || op == kF64Const) {
       if (!emit_constant(builder, stack, op, instruction.operand)) {
@@ -1298,13 +1298,10 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
         (wasm_memory_operation || wasm_fc_operation)) {
       const auto subopcode = static_cast<std::uint32_t>(op & 0xFF);
       const auto packed_memory_indices = instruction.operand;
-      if (wasm_fc_operation && subopcode == 0x0A && packed_memory_indices != 0) {
-        return false;
-      }
-      if (wasm_fc_operation && subopcode == 0x0B &&
-          static_cast<std::uint32_t>(packed_memory_indices) != 0) {
-        return false;
-      }
+      // The loader accepts only memory index 0 for memory.copy and memory.fill.
+      assert(!(wasm_fc_operation && subopcode == 0x0A && packed_memory_indices != 0));
+      assert(!(wasm_fc_operation && subopcode == 0x0B &&
+               static_cast<std::uint32_t>(packed_memory_indices) != 0));
       const auto instruction_width =
           static_cast<std::uint8_t>(source_end_offsets[index] - source_offsets[index]);
       const std::uint64_t immediates[2] = {instruction_width,
@@ -1713,10 +1710,8 @@ int fireball::compile_instruction_body(
   static_cast<void>(next_pc);
   static_cast<void>(has_loops_to);
   static_cast<void>(loops_to);
-  if (result == nullptr || output == nullptr || byte_span == 0 || instruction_count > byte_span ||
-      (instruction_count != 0 && instructions == nullptr)) {
-    return -1;
-  }
+  assert(result != nullptr && output != nullptr && byte_span != 0 &&
+         instruction_count <= byte_span && (instruction_count == 0 || instructions != nullptr));
   *result = {};
   result->body_end_ip = kNoTraceExitIp;
   if (instruction_count == 0 || instruction_count > kMaxTraceInstructions ||
@@ -1750,15 +1745,12 @@ int fireball::compile_wasm_trace(
   static_cast<void>(next_pc);
   static_cast<void>(has_loops_to);
   static_cast<void>(loops_to);
-  if (code == nullptr || byte_span == 0 || code_offset > code_bytes ||
-      byte_span > code_bytes - code_offset || output == nullptr || result == nullptr) {
-    return -1;
-  }
+  assert(code != nullptr && byte_span != 0 && code_offset <= code_bytes &&
+         byte_span <= code_bytes - code_offset && output != nullptr && result != nullptr);
   *result = {};
   result->body_end_ip = kNoTraceExitIp;
-  if (output_capacity > kMaxBodyBytes) {
-    return -1;
-  }
+  // The caller passes the body scratch of kMaxBodyBytes.
+  assert(output_capacity <= kMaxBodyBytes);
 
   std::array<fireball::jit_instruction, kMaxTraceInstructions> instructions{};
   std::array<code_ip_t, kMaxTraceInstructions> source_offsets{};
@@ -1772,9 +1764,8 @@ int fireball::compile_wasm_trace(
   const std::uint8_t *annotation_cursor = nullptr;
   const std::uint8_t *annotation_limit = nullptr;
   if (interpreter_annotations != nullptr) {
-    if (interpreter_annotation_byte_offset > interpreter_annotation_byte_count) {
-      return -1;
-    }
+    // The loader places the block's annotation start inside its pool.
+    assert(interpreter_annotation_byte_offset <= interpreter_annotation_byte_count);
     annotation_block_start = interpreter_annotations + interpreter_annotation_byte_offset;
     annotation_cursor = annotation_block_start;
     annotation_limit = interpreter_annotations + interpreter_annotation_byte_count;
@@ -1974,9 +1965,8 @@ int fireball::compile_wasm_trace(
         static_cast<annotation_offset_t>(annotation_offset_64);
     source_end_offsets[instruction_index] = cursor;
   }
-  if (cursor != end && !call_exit) {
-    return -1;
-  }
+  // The scanner consumes the whole block, or the block ends in a call exit.
+  assert(cursor == end || call_exit);
   if (instruction_count == 0 && !call_exit) {
     return 0;
   }
@@ -2020,9 +2010,7 @@ int fireball::compile_wasm_trace(
 std::int64_t fireball::chain_successor(std::uintptr_t code_address, code_offset_t code_bytes,
                                        code_offset_t offset, code_offset_t span,
                                        wasm_pc_t next_pc) {
-  if (code_address == 0 || offset > code_bytes || span > code_bytes - offset) {
-    return -1;
-  }
+  assert(code_address != 0 && offset <= code_bytes && span <= code_bytes - offset);
   const auto *code = reinterpret_cast<const std::uint8_t *>(code_address);
   const auto end = offset + span;
   const auto terminator = end < code_bytes ? code[end] : 0x0B;

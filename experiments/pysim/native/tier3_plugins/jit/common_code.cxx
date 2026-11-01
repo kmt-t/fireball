@@ -192,17 +192,13 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
 extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block *block, std::uint8_t *output,
                                     std::uint32_t capacity, std::uint8_t *body_scratch) {
   using namespace fireball;
-  if (block == nullptr || output == nullptr || capacity <= header_bytes ||
-      body_scratch == nullptr ||
-      capacity > header_bytes + kMaxBodyBytes + trace_blob_overhead_bytes) {
-    return -1;
-  }
+  assert(block != nullptr && output != nullptr && capacity > header_bytes &&
+         body_scratch != nullptr &&
+         capacity <= header_bytes + kMaxBodyBytes + trace_blob_overhead_bytes);
   const auto next =
       chain_successor(reinterpret_cast<std::uintptr_t>(block->code.data), block->code.bytes,
                       block->offset, block->byte_span, block->next_pc);
-  if (next < 0) {
-    return -1;
-  }
+  assert(next >= 0);
   fireball::jit_compile_result result{};
   const auto status = compile_wasm_trace(
       block->code.data, block->code.bytes, block->offset, block->byte_span, next != UINT32_MAX,

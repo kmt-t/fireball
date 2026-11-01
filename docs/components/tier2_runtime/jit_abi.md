@@ -78,10 +78,10 @@ Interpreter opcode handlerの型は`void (execution_context*, const uint8_t*, ui
 | `+0x0C` | `head_pc` | 4バイト | キャッシュ常駐entryのWASM開始PC |
 | `+0x10` | `blob_bytes` | 4バイト | ヘッダからtrace末尾定数領域末尾までの配置サイズ |
 | `+0x14` | `stack_words` | 1バイト | 当該トレースが書き込む最大スタック領域 |
-| `+0x15` | `result_words` | 1バイト | トレースが確定する結果ワード数。実行時のsp計算と連結の判定には使わない（sp の正本は`execution_context.stack_pointer`） |
-| `+0x16` | `chain_words` | 1バイト | 現在のchain全体が必要とする最大スタック領域 |
-| `+0x17` | `chain_body_count` | 1バイト | rootから終端または最初の再訪までに含む相異なるtrace body数。循環時もchain更新で有限に再計算 |
-| `+0x18` | `frame_depth` | 1バイト | 関数開始位置から当該ブロック開始位置までの制御フレーム深さ（最大 `FB_CONF_MAX_NESTING_DEPTH`） |
+| `+0x15` | `chain_words` | 1バイト | 現在のchain全体が必要とする最大スタック領域 |
+| `+0x16` | `chain_body_count` | 1バイト | rootから終端または最初の再訪までに含む相異なるtrace body数。循環時もchain更新で有限に再計算 |
+| `+0x17` | `frame_depth` | 1バイト | 関数開始位置から当該ブロック開始位置までの制御フレーム深さ（最大 `FB_CONF_MAX_NESTING_DEPTH`） |
+| `+0x18` | `exit_kind` | 1バイト | trace終了種別（normalは0、call_cpsは1） |
 | `+0x19` | 予約 | 1バイト | `block_index`を2-byte境界へ揃える |
 | `+0x1A` | `block_index` | 2バイト | Loaderの`block_index_t`基本ブロック番号（`0xFFFF`は無効） |
 | `+0x20` | `const_rel_offset` | 4バイト | ヘッダ先頭からtrace専用定数領域先頭までの符号なし相対offset |
@@ -91,7 +91,7 @@ Interpreter opcode handlerの型は`void (execution_context*, const uint8_t*, ui
 ヘッダはJITコードから相対参照できるコード近傍に置く。生成コードまたは共通コードが読み取るtrace固有の値だけを保持する。
 先頭PC、コード長、論理的な後続PCはcacheの管理情報に保持する。未使用のvariant予約欄は設けない。
 
-trace末尾には境界metadataを置き、定数poolをその直後に置く。境界metadataは`body_end_ip`、`next_pc`、`loops_to`、`interpreter_rel_bytes`をu32、`block_index`をu16、`frame_depth`と`result_words`をu8で持ち、20バイトである。`interpreter_rel_bytes`はtrace内命令が消費するInterpreter注釈poolのbyte数であり、導出値recordと可変命令幅recordを含む。`body_end_ip`は関数内相対offsetで、x64終端dispatcherが`execution_context.ip`へ設定する。`next_pc`と`loops_to`はmodule内PCである。slot数fieldは設けない。共通chain dispatcherへの相対値は`common_code_relative`に記録する。ステンシルとchain dispatcherはPICとして生成し、GOT/PLTを使わない。生成器は出力objectのGOT/PLT sectionとコードrelocationを拒否する。
+trace末尾には境界metadataを置き、定数poolをその直後に置く。境界metadataは`body_end_ip`、`next_pc`、`loops_to`、`interpreter_rel_bytes`をu32、`block_index`をu16、`frame_depth`をu8で持ち、末尾の1バイトは配置の余白とし、全体は20バイトである。`interpreter_rel_bytes`はtrace内命令が消費するInterpreter注釈poolのbyte数であり、導出値recordと可変命令幅recordを含む。`body_end_ip`は関数内相対offsetで、x64終端dispatcherが`execution_context.ip`へ設定する。`next_pc`と`loops_to`はmodule内PCである。slot数fieldは設けない。共通chain dispatcherへの相対値は`common_code_relative`に記録する。ステンシルとchain dispatcherはPICとして生成し、GOT/PLTを使わない。生成器は出力objectのGOT/PLT sectionとコードrelocationを拒否する。
 
 Runtime API 記録の形の正本は、この節である。記録は、u8 slot、u8 即値個数、u8 即値の幅の和、u32 `code_ip_t`、即値、末尾の u32 再開位置の順に並ぶ。即値の幅の和は、即値の幅の合計に末尾の再開位置の 4 byte を含めた値である。終端 API 記録では、先頭の即値が関数注釈 pool の byte offset（u32、命令の注釈の先頭）である。末尾の再開位置（u32）は、その命令を実行した後の注釈 pool の byte offset（命令の注釈の直後）である。Runtime API が Interpreter へ戻るとき、Interpreter はこの位置から続きを読む。スタブは、先頭 7 byte と即値の幅の和だけ `rel` を進める。
 

@@ -96,6 +96,5 @@ class TraceCompiler:
         header = native_abi.NativeTraceHeader.from_buffer_copy(blob[:JIT_X64_TRACE_HEADER_BYTES])
         trace.size_bytes = header.blob_bytes
         trace.stack_words = header.stack_words
-        trace.result_words = header.result_words
         trace.header._native = header
         trace.bind_code()

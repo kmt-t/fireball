@@ -145,7 +145,6 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
       pool_offset + r->relocation_bytes > std::numeric_limits<std::uint16_t>::max()) {
     return 0;
   }
-  const jit_result_words_t result_words = r->result_words;
   const auto words = r->max_stack_words;
   if (words > 0xFFu) {
     return 0;
@@ -156,7 +155,6 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
              head_pc,
              static_cast<std::uint32_t>(pool_offset + r->relocation_bytes),
              static_cast<std::uint8_t>(words),
-             static_cast<jit_result_words_t>(result_words),
              static_cast<std::uint8_t>(words),
              1,
              frame_depth,
@@ -183,9 +181,7 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
                                                       loops_to,
                                                       r->interpreter_rel_bytes,
                                                       next_block_index,
-                                                      frame_depth,
-                                                      static_cast<jit_result_words_t>(
-                                                          result_words)};
+                                                      frame_depth};
   std::memcpy(output + metadata_offset, &boundary_metadata, sizeof(boundary_metadata));
   return 1;
 }

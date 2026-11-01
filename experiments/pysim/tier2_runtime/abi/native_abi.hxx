@@ -33,8 +33,6 @@ struct fb_native_jit_trace_exit {
   // Loader-resolved block index for next_pc; invalid when no successor exists.
   block_index_t block_index;
   frame_depth_t frame_depth;
-  // Net stack change of the trace; negative when it consumed words of its entry stack.
-  jit_result_words_t result_words;
 };
 
 enum fb_native_jit_trace_exit_kind {

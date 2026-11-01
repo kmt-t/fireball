@@ -919,7 +919,6 @@ struct trace_builder {
     }
     result.body_bytes = static_cast<std::uint32_t>(pool_body_offset);
     result.max_stack_words = 0;
-    result.result_words = 0;
     result.relocation_bytes = static_cast<std::uint32_t>(relocation_bytes);
     return true;
   }
@@ -941,12 +940,10 @@ struct stack_model {
   jit_stack_words_t word_count = 0;
   jit_stack_words_t max_words = 0;
   jit_stack_words_t entry_words = 0;
-  jit_stack_words_t seeded_words = 0;
 
   /** @brief 入口の語数で初期化する。型付きの値は積まれていない状態から始まる。 */
   void seed_entry(jit_stack_words_t words) {
     entry_words = words;
-    seeded_words = words;
     word_count = words;
     max_words = words;
   }
@@ -1425,8 +1422,6 @@ int finish_trace(trace_builder &builder, stack_model &stack, fireball::jit_compi
     return 0;
   }
   result->max_stack_words = stack.max_words;
-  // Signed net change above the entry stack; negative when the trace consumed entry words.
-  result->result_words = static_cast<jit_result_words_t>(stack.word_count - stack.seeded_words);
   return 1;
 }
 

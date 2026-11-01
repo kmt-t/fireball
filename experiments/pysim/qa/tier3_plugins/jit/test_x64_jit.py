@@ -769,10 +769,8 @@ def test_compiled_expressions_match_reference_with_bounded_stack_writes():
         sp_index = 3 + seed % 7
         trace, words = _run_spill_trace(program, locals_values, sp_index)
         assert words[sp_index] == expected, f"seed {seed}: {words[sp_index]:#x} != {expected:#x}"
-        assert trace.result_words == 1, f"seed {seed}: result_words"
-        assert trace.result_words <= trace.stack_words <= max(peak_depth, 1), (
-            f"seed {seed}: stack_words"
-        )
+        assert trace.stack_words <= max(peak_depth, 1), f"seed {seed}: stack_words"
+
         touched = [i for i in range(len(words)) if words[i] != _SENTINEL]
         assert all(sp_index <= i < sp_index + trace.stack_words for i in touched), (
             f"seed {seed}: wrote outside [{sp_index}, {sp_index + trace.stack_words}): {touched}"

@@ -101,7 +101,6 @@ class NativeTraceHeader(ctypes.Structure):
         ("head_pc", ctypes.c_uint32),
         ("blob_bytes", ctypes.c_uint32),
         ("stack_words", ctypes.c_uint8),
-        ("result_words", ctypes.c_int8),
         ("chain_words", ctypes.c_uint8),
         ("chain_body_count", ctypes.c_uint8),
         ("frame_depth", ctypes.c_uint8),
@@ -121,7 +120,6 @@ class NativeTraceExit(ctypes.Structure):
         ("interpreter_rel_bytes", ctypes.c_uint32),
         ("block_index", ctypes.c_uint16),
         ("frame_depth", ctypes.c_uint8),
-        ("result_words", ctypes.c_int8),
     )
 
 
@@ -150,18 +148,16 @@ assert NativeTraceHeader.common_code_relative.offset == 8
 assert NativeTraceHeader.head_pc.offset == 12
 assert NativeTraceHeader.blob_bytes.offset == 16
 assert NativeTraceHeader.stack_words.offset == 20
-assert NativeTraceHeader.result_words.offset == 21
-assert NativeTraceHeader.chain_words.offset == 22
-assert NativeTraceHeader.chain_body_count.offset == 23
-assert NativeTraceHeader.frame_depth.offset == 24
-assert NativeTraceHeader.exit_kind.offset == 25
+assert NativeTraceHeader.chain_words.offset == 21
+assert NativeTraceHeader.chain_body_count.offset == 22
+assert NativeTraceHeader.frame_depth.offset == 23
+assert NativeTraceHeader.exit_kind.offset == 24
 assert NativeTraceHeader.frame_depth.size == 1
 assert NativeTraceHeader.block_index.offset == 26
 assert NativeTraceHeader.const_rel_offset.offset == 28
 assert ctypes.sizeof(NativeTraceHeader) == 32
 assert NativeTraceExit.block_index.offset == 16
 assert NativeTraceExit.frame_depth.offset == 18
-assert NativeTraceExit.result_words.offset == 19
 assert ctypes.sizeof(NativeTraceExit) == 20
 
 
@@ -173,7 +169,6 @@ class TraceQaState:
     size_bytes: int = 0
     next_pc: int = 0xFFFF_FFFF
     loops_to: int = 0xFFFF_FFFF
-    result_words: int = 0
     stack_words: int = 0
     byte_span: int = 0
     frame_depth: int = 0
@@ -867,7 +862,6 @@ def compile_wasm(block: WasmBlock, trace: TraceQaState) -> bytes | None:
     control_boundary = boundary_opcode in (0x04, 0x0D, 0x0E, 0x0F)
     trace.next_pc = None if block.loops_to is not None or control_boundary else block.next_pc
     trace.loops_to = 0xFFFF_FFFF if block.loops_to is None else block.loops_to
-    trace.result_words = header.result_words
     trace.stack_words = header.stack_words
     trace.byte_span = block.byte_length
     trace.frame_depth = header.frame_depth
@@ -1009,7 +1003,6 @@ def compile_instructions(
     assert COMMON_LAYOUT.header_bytes == ctypes.sizeof(NativeTraceHeader)
     trace.size_bytes = header.blob_bytes
     trace.frame_depth = header.frame_depth
-    trace.result_words = header.result_words
     trace.stack_words = header.stack_words
     trace.chain_target_address = header.chain_target_address
     trace.blob_bytes = header.blob_bytes

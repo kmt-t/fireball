@@ -166,7 +166,7 @@ def test_jitr_00_common_apccs_area_survives_rotation_and_flush():
     snapshot = ctypes.string_at(region_base, JIT_CACHE_COMMON_CODE_BYTES)
     expected_blob = bytearray(trace.code_blob)
     struct.pack_into("<i", expected_blob, 8, -trace.code_offset)
-    expected_blob[23] = 1  # The trace header starts with one body in its chain.
+    expected_blob[22] = 1  # The trace header starts with one body in its chain.
     assert ctypes.string_at(region_base + trace.code_offset, len(trace_blob)) == expected_blob
 
     cache.rotate()
@@ -654,10 +654,9 @@ def test_jitc_20_trace_header_32byte_x64_physical_layout():
     assert native_abi.NativeTraceHeader.head_pc.offset == 12
     assert native_abi.NativeTraceHeader.blob_bytes.offset == 16
     assert native_abi.NativeTraceHeader.stack_words.offset == 20
-    assert native_abi.NativeTraceHeader.result_words.offset == 21
-    assert native_abi.NativeTraceHeader.chain_words.offset == 22
-    assert native_abi.NativeTraceHeader.chain_body_count.offset == 23
-    assert native_abi.NativeTraceHeader.frame_depth.offset == 24
+    assert native_abi.NativeTraceHeader.chain_words.offset == 21
+    assert native_abi.NativeTraceHeader.chain_body_count.offset == 22
+    assert native_abi.NativeTraceHeader.frame_depth.offset == 23
     assert native_abi.NativeTraceHeader.frame_depth.size == 1
     assert native_abi.NativeTraceHeader.block_index.offset == 26
     assert native_abi.NativeTraceHeader.block_index.size == 2
@@ -2396,7 +2395,6 @@ def test_jit_compile_call_blocks_and_tail_call_cps_handler(
     trace_exit = native_abi.NativeTraceExit.from_buffer_copy(trace.code_blob, exit_offset)
     assert trace_exit.body_end_ip == call_ip + (2 if call_opcode == 0x10 else 3)
     assert trace_exit.interpreter_rel_bytes == 10
-    assert trace.result_words == 1
 
     if native_abi.BLOCK_COUNTERS_ENABLED():
         diagnostics = native_abi.NativeConstPoolDiagnostics()
@@ -2945,7 +2943,6 @@ def test_jitr_host_import_call_trace_tail_calls_cps_handler_and_resumes_once():
     call_block, call_ip = _find_call_block(module, 1, 0x10, b"\x10\x00")
     source_trace, trace_exit = _install_call_traces(engine, module, call_block)
     assert trace_exit.body_end_ip == call_ip + 2
-    assert source_trace.result_words == 1
 
     jit_memory = bytearray(65536)
     interpreter = Interpreter(module, memory=jit_memory, host_functions=host_functions)
@@ -3087,7 +3084,6 @@ def test_jitr_call_indirect_trace_uses_interpreter_table_checks(
     call_block, call_ip = _find_call_block(module, caller, 0x11, b"\x11\x00\x00")
     source_trace, trace_exit = _install_call_traces(engine, module, call_block)
     assert trace_exit.body_end_ip == call_ip + 3
-    assert source_trace.result_words == 2
 
     jit_memory = bytearray(65536)
     interpreter = Interpreter(module, memory=jit_memory)

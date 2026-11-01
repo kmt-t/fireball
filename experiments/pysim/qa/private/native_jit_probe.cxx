@@ -113,7 +113,7 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_bind_blocks(qa_jit_runtime *run
 struct fb_native_trace_descriptor {
   std::uint32_t head_pc;
   std::uintptr_t entry_address;
-  std::uint32_t byte_span, result_words, stack_words, frame_depth;
+  std::uint32_t byte_span, stack_words, frame_depth;
   std::uint32_t next_pc, loops_to, chain_next_pc, chain_stack_words;
   std::uint32_t chain_body_count;
   std::uint32_t *exec_count;
@@ -154,7 +154,6 @@ static int build_dispatch_table(qa_jit_runtime *runtime, fb_native_trace_descrip
     output[count++] = {selected.head_pc,
                        runtime->trace_entry_address(selected),
                        block->byte_span,
-                       static_cast<std::uint32_t>(header->result_words),
                        header->stack_words,
                        block->frame_depth,
                        block->next_pc,

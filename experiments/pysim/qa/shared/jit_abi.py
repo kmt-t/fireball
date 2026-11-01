@@ -18,7 +18,6 @@ class NativeTraceDispatchEntry(ctypes.Structure):
         ("head_pc", ctypes.c_uint32),
         ("entry_address", ctypes.c_void_p),
         ("byte_span", ctypes.c_uint32),
-        ("result_words", ctypes.c_uint32),
         ("stack_words", ctypes.c_uint32),
         ("frame_depth", ctypes.c_uint32),
         ("next_pc", ctypes.c_uint32),
@@ -144,7 +143,6 @@ class JITTrace(Protocol):
     head_pc: int
     loops_to: int | None
     next_pc: int | None
-    result_words: int
     stack_words: int
     exec_count: int
 

@@ -16,7 +16,6 @@ inline constexpr code_ip_t kNoTraceExitIp = UINT32_MAX;
 struct jit_compile_result {
   code_offset_t body_bytes;
   jit_stack_words_t max_stack_words;
-  jit_result_words_t result_words;
   code_offset_t relocation_bytes;
   annotation_offset_t interpreter_rel_bytes;
   code_ip_t body_end_ip = kNoTraceExitIp;

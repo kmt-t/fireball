@@ -258,7 +258,6 @@ class JITTrace:
         size_bytes: int = JIT_TRACE_DEFAULT_BYTES,
         next_pc: int | None = None,
         loops_to: int | None = None,
-        result_words: int = 0,
         stack_words: int = 1,
         buf: ExecutableBuffer | None = None,
         native_fn: NativeTraceFn | None = None,
@@ -282,8 +281,6 @@ class JITTrace:
         self._native.dispatch_next_pc = 0xFFFF_FFFF if next_pc is None else next_pc
         self._native.dispatch_loops_to = 0xFFFF_FFFF if loops_to is None else loops_to
         self._native.byte_span = size_bytes
-        assert 0 <= result_words <= 0xFF
-        self.result_words = result_words
         # Raw words the trace may write from `sp` upward: intermediate values and the
         # residual result. The C++ dispatcher checks the
         # resident descriptor's chain requirement before entering the trace.
@@ -302,7 +299,6 @@ class JITTrace:
             header.head_pc = self.head_pc
             header.blob_bytes = len(blob)
             header.stack_words = self.stack_words
-            header.result_words = self.result_words
             header.frame_depth = self._native.frame_depth
             header.chain_words = self.stack_words
             self._header._native = native_abi.NativeTraceHeader.from_buffer_copy(
@@ -330,7 +326,6 @@ class JITTrace:
             size_bytes=trace._header._native.blob_bytes,
             next_pc=entry.next_pc,
             loops_to=entry.loops_to,
-            result_words=entry.result_words,
             stack_words=entry.stack_words,
             byte_span=entry.byte_span,
             frame_depth=entry.frame_depth,
@@ -379,7 +374,6 @@ class JITTrace:
         self._native.entry_address = address + JIT_X64_TRACE_HEADER_BYTES
         self._native.size_bytes = header.blob_bytes
         self._native.stack_words = header.stack_words
-        self._native.result_words = header.result_words
         self._native.frame_depth = header.frame_depth
         self._native.code_offset = (-header.common_code_relative) & 0xFFFF_FFFF
         self._native.chain_target_address = header.chain_target_address
@@ -427,14 +421,6 @@ class JITTrace:
     @size_bytes.setter
     def size_bytes(self, value: int) -> None:
         self._native.size_bytes = value
-
-    @property
-    def result_words(self) -> int:
-        return self._native.result_words
-
-    @result_words.setter
-    def result_words(self, value: int) -> None:
-        self._native.result_words = value
 
     @property
     def stack_words(self) -> int:
@@ -561,10 +547,14 @@ class JITTrace:
             ctx.local_base = ctx.local_stack_base
         code_address = int(ctx.code or 0)
         instruction_ip = ctypes.c_void_p(code_address + int(ctx.ip))
+        start = ctx.stack_pointer
         self.execute(ctx.context_ptr, instruction_ip, ctx.sp_ptr)
-        if self.result_words == 0:
+        # The trace writes its final stack pointer back; its net change is the words it left.
+        words = (ctx.stack_pointer - start) // 4
+        assert words >= 0, "a QA trace invocation must not consume the shared stack"
+        if words == 0:
             return 0
-        ctx.stack.set_size(result_slot + self.result_words)
+        ctx.stack.set_size(result_slot + words)
         result = ctx.stack[result_slot]
         return result
 
@@ -838,7 +828,6 @@ class JitRuntimeBoundary:
             header.head_pc = trace.head_pc
             header.blob_bytes = len(blob)
             header.stack_words = trace.stack_words
-            header.result_words = trace.result_words
             header.frame_depth = trace._native.frame_depth
             header.chain_words = trace.stack_words
             trace.code_blob = bytes(blob)

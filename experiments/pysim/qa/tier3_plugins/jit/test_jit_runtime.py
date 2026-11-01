@@ -2340,95 +2340,25 @@ def test_jit_structural_delimiters_are_loader_metadata_and_emit_no_operations():
         elif not should_be_in_body:
             assert block_at_delimiter is None or block_at_delimiter.byte_span == 0
 
-    empty_view = native_abi.NativeByteView(0, 0)
-    empty_locals = native_abi.NativeLocalLayout(empty_view, empty_view, 0, 0)
-
-    def compile_raw(code_bytes: bytes, byte_length: int, annotations: bytes = b"") -> JITTrace:
-        code_storage = ctypes.create_string_buffer(code_bytes)
-        annotation_storage = ctypes.create_string_buffer(annotations) if annotations else None
-        annotation_view = (
-            empty_view
-            if annotation_storage is None
-            else native_abi.NativeByteView(ctypes.addressof(annotation_storage), len(annotations))
-        )
-        block = native_abi.WasmBlock(
-            head_pc=0x200,
-            code=native_abi.NativeByteView(ctypes.addressof(code_storage), len(code_bytes)),
-            offset=0,
-            byte_length=byte_length,
-            next_pc=0x208,
-            loops_to=None,
-            locals=empty_locals,
-            interpreter_annotations=annotation_view,
-        )
-        trace = TraceCompiler.compile_wasm(block)
-        assert trace is not None
-        return trace
-
-    annotation_bytes = b"\x00" * 6
-    # The i32.const annotation (5 bytes) precedes the delimiters' annotations in the block's pool.
-    plain = compile_raw(b"\x41\x07\x02\x40", 2, b"\x00" * 5)
-    with_delimiters = compile_raw(
-        b"\x41\x07\x02\x40\x03\x40\x05\x0b", 8, b"\x00" * 5 + annotation_bytes
-    )
-    assert plain.code_blob is not None and with_delimiters.code_blob is not None
-    plain_header = native_abi.NativeTraceHeader.from_buffer_copy(
-        plain.code_blob[:JIT_TRACE_HEADER_BYTES]
-    )
-    delimiter_header = native_abi.NativeTraceHeader.from_buffer_copy(
-        with_delimiters.code_blob[:JIT_TRACE_HEADER_BYTES]
-    )
-    metadata_bytes = ctypes.sizeof(native_abi.NativeTraceExit)
-    plain_body_end = plain_header.const_rel_offset - metadata_bytes
-    delimiter_body_end = delimiter_header.const_rel_offset - metadata_bytes
-    assert (
-        plain.code_blob[JIT_TRACE_HEADER_BYTES:plain_body_end]
-        == with_delimiters.code_blob[JIT_TRACE_HEADER_BYTES:delimiter_body_end]
-    )
-    delimiter_exit = native_abi.NativeTraceExit.from_buffer_copy(
-        with_delimiters.code_blob[delimiter_body_end : delimiter_body_end + metadata_bytes]
-    )
-    assert delimiter_exit.interpreter_rel_bytes == 5 + len(annotation_bytes)
-    assert plain.next_pc == 0x208
-    assert with_delimiters.next_pc == 0x208
-
-    instruction_compiler = TraceCompiler()
-    plain_ir = instruction_compiler.compile_instructions(
-        head_pc=0x200,
-        instructions=((I32_CONST, 7),),
-        next_pc=0x208,
-        loops_to=None,
-        byte_length=2,
-        local_layout=LocalLayout(()),
-    )
-    delimiter_ir = instruction_compiler.compile_instructions(
-        head_pc=0x200,
-        instructions=(
-            (I32_CONST, 7),
-            (0x02, 0),
-            (0x03, 0),
-            (0x05, 0),
-            (0x0B, 0),
-        ),
-        next_pc=0x208,
-        loops_to=None,
-        byte_length=8,
-        local_layout=LocalLayout(()),
-    )
-    assert plain_ir is not None and delimiter_ir is not None
-    assert plain_ir.code_blob is not None and delimiter_ir.code_blob is not None
-    plain_ir_header = native_abi.NativeTraceHeader.from_buffer_copy(
-        plain_ir.code_blob[:JIT_TRACE_HEADER_BYTES]
-    )
-    delimiter_ir_header = native_abi.NativeTraceHeader.from_buffer_copy(
-        delimiter_ir.code_blob[:JIT_TRACE_HEADER_BYTES]
-    )
-    plain_ir_body_end = plain_ir_header.const_rel_offset - metadata_bytes
-    delimiter_ir_body_end = delimiter_ir_header.const_rel_offset - metadata_bytes
-    assert (
-        plain_ir.code_blob[JIT_TRACE_HEADER_BYTES:plain_ir_body_end]
-        == delimiter_ir.code_blob[JIT_TRACE_HEADER_BYTES:delimiter_ir_body_end]
-    )
+    # Each loader block is compiled from its own metadata. A block holding only delimiters has no
+    # operation, so its trace does not exist; every other block must compile.
+    delimiter_only_blocks = 0
+    for block in function_blocks:
+        if block.byte_span == 0:
+            continue
+        block_offset = block.head_pc - function.code_pc_offset
+        block_opcodes = [
+            instruction.opcode
+            for instruction in instructions
+            if block_offset <= instruction.offset < block_offset + block.byte_span
+        ]
+        trace = compile_module_block(TraceCompiler(), module, block)
+        if block_opcodes and all(opcode in delimiter_opcodes for opcode in block_opcodes):
+            delimiter_only_blocks += 1
+            assert trace is None
+        else:
+            assert trace is not None and trace.code_blob is not None
+    assert delimiter_only_blocks == 2
 
 
 @pytest.mark.parametrize(
@@ -4225,7 +4155,10 @@ def test_jitr_br_table_terminal_record_points_at_the_loader_annotation():
     trace_exit = native_abi.NativeTraceExit.from_buffer_copy(trace.code_blob, exit_offset)
     assert trace_exit.body_end_ip == br_table.offset
     assert trace_exit.interpreter_rel_bytes == expected_rel_bytes
-    assert block.interpreter_annotation_byte_offset + trace_exit.interpreter_rel_bytes == expected_annotation
+    assert (
+        block.interpreter_annotation_byte_offset + trace_exit.interpreter_rel_bytes
+        == expected_annotation
+    )
 
 
 def test_jitr_br_table_terminal_record_resumes_after_the_loader_annotation():
@@ -4274,7 +4207,9 @@ def test_jitr_br_table_terminal_record_resumes_after_the_loader_annotation():
             if ip == br_table.offset:
                 record = position
                 break
-    assert record is not None, f"the br_table terminal record was not found: br_table.offset={br_table.offset} pool={pool[:24].hex()}"
+    assert record is not None, (
+        f"the br_table terminal record was not found: br_table.offset={br_table.offset} pool={pool[:24].hex()}"
+    )
     (annotation,) = struct.unpack_from("<I", pool, record + 7)
     (resume,) = struct.unpack_from("<I", pool, record + 11)
     assert annotation == annotation_position

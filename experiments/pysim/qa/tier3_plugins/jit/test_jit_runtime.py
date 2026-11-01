@@ -4158,3 +4158,60 @@ def test_jitr_measurements_are_formatted_in_cpp_through_shared_printk():
         assert rejected.drain_output() == b""
     finally:
         manager.close()
+
+
+BR_TABLE_TERMINAL_WAT = """
+(module
+  (func (export "main") (param $n i32) (result i32) (local $i i32)
+    (block $exit
+      (loop $l
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (block $t
+          (block $u
+            (br_table $exit $t $u (i32.rem_u (local.get $i) (i32.const 3)))))
+        (br_if $exit (i32.ge_s (local.get $i) (local.get $n)))
+        (br $l)))
+    (local.get $i)))
+"""
+
+
+def test_jitr_br_table_terminal_record_points_at_the_loader_annotation():
+    """The br_table that ends a trace records the annotation position the loader wrote for it.
+
+    The expected position is computed from the loader's own annotation sizes of the instructions
+    before the br_table, not from the JIT's arithmetic.
+    """
+    from tier2_runtime.interpreter.control_flow import (
+        _count_interpreter_annotation_pool_bytes,
+        iter_scan_instrs,
+    )
+    from tier2_runtime.wasm.opcodes import BR_TABLE
+
+    module = parse_standalone(wat_to_wasm(BR_TABLE_TERMINAL_WAT))
+    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), candidate_threshold=0)
+    engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
+    engine.register_module_blocks(module)
+    function_index = module.export_func_index("main")
+    code = module.code_for(function_index)
+    function_base = module.function_pc_offset(function_index)
+    br_table = next(ins for ins in iter_scan_instrs(code) if ins.opcode == BR_TABLE)
+    br_table_pc = function_base + br_table.offset
+    block = next(
+        block
+        for block in module.blocks
+        if block.head_pc <= br_table_pc <= block.head_pc + block.byte_span
+    )
+    block_offset = block.head_pc - function_base
+    expected_rel_bytes = _count_interpreter_annotation_pool_bytes(
+        code[block_offset : br_table.offset]
+    )
+    expected_annotation = block.interpreter_annotation_byte_offset + expected_rel_bytes
+
+    trace = TraceCompiler.compile_wasm(manager._block_input(block.head_pc, block))
+    assert trace is not None and trace.code_blob is not None
+    header = native_abi.NativeTraceHeader.from_buffer_copy(trace.code_blob)
+    exit_offset = header.const_rel_offset - ctypes.sizeof(native_abi.NativeTraceExit)
+    trace_exit = native_abi.NativeTraceExit.from_buffer_copy(trace.code_blob, exit_offset)
+    assert trace_exit.body_end_ip == br_table.offset
+    assert trace_exit.interpreter_rel_bytes == expected_rel_bytes
+    assert block.interpreter_annotation_byte_offset + trace_exit.interpreter_rel_bytes == expected_annotation

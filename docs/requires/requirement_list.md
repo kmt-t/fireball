@@ -60,7 +60,7 @@ graph LR
 | `{WasmFCSubset}` | `0xFC`の飽和型浮動小数点→整数変換8命令と、単一メモリ向け`memory.copy`/`memory.fill`だけをサポートする。変換はNaN・無限大・範囲外値をWASM規則で飽和させ、メモリ操作は全範囲を事前検証する。`memory.copy`はゲストリニアアドレスとvMMIO管理下のDYNAMIC・SHM・PASSTHROUGHアドレスを扱う。vMMIO側は内部vDMA経路で転送し、完了とCPU可視性を確認してから次命令へ進む。内部の同期・非同期は転送対象と操作に応じる。コピーの観測結果はWASMのmemmove意味論を保つ。 | 高 | テスト <!-- definition: {WasmFCSubset} --> |
 | `{FastAddressCheck}` | ゲストアドレスの境界チェックをサイズ比較の単一命令で高速化し、境界外は即座にトラップする（黙ったラップアラウンドは不可）。 | 中 | レビュー <!-- definition: {FastAddressCheck} --> |
 | `{vMMIO_Isolation}` | vMMIO空間へのアクセスのみをデバイスI/Oとして許可し、メモリ安全性を確保する。 | 高 | テスト <!-- definition: {vMMIO_Isolation} --> |
-| `{JIT_RuntimeAPI}` | Runtime APIをJIT traceから呼べる共通関数表へ置き、opcodeの状態更新を再利用する。Loaderが受理したopcodeに直接stencilがない場合は、JIT trace内から対応APIを呼び、APIが通常継続を返した場合は後続JIT operationをそのまま実行する。Interpreter handlerも同じAPIを呼び、CPS継続への接続だけを担う。 | 高 | レビュー <!-- definition: {JIT_RuntimeAPI} --> |
+| `{JIT_RuntimeAPI}` | Runtime APIをJIT traceから呼べる共通関数表へ置き、opcodeの状態更新を再利用する。Loaderが受理したopcodeに直接stencilがない場合は、JIT trace内から対応APIを呼ぶ。APIが通常継続を返した場合は、後続のJIT operationをそのまま実行する。Interpreter handlerも同じAPIを呼び、CPS継続への接続だけを担う。 | 高 | レビュー <!-- definition: {JIT_RuntimeAPI} --> |
 | `{OneRuntimeOneGuest}` | 1つのWASMランタイムは厳密に1つのゲストモジュールのみを担当し、マルチインスタンス実行は共有VM内のスレッドではなく独立した別ランタイムの並行起動とIPC協調によって完全なメモリ・障害隔離を実現する。 | 高 | レビュー <!-- definition: {OneRuntimeOneGuest} --> |
 | `{Runtime_BumpAllocator}` | 各ランタイムが専用の固定長バンプアロケータ（`bump_allocator`）を所有し、ロードした全モジュールのシステムコンテナストレージ確保を一括管理する。メモリはランタイム破棄時に個別モジュールの破棄なしで $O(1)$ 解放する。 | 高 | テスト <!-- definition: {Runtime_BumpAllocator} --> |
 | `{System_Allocator}` | カーネル・仮想化基盤（COOS, vMMIO, IPC Router等）が常駐・運用するシステムコンテナの内部ストレージを dlmalloc（`mspace`）により動的アロケートし、個別解放・自動合体によるメモリ再利用を可能にする。 | 高 | レビュー <!-- definition: {System_Allocator} --> |

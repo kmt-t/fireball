@@ -7,6 +7,7 @@ VM operand stack around the expression, so a moved stack pointer changes the res
 
 from __future__ import annotations
 
+import pytest
 from qa.shared.helpers import make_interpreter as Interpreter
 from qa.shared.helpers import make_native_interpreter, wat_to_wasm
 from tier2_runtime.interpreter.control_flow import find_rpn_expressions
@@ -82,9 +83,152 @@ def test_rpn_03_loader_finds_expressions_and_bounds_them_by_block_and_capacity()
     expressions = find_rpn_expressions(
         code, heads, function.local_layout_cache, function.max_operand_stack_words
     )
-    assert len(expressions) == 2
-    for expression in expressions:
+    # Two END expressions (local.set) and one END_STACK expression (the compare before br_if).
+    assert len(expressions) == 3
+    end_expressions = [expression for expression in expressions if expression.writes_local]
+    stack_expressions = [expression for expression in expressions if not expression.writes_local]
+    assert len(end_expressions) == 2 and len(stack_expressions) == 1
+    for expression in end_expressions:
         assert expression.max_depth == 2
         assert expression.code_length == expression.set_offset + 2 - expression.head_offset
-    # A stack capacity of 1 cannot hold the depth-2 expression.
+    assert stack_expressions[0].max_depth == 2
+    assert (
+        stack_expressions[0].resume_offset
+        == stack_expressions[0].head_offset + stack_expressions[0].code_length
+    )
+    # A stack capacity of 1 cannot hold the depth-2 expressions.
     assert find_rpn_expressions(code, heads, function.local_layout_cache, 1) == ()
+
+
+I32_BINARY_OPERATORS = (
+    "i32.add",
+    "i32.sub",
+    "i32.mul",
+    "i32.and",
+    "i32.or",
+    "i32.xor",
+    "i32.shl",
+    "i32.shr_s",
+    "i32.shr_u",
+    "i32.rotl",
+    "i32.rotr",
+    "i32.eq",
+    "i32.ne",
+    "i32.lt_s",
+    "i32.lt_u",
+    "i32.gt_s",
+    "i32.gt_u",
+    "i32.le_s",
+    "i32.le_u",
+    "i32.ge_s",
+    "i32.ge_u",
+)
+I32_UNARY_OPERATORS = ("i32.eqz", "i32.clz", "i32.ctz", "i32.popcnt")
+I32_CHECKED_OPERATORS = ("i32.div_s", "i32.div_u", "i32.rem_s", "i32.rem_u")
+I32_OPERAND_PAIRS = [
+    (0, 0),
+    (1, 2),
+    (7, 9),
+    (0xFFFF_FFFF, 1),
+    (123456, 0xDEAD),
+    (5, 0xFFFF_FFF0),
+    (0x8000_0000, 0xFFFF_FFFF),
+    (0x8000_0000, 31),
+    (3, 33),
+    (0, 0x8000_0000),
+]
+
+
+def _operator_module(operator: str):
+    if operator in I32_UNARY_OPERATORS:
+        body = f"local.get 0 {operator} local.set 2 local.get 2"
+    else:
+        body = f"local.get 0 local.get 1 {operator} local.set 2 local.get 2"
+    return _loop_module(body)
+
+
+@pytest.mark.parametrize(
+    "operator", I32_BINARY_OPERATORS + I32_UNARY_OPERATORS + I32_CHECKED_OPERATORS
+)
+def test_rpn_04_every_i32_operator_matches_reference(operator: str):
+    """TEST-RPN-04: each i32 operator of the expression ISA agrees with the reference, including
+    the shift counts modulo 32, the signed and unsigned comparisons, and the rotations."""
+    module = _operator_module(operator)
+    code, function = _function_code(module)
+    from tier2_runtime.interpreter.control_flow import extract_basic_blocks
+
+    heads = [block[0] for block in extract_basic_blocks(code, function.control_map, pc_base=0)]
+    assert find_rpn_expressions(
+        code, heads, function.local_layout_cache, function.max_operand_stack_words
+    )
+    native = make_native_interpreter(module)
+    reference = Interpreter(module)
+    arguments = (
+        [[a] for a, _ in I32_OPERAND_PAIRS]
+        if operator in I32_UNARY_OPERATORS
+        else I32_OPERAND_PAIRS
+    )
+    for values in arguments:
+        values = list(values) if len(values) == 2 else [values[0], 1]
+        expected = reference.call(0, values)
+        actual = native.call(0, values)
+        assert actual.is_ok == expected.is_ok
+        if expected.is_ok:
+            assert actual.unwrap() == expected.unwrap()
+        else:
+            assert actual.error.code == expected.error.code
+
+
+@pytest.mark.parametrize("operator", I32_CHECKED_OPERATORS)
+def test_rpn_05_trapping_operators_report_the_reference_trap(operator: str):
+    """TEST-RPN-05: a division by zero and the signed overflow trap with the reference trap code,
+    and the operator stops the following effects."""
+    module = _operator_module(operator)
+    native = make_native_interpreter(module)
+    reference = Interpreter(module)
+    for values in ([7, 0], [0x8000_0000, 0xFFFF_FFFF], [9, 2]):
+        expected = reference.call(0, values)
+        actual = native.call(0, values)
+        assert actual.is_ok == expected.is_ok
+        if expected.is_ok:
+            assert actual.unwrap() == expected.unwrap()
+        else:
+            assert actual.error.code == expected.error.code
+
+
+def test_rpn_06_end_stack_hands_the_temporaries_to_the_vm_stack():
+    """TEST-RPN-06: an expression that ends before a call leaves its value on the VM stack, the
+    call consumes it, and the value below the expression survives."""
+    body = """
+        i32.const 7
+        local.get 0 i32.const 3 i32.add
+        call $twice
+        i32.add
+    """
+    wat = f"""
+    (module
+      (func $twice (param i32) (result i32) local.get 0 i32.const 2 i32.mul)
+      (func (export "f") (param i32 i32) (result i32) (local i32 i32)
+        {body}
+      )
+    )
+    """
+    module = parse_standalone(wat_to_wasm(wat))
+    native = make_native_interpreter(module)
+    reference = Interpreter(module)
+    function = module.functions[1]
+    code = module.source[function.code_offset : function.code_offset + function.code_size]
+    from tier2_runtime.interpreter.control_flow import extract_basic_blocks
+
+    heads = [block[0] for block in extract_basic_blocks(code, function.control_map, pc_base=0)]
+    stack_expressions = [
+        expression
+        for expression in find_rpn_expressions(
+            code, heads, function.local_layout_cache, function.max_operand_stack_words
+        )
+        if not expression.writes_local
+    ]
+    assert stack_expressions, "the expression before the call must end with END_STACK"
+    for a, b in [(1, 2), (100, 200), (0, 0xFFFF_FFFF)]:
+        expected = reference.call(1, [a, b]).unwrap()
+        assert native.call(1, [a, b]).unwrap() == expected

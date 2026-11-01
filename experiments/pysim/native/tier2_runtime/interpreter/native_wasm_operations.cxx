@@ -2495,4 +2495,28 @@ template bool runtime_end<true>(execution_context *context, const std::uint8_t *
                                 std::uint32_t *&sp, std::uint32_t *&local_base,
                                 const std::uint8_t *&rel);
 
+// The RPN element thread calls these operations directly (native_interpreter.cxx), so the 32-bit
+// instances have out-of-line definitions in this translation unit.
+template bool opcode_div_signed<std::uint32_t>(std::uint32_t, std::uint32_t, std::uint32_t &,
+                                               std::uint32_t &);
+template bool opcode_div_unsigned<std::uint32_t>(std::uint32_t, std::uint32_t, std::uint32_t &,
+                                                 std::uint32_t &);
+template bool opcode_rem_signed<std::uint32_t>(std::uint32_t, std::uint32_t, std::uint32_t &,
+                                               std::uint32_t &);
+template bool opcode_rem_unsigned<std::uint32_t>(std::uint32_t, std::uint32_t, std::uint32_t &,
+                                                 std::uint32_t &);
+template std::uint32_t opcode_shift_left<std::uint32_t>(std::uint32_t, std::uint32_t);
+template std::uint32_t opcode_shift_right_signed<std::uint32_t>(std::uint32_t, std::uint32_t);
+template std::uint32_t opcode_shift_right_unsigned<std::uint32_t>(std::uint32_t, std::uint32_t);
+template std::uint32_t opcode_rotate_left<std::uint32_t>(std::uint32_t, std::uint32_t);
+template std::uint32_t opcode_rotate_right<std::uint32_t>(std::uint32_t, std::uint32_t);
+template bool opcode_signed_lt<std::uint32_t>(std::uint32_t, std::uint32_t);
+template bool opcode_signed_gt<std::uint32_t>(std::uint32_t, std::uint32_t);
+template bool opcode_signed_le<std::uint32_t>(std::uint32_t, std::uint32_t);
+template bool opcode_signed_ge<std::uint32_t>(std::uint32_t, std::uint32_t);
+template bool opcode_eqz<std::uint32_t>(std::uint32_t);
+template std::uint32_t opcode_clz<std::uint32_t>(std::uint32_t);
+template std::uint32_t opcode_ctz<std::uint32_t>(std::uint32_t);
+template std::uint32_t opcode_popcount<std::uint32_t>(std::uint32_t);
+
 } // namespace fireball::wasm_runtime

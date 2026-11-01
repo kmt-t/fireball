@@ -17,6 +17,7 @@
 #include <initializer_list>
 #include <limits>
 #include <type_traits>
+#include <utility>
 
 #define FIREBALL_CPS_CALL FIREBALL_NATIVE_CPS_CALL
 
@@ -253,25 +254,111 @@ inline FIREBALL_CPS_CALL void h_rpn_push_imm(execution_context *context,
   rpn_next<WithJit>(context, instruction_ip, sp + 1, cursor);
 }
 
-// The four binary i32 operators of the expression ISA; shift counts are taken modulo 32.
-template <std::uint32_t K> std::uint32_t rpn_apply(std::uint32_t lhs, std::uint32_t rhs) {
+// The i32 operators of the expression ISA. Each K uses the functor of the matching wasm handler
+// (native_interpreter.cxx, handler table), so both paths share one definition of the operation.
+template <std::uint32_t K> inline std::uint32_t rpn_i32_binary(std::uint32_t lhs, std::uint32_t rhs) {
   if constexpr (K == 0) {
-    return lhs + rhs;
+    return std::plus<>{}(lhs, rhs);
   } else if constexpr (K == 1) {
-    return lhs - rhs;
+    return std::minus<>{}(lhs, rhs);
   } else if constexpr (K == 2) {
-    return lhs << (rhs & 31u);
+    return std::multiplies<>{}(lhs, rhs);
+  } else if constexpr (K == 7) {
+    return std::bit_and<>{}(lhs, rhs);
+  } else if constexpr (K == 8) {
+    return std::bit_or<>{}(lhs, rhs);
+  } else if constexpr (K == 9) {
+    return std::bit_xor<>{}(lhs, rhs);
+  } else if constexpr (K == 10) {
+    return opcode_shift_left<std::uint32_t>(lhs, rhs);
+  } else if constexpr (K == 11) {
+    return opcode_shift_right_signed<std::uint32_t>(lhs, rhs);
+  } else if constexpr (K == 12) {
+    return opcode_shift_right_unsigned<std::uint32_t>(lhs, rhs);
+  } else if constexpr (K == 13) {
+    return opcode_rotate_left<std::uint32_t>(lhs, rhs);
+  } else if constexpr (K == 14) {
+    return opcode_rotate_right<std::uint32_t>(lhs, rhs);
+  } else if constexpr (K == 15) {
+    return static_cast<std::uint32_t>(std::equal_to<>{}(lhs, rhs));
+  } else if constexpr (K == 16) {
+    return static_cast<std::uint32_t>(std::not_equal_to<>{}(lhs, rhs));
+  } else if constexpr (K == 17) {
+    return static_cast<std::uint32_t>(opcode_signed_lt<std::uint32_t>(lhs, rhs));
+  } else if constexpr (K == 18) {
+    return static_cast<std::uint32_t>(std::less<>{}(lhs, rhs));
+  } else if constexpr (K == 19) {
+    return static_cast<std::uint32_t>(opcode_signed_gt<std::uint32_t>(lhs, rhs));
+  } else if constexpr (K == 20) {
+    return static_cast<std::uint32_t>(std::greater<>{}(lhs, rhs));
+  } else if constexpr (K == 21) {
+    return static_cast<std::uint32_t>(opcode_signed_le<std::uint32_t>(lhs, rhs));
+  } else if constexpr (K == 22) {
+    return static_cast<std::uint32_t>(std::less_equal<>{}(lhs, rhs));
+  } else if constexpr (K == 23) {
+    return static_cast<std::uint32_t>(opcode_signed_ge<std::uint32_t>(lhs, rhs));
   } else {
-    return lhs >> (rhs & 31u);
+    static_assert(K == 24, "kRpnBinopKindCount");
+    return static_cast<std::uint32_t>(std::greater_equal<>{}(lhs, rhs));
   }
 }
 
+// The trapping i32 operators (div_s, div_u, rem_s, rem_u). Returns false with trap_code on a trap.
+template <std::uint32_t K>
+inline bool rpn_i32_checked(std::uint32_t lhs, std::uint32_t rhs, std::uint32_t &result,
+                            std::uint32_t &trap_code) {
+  if constexpr (K == 3) {
+    return opcode_div_signed<std::uint32_t>(lhs, rhs, result, trap_code);
+  } else if constexpr (K == 4) {
+    return opcode_div_unsigned<std::uint32_t>(lhs, rhs, result, trap_code);
+  } else if constexpr (K == 5) {
+    return opcode_rem_signed<std::uint32_t>(lhs, rhs, result, trap_code);
+  } else {
+    static_assert(K == 6, "checked i32 operator index");
+    return opcode_rem_unsigned<std::uint32_t>(lhs, rhs, result, trap_code);
+  }
+}
+
+template <std::uint32_t K> inline std::uint32_t rpn_i32_unary(std::uint32_t value) {
+  if constexpr (K == 0) {
+    return static_cast<std::uint32_t>(opcode_eqz<std::uint32_t>(value));
+  } else if constexpr (K == 1) {
+    return opcode_clz<std::uint32_t>(value);
+  } else if constexpr (K == 2) {
+    return opcode_ctz<std::uint32_t>(value);
+  } else {
+    static_assert(K == 3, "kRpnUnaryKindCount");
+    return opcode_popcount<std::uint32_t>(value);
+  }
+}
+
+// Element K (kRpnElemBinopBase + K). The trapping operators carry the instruction distance from
+// the expression head in the byte after the element, so the trap reports the instruction.
 template <bool WithJit, std::uint32_t K>
 inline FIREBALL_CPS_CALL void h_rpn_binop(execution_context *context,
                                           const std::uint8_t *instruction_ip, std::uint32_t *sp,
                                           const std::uint8_t *rel) {
-  sp[-2] = rpn_apply<K>(sp[-2], sp[-1]);
-  rpn_next<WithJit>(context, instruction_ip, sp - 1, rel + 1);
+  if constexpr (K >= 3 && K <= 6) {
+    std::uint32_t result = 0;
+    std::uint32_t trap_code = 0;
+    if (!rpn_i32_checked<K>(sp[-2], sp[-1], result, trap_code)) {
+      trap(*context, trap_code, instruction_offset(*context, instruction_ip + rel[1]));
+      return;
+    }
+    sp[-2] = result;
+    rpn_next<WithJit>(context, instruction_ip, sp - 1, rel + 2);
+  } else {
+    sp[-2] = rpn_i32_binary<K>(sp[-2], sp[-1]);
+    rpn_next<WithJit>(context, instruction_ip, sp - 1, rel + 1);
+  }
+}
+
+template <bool WithJit, std::uint32_t K>
+inline FIREBALL_CPS_CALL void h_rpn_unary(execution_context *context,
+                                          const std::uint8_t *instruction_ip, std::uint32_t *sp,
+                                          const std::uint8_t *rel) {
+  sp[-1] = rpn_i32_unary<K>(sp[-1]);
+  rpn_next<WithJit>(context, instruction_ip, sp, rel + 1);
 }
 
 // The terminal element stores the expression value into the local and continues the VM after the
@@ -290,15 +377,46 @@ inline FIREBALL_CPS_CALL void h_rpn_end(execution_context *context,
       context, instruction_ip + code_length, sp - 1, after_set);
 }
 
+// The terminal element without a local write. The temporaries are the VM operand stack top, and
+// the VM resumes at the instruction that ends the expression.
+template <bool WithJit>
+inline FIREBALL_CPS_CALL void h_rpn_end_stack(execution_context *context,
+                                              const std::uint8_t *instruction_ip,
+                                              std::uint32_t *sp, const std::uint8_t *rel) {
+  const std::uint8_t *cursor = rel + 1;
+  const auto continuation = static_cast<std::ptrdiff_t>(read_s32(cursor));
+  const auto code_length = read_u8(cursor);
+  const std::uint8_t *after_stack = rel + continuation;
+  [[clang::musttail]] return dispatch_next<void, WithJit>(
+      context, instruction_ip + code_length, sp, after_stack);
+}
+
+template <bool WithJit, std::size_t... Ks>
+constexpr void fill_rpn_binop_handlers(std::array<native_opcode_handler, 256> &handlers,
+                                       std::index_sequence<Ks...>) {
+  ((handlers[kRpnElemBinopBase + Ks] =
+        &h_rpn_binop<WithJit, static_cast<std::uint32_t>(Ks)>),
+   ...);
+}
+
+template <bool WithJit, std::size_t... Ks>
+constexpr void fill_rpn_unary_handlers(std::array<native_opcode_handler, 256> &handlers,
+                                       std::index_sequence<Ks...>) {
+  ((handlers[kRpnElemUnaryBase + Ks] =
+        &h_rpn_unary<WithJit, static_cast<std::uint32_t>(Ks)>),
+   ...);
+}
+
 template <bool WithJit> constexpr auto make_rpn_element_handlers() {
-  std::array<native_opcode_handler, 8> handlers{};
+  std::array<native_opcode_handler, 256> handlers{};
   handlers[kRpnElemPushLocal] = &h_rpn_push_local<WithJit>;
   handlers[kRpnElemPushImm] = &h_rpn_push_imm<WithJit>;
-  handlers[kRpnElemBinopBase + 0] = &h_rpn_binop<WithJit, 0>;
-  handlers[kRpnElemBinopBase + 1] = &h_rpn_binop<WithJit, 1>;
-  handlers[kRpnElemBinopBase + 2] = &h_rpn_binop<WithJit, 2>;
-  handlers[kRpnElemBinopBase + 3] = &h_rpn_binop<WithJit, 3>;
   handlers[kRpnElemEnd] = &h_rpn_end<WithJit>;
+  handlers[kRpnElemEndStack] = &h_rpn_end_stack<WithJit>;
+  fill_rpn_binop_handlers<WithJit>(
+      handlers, std::make_index_sequence<kRpnBinopKindCount>{});
+  fill_rpn_unary_handlers<WithJit>(
+      handlers, std::make_index_sequence<kRpnUnaryKindCount>{});
   return handlers;
 }
 

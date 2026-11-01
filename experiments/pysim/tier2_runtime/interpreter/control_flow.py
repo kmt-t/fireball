@@ -202,8 +202,10 @@ from tier2_runtime.wasm.opcodes import (
     RETURN,
     RPN_ELEM_BINOP_BASE,
     RPN_ELEM_END,
+    RPN_ELEM_END_STACK,
     RPN_ELEM_PUSH_IMM,
     RPN_ELEM_PUSH_LOCAL,
+    RPN_ELEM_UNARY_BASE,
     RPN_EXPR_HEAD,
     RPN_MAX_DEPTH,
     SELECT,
@@ -927,24 +929,99 @@ def _count_interpreter_annotation_pool_bytes(code: memoryview) -> int:
     return annotation_bytes
 
 
-# RPN expression annotations (REQ-097 D). A run is a local.get head, then i32.const, local.get and
-# binary i32 operators (k = add, sub, shl, shr_u), that ends at an i32 local.set with one value left.
-_RPN_BINOP_KIND = {0x6A: 0, 0x6B: 1, 0x74: 2, 0x76: 3}
-_RPN_END_BYTES = (
-    8  # END element: [RPN_ELEM_END][target u16][continuation i32 delta][code_length u8]
-)
+# RPN expression annotations (REQ-097 D). An expression starts at a one-word local.get and covers
+# one-word local.get, i32.const, the i32 binary operators (including the trapping div and rem), the
+# i32 unary operators (eqz, clz, ctz, popcnt). It ends in one of two ways, never crossing a block head.
+#   END (local.set): a one-word local.set that leaves one value writes the local.
+#   END_STACK: the first instruction it does not cover ends it; the temporaries become the VM stack.
+# An expression covers at least two instructions.
+_RPN_BINOP_KIND = {
+    0x6A: 0,
+    0x6B: 1,
+    0x6C: 2,
+    0x6D: 3,
+    0x6E: 4,
+    0x6F: 5,
+    0x70: 6,
+    0x71: 7,
+    0x72: 8,
+    0x73: 9,
+    0x74: 10,
+    0x75: 11,
+    0x76: 12,
+    0x77: 13,
+    0x78: 14,
+    0x46: 15,
+    0x47: 16,
+    0x48: 17,
+    0x49: 18,
+    0x4A: 19,
+    0x4B: 20,
+    0x4C: 21,
+    0x4D: 22,
+    0x4E: 23,
+    0x4F: 24,
+}
+# div_s, div_u, rem_s, rem_u: the element carries the instruction distance for the trap position.
+_RPN_CHECKED_BINOP_KINDS = frozenset({3, 4, 5, 6})
+_RPN_UNARY_KIND = {0x45: 0, 0x67: 1, 0x68: 2, 0x69: 3}
+_RPN_MIN_INSTRUCTIONS = 2
+_RPN_END_LOCAL_BYTES = 8  # [END][target u16][continuation i32][code_length u8]
+_RPN_END_STACK_BYTES = 6  # [END_STACK][continuation i32][code_length u8]
 
 
 @dataclass(frozen=True, slots=True)
 class RpnExpression:
-    """One loader-decided expression. Offsets are function-relative code offsets."""
+    """One loader-decided expression. Offsets are function-relative code offsets.
+
+    writes_local selects the terminal: END writes target and resumes after set_offset, END_STACK
+    resumes at resume_offset with the temporaries as the VM stack top (set_offset is then -1).
+    """
 
     head_offset: int
-    set_offset: int
     code_length: int
-    target: int
     max_depth: int
-    elements: bytes  # PUSH_LOCAL / PUSH_IMM / BINOP elements; END is appended by the pool builder
+    elements: bytes  # PUSH / OPERATOR elements; the terminal is appended by the pool builder
+    writes_local: bool
+    set_offset: int
+    target: int
+    resume_offset: int
+
+    @property
+    def end_bytes(self) -> int:
+        return _RPN_END_LOCAL_BYTES if self.writes_local else _RPN_END_STACK_BYTES
+
+
+def _rpn_covered_element(
+    code: memoryview,
+    instruction: Instr,
+    local_layout: LocalLayout,
+    depth: int,
+    head_offset: int,
+) -> tuple[bytes, int] | None:
+    """Element bytes and the depth change of one covered instruction, or None when it is not covered."""
+    opcode = instruction.opcode
+    if opcode == LOCAL_GET:
+        if local_layout.size_words(instruction.operand) != 1:
+            return None
+        frame = local_layout.offset(instruction.operand)
+        return bytes([RPN_ELEM_PUSH_LOCAL]) + frame.to_bytes(2, "little"), 1
+    if opcode == I32_CONST:
+        value, _ = decode_signed_full(code, instruction.offset + 1, bits=32)
+        return bytes([RPN_ELEM_PUSH_IMM]) + (value & 0xFFFF_FFFF).to_bytes(4, "little"), 1
+    if opcode in _RPN_BINOP_KIND:
+        if depth < 2:
+            return None
+        kind = _RPN_BINOP_KIND[opcode]
+        element = bytes([RPN_ELEM_BINOP_BASE + kind])
+        if kind in _RPN_CHECKED_BINOP_KINDS:
+            element += bytes([instruction.offset - head_offset])
+        return element, -1
+    if opcode in _RPN_UNARY_KIND:
+        if depth < 1:
+            return None
+        return bytes([RPN_ELEM_UNARY_BASE + _RPN_UNARY_KIND[opcode]]), 0
+    return None
 
 
 def _scan_rpn_expression(
@@ -955,53 +1032,61 @@ def _scan_rpn_expression(
     local_layout: LocalLayout,
     depth_limit: int,
 ) -> tuple[RpnExpression, int] | None:
+    head = instructions[start]
     depth = 0
     max_depth = 0
+    covered = 0
     elements = bytearray()
-    for position in range(start, len(instructions)):
+    position = start
+    while position < len(instructions):
         instruction = instructions[position]
         if position > start and instruction.offset in heads:
-            return None
-        opcode = instruction.opcode
-        if opcode == LOCAL_GET:
-            if local_layout.size_words(instruction.operand) != 1:
-                return None
-            frame = local_layout.offset(instruction.operand)
-            elements.append(RPN_ELEM_PUSH_LOCAL)
-            elements += frame.to_bytes(2, "little")
-            depth += 1
-        elif opcode == I32_CONST:
-            value, _ = decode_signed_full(code, instruction.offset + 1, bits=32)
-            elements.append(RPN_ELEM_PUSH_IMM)
-            elements += (value & 0xFFFF_FFFF).to_bytes(4, "little")
-            depth += 1
-        elif opcode in _RPN_BINOP_KIND:
-            if depth < 2:
-                return None
-            elements.append(RPN_ELEM_BINOP_BASE + _RPN_BINOP_KIND[opcode])
-            depth -= 1
-        elif opcode == LOCAL_SET:
+            break
+        if instruction.opcode == LOCAL_SET:
             if depth != 1 or local_layout.size_words(instruction.operand) != 1:
-                return None
-            head = instructions[start]
+                break
             code_length = instruction.end_offset - head.offset
-            if code_length > 0xFF:
+            if code_length > 0xFF or covered + 1 < _RPN_MIN_INSTRUCTIONS:
                 return None
             expression = RpnExpression(
                 head_offset=head.offset,
-                set_offset=instruction.offset,
                 code_length=code_length,
-                target=local_layout.offset(instruction.operand),
                 max_depth=max_depth,
                 elements=bytes(elements),
+                writes_local=True,
+                set_offset=instruction.offset,
+                target=local_layout.offset(instruction.operand),
+                resume_offset=instruction.offset,
             )
             return expression, position
-        else:
-            return None
+        covered_element = _rpn_covered_element(code, instruction, local_layout, depth, head.offset)
+        if covered_element is None:
+            break
+        element, change = covered_element
+        elements += element
+        depth += change
+        covered += 1
         max_depth = max(max_depth, depth)
         if depth > depth_limit:
             return None
-    return None
+        position += 1
+    if covered < _RPN_MIN_INSTRUCTIONS or position >= len(instructions):
+        return None
+    resume = instructions[position]
+    code_length = resume.offset - head.offset
+    if code_length > 0xFF:
+        return None
+    expression = RpnExpression(
+        head_offset=head.offset,
+        code_length=code_length,
+        max_depth=max_depth,
+        elements=bytes(elements),
+        writes_local=False,
+        set_offset=-1,
+        target=0,
+        resume_offset=resume.offset,
+    )
+    return expression, position - 1
 
 
 def find_rpn_expressions(
@@ -1050,7 +1135,7 @@ def fit_rpn_expressions(
     kept: list[RpnExpression] = []
     cursor = block_bytes
     for expression in expressions:
-        size = len(expression.elements) + _RPN_END_BYTES
+        size = len(expression.elements) + expression.end_bytes
         if cursor + size > 0xFFFF:
             break
         kept.append(expression)
@@ -1087,6 +1172,46 @@ def rpn_native_code(
     return copy
 
 
+def _rpn_local_set_offsets(rpn_expressions: tuple[RpnExpression, ...]) -> set[int]:
+    """The local.set offsets that terminate an END expression."""
+    return {expression.set_offset for expression in rpn_expressions if expression.writes_local}
+
+
+def _append_little_endian(annotations: InterpreterAnnotationPool, value: int, width: int) -> None:
+    for shift in range(0, 8 * width, 8):
+        annotations.append_byte((value >> shift) & 0xFF)
+
+
+def _append_rpn_program(
+    annotations: InterpreterAnnotationPool,
+    expression: RpnExpression,
+    set_ends: dict[int, int],
+    instruction_starts: dict[int, int],
+) -> None:
+    """Append one expression program: its elements, then its terminal and code length.
+
+    END resumes after the terminal local.set annotation. END_STACK resumes at the annotation of the
+    instruction that ends the expression.
+    """
+    for element_byte in expression.elements:
+        annotations.append_byte(element_byte)
+    end_position = len(annotations)
+    if expression.writes_local:
+        annotations.append_byte(RPN_ELEM_END)
+        _append_little_endian(annotations, expression.target, 2)
+        _append_little_endian(
+            annotations, (set_ends[expression.set_offset] - end_position) & 0xFFFF_FFFF, 4
+        )
+    else:
+        annotations.append_byte(RPN_ELEM_END_STACK)
+        _append_little_endian(
+            annotations,
+            (instruction_starts[expression.resume_offset] - end_position) & 0xFFFF_FFFF,
+            4,
+        )
+    annotations.append_byte(expression.code_length)
+
+
 def build_interpreter_annotation_pool(
     code: memoryview,
     block_heads: SequenceView[int],
@@ -1115,11 +1240,11 @@ def build_interpreter_annotation_pool(
         total_bytes += _count_interpreter_annotation_pool_bytes(code[start:end])
 
     program_positions: dict[int, int] = {}
-    set_offsets = {expression.set_offset for expression in rpn_expressions}
+    set_offsets = _rpn_local_set_offsets(rpn_expressions)
     cursor = total_bytes
     for expression in rpn_expressions:
         program_positions[expression.head_offset] = cursor
-        cursor += len(expression.elements) + _RPN_END_BYTES
+        cursor += len(expression.elements) + expression.end_bytes
     assert not rpn_expressions or cursor <= 0xFFFF, (
         "fit_rpn_expressions must bound the program region"
     )
@@ -1135,9 +1260,7 @@ def build_interpreter_annotation_pool(
         # native head needs no pool base. Other local.get store 0.
         if function_offset not in program_positions:
             return 0
-        annotation_start = (
-            len(annotations) - 4
-        )  # width, offset (u16), slot width precede the ext
+        annotation_start = len(annotations) - 4  # width, offset (u16), slot width precede the ext
         return program_positions[function_offset] - annotation_start
 
     def append_u32(value: int) -> None:
@@ -1363,12 +1486,15 @@ def build_interpreter_annotation_pool(
         if _MEMARG_OPCODES.at(memarg_opcode):
             handlers[memarg_opcode] = emit_memarg
 
+    # Annotation offset of each instruction, keyed by function offset: an END_STACK resumes there.
+    instruction_starts: dict[int, int] = {}
     for block_number, start in enumerate(block_heads):
         end = block_heads[block_number + 1] if block_number + 1 < len(block_heads) else len(code)
         appended = block_offsets.push_back(annotation_offset_t(len(annotations)))
         assert appended
         block_code = code[start:end]
         for instruction in iter_scan_instrs(block_code):
+            instruction_starts[start + instruction.offset] = len(annotations)
             if _has_instruction_width_record(instruction.opcode):
                 append_instruction_width(
                     instruction_width_t(instruction.end_offset - instruction.offset)
@@ -1378,13 +1504,7 @@ def build_interpreter_annotation_pool(
                 handler(instruction, block_code, start)
     assert len(annotations) == block_bytes
     for expression in rpn_expressions:
-        for element_byte in expression.elements:
-            annotations.append_byte(element_byte)
-        end_position = len(annotations)
-        annotations.append_byte(RPN_ELEM_END)
-        append_u16(expression.target)
-        append_u32((set_ends[expression.set_offset] - end_position) & 0xFFFF_FFFF)
-        annotations.append_byte(expression.code_length)
+        _append_rpn_program(annotations, expression, set_ends, instruction_starts)
     return annotations, block_offsets
 
 

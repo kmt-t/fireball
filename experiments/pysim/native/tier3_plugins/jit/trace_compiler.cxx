@@ -1588,23 +1588,6 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
 
   std::uint32_t annotation_bytes = 0;
   switch (opcode) {
-  case 0x04: {
-    [[maybe_unused]] std::uint64_t block_type = 0;
-    if (!read_signed_leb(code, cursor, code_bytes, block_type, 33u)) {
-      return -1;
-    }
-    annotation_bytes = opcode == 0x04 ? 4u : 2u;
-    break;
-  }
-  case 0x0C:
-  case 0x0D: {
-    std::uint32_t operand = 0;
-    if (!read_unsigned_leb(code, cursor, code_bytes, operand)) {
-      return -1;
-    }
-    annotation_bytes = opcode == 0x0D ? 3u : 2u;
-    break;
-  }
   case 0x0E: {
     std::uint32_t case_count = 0;
     if (!read_unsigned_leb(code, cursor, code_bytes, case_count)) {

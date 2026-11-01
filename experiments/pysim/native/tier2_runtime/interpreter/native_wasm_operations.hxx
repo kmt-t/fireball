@@ -48,6 +48,13 @@ constexpr std::uint32_t kRpnElemEndStack = 0x07;
 constexpr std::uint32_t kRpnElemBinopBase = 0x10;
 constexpr std::uint32_t kRpnElemUnaryBase = 0x40;
 constexpr std::uint32_t kRpnBinopKindCount = 25;
+constexpr std::uint32_t kRpnElemSpecBase = 0x80;
+// Operand kinds and destinations of a specialised element (the order follows RPN_SPECIALISED_FORMS).
+constexpr std::uint32_t kRpnOperandTemp = 0;
+constexpr std::uint32_t kRpnOperandLocal = 1;
+constexpr std::uint32_t kRpnOperandImm = 2;
+constexpr std::uint32_t kRpnDestTemp = 0;
+constexpr std::uint32_t kRpnDestLocal = 1;
 constexpr std::uint32_t kRpnUnaryKindCount = 4;
 constexpr std::uint32_t kRpnMaxDepth = 8;
 constexpr std::uint32_t kFcMemoryCopySubopcode = 0x0A;

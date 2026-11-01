@@ -205,9 +205,11 @@ from tier2_runtime.wasm.opcodes import (
     RPN_ELEM_END_STACK,
     RPN_ELEM_PUSH_IMM,
     RPN_ELEM_PUSH_LOCAL,
+    RPN_ELEM_SPEC_BASE,
     RPN_ELEM_UNARY_BASE,
     RPN_EXPR_HEAD,
     RPN_MAX_DEPTH,
+    RPN_SPECIALISED_FORMS,
     SELECT,
     UNREACHABLE,
 )
@@ -968,60 +970,193 @@ _RPN_UNARY_KIND = {0x45: 0, 0x67: 1, 0x68: 2, 0x69: 3}
 _RPN_MIN_INSTRUCTIONS = 2
 _RPN_END_LOCAL_BYTES = 8  # [END][target u16][continuation i32][code_length u8]
 _RPN_END_STACK_BYTES = 6  # [END_STACK][continuation i32][code_length u8]
+_RPN_TAIL_BYTES = 5  # [continuation i32][code_length u8], after a specialised local write
+
+
+RPN_TERMINAL_END = 0  # END element: writes the local (target u16), then the program tail
+RPN_TERMINAL_TAIL = 1  # the last specialised element writes the local; the program tail follows
+RPN_TERMINAL_STACK = 2  # END_STACK: the temporaries become the VM stack top
+
+_KIND_TEMP = 0  # an operand that is a temporary on the VM stack above the pointer
+_KIND_LOCAL = 1  # a local that has not been read yet (value: frame word offset)
+_KIND_IMM = 2  # an immediate that has not been pushed yet (value: i32 bits)
+_KIND_LETTER = {_KIND_TEMP: "T", _KIND_LOCAL: "L", _KIND_IMM: "I"}
 
 
 @dataclass(frozen=True, slots=True)
 class RpnExpression:
     """One loader-decided expression. Offsets are function-relative code offsets.
 
-    writes_local selects the terminal: END writes target and resumes after set_offset, END_STACK
-    resumes at resume_offset with the temporaries as the VM stack top (set_offset is then -1).
+    terminal is RPN_TERMINAL_END (the END element writes target and resumes after set_offset),
+    RPN_TERMINAL_TAIL (the last specialised element writes target; the program tail follows), or
+    RPN_TERMINAL_STACK (END_STACK resumes at resume_offset; set_offset is then -1).
     """
 
     head_offset: int
     code_length: int
     max_depth: int
-    elements: bytes  # PUSH / OPERATOR elements; the terminal is appended by the pool builder
-    writes_local: bool
+    elements: bytes  # operator and push elements; the terminal is appended by the pool builder
+    terminal: int
     set_offset: int
     target: int
     resume_offset: int
 
     @property
+    def writes_local(self) -> bool:
+        return self.terminal != RPN_TERMINAL_STACK
+
+    @property
     def end_bytes(self) -> int:
-        return _RPN_END_LOCAL_BYTES if self.writes_local else _RPN_END_STACK_BYTES
+        if self.terminal == RPN_TERMINAL_TAIL:
+            return _RPN_TAIL_BYTES
+        return _RPN_END_LOCAL_BYTES if self.terminal == RPN_TERMINAL_END else _RPN_END_STACK_BYTES
 
 
-def _rpn_covered_element(
-    code: memoryview,
-    instruction: Instr,
-    local_layout: LocalLayout,
-    depth: int,
-    head_offset: int,
-) -> tuple[bytes, int] | None:
-    """Element bytes and the depth change of one covered instruction, or None when it is not covered."""
-    opcode = instruction.opcode
-    if opcode == LOCAL_GET:
-        if local_layout.size_words(instruction.operand) != 1:
-            return None
-        frame = local_layout.offset(instruction.operand)
-        return bytes([RPN_ELEM_PUSH_LOCAL]) + frame.to_bytes(2, "little"), 1
-    if opcode == I32_CONST:
-        value, _ = decode_signed_full(code, instruction.offset + 1, bits=32)
-        return bytes([RPN_ELEM_PUSH_IMM]) + (value & 0xFFFF_FFFF).to_bytes(4, "little"), 1
-    if opcode in _RPN_BINOP_KIND:
-        if depth < 2:
-            return None
-        kind = _RPN_BINOP_KIND[opcode]
-        element = bytes([RPN_ELEM_BINOP_BASE + kind])
-        if kind in _RPN_CHECKED_BINOP_KINDS:
-            element += bytes([instruction.offset - head_offset])
-        return element, -1
-    if opcode in _RPN_UNARY_KIND:
-        if depth < 1:
-            return None
-        return bytes([RPN_ELEM_UNARY_BASE + _RPN_UNARY_KIND[opcode]]), 0
-    return None
+_RPN_SPEC_CODES = {
+    form: RPN_ELEM_SPEC_BASE + index for index, form in enumerate(RPN_SPECIALISED_FORMS)
+}
+_RPN_SPEC_DEST_L_CODES = {
+    (kind, left, right): code
+    for (kind, left, right, dest), code in _RPN_SPEC_CODES.items()
+    if dest == "L"
+}
+
+
+def _rpn_operand_bytes(entry: tuple[int, int]) -> bytes:
+    kind, value = entry
+    if kind == _KIND_LOCAL:
+        return value.to_bytes(2, "little")
+    if kind == _KIND_IMM:
+        return (value & 0xFFFF_FFFF).to_bytes(4, "little")
+    return b""
+
+
+class _RpnScan:
+    """The state of one expression scan.
+
+    model holds the operands in order, each a temporary, a local or an immediate that is not read
+    yet. A specialised element reads its local and immediate operands directly, and its temporary
+    operands from the top of the VM stack. Any other operator pushes its pending operands first.
+    last_op records the last operator element, so that a local.set can rewrite it to write the
+    local directly. checkpoint is the last point where no operand is pending.
+    """
+
+    def __init__(
+        self, code: memoryview, local_layout: LocalLayout, head_offset: int, depth_limit: int
+    ) -> None:
+        self.code = code
+        self.local_layout = local_layout
+        self.head_offset = head_offset
+        self.depth_limit = depth_limit
+        self.model: list[tuple[int, int]] = []
+        self.elements = bytearray()
+        self.covered = 0
+        self.max_depth = 0
+        self.last_op: tuple[int, int, int, tuple[int, int], tuple[int, int]] | None = None
+        self.checkpoint: tuple[int, int, int, int] | None = None
+        self.depth_exceeded = False
+
+    def materialise(self, index: int) -> None:
+        kind, value = self.model[index]
+        if kind == _KIND_TEMP:
+            return
+        self.elements.append(RPN_ELEM_PUSH_LOCAL if kind == _KIND_LOCAL else RPN_ELEM_PUSH_IMM)
+        self.elements.extend(_rpn_operand_bytes((kind, value)))
+        self.model[index] = (_KIND_TEMP, 0)
+
+    def step(self, instruction: Instr) -> bool:
+        """Scan one covered instruction. False stops the expression before this instruction."""
+        opcode = instruction.opcode
+        if opcode == LOCAL_GET:
+            if self.local_layout.size_words(instruction.operand) != 1:
+                return False
+            self.model.append((_KIND_LOCAL, self.local_layout.offset(instruction.operand)))
+        elif opcode == I32_CONST:
+            value, _ = decode_signed_full(self.code, instruction.offset + 1, bits=32)
+            self.model.append((_KIND_IMM, value))
+        elif opcode in _RPN_BINOP_KIND:
+            if not self._binop(_RPN_BINOP_KIND[opcode], instruction.offset):
+                return False
+        elif opcode in _RPN_UNARY_KIND:
+            if not self.model:
+                return False
+            self._unary(_RPN_UNARY_KIND[opcode])
+        else:
+            return False
+        self.covered += 1
+        self.max_depth = max(self.max_depth, len(self.model))
+        if len(self.model) > self.depth_limit:
+            self.depth_exceeded = True
+            return False
+        return True
+
+    def _binop(self, kind: int, offset: int) -> bool:
+        if len(self.model) < 2:
+            return False
+        # Pending operands below this operator are pushed first, so that no pending operand lies
+        # below a temporary.
+        for index in range(len(self.model) - 2):
+            self.materialise(index)
+        lhs, rhs = self.model[-2], self.model[-1]
+        op_start = len(self.elements)
+        spec_code = _RPN_SPEC_CODES.get((kind, _KIND_LETTER[lhs[0]], _KIND_LETTER[rhs[0]], "T"))
+        if spec_code is not None and kind not in _RPN_CHECKED_BINOP_KINDS:
+            self.elements.append(spec_code)
+            self.elements.extend(_rpn_operand_bytes(lhs) + _rpn_operand_bytes(rhs))
+        else:
+            if lhs[0] != _KIND_TEMP and rhs[0] == _KIND_TEMP:
+                return False  # a pending local below a temporary cannot be pushed in order
+            self.materialise(len(self.model) - 2)
+            self.materialise(len(self.model) - 1)
+            self.elements.append(RPN_ELEM_BINOP_BASE + kind)
+            if kind in _RPN_CHECKED_BINOP_KINDS:
+                self.elements.append(offset - self.head_offset)
+        self.last_op = (op_start, len(self.elements), kind, lhs, rhs)
+        del self.model[-2:]
+        self.model.append((_KIND_TEMP, 0))
+        return True
+
+    def _unary(self, kind: int) -> None:
+        for index in range(len(self.model)):
+            self.materialise(index)
+        self.elements.append(RPN_ELEM_UNARY_BASE + kind)
+        self.model[-1] = (_KIND_TEMP, 0)
+        self.last_op = None
+
+    def checkpoint_here(self, position: int) -> None:
+        if all(kind == _KIND_TEMP for kind, _ in self.model):
+            self.checkpoint = (position, len(self.elements), self.covered, self.max_depth)
+
+    def local_write_ends_here(self, instruction: Instr) -> bool:
+        return (
+            len(self.model) == 1
+            and self.model[0][0] == _KIND_TEMP
+            and self.covered >= 1
+            and self.local_layout.size_words(instruction.operand) == 1
+        )
+
+    def rewrite_last_op_to_local(self, target: int) -> bool:
+        """Rewrite the last operator as one that writes the local, when that form exists."""
+        if self.last_op is None or self.last_op[1] != len(self.elements):
+            return False
+        op_start, _op_end, kind, lhs, rhs = self.last_op
+        dest_code = _RPN_SPEC_DEST_L_CODES.get((kind, _KIND_LETTER[lhs[0]], _KIND_LETTER[rhs[0]]))
+        if dest_code is None:
+            return False
+        del self.elements[op_start:]
+        self.elements.append(dest_code)
+        self.elements.extend(_rpn_operand_bytes(lhs) + _rpn_operand_bytes(rhs))
+        self.elements.extend(target.to_bytes(2, "little"))
+        return True
+
+    def finish(self, position: int) -> tuple[int, int, int, int] | None:
+        """The expression that ends before the instruction at position, or None."""
+        if not self.depth_exceeded and self.covered > 0:
+            # Pending operands are pushed, so the temporaries become the VM stack top (END_STACK).
+            for index in range(len(self.model)):
+                self.materialise(index)
+            self.checkpoint = (position, len(self.elements), self.covered, self.max_depth)
+        return self.checkpoint
 
 
 def _scan_rpn_expression(
@@ -1032,61 +1167,62 @@ def _scan_rpn_expression(
     local_layout: LocalLayout,
     depth_limit: int,
 ) -> tuple[RpnExpression, int] | None:
+    """Scan one expression starting at the local.get at instructions[start].
+
+    The expression ends at a one-word local.set of its only temporary (END or TAIL), or before the
+    first instruction it does not cover (END_STACK, at the last checkpoint).
+    """
     head = instructions[start]
-    depth = 0
-    max_depth = 0
-    covered = 0
-    elements = bytearray()
+    scan = _RpnScan(code, local_layout, head.offset, depth_limit)
     position = start
     while position < len(instructions):
         instruction = instructions[position]
         if position > start and instruction.offset in heads:
             break
         if instruction.opcode == LOCAL_SET:
-            if depth != 1 or local_layout.size_words(instruction.operand) != 1:
+            if not scan.local_write_ends_here(instruction):
                 break
             code_length = instruction.end_offset - head.offset
-            if code_length > 0xFF or covered + 1 < _RPN_MIN_INSTRUCTIONS:
+            if code_length > 0xFF or scan.covered + 1 < _RPN_MIN_INSTRUCTIONS:
                 return None
+            target = local_layout.offset(instruction.operand)
+            tail = scan.rewrite_last_op_to_local(target)
             expression = RpnExpression(
                 head_offset=head.offset,
                 code_length=code_length,
-                max_depth=max_depth,
-                elements=bytes(elements),
-                writes_local=True,
+                max_depth=scan.max_depth,
+                elements=bytes(scan.elements),
+                terminal=RPN_TERMINAL_TAIL if tail else RPN_TERMINAL_END,
                 set_offset=instruction.offset,
-                target=local_layout.offset(instruction.operand),
+                target=target,
                 resume_offset=instruction.offset,
             )
             return expression, position
-        covered_element = _rpn_covered_element(code, instruction, local_layout, depth, head.offset)
-        if covered_element is None:
+        if not scan.step(instruction):
             break
-        element, change = covered_element
-        elements += element
-        depth += change
-        covered += 1
-        max_depth = max(max_depth, depth)
-        if depth > depth_limit:
-            return None
         position += 1
-    if covered < _RPN_MIN_INSTRUCTIONS or position >= len(instructions):
+        scan.checkpoint_here(position)
+    checkpoint = scan.finish(position)
+    if checkpoint is None:
         return None
-    resume = instructions[position]
+    next_position, length, covered_count, depth = checkpoint
+    if covered_count < _RPN_MIN_INSTRUCTIONS or next_position >= len(instructions):
+        return None
+    resume = instructions[next_position]
     code_length = resume.offset - head.offset
     if code_length > 0xFF:
         return None
     expression = RpnExpression(
         head_offset=head.offset,
         code_length=code_length,
-        max_depth=max_depth,
-        elements=bytes(elements),
-        writes_local=False,
+        max_depth=depth,
+        elements=bytes(scan.elements[:length]),
+        terminal=RPN_TERMINAL_STACK,
         set_offset=-1,
         target=0,
         resume_offset=resume.offset,
     )
-    return expression, position - 1
+    return expression, next_position - 1
 
 
 def find_rpn_expressions(
@@ -1196,19 +1332,16 @@ def _append_rpn_program(
     for element_byte in expression.elements:
         annotations.append_byte(element_byte)
     end_position = len(annotations)
-    if expression.writes_local:
+    if expression.terminal == RPN_TERMINAL_END:
         annotations.append_byte(RPN_ELEM_END)
         _append_little_endian(annotations, expression.target, 2)
-        _append_little_endian(
-            annotations, (set_ends[expression.set_offset] - end_position) & 0xFFFF_FFFF, 4
-        )
-    else:
+    elif expression.terminal == RPN_TERMINAL_STACK:
         annotations.append_byte(RPN_ELEM_END_STACK)
-        _append_little_endian(
-            annotations,
-            (instruction_starts[expression.resume_offset] - end_position) & 0xFFFF_FFFF,
-            4,
-        )
+    if expression.writes_local:
+        resume_position = set_ends[expression.set_offset]
+    else:
+        resume_position = instruction_starts[expression.resume_offset]
+    _append_little_endian(annotations, (resume_position - end_position) & 0xFFFF_FFFF, 4)
     annotations.append_byte(expression.code_length)
 
 

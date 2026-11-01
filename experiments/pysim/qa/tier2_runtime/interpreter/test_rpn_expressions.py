@@ -232,3 +232,77 @@ def test_rpn_06_end_stack_hands_the_temporaries_to_the_vm_stack():
     for a, b in [(1, 2), (100, 200), (0, 0xFFFF_FFFF)]:
         expected = reference.call(1, [a, b]).unwrap()
         assert native.call(1, [a, b]).unwrap() == expected
+
+
+SPECIALISED_CASES = (
+    # (form index in RPN_SPECIALISED_FORMS, body)
+    (0, "local.get 0 local.get 1 i32.mul i32.const 7 i32.add local.set 2 local.get 2"),
+    (
+        1,
+        "local.get 0 local.get 1 i32.mul i32.const 2 i32.shr_s i32.const 3 i32.add local.set 2 local.get 2",
+    ),
+    (2, "local.get 0 i32.const 3 i32.shr_u local.set 2 local.get 2"),
+    (3, "local.get 0 local.get 1 i32.sub local.set 2 local.get 2"),
+    (4, "local.get 0 local.get 1 i32.add i32.const 5 i32.mul local.set 2 local.get 2"),
+    (5, "local.get 0 local.get 1 i32.mul local.get 0 i32.sub local.set 2 local.get 2"),
+    (6, "local.get 0 i32.const 3 i32.gt_s if (result i32) i32.const 9 else i32.const 0 end"),
+    (7, "local.get 0 i32.const 3 i32.lt_s if (result i32) i32.const 9 else i32.const 0 end"),
+    (8, "local.get 0 local.get 1 i32.gt_u if (result i32) i32.const 9 else i32.const 0 end"),
+)
+
+
+def _element_codes(elements: bytes) -> list[int]:
+    """The element codes of one program, walked with each element's own length."""
+    from tier2_runtime.wasm.opcodes import RPN_ELEM_SPEC_BASE, RPN_SPECIALISED_FORMS
+
+    codes: list[int] = []
+    cursor = 0
+    while cursor < len(elements):
+        code = elements[cursor]
+        codes.append(code)
+        if code == 0x00:
+            cursor += 3
+        elif code == 0x01:
+            cursor += 5
+        elif 0x10 <= code < 0x10 + 25:
+            cursor += 2 if code - 0x10 in (3, 4, 5, 6) else 1
+        elif 0x40 <= code < 0x44:
+            cursor += 1
+        elif RPN_ELEM_SPEC_BASE <= code < RPN_ELEM_SPEC_BASE + len(RPN_SPECIALISED_FORMS):
+            _kind, left, right, dest = RPN_SPECIALISED_FORMS[code - RPN_ELEM_SPEC_BASE]
+            size = 1 + (2 if left == "L" else 4 if left == "I" else 0)
+            size += 2 if right == "L" else 4 if right == "I" else 0
+            cursor += size + (2 if dest == "L" else 0)
+        else:
+            raise AssertionError(f"unexpected element code {code:#x}")
+    return codes
+
+
+@pytest.mark.parametrize("form_index, body", SPECIALISED_CASES)
+def test_rpn_07_specialised_forms_match_reference(form_index: int, body: str):
+    """TEST-RPN-07: each specialised form is emitted for its operand kinds and destination, and the
+    native result agrees with the reference."""
+    from tier2_runtime.interpreter.control_flow import extract_basic_blocks
+    from tier2_runtime.wasm.opcodes import RPN_ELEM_SPEC_BASE
+
+    module = _loop_module(body)
+    code, function = _function_code(module)
+    heads = [block[0] for block in extract_basic_blocks(code, function.control_map, pc_base=0)]
+    expressions = find_rpn_expressions(
+        code, heads, function.local_layout_cache, function.max_operand_stack_words
+    )
+    emitted = [code for expression in expressions for code in _element_codes(expression.elements)]
+    assert RPN_ELEM_SPEC_BASE + form_index in emitted
+    native = make_native_interpreter(module)
+    reference = Interpreter(module)
+    for a, b in [
+        (0, 0),
+        (1, 2),
+        (7, 9),
+        (0xFFFF_FFFF, 1),
+        (123456, 0xDEAD),
+        (5, 0xFFFF_FFF0),
+        (3, 3),
+    ]:
+        expected = reference.call(0, [a, b]).unwrap()
+        assert native.call(0, [a, b]).unwrap() == expected

@@ -391,6 +391,55 @@ inline FIREBALL_CPS_CALL void h_rpn_end_stack(execution_context *context,
       context, instruction_ip + code_length, sp, after_stack);
 }
 
+// A specialised operator element (RPN_SPECIALISED_FORMS). The left and right operands are read from
+// the element bytes when they are locals or immediates, and from the temporaries otherwise. The
+// destination is a temporary (the element continues) or a local (the element ends the expression,
+// and the program tail follows its target).
+template <bool WithJit, std::uint32_t K, std::uint32_t LK, std::uint32_t RK, std::uint32_t Dest>
+inline FIREBALL_CPS_CALL void h_rpn_spec(execution_context *context,
+                                         const std::uint8_t *instruction_ip, std::uint32_t *sp,
+                                         const std::uint8_t *rel) {
+  constexpr std::uint32_t kTemps =
+      (LK == kRpnOperandTemp ? 1u : 0u) + (RK == kRpnOperandTemp ? 1u : 0u);
+  const std::uint8_t *cursor = rel + 1;
+  std::uint32_t lhs = 0;
+  if constexpr (LK == kRpnOperandLocal) {
+    lhs = context->local_base[read_u16(cursor)];
+  } else if constexpr (LK == kRpnOperandImm) {
+    lhs = static_cast<std::uint32_t>(read_s32(cursor));
+  } else {
+    lhs = sp[-static_cast<std::ptrdiff_t>(kTemps)];
+  }
+  std::uint32_t rhs = 0;
+  if constexpr (RK == kRpnOperandLocal) {
+    rhs = context->local_base[read_u16(cursor)];
+  } else if constexpr (RK == kRpnOperandImm) {
+    rhs = static_cast<std::uint32_t>(read_s32(cursor));
+  } else {
+    rhs = sp[-1];
+  }
+  const std::uint32_t result = rpn_i32_binary<K>(lhs, rhs);
+  if constexpr (Dest == kRpnDestLocal) {
+    const auto target = static_cast<frame_word_offset_t>(read_u16(cursor));
+    context->local_base[target] = result;
+    const std::uint8_t *tail = cursor;
+    const auto continuation = static_cast<std::ptrdiff_t>(read_s32(cursor));
+    const auto code_length = read_u8(cursor);
+    const std::uint8_t *after_set = tail + continuation;
+    [[clang::musttail]] return dispatch_next<void, WithJit>(
+        context, instruction_ip + code_length, sp - kTemps, after_set);
+  } else if constexpr (kTemps == 2) {
+    sp[-2] = result;
+    rpn_next<WithJit>(context, instruction_ip, sp - 1, cursor);
+  } else if constexpr (kTemps == 1) {
+    sp[-1] = result;
+    rpn_next<WithJit>(context, instruction_ip, sp, cursor);
+  } else {
+    sp[0] = result;
+    rpn_next<WithJit>(context, instruction_ip, sp + 1, cursor);
+  }
+}
+
 template <bool WithJit, std::size_t... Ks>
 constexpr void fill_rpn_binop_handlers(std::array<native_opcode_handler, 256> &handlers,
                                        std::index_sequence<Ks...>) {
@@ -417,6 +466,16 @@ template <bool WithJit> constexpr auto make_rpn_element_handlers() {
       handlers, std::make_index_sequence<kRpnBinopKindCount>{});
   fill_rpn_unary_handlers<WithJit>(
       handlers, std::make_index_sequence<kRpnUnaryKindCount>{});
+  // Same order as RPN_SPECIALISED_FORMS: (binary operator, left, right, destination).
+  handlers[kRpnElemSpecBase + 0] = &h_rpn_spec<WithJit, 2, kRpnOperandLocal, kRpnOperandLocal, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 1] = &h_rpn_spec<WithJit, 11, kRpnOperandTemp, kRpnOperandImm, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 2] = &h_rpn_spec<WithJit, 12, kRpnOperandLocal, kRpnOperandImm, kRpnDestLocal>;
+  handlers[kRpnElemSpecBase + 3] = &h_rpn_spec<WithJit, 1, kRpnOperandLocal, kRpnOperandLocal, kRpnDestLocal>;
+  handlers[kRpnElemSpecBase + 4] = &h_rpn_spec<WithJit, 0, kRpnOperandLocal, kRpnOperandLocal, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 5] = &h_rpn_spec<WithJit, 1, kRpnOperandTemp, kRpnOperandLocal, kRpnDestLocal>;
+  handlers[kRpnElemSpecBase + 6] = &h_rpn_spec<WithJit, 19, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 7] = &h_rpn_spec<WithJit, 17, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 8] = &h_rpn_spec<WithJit, 20, kRpnOperandLocal, kRpnOperandLocal, kRpnDestTemp>;
   return handlers;
 }
 

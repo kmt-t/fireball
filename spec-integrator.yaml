@@ -480,19 +480,19 @@ source_verification:
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: build_control_map
-        line: 606
+        line: 608
         ccn: 42
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: iter_scan_instrs
-        line: 772
+        line: 774
         ccn: 17
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: extract_basic_blocks
-        line: 1629
+        line: 1762
         ccn: 37
         plan_req: REQ-042
       - group: python_pysim

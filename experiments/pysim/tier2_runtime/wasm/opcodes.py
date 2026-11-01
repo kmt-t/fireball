@@ -222,4 +222,22 @@ RPN_ELEM_END = 0x06  # terminal: the value is written to a local (WASM local.set
 RPN_ELEM_END_STACK = 0x07  # terminal: the temporaries become the VM operand stack top
 RPN_ELEM_BINOP_BASE = 0x10  # + i32 binary operator index (0..24, see control_flow)
 RPN_ELEM_UNARY_BASE = 0x40  # + i32 unary operator index (0..3)
+# Specialised operator elements: the operands and the destination are read from the element bytes
+# (local, immediate, or temporary) instead of separate push elements. Entry i of
+# RPN_SPECIALISED_FORMS has element code RPN_ELEM_SPEC_BASE + i. The native table in
+# native_interpreter.cxx lists the same forms in the same order.
+RPN_ELEM_SPEC_BASE = 0x80
+# (binary operator index, left operand, right operand, destination); operand: T temporary, L local,
+# I immediate; destination: T temporary, L local (the element then ends the expression).
+RPN_SPECIALISED_FORMS = (
+    (2, "L", "L", "T"),  # i32.mul  (local, local) -> temporary
+    (11, "T", "I", "T"),  # i32.shr_s (temporary, immediate) -> temporary
+    (12, "L", "I", "L"),  # i32.shr_u (local, immediate) -> local
+    (1, "L", "L", "L"),  # i32.sub  (local, local) -> local
+    (0, "L", "L", "T"),  # i32.add  (local, local) -> temporary
+    (1, "T", "L", "L"),  # i32.sub  (temporary, local) -> local
+    (19, "L", "I", "T"),  # i32.gt_s (local, immediate) -> temporary
+    (17, "L", "I", "T"),  # i32.lt_s (local, immediate) -> temporary
+    (20, "L", "L", "T"),  # i32.gt_u (local, local) -> temporary
+)
 RPN_MAX_DEPTH = 8

@@ -911,12 +911,13 @@ def _operand_annotation_bytes(code: memoryview, instruction: Instr) -> int:
         return BR_TABLE_COUNT_BYTES + (label_count + 1) * BR_TABLE_TARGET_BYTES
     if opcode == FC_PREFIX:
         assert instruction.operand is not None
-        if (
+        # The loader rejects every other 0xFC subopcode, so the subopcode byte is always present.
+        assert (
             FC_I32_TRUNC_SAT_F32_S <= instruction.operand <= FC_I64_TRUNC_SAT_F64_U
             or instruction.operand == FC_MEMORY_COPY
             or instruction.operand == FC_MEMORY_FILL
-        ):
-            return 1  # subopcode
+        )
+        return 1  # subopcode
     return 0
 
 

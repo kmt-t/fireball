@@ -769,3 +769,35 @@ def test_load_60_preserves_internal_assertion_identity(monkeypatch: pytest.Monke
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([str(_TEST_FILE)]))
+
+
+def _module_with_fc_body(instruction_bytes: bytes) -> bytes:
+    """Build a one-function module whose body is the given instruction bytes and an end."""
+    body = bytes([0x00]) + instruction_bytes + bytes([0x0B])
+    payload = bytes([1, len(body)]) + body
+    return (
+        b"\x00asm\x01\x00\x00\x00"
+        + bytes([1, 4, 1, 0x60, 0, 0])  # type section: () -> ()
+        + bytes([3, 2, 1, 0])  # function section
+        + bytes([5, 3, 1, 0, 1])  # memory section: one page
+        + bytes([10, len(payload)])
+        + payload
+    )
+
+
+@pytest.mark.parametrize("subopcode", (8, 12, 18))
+def test_loader_rejects_0xfc_subopcodes_outside_the_supported_set(subopcode: int) -> None:
+    """The loader rejects every 0xFC subopcode outside 0..7, 0x0A and 0x0B.
+
+    The trace compiler and the annotation sizing assume this rejection, so they assert instead of
+    returning a fallback for those subopcodes.
+    """
+    binary = _module_with_fc_body(bytes([0x41, 0, 0x41, 0, 0x41, 0, 0xFC, subopcode, 0, 0]))
+    with pytest.raises(InvalidWasm, match=f"0xFC subopcode {subopcode} is not supported"):
+        parse_standalone(binary)
+
+
+def test_loader_accepts_memory_copy_as_a_supported_0xfc_subopcode() -> None:
+    binary = _module_with_fc_body(bytes([0x41, 0, 0x41, 0, 0x41, 0, 0xFC, 0x0A, 0, 0]))
+    module = parse_standalone(binary)
+    assert module.functions

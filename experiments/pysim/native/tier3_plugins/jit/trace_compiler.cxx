@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -1382,10 +1383,8 @@ bool apply_runtime_api_stack_effect(int op, stack_model &stack) {
       return stack.unary(static_cast<std::uint8_t>(input_width),
                          static_cast<std::uint8_t>(output_width));
     }
-    if (subopcode == 0x0A || subopcode == 0x0B) {
-      return pop_values(stack, 3, 1);
-    }
-    return false;
+    assert(subopcode == 0x0A || subopcode == 0x0B);
+    return pop_values(stack, 3, 1);
   }
 
   if (op == 0x01) {
@@ -1822,17 +1821,12 @@ int fireball::compile_wasm_trace(
 
     if (opcode == kFcPrefix) {
       std::uint32_t subopcode = 0;
-      if (!read_unsigned_leb(code, cursor, end, subopcode) || subopcode > 17) {
+      if (!read_unsigned_leb(code, cursor, end, subopcode)) {
         return -1;
       }
+      // The loader rejects every other 0xFC subopcode before the trace compiler sees the code.
+      assert(subopcode <= 7 || subopcode == 0x0A || subopcode == 0x0B);
       instruction.opcode = 0xFC00u | subopcode;
-      std::uint32_t immediate_count = 0;
-      if (subopcode == 8 || subopcode == 0x0A || subopcode == 0x0C || subopcode == 0x0E) {
-        immediate_count = 2;
-      } else if (subopcode == 9 || subopcode == 0x0B || subopcode == 0x0D ||
-                 (subopcode >= 0x0F && subopcode <= 0x11)) {
-        immediate_count = 1;
-      }
       std::uint8_t fc_width_field = 0;
       std::uint8_t fc_subopcode_field = 0;
       if (!take_annotation_field(annotation_cursor, annotation_limit, fc_width_field) ||
@@ -1855,14 +1849,6 @@ int fireball::compile_wasm_trace(
           return -1;
         }
         instruction.operand = memory_index;
-      } else {
-        while (immediate_count != 0) {
-          std::uint32_t ignored = 0;
-          if (!read_unsigned_leb(code, cursor, end, ignored)) {
-            return -1;
-          }
-          --immediate_count;
-        }
       }
       const auto annotation_offset_64 =
           static_cast<std::uint64_t>(interpreter_annotation_byte_offset) + interpreter_rel_bytes;

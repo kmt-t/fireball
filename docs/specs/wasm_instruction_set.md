@@ -182,13 +182,34 @@ x64で確認したInterpreter/JIT間の3論理引数契約と物理ABIは [`jit_
 
 | Opcode 群 | カテゴリ / 代表命令名 | スタック遷移 | インタープリタ実装 | ARMv8-M JIT mapping (TBD) | ARMv8-M physical behavior (TBD) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x79`〜`0x8A` | **i64 算術・論理・シフト** (`i64.clz`, `i64.ctz`, `i64.popcnt`, `i64.add`, `i64.sub`, `i64.mul`, `i64.div_s/u`, `i64.rem_s/u`, `i64.and/or/xor`, `i64.shl`, `i64.shr_s/u`, `i64.rotl/r`) | `[i64, i64] -> [i64]` | C++ `int64_t` / `libgcc` 呼び出し | TBD | TBD |
-| `0x50`〜`0x5A` | **i64 比較命令** (`i64.eqz`, `i64.eq`, `i64.ne`, `i64.lt_s/u`, `i64.gt_s/u`, `i64.le_s/u`, `i64.ge_s/u`) | `[i64, i64] -> [i32]` | 64-bit 比較ハンドラ | TBD | TBD |
-| `0x8B`〜`0x98` | **f32 単精度浮動小数点** (`f32.add`, `f32.sub`, `f32.mul`, `f32.div`, `f32.sqrt`, `f32.min`, `f32.max`, `f32.ceil/floor/trunc/nearest`) | `[f32, f32] -> [f32]` | C++ `float` / ハードウェア FPU / soft-float | TBD | TBD |
-| `0x99`〜`0xA6` | **f64 倍精度浮動小数点** (`f64.add`, `f64.sub`, `f64.mul`, `f64.div`, `f64.sqrt`, `f64.min`, `f64.max`, `f64.ceil/floor/trunc/nearest`) | `[f64, f64] -> [f64]` | C++ `double` / `libgcc` soft-float | TBD | TBD |
-| `0x5B`〜`0x66` | **f32/f64 浮動小数点比較** (`f32/f64.eq`, `ne`, `lt`, `gt`, `le`, `ge`) | `[f*, f*] -> [i32]` | IEEE 754 準拠比較 | TBD | TBD |
-| `0xA7`〜`0xBF` | **型変換・再解釈命令** (`i32.wrap_i64`, `i64.extend_i32_*`, `i32/i64.trunc_f*`, `f32/f64.convert_i*`, `reinterpret`) | `[t1] -> [t2]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
-| `0xC0`〜`0xC4` | **符号拡張** (`i32.extend8_s`, `i32.extend16_s`, `i64.extend8_s`, `i64.extend16_s`, `i64.extend32_s`) | `0xC0`、`0xC1`: `[i32] -> [i32]`。`0xC2`〜`0xC4`: `[i64] -> [i64]` | 下位ビットを符号拡張する Runtime API | TBD | TBD |
+| `0x79`〜`0x7B` | **i64 単項・ビット演算** (`i64.clz`, `i64.ctz`, `i64.popcnt`) | `[i64] -> [i64]` | C++ `int64_t` / `libgcc` 呼び出し | TBD | TBD |
+| `0x7C`〜`0x8A` | **i64 二項演算** (`i64.add`, `i64.sub`, `i64.mul`, `i64.div_s/u`, `i64.rem_s/u`, `i64.and/or/xor`, `i64.shl`, `i64.shr_s/u`, `i64.rotl/r`) | `[i64, i64] -> [i64]` | C++ `int64_t` / `libgcc` 呼び出し | TBD | TBD |
+| `0x50` | **i64.eqz**（単項の比較） | `[i64] -> [i32]` | 64-bit 比較ハンドラ | TBD | TBD |
+| `0x51`〜`0x5A` | **i64 比較命令** (`i64.eq`, `i64.ne`, `i64.lt_s/u`, `i64.gt_s/u`, `i64.le_s/u`, `i64.ge_s/u`) | `[i64, i64] -> [i32]` | 64-bit 比較ハンドラ | TBD | TBD |
+| `0x5B`〜`0x60` | **f32 比較命令** (`f32.eq`, `f32.ne`, `f32.lt`, `f32.gt`, `f32.le`, `f32.ge`) | `[f32, f32] -> [i32]` | IEEE 754 準拠比較 | TBD | TBD |
+| `0x61`〜`0x66` | **f64 比較命令** (`f64.eq`, `f64.ne`, `f64.lt`, `f64.gt`, `f64.le`, `f64.ge`) | `[f64, f64] -> [i32]` | IEEE 754 準拠比較 | TBD | TBD |
+| `0x8B`〜`0x91` | **f32 単項** (`f32.abs`, `f32.neg`, `f32.ceil`, `f32.floor`, `f32.trunc`, `f32.nearest`, `f32.sqrt`) | `[f32] -> [f32]` | C++ `float` / ハードウェア FPU / soft-float | TBD | TBD |
+| `0x92`〜`0x98` | **f32 二項演算** (`f32.add`, `f32.sub`, `f32.mul`, `f32.div`, `f32.min`, `f32.max`, `f32.copysign`) | `[f32, f32] -> [f32]` | C++ `float` / ハードウェア FPU / soft-float | TBD | TBD |
+| `0x99`〜`0x9F` | **f64 単項** (`f64.abs`, `f64.neg`, `f64.ceil`, `f64.floor`, `f64.trunc`, `f64.nearest`, `f64.sqrt`) | `[f64] -> [f64]` | C++ `double` / `libgcc` soft-float | TBD | TBD |
+| `0xA0`〜`0xA6` | **f64 二項演算** (`f64.add`, `f64.sub`, `f64.mul`, `f64.div`, `f64.min`, `f64.max`, `f64.copysign`) | `[f64, f64] -> [f64]` | C++ `double` / `libgcc` soft-float | TBD | TBD |
+| `0xA7` | **i32.wrap_i64** | `[i64] -> [i32]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xA8`〜`0xA9` | **i32.trunc_f32_s/u** | `[f32] -> [i32]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xAA`〜`0xAB` | **i32.trunc_f64_s/u** | `[f64] -> [i32]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xAC`〜`0xAD` | **i64.extend_i32_s/u** | `[i32] -> [i64]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xAE`〜`0xAF` | **i64.trunc_f32_s/u** | `[f32] -> [i64]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xB0`〜`0xB1` | **i64.trunc_f64_s/u** | `[f64] -> [i64]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xB2`〜`0xB3` | **f32.convert_i32_s/u** | `[i32] -> [f32]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xB4`〜`0xB5` | **f32.convert_i64_s/u** | `[i64] -> [f32]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xB6` | **f32.demote_f64** | `[f64] -> [f32]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xB7`〜`0xB8` | **f64.convert_i32_s/u** | `[i32] -> [f64]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xB9`〜`0xBA` | **f64.convert_i64_s/u** | `[i64] -> [f64]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xBB` | **f64.promote_f32** | `[f32] -> [f64]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xBC` | **i32.reinterpret_f32** | `[f32] -> [i32]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xBD` | **i64.reinterpret_f64** | `[f64] -> [i64]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xBE` | **f32.reinterpret_i32** | `[i32] -> [f32]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xBF` | **f64.reinterpret_i64** | `[i64] -> [f64]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xC0`〜`0xC1` | **i32 符号拡張** (`i32.extend8_s`, `i32.extend16_s`) | `[i32] -> [i32]` | 下位ビットを符号拡張する Runtime API | TBD | TBD |
+| `0xC2`〜`0xC4` | **i64 符号拡張** (`i64.extend8_s`, `i64.extend16_s`, `i64.extend32_s`) | `[i64] -> [i64]` | 下位ビットを符号拡張する Runtime API | TBD | TBD |
 
 ### 3.7 飽和型浮動小数点→整数変換 ({WasmFCSubset})
 <!-- traceability: {WasmFCSubset} {ThreadedInterpreter} {JIT_RuntimeAPI} -->

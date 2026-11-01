@@ -491,20 +491,8 @@ source_verification:
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
-        function: _count_interpreter_annotation_pool_bytes
-        line: 869
-        ccn: 26
-        plan_req: REQ-042
-      - group: python_pysim
-        file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
-        function: build_interpreter_annotation_pool
-        line: 1095
-        ccn: 44
-        plan_req: REQ-042
-      - group: python_pysim
-        file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: extract_basic_blocks
-        line: 1468
+        line: 1526
         ccn: 37
         plan_req: REQ-042
       - group: python_pysim

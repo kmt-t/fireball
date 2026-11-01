@@ -13,7 +13,7 @@ without hitting Python's recursion limit.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from enum import IntFlag
 
@@ -866,50 +866,62 @@ def _instruction_width_record_size(instruction_width: int) -> int:
     return 1
 
 
+# Operand bytes of the instructions whose annotation width depends only on the opcode.
+_LOCAL_ANNOTATION_BYTES = {
+    LOCAL_GET: 3 + 2,  # frame word offset, local width, and the RPN ext (head or terminal)
+    LOCAL_SET: 3 + 2,
+    LOCAL_TEE: 3,  # frame word offset and local width
+}
+_FIXED_OPERAND_ANNOTATION_BYTES = {
+    GLOBAL_GET: 2,  # global index
+    GLOBAL_SET: 2,
+    I32_CONST: 4,  # signed value
+    I64_CONST: 8,  # signed value
+    BR: 4,  # target block, stack base, and result width
+    BR_IF: 4,  # target block, stack base, and result width
+    IF: 4,
+    LOOP: 2,
+    ELSE: 2,
+    END: 2,
+    CALL: 4,  # function/type index and continuation block index
+    CALL_INDIRECT: 4,  # function/type index and continuation block index
+    DROP: 1,  # operand width, derived by stack type analysis
+    SELECT: 1,  # operand width, derived by stack type analysis
+}
+
+
+def _operand_annotation_bytes(code: memoryview, instruction: Instr) -> int:
+    """Bytes that the operand annotation of one instruction occupies in the pool."""
+    opcode = instruction.opcode
+    if opcode in _LOCAL_ANNOTATION_BYTES:
+        return _LOCAL_ANNOTATION_BYTES[opcode]
+    if opcode in _FIXED_OPERAND_ANNOTATION_BYTES:
+        return _FIXED_OPERAND_ANNOTATION_BYTES[opcode]
+    if _MEMARG_OPCODES.at(opcode):
+        return 4  # effective offset
+    if opcode == BR_TABLE:
+        label_count, _ = decode_unsigned_full(code, instruction.offset + 1)
+        require_wasm(
+            label_count <= 0xFFFF,
+            "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds u16",
+        )
+        return BR_TABLE_COUNT_BYTES + (label_count + 1) * BR_TABLE_TARGET_BYTES
+    if opcode == FC_PREFIX:
+        assert instruction.operand is not None
+        if (
+            FC_I32_TRUNC_SAT_F32_S <= instruction.operand <= FC_I64_TRUNC_SAT_F64_U
+            or instruction.operand == FC_MEMORY_COPY
+            or instruction.operand == FC_MEMORY_FILL
+        ):
+            return 1  # subopcode
+    return 0
+
+
 def _count_interpreter_annotation_pool_bytes(code: memoryview) -> int:
     annotation_bytes = 0
     for instruction in iter_scan_instrs(code):
-        opcode = instruction.opcode
-        if opcode == LOCAL_GET or opcode == LOCAL_SET or opcode == LOCAL_TEE:
-            annotation_bytes += 3  # frame word offset and local width
-            if opcode != LOCAL_TEE:
-                annotation_bytes += 2  # RPN ext (expression head or terminal)
-        elif opcode == GLOBAL_GET or opcode == GLOBAL_SET:
-            annotation_bytes += 2  # global index
-        elif opcode == I32_CONST:
-            annotation_bytes += 4  # signed value
-        elif opcode == I64_CONST:
-            annotation_bytes += 8  # signed value
-        elif _MEMARG_OPCODES.at(opcode):
-            annotation_bytes += 4  # effective offset
-        elif opcode == BR:
-            annotation_bytes += 4  # target block, stack base, and result width
-        elif opcode == BR_IF:
-            annotation_bytes += 4  # target block, stack base, and result width
-        elif opcode == BR_TABLE:
-            label_count, _ = decode_unsigned_full(code, instruction.offset + 1)
-            require_wasm(
-                label_count <= 0xFFFF,
-                "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds u16",
-            )
-            annotation_bytes += BR_TABLE_COUNT_BYTES + (label_count + 1) * BR_TABLE_TARGET_BYTES
-        elif opcode == IF:
-            annotation_bytes += 4
-        elif opcode == LOOP or opcode == ELSE or opcode == END:
-            annotation_bytes += 2
-        elif opcode == CALL or opcode == CALL_INDIRECT:
-            annotation_bytes += 4  # function/type index and continuation block index
-        elif opcode == FC_PREFIX:
-            assert instruction.operand is not None
-            if (
-                FC_I32_TRUNC_SAT_F32_S <= instruction.operand <= FC_I64_TRUNC_SAT_F64_U
-                or instruction.operand == FC_MEMORY_COPY
-                or instruction.operand == FC_MEMORY_FILL
-            ):
-                annotation_bytes += 1  # subopcode
-        elif opcode == DROP or opcode == SELECT:
-            annotation_bytes += 1  # operand width, derived by stack type analysis
-        if _has_instruction_width_record(opcode):
+        annotation_bytes += _operand_annotation_bytes(code, instruction)
+        if _has_instruction_width_record(instruction.opcode):
             annotation_bytes += _instruction_width_record_size(
                 instruction.end_offset - instruction.offset
             )
@@ -1135,17 +1147,15 @@ def build_interpreter_annotation_pool(
     annotations = InterpreterAnnotationPool(capacity=total_bytes, allocator=allocator)
     block_offsets: StaticVector[annotation_offset_t] = StaticVector(capacity=len(block_heads))
 
-    def rpn_ext_for(opcode: int, function_offset: int) -> int:
+    def rpn_ext_for(function_offset: int) -> int:
         # The expression head stores the distance from its own annotation start to the program, so the
-        # native head needs no pool base. Other local.get store 0; local.set stores 0xFFFF.
-        if opcode == LOCAL_GET:
-            if function_offset not in program_positions:
-                return 0
-            annotation_start = (
-                len(annotations) - 4
-            )  # width, offset (u16), slot width precede the ext
-            return program_positions[function_offset] - annotation_start
-        return 0xFFFF
+        # native head needs no pool base. Other local.get store 0.
+        if function_offset not in program_positions:
+            return 0
+        annotation_start = (
+            len(annotations) - 4
+        )  # width, offset (u16), slot width precede the ext
+        return program_positions[function_offset] - annotation_start
 
     def append_u32(value: int) -> None:
         assert 0 <= value <= 0xFFFF_FFFF
@@ -1214,127 +1224,175 @@ def build_interpreter_annotation_pool(
         annotations.append_byte(stack_base_words)
         annotations.append_byte(result_words)
 
+    def write_local_slot(instruction: Instr, block_code: memoryview) -> None:
+        local_index, _ = decode_unsigned_full(block_code, instruction.offset + 1)
+        assert local_index < len(local_layout)
+        frame_offset: frame_word_offset_t = local_layout.offset(local_index)
+        local_width = local_layout.size_words(local_index)
+        assert frame_offset <= 0xFFFF and local_width <= 0xFF
+        append_u16(frame_offset)
+        annotations.append_byte(local_width)
+
+    def emit_local_get(instruction: Instr, block_code: memoryview, start: int) -> None:
+        write_local_slot(instruction, block_code)
+        append_u16(rpn_ext_for(start + instruction.offset))
+
+    def emit_local_set(instruction: Instr, block_code: memoryview, start: int) -> None:
+        write_local_slot(instruction, block_code)
+        function_offset = start + instruction.offset
+        append_u16(0xFFFF)
+        if function_offset in set_offsets:
+            set_ends[function_offset] = len(annotations)
+
+    def emit_local_tee(instruction: Instr, block_code: memoryview, start: int) -> None:
+        write_local_slot(instruction, block_code)
+
+    def emit_drop(instruction: Instr, block_code: memoryview, start: int) -> None:
+        function_offset = start + instruction.offset
+        width = 1 if drop_widths is None else drop_widths.view().find(function_offset) or 1
+        assert width == 1 or width == 2
+        annotations.append_byte(width)
+
+    def emit_select(instruction: Instr, block_code: memoryview, start: int) -> None:
+        function_offset = start + instruction.offset
+        width = 1 if select_widths is None else select_widths.view().find(function_offset) or 1
+        assert width == 1 or width == 2
+        annotations.append_byte(width)
+
+    def emit_global(instruction: Instr, block_code: memoryview, start: int) -> None:
+        raw_global_index, _ = decode_unsigned_full(block_code, instruction.offset + 1)
+        global_index = global_index_t(raw_global_index)
+        require_wasm(
+            global_index <= 0xFFFF,
+            "ERR_WASM_UNSUPPORTED_FEATURE: global index exceeds u16",
+        )
+        append_u16(global_index)
+
+    def emit_i32_const(instruction: Instr, block_code: memoryview, start: int) -> None:
+        value, _ = decode_signed_full(block_code, instruction.offset + 1, bits=32)
+        append_u32(value & 0xFFFF_FFFF)
+
+    def emit_i64_const(instruction: Instr, block_code: memoryview, start: int) -> None:
+        value, _ = decode_signed_full(block_code, instruction.offset + 1, bits=64)
+        append_wide(value)
+
+    def emit_memarg(instruction: Instr, block_code: memoryview, start: int) -> None:
+        _alignment, next_cursor = decode_unsigned_full(block_code, instruction.offset + 1)
+        offset, _ = decode_unsigned_full(block_code, next_cursor)
+        append_u32(offset)
+
+    def emit_branch(instruction: Instr, block_code: memoryview, start: int) -> None:
+        append_branch_target(start + instruction.offset, 0)
+
+    def emit_br_table(instruction: Instr, block_code: memoryview, start: int) -> None:
+        function_offset = start + instruction.offset
+        label_count, target_cursor = decode_unsigned_full(block_code, instruction.offset + 1)
+        require_wasm(
+            label_count <= 0xFFFF,
+            "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds u16",
+        )
+        append_u16(label_count)
+        for target_number in range(label_count + 1):
+            _, target_cursor = decode_unsigned_full(block_code, target_cursor)
+            append_branch_target(function_offset, target_number)
+
+    def emit_call(instruction: Instr, block_code: memoryview, start: int) -> None:
+        raw_function_index, _ = decode_unsigned_full(block_code, instruction.offset + 1)
+        function_index = function_index_t(raw_function_index)
+        require_wasm(
+            function_index <= 0xFFFF,
+            "ERR_WASM_UNSUPPORTED_FEATURE: function index exceeds u16",
+        )
+        append_u16(function_index)
+        append_u16(block_index_for_offset(start + instruction.end_offset))
+
+    def emit_call_indirect(instruction: Instr, block_code: memoryview, start: int) -> None:
+        raw_type_index, next_cursor = decode_unsigned_full(block_code, instruction.offset + 1)
+        type_index = type_index_t(raw_type_index)
+        require_wasm(
+            type_index <= 0xFFFF,
+            "ERR_WASM_UNSUPPORTED_FEATURE: type index exceeds u16",
+        )
+        append_u16(type_index)
+        _table_index, _ = decode_unsigned_full(block_code, next_cursor)
+        append_u16(block_index_for_offset(start + instruction.end_offset))
+
+    def emit_fc_prefix(instruction: Instr, block_code: memoryview, start: int) -> None:
+        subopcode, cursor = decode_unsigned_full(block_code, instruction.offset + 1)
+        assert subopcode <= 0xFF
+        annotations.append_byte(subopcode)
+        if subopcode == FC_MEMORY_COPY:
+            _destination_memory, cursor = decode_unsigned_full(block_code, cursor)
+            _source_memory, _ = decode_unsigned_full(block_code, cursor)
+        elif subopcode == FC_MEMORY_FILL:
+            _memory_index, _ = decode_unsigned_full(block_code, cursor)
+
+    def emit_loop(instruction: Instr, block_code: memoryview, start: int) -> None:
+        append_u16(block_index_for_offset(start + instruction.end_offset))
+
+    def emit_if(instruction: Instr, block_code: memoryview, start: int) -> None:
+        function_offset = start + instruction.offset
+        then_target = start + instruction.end_offset
+        match = None if control_map is None else control_map.block(function_offset)
+        if match is None:
+            else_target = len(code)
+        else:
+            match_end, else_offset, _result_arity = match
+            else_target = else_offset + 1 if else_offset is not None else match_end + 1
+        append_u16(block_index_for_offset(then_target))
+        append_u16(block_index_for_offset(else_target))
+
+    def emit_else(instruction: Instr, block_code: memoryview, start: int) -> None:
+        function_offset = start + instruction.offset
+        if control_map is None:
+            target = len(code)
+        else:
+            target = control_map.else_target(function_offset)
+        append_u16(block_index_for_offset(target))
+
+    def emit_end(instruction: Instr, block_code: memoryview, start: int) -> None:
+        append_u16(continuation_block_index_for_offset(start + instruction.end_offset))
+
+    # One procedure per opcode. The loop judges each instruction's opcode once, then the procedure
+    # writes that instruction's operands and branch targets in the original order.
+    handlers: dict[int, Callable[[Instr, memoryview, int], None]] = {
+        LOCAL_GET: emit_local_get,
+        LOCAL_SET: emit_local_set,
+        LOCAL_TEE: emit_local_tee,
+        DROP: emit_drop,
+        SELECT: emit_select,
+        GLOBAL_GET: emit_global,
+        GLOBAL_SET: emit_global,
+        I32_CONST: emit_i32_const,
+        I64_CONST: emit_i64_const,
+        BR: emit_branch,
+        BR_IF: emit_branch,
+        BR_TABLE: emit_br_table,
+        CALL: emit_call,
+        CALL_INDIRECT: emit_call_indirect,
+        FC_PREFIX: emit_fc_prefix,
+        LOOP: emit_loop,
+        IF: emit_if,
+        ELSE: emit_else,
+        END: emit_end,
+    }
+    for memarg_opcode in range(0x100):
+        if _MEMARG_OPCODES.at(memarg_opcode):
+            handlers[memarg_opcode] = emit_memarg
+
     for block_number, start in enumerate(block_heads):
         end = block_heads[block_number + 1] if block_number + 1 < len(block_heads) else len(code)
         appended = block_offsets.push_back(annotation_offset_t(len(annotations)))
         assert appended
         block_code = code[start:end]
         for instruction in iter_scan_instrs(block_code):
-            cursor = instruction.offset + 1
-            function_offset = start + instruction.offset
-            opcode = instruction.opcode
-            if _has_instruction_width_record(opcode):
+            if _has_instruction_width_record(instruction.opcode):
                 append_instruction_width(
                     instruction_width_t(instruction.end_offset - instruction.offset)
                 )
-            if opcode == LOCAL_GET or opcode == LOCAL_SET or opcode == LOCAL_TEE:
-                local_index, _ = decode_unsigned_full(block_code, cursor)
-                assert local_index < len(local_layout)
-                frame_offset: frame_word_offset_t = local_layout.offset(local_index)
-                local_width = local_layout.size_words(local_index)
-                assert frame_offset <= 0xFFFF and local_width <= 0xFF
-                append_u16(frame_offset)
-                annotations.append_byte(local_width)
-                if opcode != LOCAL_TEE:
-                    append_u16(rpn_ext_for(opcode, function_offset))
-                if opcode == LOCAL_SET and function_offset in set_offsets:
-                    set_ends[function_offset] = len(annotations)
-            elif opcode == DROP:
-                width = 1 if drop_widths is None else drop_widths.view().find(function_offset) or 1
-                assert width == 1 or width == 2
-                annotations.append_byte(width)
-            elif opcode == SELECT:
-                width = (
-                    1 if select_widths is None else select_widths.view().find(function_offset) or 1
-                )
-                assert width == 1 or width == 2
-                annotations.append_byte(width)
-            elif opcode == GLOBAL_GET or opcode == GLOBAL_SET:
-                raw_global_index, _ = decode_unsigned_full(block_code, cursor)
-                global_index = global_index_t(raw_global_index)
-                require_wasm(
-                    global_index <= 0xFFFF,
-                    "ERR_WASM_UNSUPPORTED_FEATURE: global index exceeds u16",
-                )
-                append_u16(global_index)
-            elif opcode == I32_CONST:
-                value, _ = decode_signed_full(block_code, cursor, bits=32)
-                append_u32(value & 0xFFFF_FFFF)
-            elif opcode == I64_CONST:
-                value, _ = decode_signed_full(block_code, cursor, bits=64)
-                append_wide(value)
-            elif _MEMARG_OPCODES.at(opcode):
-                _alignment, next_cursor = decode_unsigned_full(block_code, cursor)
-                offset, _ = decode_unsigned_full(block_code, next_cursor)
-                append_u32(offset)
-            elif opcode == BR_TABLE:
-                label_count, next_cursor = decode_unsigned_full(block_code, cursor)
-                require_wasm(
-                    label_count <= 0xFFFF,
-                    "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds u16",
-                )
-                append_u16(label_count)
-                cursor = next_cursor
-            elif opcode == CALL_INDIRECT:
-                raw_type_index, next_cursor = decode_unsigned_full(block_code, cursor)
-                type_index = type_index_t(raw_type_index)
-                require_wasm(
-                    type_index <= 0xFFFF,
-                    "ERR_WASM_UNSUPPORTED_FEATURE: type index exceeds u16",
-                )
-                append_u16(type_index)
-                _table_index, _ = decode_unsigned_full(block_code, next_cursor)
-            elif opcode == CALL:
-                raw_function_index, _ = decode_unsigned_full(block_code, cursor)
-                function_index = function_index_t(raw_function_index)
-                require_wasm(
-                    function_index <= 0xFFFF,
-                    "ERR_WASM_UNSUPPORTED_FEATURE: function index exceeds u16",
-                )
-                append_u16(function_index)
-            elif opcode == FC_PREFIX:
-                subopcode, cursor = decode_unsigned_full(block_code, cursor)
-                assert subopcode <= 0xFF
-                annotations.append_byte(subopcode)
-                if subopcode == FC_MEMORY_COPY:
-                    _destination_memory, cursor = decode_unsigned_full(block_code, cursor)
-                    _source_memory, _ = decode_unsigned_full(block_code, cursor)
-                elif subopcode == FC_MEMORY_FILL:
-                    _memory_index, _ = decode_unsigned_full(block_code, cursor)
-            if opcode == LOOP:
-                append_u16(block_index_for_offset(start + instruction.end_offset))
-            elif opcode == IF:
-                then_target = start + instruction.end_offset
-                match = None if control_map is None else control_map.block(function_offset)
-                if match is None:
-                    else_target = len(code)
-                else:
-                    match_end, else_offset, _result_arity = match
-                    else_target = else_offset + 1 if else_offset is not None else match_end + 1
-                append_u16(block_index_for_offset(then_target))
-                append_u16(block_index_for_offset(else_target))
-            elif opcode == ELSE:
-                if control_map is None:
-                    target = len(code)
-                else:
-                    target = control_map.else_target(function_offset)
-                append_u16(block_index_for_offset(target))
-            elif opcode == END:
-                append_u16(continuation_block_index_for_offset(start + instruction.end_offset))
-            elif opcode == BR:
-                append_branch_target(function_offset, 0)
-            elif opcode == BR_IF:
-                append_branch_target(function_offset, 0)
-            elif opcode == BR_TABLE:
-                label_count, target_cursor = decode_unsigned_full(
-                    block_code, instruction.offset + 1
-                )
-                for target_number in range(label_count + 1):
-                    _, target_cursor = decode_unsigned_full(block_code, target_cursor)
-                    append_branch_target(function_offset, target_number)
-            elif opcode == CALL or opcode == CALL_INDIRECT:
-                append_u16(block_index_for_offset(start + instruction.end_offset))
-
+            handler = handlers.get(instruction.opcode)
+            if handler is not None:
+                handler(instruction, block_code, start)
     assert len(annotations) == block_bytes
     for expression in rpn_expressions:
         for element_byte in expression.elements:

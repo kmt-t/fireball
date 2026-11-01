@@ -4,7 +4,7 @@
 
 | パス | 担当 |
 | :--- | :--- |
-| [`operations.S`](../../experiments/pysim/native/tier3_plugins/jit/lir/x64/operations.S) | x64 の操作ステンシルを記述する。直接実行する演算、型別 local template、融合 variant、Runtime API 呼出しを定義する。即値slotとlocal instruction slotを明示する。 |
+| [`operations.S`](../../experiments/pysim/native/tier3_plugins/jit/lir/x64/operations.S) | x64 の操作ステンシルを記述する。直接実行する演算、型別 local template、Runtime API 呼出しを定義する。即値slotとlocal instruction slotを明示する。 |
 | [`trace.S`](../../experiments/pysim/native/tier3_plugins/jit/lir/x64/trace.S) | trace entry、出口、trap 経路を記述する。 |
 | [`common.S`](../../experiments/pysim/native/tier3_plugins/jit/lir/x64/common.S) | 共通コード領域の chain dispatcher を記述する。 |
 | [`generate_assembly.py`](generate_assembly.py) | アセンブリを PIC object にし、`.text` の raw binary、C++ byte array、symbol・分岐 metadata を生成する。 |

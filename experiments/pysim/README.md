@@ -249,10 +249,6 @@ bash experiments/pysim/native/tier2_runtime/interpreter/build_native.sh
 - x64 compilerは実行コードregion内のtrace出力領域にassembly生成コード、命令エンコード済みlocal access、即値、Runtime API用定数poolを構成する。decode済み命令列、operation symbol列、stack modelは固定長配列で保持する。operation用配列の容量は`FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS + 1`件、再配置record用配列の容量は`8 × FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS + 1`件である。実行可能コード領域とLoader arenaのbufferは別管理する。
 - `jit_runtime<Measurement>`は計測型でQAと製品構成を切り替える。製品側は`void`、QA側は専用計測型を選ぶ。QA用の代替block入力、compiler無効化、自己所有memory、16-bit trace参照IDの検査をQA構成に限定する。
 
-### 6.3 JIT命令プロファイルの根拠
-
-操作対応と融合候補の選定に使う静的データは、`benchmarks/profile/guest/suite.c`をClang 21.1.8の`--target=wasm32 -mcpu=mvp -O2`でWASMへ変換し、`wasm-objdump`の命令列から関数境界をまたがない2〜4命令n-gramと即値を数えたものである。28関数・6,460命令では、`local.get i32.const i32.add`が305回、`i32.const i32.add`が382回、`i32.const i32.mul`が83回、`i32.const i32.and`が60回だった。加算即値`1` / `-1`は97 / 21回、乗算即値`3` / `5`は1 / 3回、AND即値`255` / `65535`は11 / 2回だった。空スタックからの`local.get, local.get, i32.*`融合候補は85件だった。これらはコンパイル済み入力内の静的出現数であり、実行時頻度や生成stencilの機械語命令数ではない。
-
 ### 6.4 資源測定の実行方法と記録
 
 ランタイムarena測定と資源一覧は次のentry pointで再取得する。結果はホストABIと指定入力に対する参照値であり、対象MCUのRAM/ROM適合を証明しない。

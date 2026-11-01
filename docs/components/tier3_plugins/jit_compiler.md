@@ -3,7 +3,6 @@
      implementation: experiments/pysim/native/tier3_plugins/jit/trace_compiler.cxx
      formal: formal/jit_cache_model.py
      benchmark: ../../../experiments/pysim/benchmarks/jit/bench_jit.py
-     benchmark: ../../../experiments/pysim/benchmarks/jit/bench_x64_stencil_instructions.py
      test: docs/qa/tier3_plugins/jit_compiler_test_spec.md
      test: docs/qa/specs/wasm_instruction_set_test_spec.md
 -->

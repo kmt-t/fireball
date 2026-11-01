@@ -627,15 +627,23 @@ def test_local_stencils_encode_each_compact_offset_into_the_trace():
         start = wide_layout.offset(operand)
         assert tuple(context.stack) == values[start : start + 2]
 
-    too_many_locals = compiler.compile_instructions(
+    # The local count is capped only by the loader (FB_CONF_MAX_LOCALS); 17 locals compile, and an
+    # offset past byte 127 uses the disp32 form.
+    many_locals = LocalLayout((I32,) * 40)
+    far_local = compiler.compile_instructions(
         head_pc=0,
-        instructions=((LOCAL_GET, 0),),
+        instructions=((LOCAL_GET, 39),),
         next_pc=1,
         loops_to=None,
         byte_length=1,
-        local_layout=LocalLayout((I32,) * 17),
+        local_layout=many_locals,
     )
-    assert too_many_locals is None
+    assert far_local is not None
+    context = ExecutionContext()
+    extended = context.local_stack.extend(tuple(range(64)))
+    assert extended
+    far_local.invoke(context)
+    assert tuple(context.stack) == (many_locals.offset(39),)
 
 
 def test_jit_embeds_immutable_numeric_immediates_in_native_code():

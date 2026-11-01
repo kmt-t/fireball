@@ -71,10 +71,17 @@ def collect_stencils(
                 f"stencil {symbol_name!r} has an immediate patch slot outside its code"
             )
         instruction_symbol = symbols.get(f"fb_jit_instruction_slot__{symbol_name}")
+        wide_instruction_symbol = symbols.get(f"fb_jit_instruction_slot7__{symbol_name}")
+        if instruction_symbol is not None and wide_instruction_symbol is not None:
+            raise GenerationError(f"stencil {symbol_name!r} has two instruction slots")
+        if wide_instruction_symbol is not None:
+            instruction_symbol = wide_instruction_symbol
         instruction_offset = (
             None if instruction_symbol is None else instruction_symbol.address - symbol.address
         )
-        instruction_width = 4 if instruction_symbol is not None else 0
+        instruction_width = (
+            0 if instruction_symbol is None else (7 if wide_instruction_symbol is not None else 4)
+        )
         if instruction_offset is not None and (
             instruction_offset < 0 or instruction_width > symbol.size - instruction_offset
         ):

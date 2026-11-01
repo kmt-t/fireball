@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <utility>
 
 #include "common_code_abi.hxx"
 #include "jit_internal.hxx"
@@ -46,7 +47,10 @@ struct const_pool_diagnostic_scope {
 #endif
 
 constexpr std::size_t kTraceHeaderBytes = FB_CONF_JIT_X64_TRACE_HEADER_BYTES;
-constexpr std::uint32_t kMaxLogicalLocals = 16;
+// A local access uses an 8-bit displacement up to this byte offset; beyond it a 32-bit one.
+constexpr std::uint32_t kMaxDisp8LocalBytes = 127;
+// The longest local access encoding: REX, opcode, ModRM and a 32-bit displacement.
+constexpr std::size_t kMaxLocalInstructionBytes = 7;
 // The normal success slot is removed while composing the next operation body,
 // so successful operations fall through without an epilogue or transfer.
 // Abort slots target the single trace-level return stub.
@@ -340,26 +344,43 @@ enum class local_memory_operation : std::uint8_t {
   store_wide,
 };
 
-bool encode_local_memory_instruction(local_memory_operation operation, std::uint32_t byte_offset,
-                                     std::array<std::uint8_t, 4> &encoded) {
-  if ((byte_offset & 3u) != 0 || byte_offset > 127) {
-    return false;
-  }
+/** @brief 局所のアクセスの機械語を、命令スロットの幅（4 は disp8、7 は disp32）で符号化する。 */
+void encode_local_memory_instruction(local_memory_operation operation, std::uint32_t byte_offset,
+                                     std::uint8_t slot_width,
+                                     std::array<std::uint8_t, kMaxLocalInstructionBytes> &encoded) {
+  // The compiler selects the slot width from the byte offset, and the locals are word aligned.
+  assert((byte_offset & 3u) == 0);
+  assert(slot_width == 4 || slot_width == 7);
+  assert(slot_width == 7 || byte_offset <= kMaxDisp8LocalBytes);
+  // REX prefix and opcode: load (8b) or store (89), with r11 as the base register.
+  std::uint8_t rex = 0;
+  std::uint8_t opcode = 0;
   switch (operation) {
   case local_memory_operation::load_narrow:
-    encoded = {0x41, 0x8b, 0x43, static_cast<std::uint8_t>(byte_offset)};
-    return true;
+    rex = 0x41, opcode = 0x8b;
+    break;
   case local_memory_operation::load_wide:
-    encoded = {0x49, 0x8b, 0x43, static_cast<std::uint8_t>(byte_offset)};
-    return true;
+    rex = 0x49, opcode = 0x8b;
+    break;
   case local_memory_operation::store_narrow:
-    encoded = {0x41, 0x89, 0x43, static_cast<std::uint8_t>(byte_offset)};
-    return true;
+    rex = 0x41, opcode = 0x89;
+    break;
   case local_memory_operation::store_wide:
-    encoded = {0x49, 0x89, 0x43, static_cast<std::uint8_t>(byte_offset)};
-    return true;
+    rex = 0x49, opcode = 0x89;
+    break;
   }
-  return false;
+  encoded = {};
+  encoded[0] = rex;
+  encoded[1] = opcode;
+  if (slot_width == 4) {
+    encoded[2] = 0x43;  // [r11 + disp8]
+    encoded[3] = static_cast<std::uint8_t>(byte_offset);
+  } else {
+    encoded[2] = 0x83;  // [r11 + disp32]
+    for (std::size_t index = 0; index < 4; ++index) {
+      encoded[3 + index] = static_cast<std::uint8_t>(byte_offset >> (8 * index));
+    }
+  }
 }
 
 /** @brief 借用出力バッファと固定容量の操作・再配置情報を保持する。 */
@@ -369,7 +390,8 @@ struct trace_builder {
   std::size_t body_size = 0;
   std::array<stencil_view, kMaxTraceOperations> operations{};
   std::array<std::uint64_t, kMaxTraceOperations> patch_values{};
-  std::array<std::array<std::uint8_t, 4>, kMaxTraceOperations> local_instructions{};
+  std::array<std::array<std::uint8_t, kMaxLocalInstructionBytes>, kMaxTraceOperations>
+      local_instructions{};
   std::size_t operation_count = 0;
   std::array<relocation_entry, kMaxRelocationConstants> relocations{};
   std::size_t relocation_count = 0;
@@ -383,7 +405,8 @@ struct trace_builder {
           stencil.patch_slot_width > stencil.size - stencil.patch_slot_offset)) ||
         (stencil.instruction_slot_width == 0) != (stencil.instruction_slot_offset == kNoLinkSlot) ||
         (stencil.instruction_slot_width != 0 &&
-         (stencil.instruction_slot_width != 4 || stencil.instruction_slot_offset > stencil.size ||
+         ((stencil.instruction_slot_width != 4 && stencil.instruction_slot_width != 7) ||
+          stencil.instruction_slot_offset > stencil.size ||
           stencil.instruction_slot_width > stencil.size - stencil.instruction_slot_offset))) {
       return false;
     }
@@ -403,11 +426,9 @@ struct trace_builder {
   bool append_local(stencil_view stencil, std::uint32_t byte_offset,
                     local_memory_operation operation, std::uint64_t patch_value = 0,
                     std::uint8_t patch_width = 0) {
-    std::array<std::uint8_t, 4> encoded{};
-    if (stencil.instruction_slot_width != encoded.size() ||
-        stencil.patch_slot_width != patch_width ||
-        !encode_local_memory_instruction(operation, byte_offset, encoded) ||
-        !append_node(stencil)) {
+    std::array<std::uint8_t, kMaxLocalInstructionBytes> encoded{};
+    encode_local_memory_instruction(operation, byte_offset, stencil.instruction_slot_width, encoded);
+    if (stencil.patch_slot_width != patch_width || !append_node(stencil)) {
       return false;
     }
     local_instructions[operation_count - 1] = encoded;
@@ -1052,25 +1073,69 @@ stencil_view wide_binary_stencil(int op) {
   }
 }
 
-bool local_layout_entry(const frame_word_offset_t *offsets, const std::uint8_t *types,
+void local_layout_entry(const frame_word_offset_t *offsets, const std::uint8_t *types,
                         local_count_t count, local_count_t total_words, int index,
                         code_offset_t &offset_bytes, operand_words_t &width, std::uint8_t &type) {
-  if (index < 0 || static_cast<std::uint32_t>(index) >= count || offsets == nullptr ||
-      types == nullptr) {
-    return false;
-  }
+  // The loader fixes the local indexes, the value types and the frame layout before compilation.
+  assert(index >= 0 && static_cast<std::uint32_t>(index) < count);
+  assert(offsets != nullptr && types != nullptr);
   const auto offset = offsets[index];
   const auto local_type = types[index];
   const bool narrow = local_type == kWasmI32 || local_type == kWasmF32;
   const bool wide = local_type == kWasmI64 || local_type == kWasmF64;
   const auto size = wide ? 2u : 1u;
-  if ((!narrow && !wide) || offset + size > total_words || offset > 30) {
-    return false;
-  }
+  assert(narrow || wide);
+  assert(offset + size <= total_words);
   offset_bytes = static_cast<std::uint32_t>(offset) * 4;
   width = size;
   type = local_type;
-  return true;
+}
+
+/** @brief 局所の disp8 の範囲（127 byte）を越える位置の、disp32 の stencil を返す。 */
+stencil_view local_stencil_disp32(int operation, std::uint8_t type) {
+  switch (operation) {
+  case kLocalGet:
+    switch (type) {
+    case kWasmI32:
+      return get_stencil(asm_generated::local_get_i32_d32);
+    case kWasmI64:
+      return get_stencil(asm_generated::local_get_i64_d32);
+    case kWasmF32:
+      return get_stencil(asm_generated::local_get_f32_d32);
+    case kWasmF64:
+      return get_stencil(asm_generated::local_get_f64_d32);
+    default:
+      std::unreachable();
+    }
+  case kLocalSet:
+    switch (type) {
+    case kWasmI32:
+      return get_stencil(asm_generated::local_set_i32_d32);
+    case kWasmI64:
+      return get_stencil(asm_generated::local_set_i64_d32);
+    case kWasmF32:
+      return get_stencil(asm_generated::local_set_f32_d32);
+    case kWasmF64:
+      return get_stencil(asm_generated::local_set_f64_d32);
+    default:
+      std::unreachable();
+    }
+  case kLocalTee:
+    switch (type) {
+    case kWasmI32:
+      return get_stencil(asm_generated::local_tee_i32_d32);
+    case kWasmI64:
+      return get_stencil(asm_generated::local_tee_i64_d32);
+    case kWasmF32:
+      return get_stencil(asm_generated::local_tee_f32_d32);
+    case kWasmF64:
+      return get_stencil(asm_generated::local_tee_f64_d32);
+    default:
+      std::unreachable();
+    }
+  default:
+    std::unreachable();
+  }
 }
 
 stencil_view local_stencil(int operation, std::uint8_t type) {
@@ -1086,7 +1151,7 @@ stencil_view local_stencil(int operation, std::uint8_t type) {
     case kWasmF64:
       return get_stencil(asm_generated::local_get_f64);
     default:
-      return {};
+      std::unreachable();
     }
   case kLocalSet:
     switch (type) {
@@ -1099,7 +1164,7 @@ stencil_view local_stencil(int operation, std::uint8_t type) {
     case kWasmF64:
       return get_stencil(asm_generated::local_set_f64);
     default:
-      return {};
+      std::unreachable();
     }
   case kLocalTee:
     switch (type) {
@@ -1112,10 +1177,10 @@ stencil_view local_stencil(int operation, std::uint8_t type) {
     case kWasmF64:
       return get_stencil(asm_generated::local_tee_f64);
     default:
-      return {};
+      std::unreachable();
     }
   default:
-    return {};
+    std::unreachable();
   }
 }
 
@@ -1170,7 +1235,7 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
                           const code_ip_t *source_offsets = nullptr,
                           const code_ip_t *source_end_offsets = nullptr,
                           const annotation_offset_t *interpreter_rel_after_offsets = nullptr) {
-  if (local_count > kMaxLogicalLocals || local_slot_count > 2 * local_count ||
+  if (local_slot_count > 2 * local_count ||
       (local_count != 0 && (local_offsets == nullptr || local_types == nullptr))) {
     return false;
   }
@@ -1201,14 +1266,10 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       code_offset_t offset = 0;
       operand_words_t width = 0;
       std::uint8_t type = 0;
-      if (!local_layout_entry(local_offsets, local_types, local_count, local_slot_count,
-                              static_cast<int>(instruction.operand), offset, width, type)) {
-        return false;
-      }
-      const auto local_op = local_stencil(op, type);
-      if (local_op.symbol == nullptr) {
-        return false;
-      }
+      local_layout_entry(local_offsets, local_types, local_count, local_slot_count,
+                         static_cast<int>(instruction.operand), offset, width, type);
+      const auto local_op = offset > kMaxDisp8LocalBytes ? local_stencil_disp32(op, type)
+                                                         : local_stencil(op, type);
       const auto encoding =
           width == 1 ? local_memory_operation::load_narrow : local_memory_operation::load_wide;
       const auto store_encoding =

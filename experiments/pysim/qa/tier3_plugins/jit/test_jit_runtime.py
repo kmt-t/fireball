@@ -944,10 +944,9 @@ def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
         min_trace_bytes=1,
         candidate_threshold=0,
     )
-    locals_wat = " ".join("(local i32)" for _ in range(17))
-    module = parse_standalone(
-        wat_to_wasm(f"(module (func (result i32) {locals_wat} i32.const 11))")
-    )
+    # 80 instructions exceed kMaxTraceInstructions (64), a listed failure of the compiler.
+    body = " ".join("i32.const 1 drop" for _ in range(40))
+    module = parse_standalone(wat_to_wasm(f"(module (func (result i32) {body} i32.const 11))"))
     engine.register_module_blocks(module)
     block = module.blocks[0]
     pc = block.head_pc
@@ -4331,3 +4330,25 @@ def test_native_plugin_compiles_global_access_blocks_with_the_module_global_widt
         plugin.close()
         for backing in backings:
             backing.close()
+
+
+
+@pytest.mark.parametrize("local_count", (17, 32, 33, 256))
+def test_jit_compiles_blocks_that_access_any_local_of_a_function(local_count):
+    """A block reads and writes the last local whatever the function's local count."""
+    # No parameter: the loader caps parameters and locals together at FB_CONF_MAX_LOCALS (256).
+    declarations = " ".join("(local i32)" for _ in range(local_count))
+    last = local_count - 1
+    wat = (
+        f'(module (func (export "f") (result i32) {declarations} '
+        f"(local.set {last} (i32.add (local.get {last}) (i32.const 1))) "
+        f"(local.get {last})))"
+    )
+    module = parse_standalone(wat_to_wasm(wat))
+    function_index = module.export_func_index("f")
+    blocks = [
+        block for block in module.blocks if block.func_index == function_index and block.byte_span
+    ]
+    assert blocks
+    for block in blocks:
+        assert compile_module_block(TraceCompiler(), module, block) is not None

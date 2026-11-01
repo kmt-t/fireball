@@ -137,7 +137,7 @@ Interpreterでも同じRuntime APIを使う。Interpreter側のopcode handlerは
 | 命令経路 | 実行方法 | 次の処理 |
 | :--- | :--- | :--- |
 | 直接assembly variantがある | 型・offsetに対応するstencilをtraceへ合成する | 次のstencilへfall-throughする |
-| ローカル操作 | 型・操作別テンプレートを合成し、x64命令エンコーダがmemory instructionと`disp8`を書き込む | 次のstencilへfall-throughする |
+| ローカル操作 | 型・操作別テンプレートを合成し、x64命令エンコーダがmemory instructionを書き込む。byte offset 127 以下は`disp8`、128 以上は`disp32`の版のstencilを選ぶ | 次のstencilへfall-throughする |
 | 直接assembly variantがない有効opcode | `runtime_api` stencilが共通API tableから対応するAPIを呼ぶ | 通常継続なら同じJIT traceの次のstencilへ進む。trapまたは境界exitならtraceを終了する |
 | `call`、`call_indirect` | 呼出しopcodeを最後のoperationとしてtraceへ含め、x64用handler slotとInterpreter annotation offsetを記録する | 共通コード領域の借用table pointerを経由し、handler slotの添字でTier 2 CPS handlerへtail-callする。traceに関数の絶対アドレスを埋め込まない |
 
@@ -224,8 +224,7 @@ Clang integrated assemblerはx64操作、trace entry/exit、common dispatcherの
 operation間に接続用jump/callは置かない。成功link slotを次のstencil bytesで置き換え、連続配置した本体へfall-throughする。
 
 `local.get`、`local.set`、`local.tee`はoperationとWASM値型に対応するstencilへlowerする。trace compilerはLoaderが確定したcompact word offsetを命令エンコーダへ渡し、エンコーダがlocal memory instructionへ直接書き込む。offsetごとのstencil variantは作らない。
-trace compilerは関数引数を含む論理ローカル数を16以下に制限する。
-各ローカルは最大2 wordなので、最後のlocalの開始位置はbyte offset 120以下となり、x64 signed `disp8`に収まる。
+局所のbyte offsetが127以下なら`disp8`の版（4 byte の命令スロット）を使い、128以上なら`disp32`の版（7 byte の命令スロット）を使う。各版は型と操作ごとに1つのstencilである。
 エンコーダはWASM local indexをLoaderのcompact offsetへ変換し、offsetをlocal memory instructionへ直接書き込む。
 local indexやoffsetを実行時に`rel`から読み出さず、local Runtime APIやopcode dispatchも使わない。
 i64/f64は2 word幅として処理する。
@@ -240,13 +239,25 @@ native trace blobはheader、trace body、境界metadata前のalignment padding�
 
 trace単位コード生成はx64実装に限って定義する。ARMv8-M向けLIR、ABI、trace配置、relocation形式はTBDである。
 
+#### コンパイル失敗の要因
+
+コンパイラが失敗を返してよい要因は、次の表に列挙したものだけとする。表の外の経路は、ローダーが確かめた事柄の再確認なら assert とし、実装の誤りなら直す。
+
+| 要因 | 条件 | 縛るもの | 根拠 | 状態 |
+| :--- | :--- | :--- | :--- | :--- |
+| 命令数の上限 | trace に含める命令が `kMaxTraceInstructions`（64）を超える | 命令列の走査用の作業域の大きさ | `jit_internal.hxx` の `kMaxTraceInstructions` | 確定 |
+| 本体の byte 上限 | trace の本体と末尾定数 pool の合計が `FB_CONF_JIT_MAX_BODY_BYTES`（1536）を超える | 出力領域の大きさ | {JIT_AssemblyStencilCodegen}（`requirement_list.md:40`）、`system_config.md:97` | 確定 |
+
+- 失敗を返す要因は上の 3 件だけである。ほかの戻り値（入口の深さ、未対応の命令など）は、直すか assert にする対象である。
+- 命令が 0 件の block は失敗ではない。trace を作らない正常な結果とする。
+
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
 <!-- traceability: {JIT_AssemblyStencilCodegen} {JIT_RuntimeAPI} -->
  1. **トレース解析とコード生成**: Tier 3 JIT拡張はLoader所有WASMコードと関数metadataを内部C++コンパイラへ渡す。C++コンパイラは命令列を復号し、operation LIR symbolと即値を選ぶ。Clang integrated assemblerがbuild時に生成したstencilをC++ trace builderが連結する。成功link slotを次のstencil本体に置換し、命令間に転送命令のないfall-through列を作る。
    - 関数引数を含む論理ローカル数が16以下なら、operationとWASM型に対応するローカル操作stencilを選ぶ。
-   - WASM数値即値を命令へ埋め込み、local memory instructionの`disp8`へoffsetをエンコードする。
+   - WASM数値即値を命令へ埋め込み、local memory instructionへoffsetをエンコードする。byte offset 127 以下は`disp8`、128 以上は`disp32`とする。
    - 直接stencilを持たない有効opcodeは対応するRuntime API stencilへlowerする。trace形成上限と定数pool容量は対応する命令列を収容する。
 2. **キャッシュ配置と定数pool**: JIT runtimeがtrace header、native stencil body、trace末尾定数領域をcacheへ配置する。WASM数値即値とlocal offsetはコードへ直接埋め込み、poolにはtrace単位のheader相対参照、各Runtime APIの実行後Interpreter annotation offset、終端record内のInterpreter annotation offsetを置く。注釈bytesを複製せず、操作間継続deltaやAPI recordごとのheader参照を生成しない。chain targetだけを実行時trace targetとしてheaderへ記録する。
 3. **実行可能メモリの確定**: x64の実行可能バッファは初期化時にRWXを設定する。パッチ確定時には命令キャッシュを同期し、権限は切り替えない。ARMv8-Mの権限機構、命令キャッシュ同期、バリア命令はTBDである。

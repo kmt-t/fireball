@@ -70,6 +70,13 @@ fb_jit_instruction_slot__\name:
   .byte 0x90, 0x90, 0x90, 0x90
 .endm
 
+/* A 7-byte slot holds the disp32 form of a local access; the generator reads its width. */
+.macro FB_INSTRUCTION_SLOT_D32 name
+  .globl fb_jit_instruction_slot7__\name
+fb_jit_instruction_slot7__\name:
+  .byte 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90
+.endm
+
 .macro FB_STENCIL_END name
   FB_SLOT_MARK fb_jit_next_slot__\name, 0xe9
 #if !defined(_WIN32)
@@ -184,56 +191,56 @@ FB_I32_COMPARE fb_stencil_i32_le_u, setbe
 FB_I32_COMPARE fb_stencil_i32_ge_s, setge
 FB_I32_COMPARE fb_stencil_i32_ge_u, setae
 
-.macro FB_LOCAL_GET_NARROW type
-  FB_STENCIL_BEGIN fb_stencil_local_get_\type
+.macro FB_LOCAL_GET_NARROW type, suffix=, slot=FB_INSTRUCTION_SLOT
+  FB_STENCIL_BEGIN fb_stencil_local_get_\type\suffix
     mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_LOCAL_BASE_OFFSET]
-    FB_INSTRUCTION_SLOT fb_stencil_local_get_\type
+    \slot fb_stencil_local_get_\type\suffix
     mov dword ptr [FB_SP_REG], eax
     lea FB_SP_REG, [FB_SP_REG + 4]
-  FB_STENCIL_END fb_stencil_local_get_\type
+  FB_STENCIL_END fb_stencil_local_get_\type\suffix
 .endm
 
-.macro FB_LOCAL_SET_NARROW type
-  FB_STENCIL_BEGIN fb_stencil_local_set_\type
+.macro FB_LOCAL_SET_NARROW type, suffix=, slot=FB_INSTRUCTION_SLOT
+  FB_STENCIL_BEGIN fb_stencil_local_set_\type\suffix
     mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_LOCAL_BASE_OFFSET]
     mov eax, dword ptr [FB_SP_REG - 4]
-    FB_INSTRUCTION_SLOT fb_stencil_local_set_\type
+    \slot fb_stencil_local_set_\type\suffix
     lea FB_SP_REG, [FB_SP_REG - 4]
-  FB_STENCIL_END fb_stencil_local_set_\type
+  FB_STENCIL_END fb_stencil_local_set_\type\suffix
 .endm
 
-.macro FB_LOCAL_TEE_NARROW type
-  FB_STENCIL_BEGIN fb_stencil_local_tee_\type
+.macro FB_LOCAL_TEE_NARROW type, suffix=, slot=FB_INSTRUCTION_SLOT
+  FB_STENCIL_BEGIN fb_stencil_local_tee_\type\suffix
     mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_LOCAL_BASE_OFFSET]
     mov eax, dword ptr [FB_SP_REG - 4]
-    FB_INSTRUCTION_SLOT fb_stencil_local_tee_\type
-  FB_STENCIL_END fb_stencil_local_tee_\type
+    \slot fb_stencil_local_tee_\type\suffix
+  FB_STENCIL_END fb_stencil_local_tee_\type\suffix
 .endm
 
-.macro FB_LOCAL_GET_WIDE type
-  FB_STENCIL_BEGIN fb_stencil_local_get_\type
+.macro FB_LOCAL_GET_WIDE type, suffix=, slot=FB_INSTRUCTION_SLOT
+  FB_STENCIL_BEGIN fb_stencil_local_get_\type\suffix
     mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_LOCAL_BASE_OFFSET]
-    FB_INSTRUCTION_SLOT fb_stencil_local_get_\type
+    \slot fb_stencil_local_get_\type\suffix
     mov qword ptr [FB_SP_REG], rax
     lea FB_SP_REG, [FB_SP_REG + 8]
-  FB_STENCIL_END fb_stencil_local_get_\type
+  FB_STENCIL_END fb_stencil_local_get_\type\suffix
 .endm
 
-.macro FB_LOCAL_SET_WIDE type
-  FB_STENCIL_BEGIN fb_stencil_local_set_\type
+.macro FB_LOCAL_SET_WIDE type, suffix=, slot=FB_INSTRUCTION_SLOT
+  FB_STENCIL_BEGIN fb_stencil_local_set_\type\suffix
     mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_LOCAL_BASE_OFFSET]
     mov rax, qword ptr [FB_SP_REG - 8]
-    FB_INSTRUCTION_SLOT fb_stencil_local_set_\type
+    \slot fb_stencil_local_set_\type\suffix
     lea FB_SP_REG, [FB_SP_REG - 8]
-  FB_STENCIL_END fb_stencil_local_set_\type
+  FB_STENCIL_END fb_stencil_local_set_\type\suffix
 .endm
 
-.macro FB_LOCAL_TEE_WIDE type
-  FB_STENCIL_BEGIN fb_stencil_local_tee_\type
+.macro FB_LOCAL_TEE_WIDE type, suffix=, slot=FB_INSTRUCTION_SLOT
+  FB_STENCIL_BEGIN fb_stencil_local_tee_\type\suffix
     mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_LOCAL_BASE_OFFSET]
     mov rax, qword ptr [FB_SP_REG - 8]
-    FB_INSTRUCTION_SLOT fb_stencil_local_tee_\type
-  FB_STENCIL_END fb_stencil_local_tee_\type
+    \slot fb_stencil_local_tee_\type\suffix
+  FB_STENCIL_END fb_stencil_local_tee_\type\suffix
 .endm
 
 FB_LOCAL_GET_NARROW i32
@@ -248,6 +255,18 @@ FB_LOCAL_TEE_NARROW f32
 FB_LOCAL_GET_WIDE f64
 FB_LOCAL_SET_WIDE f64
 FB_LOCAL_TEE_WIDE f64
+FB_LOCAL_GET_NARROW i32, _d32, FB_INSTRUCTION_SLOT_D32
+FB_LOCAL_SET_NARROW i32, _d32, FB_INSTRUCTION_SLOT_D32
+FB_LOCAL_TEE_NARROW i32, _d32, FB_INSTRUCTION_SLOT_D32
+FB_LOCAL_GET_WIDE i64, _d32, FB_INSTRUCTION_SLOT_D32
+FB_LOCAL_SET_WIDE i64, _d32, FB_INSTRUCTION_SLOT_D32
+FB_LOCAL_TEE_WIDE i64, _d32, FB_INSTRUCTION_SLOT_D32
+FB_LOCAL_GET_NARROW f32, _d32, FB_INSTRUCTION_SLOT_D32
+FB_LOCAL_SET_NARROW f32, _d32, FB_INSTRUCTION_SLOT_D32
+FB_LOCAL_TEE_NARROW f32, _d32, FB_INSTRUCTION_SLOT_D32
+FB_LOCAL_GET_WIDE f64, _d32, FB_INSTRUCTION_SLOT_D32
+FB_LOCAL_SET_WIDE f64, _d32, FB_INSTRUCTION_SLOT_D32
+FB_LOCAL_TEE_WIDE f64, _d32, FB_INSTRUCTION_SLOT_D32
 
 /* Call one opcode API through the common-area table; false exits the trace. */
 .macro FB_RUNTIME_API_STENCIL name, rel_advance

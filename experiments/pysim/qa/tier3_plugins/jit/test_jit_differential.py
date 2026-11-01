@@ -671,3 +671,26 @@ def test_jit_global_access_traces_match_wasmtime_for_i32_and_i64_globals():
     result, engine = _tier3(wasm, "f", [4000])
     assert result == expected
     assert engine.stat_jit_invocations > 0
+
+
+def test_jit_locals_beyond_the_disp8_range_match_wasmtime():
+    """Hot traces that access locals past byte offset 127 (32-bit displacement) match wasmtime."""
+    declarations = " ".join("(local i32)" for _ in range(40))
+    wat = f"""
+    (module
+      (func (export "f") (param $n i32) (result i32) (local $i i32) {declarations}
+        (block $done
+          (loop $again
+            (br_if $done (i32.ge_u (local.get $i) (local.get $n)))
+            (local.set 39 (i32.add (local.get 39) (local.get $i)))
+            (local.set 35 (i32.xor (local.get 35) (local.get 39)))
+            (local.set 2 (i32.add (local.get 2) (local.get 35)))
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br $again)))
+        (i32.add (local.get 39) (i32.add (local.get 35) (local.get 2)))))
+    """
+    wasm = wat_to_wasm(wat)
+    expected = _wasmtime_result(wasm, "f", [3000])
+    result, engine = _tier3(wasm, "f", [3000])
+    assert result == expected
+    assert engine.stat_jit_invocations > 0

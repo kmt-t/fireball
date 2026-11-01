@@ -290,27 +290,6 @@ inline FIREBALL_CPS_CALL void h_rpn_end(execution_context *context,
       context, instruction_ip + code_length, sp - 1, after_set);
 }
 
-// The template element for `local.get a; local.get b; i32.sub` (REQ-097 D). It reads both locals,
-// subtracts, and stores into the target of the END element that follows it. The temporaries are
-// never pushed, so the VM stack pointer is unchanged. The END fields are read here, not dispatched.
-template <bool WithJit>
-inline FIREBALL_CPS_CALL void h_rpn_local_pair_sub(execution_context *context,
-                                                   const std::uint8_t *instruction_ip,
-                                                   std::uint32_t *sp, const std::uint8_t *rel) {
-  const std::uint8_t *cursor = rel + 1;
-  const auto lhs = context->local_base[read_u16(cursor)];
-  const auto rhs = context->local_base[read_u16(cursor)];
-  const std::uint8_t *end = cursor;  // the END element starts here
-  cursor += 1;                       // skip its opcode byte
-  const auto target = static_cast<frame_word_offset_t>(read_u16(cursor));
-  const auto continuation = static_cast<std::ptrdiff_t>(read_s32(cursor));
-  const auto code_length = read_u8(cursor);
-  context->local_base[target] = lhs - rhs;
-  const std::uint8_t *after_set = end + continuation;
-  [[clang::musttail]] return dispatch_next<void, WithJit>(
-      context, instruction_ip + code_length, sp, after_set);
-}
-
 template <bool WithJit> constexpr auto make_rpn_element_handlers() {
   std::array<native_opcode_handler, 8> handlers{};
   handlers[kRpnElemPushLocal] = &h_rpn_push_local<WithJit>;
@@ -320,7 +299,6 @@ template <bool WithJit> constexpr auto make_rpn_element_handlers() {
   handlers[kRpnElemBinopBase + 2] = &h_rpn_binop<WithJit, 2>;
   handlers[kRpnElemBinopBase + 3] = &h_rpn_binop<WithJit, 3>;
   handlers[kRpnElemEnd] = &h_rpn_end<WithJit>;
-  handlers[kRpnElemLocalPairSub] = &h_rpn_local_pair_sub<WithJit>;
   return handlers;
 }
 

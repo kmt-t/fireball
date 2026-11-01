@@ -45,7 +45,6 @@ constexpr std::uint32_t kRpnElemPushLocal = 0x00;
 constexpr std::uint32_t kRpnElemPushImm = 0x01;
 constexpr std::uint32_t kRpnElemBinopBase = 0x02;
 constexpr std::uint32_t kRpnElemEnd = 0x06;
-constexpr std::uint32_t kRpnElemLocalPairSub = 0x07;
 constexpr std::uint32_t kRpnMaxDepth = 8;
 constexpr std::uint32_t kFcMemoryCopySubopcode = 0x0A;
 constexpr std::uint32_t kFcMemoryFillSubopcode = 0x0B;

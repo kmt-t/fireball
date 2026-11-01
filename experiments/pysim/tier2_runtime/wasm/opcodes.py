@@ -243,5 +243,11 @@ RPN_SPECIALISED_FORMS = (
     (11, "T", "I", "V"),  # i32.shr_s (temporary, immediate) -> VM operand stack, then resume the VM
     (17, "L", "I", "V"),  # i32.lt_s (local, immediate) -> VM operand stack, then resume the VM
     (19, "L", "I", "V"),  # i32.gt_s (local, immediate) -> VM operand stack, then resume the VM
+    (17, "L", "L", "T"),  # i32.lt_s (local, local) -> temporary
+    (12, "L", "I", "T"),  # i32.shr_u (local, immediate) -> temporary
+    (10, "L", "I", "T"),  # i32.shl (local, immediate) -> temporary
+    (11, "L", "I", "T"),  # i32.shr_s (local, immediate) -> temporary
+    (0, "L", "I", "L"),  # i32.add (local, immediate) -> local
+    (0, "T", "L", "L"),  # i32.add (temporary, local) -> local
 )
 RPN_MAX_DEPTH = 8

@@ -489,6 +489,12 @@ template <bool WithJit> constexpr auto make_rpn_element_handlers() {
   handlers[kRpnElemSpecBase + 9] = &h_rpn_spec<WithJit, 11, kRpnOperandTemp, kRpnOperandImm, kRpnDestVm>;
   handlers[kRpnElemSpecBase + 10] = &h_rpn_spec<WithJit, 17, kRpnOperandLocal, kRpnOperandImm, kRpnDestVm>;
   handlers[kRpnElemSpecBase + 11] = &h_rpn_spec<WithJit, 19, kRpnOperandLocal, kRpnOperandImm, kRpnDestVm>;
+  handlers[kRpnElemSpecBase + 12] = &h_rpn_spec<WithJit, 17, kRpnOperandLocal, kRpnOperandLocal, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 13] = &h_rpn_spec<WithJit, 12, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 14] = &h_rpn_spec<WithJit, 10, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 15] = &h_rpn_spec<WithJit, 11, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 16] = &h_rpn_spec<WithJit, 0, kRpnOperandLocal, kRpnOperandImm, kRpnDestLocal>;
+  handlers[kRpnElemSpecBase + 17] = &h_rpn_spec<WithJit, 0, kRpnOperandTemp, kRpnOperandLocal, kRpnDestLocal>;
   return handlers;
 }
 

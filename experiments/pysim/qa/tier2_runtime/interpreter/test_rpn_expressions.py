@@ -264,6 +264,24 @@ SPECIALISED_CASES = (
     ),
     (10, "local.get 0 i32.const 3 i32.lt_s if (result i32) i32.const 9 else i32.const 0 end"),
     (11, "local.get 0 i32.const 3 i32.gt_s if (result i32) i32.const 9 else i32.const 0 end"),
+    (
+        12,
+        "local.get 0 local.get 1 i32.lt_s i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
+    ),
+    (
+        13,
+        "local.get 0 i32.const 3 i32.shr_u i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
+    ),
+    (
+        14,
+        "local.get 0 i32.const 3 i32.shl i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
+    ),
+    (
+        15,
+        "local.get 0 i32.const 3 i32.shr_s i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
+    ),
+    (16, "local.get 0 i32.const 3 i32.add local.set 2 local.get 2"),
+    (17, "local.get 0 local.get 1 i32.mul local.get 0 i32.add local.set 2 local.get 2"),
 )
 
 

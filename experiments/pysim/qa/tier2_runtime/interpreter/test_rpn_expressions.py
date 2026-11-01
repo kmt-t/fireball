@@ -245,9 +245,25 @@ SPECIALISED_CASES = (
     (3, "local.get 0 local.get 1 i32.sub local.set 2 local.get 2"),
     (4, "local.get 0 local.get 1 i32.add i32.const 5 i32.mul local.set 2 local.get 2"),
     (5, "local.get 0 local.get 1 i32.mul local.get 0 i32.sub local.set 2 local.get 2"),
-    (6, "local.get 0 i32.const 3 i32.gt_s if (result i32) i32.const 9 else i32.const 0 end"),
-    (7, "local.get 0 i32.const 3 i32.lt_s if (result i32) i32.const 9 else i32.const 0 end"),
-    (8, "local.get 0 local.get 1 i32.gt_u if (result i32) i32.const 9 else i32.const 0 end"),
+    (
+        6,
+        "local.get 0 i32.const 3 i32.gt_s i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
+    ),
+    (
+        7,
+        "local.get 0 i32.const 3 i32.lt_s i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
+    ),
+    (
+        8,
+        "local.get 0 local.get 1 i32.gt_u i32.const 1 i32.add if (result i32) i32.const 9 else i32.const 0 end",
+    ),
+    # destination VM: the operator ends the expression, the VM takes its result
+    (
+        9,
+        "local.get 0 local.get 1 i32.mul i32.const 2 i32.shr_s if (result i32) i32.const 9 else i32.const 0 end",
+    ),
+    (10, "local.get 0 i32.const 3 i32.lt_s if (result i32) i32.const 9 else i32.const 0 end"),
+    (11, "local.get 0 i32.const 3 i32.gt_s if (result i32) i32.const 9 else i32.const 0 end"),
 )
 
 

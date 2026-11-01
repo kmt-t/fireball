@@ -976,6 +976,9 @@ _RPN_TAIL_BYTES = 5  # [continuation i32][code_length u8], after a specialised l
 RPN_TERMINAL_END = 0  # END element: writes the local (target u16), then the program tail
 RPN_TERMINAL_TAIL = 1  # the last specialised element writes the local; the program tail follows
 RPN_TERMINAL_STACK = 2  # END_STACK: the temporaries become the VM stack top
+RPN_TERMINAL_STACK_TAIL = (
+    3  # the last specialised element pushes to the VM stack; the program tail follows
+)
 
 _KIND_TEMP = 0  # an operand that is a temporary on the VM stack above the pointer
 _KIND_LOCAL = 1  # a local that has not been read yet (value: frame word offset)
@@ -1003,17 +1006,22 @@ class RpnExpression:
 
     @property
     def writes_local(self) -> bool:
-        return self.terminal != RPN_TERMINAL_STACK
+        return self.terminal in (RPN_TERMINAL_END, RPN_TERMINAL_TAIL)
 
     @property
     def end_bytes(self) -> int:
-        if self.terminal == RPN_TERMINAL_TAIL:
+        if self.terminal in (RPN_TERMINAL_TAIL, RPN_TERMINAL_STACK_TAIL):
             return _RPN_TAIL_BYTES
         return _RPN_END_LOCAL_BYTES if self.terminal == RPN_TERMINAL_END else _RPN_END_STACK_BYTES
 
 
 _RPN_SPEC_CODES = {
     form: RPN_ELEM_SPEC_BASE + index for index, form in enumerate(RPN_SPECIALISED_FORMS)
+}
+_RPN_SPEC_VM_CODES = {
+    (kind, left, right): code
+    for (kind, left, right, dest), code in _RPN_SPEC_CODES.items()
+    if dest == "V"
 }
 _RPN_SPEC_DEST_L_CODES = {
     (kind, left, right): code
@@ -1149,6 +1157,19 @@ class _RpnScan:
         self.elements.extend(target.to_bytes(2, "little"))
         return True
 
+    def rewrite_last_op_to_vm(self, length: int) -> bool:
+        """Rewrite the operator that ends the expression as one that pushes to the VM stack."""
+        if self.last_op is None or self.last_op[1] != length:
+            return False
+        op_start, _op_end, kind, lhs, rhs = self.last_op
+        vm_code = _RPN_SPEC_VM_CODES.get((kind, _KIND_LETTER[lhs[0]], _KIND_LETTER[rhs[0]]))
+        if vm_code is None:
+            return False
+        del self.elements[op_start:]
+        self.elements.append(vm_code)
+        self.elements.extend(_rpn_operand_bytes(lhs) + _rpn_operand_bytes(rhs))
+        return True
+
     def finish(self, position: int) -> tuple[int, int, int, int] | None:
         """The expression that ends before the instruction at position, or None."""
         if not self.depth_exceeded and self.covered > 0:
@@ -1212,12 +1233,17 @@ def _scan_rpn_expression(
     code_length = resume.offset - head.offset
     if code_length > 0xFF:
         return None
+    elements = bytes(scan.elements[:length])
+    terminal = RPN_TERMINAL_STACK
+    if scan.rewrite_last_op_to_vm(length):
+        elements = bytes(scan.elements)
+        terminal = RPN_TERMINAL_STACK_TAIL
     expression = RpnExpression(
         head_offset=head.offset,
         code_length=code_length,
         max_depth=depth,
-        elements=bytes(scan.elements[:length]),
-        terminal=RPN_TERMINAL_STACK,
+        elements=elements,
+        terminal=terminal,
         set_offset=-1,
         target=0,
         resume_offset=resume.offset,

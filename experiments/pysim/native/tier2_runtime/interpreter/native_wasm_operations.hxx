@@ -55,6 +55,7 @@ constexpr std::uint32_t kRpnOperandLocal = 1;
 constexpr std::uint32_t kRpnOperandImm = 2;
 constexpr std::uint32_t kRpnDestTemp = 0;
 constexpr std::uint32_t kRpnDestLocal = 1;
+constexpr std::uint32_t kRpnDestVm = 2;
 constexpr std::uint32_t kRpnUnaryKindCount = 4;
 constexpr std::uint32_t kRpnMaxDepth = 8;
 constexpr std::uint32_t kFcMemoryCopySubopcode = 0x0A;

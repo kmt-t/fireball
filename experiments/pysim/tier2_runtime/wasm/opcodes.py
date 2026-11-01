@@ -228,7 +228,8 @@ RPN_ELEM_UNARY_BASE = 0x40  # + i32 unary operator index (0..3)
 # native_interpreter.cxx lists the same forms in the same order.
 RPN_ELEM_SPEC_BASE = 0x80
 # (binary operator index, left operand, right operand, destination); operand: T temporary, L local,
-# I immediate; destination: T temporary, L local (the element then ends the expression).
+# I immediate; destination: T temporary (the element continues), L local or V VM operand stack (the
+# element ends the expression and resumes the VM, with a program tail after its operands).
 RPN_SPECIALISED_FORMS = (
     (2, "L", "L", "T"),  # i32.mul  (local, local) -> temporary
     (11, "T", "I", "T"),  # i32.shr_s (temporary, immediate) -> temporary
@@ -239,5 +240,8 @@ RPN_SPECIALISED_FORMS = (
     (19, "L", "I", "T"),  # i32.gt_s (local, immediate) -> temporary
     (17, "L", "I", "T"),  # i32.lt_s (local, immediate) -> temporary
     (20, "L", "L", "T"),  # i32.gt_u (local, local) -> temporary
+    (11, "T", "I", "V"),  # i32.shr_s (temporary, immediate) -> VM operand stack, then resume the VM
+    (17, "L", "I", "V"),  # i32.lt_s (local, immediate) -> VM operand stack, then resume the VM
+    (19, "L", "I", "V"),  # i32.gt_s (local, immediate) -> VM operand stack, then resume the VM
 )
 RPN_MAX_DEPTH = 8

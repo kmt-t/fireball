@@ -419,7 +419,17 @@ inline FIREBALL_CPS_CALL void h_rpn_spec(execution_context *context,
     rhs = sp[-1];
   }
   const std::uint32_t result = rpn_i32_binary<K>(lhs, rhs);
-  if constexpr (Dest == kRpnDestLocal) {
+  if constexpr (Dest == kRpnDestVm) {
+    // The result stays on the VM operand stack, and the VM resumes after the expression.
+    sp[-static_cast<std::ptrdiff_t>(kTemps)] = result;
+    const std::uint8_t *tail = cursor;
+    const auto continuation = static_cast<std::ptrdiff_t>(read_s32(cursor));
+    const auto code_length = read_u8(cursor);
+    const std::uint8_t *after_stack = tail + continuation;
+    [[clang::musttail]] return dispatch_next<void, WithJit>(
+        context, instruction_ip + code_length, sp - static_cast<std::ptrdiff_t>(kTemps) + 1,
+        after_stack);
+  } else if constexpr (Dest == kRpnDestLocal) {
     const auto target = static_cast<frame_word_offset_t>(read_u16(cursor));
     context->local_base[target] = result;
     const std::uint8_t *tail = cursor;
@@ -476,6 +486,9 @@ template <bool WithJit> constexpr auto make_rpn_element_handlers() {
   handlers[kRpnElemSpecBase + 6] = &h_rpn_spec<WithJit, 19, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
   handlers[kRpnElemSpecBase + 7] = &h_rpn_spec<WithJit, 17, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
   handlers[kRpnElemSpecBase + 8] = &h_rpn_spec<WithJit, 20, kRpnOperandLocal, kRpnOperandLocal, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 9] = &h_rpn_spec<WithJit, 11, kRpnOperandTemp, kRpnOperandImm, kRpnDestVm>;
+  handlers[kRpnElemSpecBase + 10] = &h_rpn_spec<WithJit, 17, kRpnOperandLocal, kRpnOperandImm, kRpnDestVm>;
+  handlers[kRpnElemSpecBase + 11] = &h_rpn_spec<WithJit, 19, kRpnOperandLocal, kRpnOperandImm, kRpnDestVm>;
   return handlers;
 }
 

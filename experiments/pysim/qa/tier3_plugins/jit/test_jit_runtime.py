@@ -4215,3 +4215,56 @@ def test_jitr_br_table_terminal_record_points_at_the_loader_annotation():
     assert trace_exit.body_end_ip == br_table.offset
     assert trace_exit.interpreter_rel_bytes == expected_rel_bytes
     assert block.interpreter_annotation_byte_offset + trace_exit.interpreter_rel_bytes == expected_annotation
+
+
+def test_jitr_br_table_terminal_record_resumes_after_the_loader_annotation():
+    """The terminal record's resume position is the end of the br_table annotation the loader wrote.
+
+    The record is [slot, count=1, immediate bytes=8, ip u32, annotation u32, resume u32]. The
+    expected values come from the loader (_operand_annotation_bytes), not from the JIT's table.
+    """
+    import struct
+
+    from tier2_runtime.interpreter.control_flow import (
+        _count_interpreter_annotation_pool_bytes,
+        _operand_annotation_bytes,
+        iter_scan_instrs,
+    )
+    from tier2_runtime.wasm.opcodes import BR_TABLE
+
+    module = parse_standalone(wat_to_wasm(BR_TABLE_TERMINAL_WAT))
+    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), candidate_threshold=0)
+    engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
+    engine.register_module_blocks(module)
+    function_index = module.export_func_index("main")
+    code = module.code_for(function_index)
+    function_base = module.function_pc_offset(function_index)
+    br_table = next(ins for ins in iter_scan_instrs(code) if ins.opcode == BR_TABLE)
+    br_table_pc = function_base + br_table.offset
+    block = next(
+        block
+        for block in module.blocks
+        if block.head_pc <= br_table_pc <= block.head_pc + block.byte_span
+    )
+    block_offset = block.head_pc - function_base
+    annotation_position = block.interpreter_annotation_byte_offset + (
+        _count_interpreter_annotation_pool_bytes(code[block_offset : br_table.offset])
+    )
+    resume_position = annotation_position + _operand_annotation_bytes(code, br_table)
+
+    trace = TraceCompiler.compile_wasm(manager._block_input(block.head_pc, block))
+    assert trace is not None and trace.code_blob is not None
+    header = native_abi.NativeTraceHeader.from_buffer_copy(trace.code_blob)
+    pool = trace.code_blob[header.const_rel_offset :]
+    record = None
+    for position in range(len(pool) - 14):
+        if pool[position + 1] == 1 and pool[position + 2] == 8:
+            (ip,) = struct.unpack_from("<I", pool, position + 3)
+            if ip == br_table.offset:
+                record = position
+                break
+    assert record is not None, f"the br_table terminal record was not found: br_table.offset={br_table.offset} pool={pool[:24].hex()}"
+    (annotation,) = struct.unpack_from("<I", pool, record + 7)
+    (resume,) = struct.unpack_from("<I", pool, record + 11)
+    assert annotation == annotation_position
+    assert resume == resume_position

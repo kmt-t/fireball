@@ -1610,7 +1610,7 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
     if (!read_unsigned_leb(code, cursor, code_bytes, case_count)) {
       return -1;
     }
-    if (case_count > UINT16_MAX || case_count > (kMaxBodyBytes - sizeof(std::uint16_t)) / 3u - 1u) {
+    if (case_count > UINT16_MAX || case_count > (kMaxBodyBytes - sizeof(std::uint16_t)) / 4u - 1u) {
       return 0;
     }
     for (std::uint32_t index = 0; index <= case_count; ++index) {
@@ -1619,7 +1619,8 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
         return -1;
       }
     }
-    annotation_bytes = sizeof(std::uint16_t) + (case_count + 1u) * 3u;
+    // One target is index u16, stack base u8, and result words u8: four bytes (control_flow.py).
+    annotation_bytes = sizeof(std::uint16_t) + (case_count + 1u) * 4u;
     break;
   }
   default:

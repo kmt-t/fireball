@@ -197,7 +197,7 @@ uv run --offline --no-sync python experiments/pysim/qa/workloads/run_all.py
 実行手順は [`benchmarks/README.md`](benchmarks/README.md) に記載する。
 
 ### JIT C++実装とABI
-`native/tier3_plugins/jit/trace_compiler.cxx`はWASM命令をcompile時に復号し、型・offset・融合形に対応するステンシルと定数を一つのtrace blobへ連結する。x64の`operations.S`、`trace.S`、`common.S`は`tools/jit_stencil_gen/generate_assembly.py`でPIC raw binaryにアセンブルし、`.text`を抽出してC++ byte arrayへ変換する。操作間の成功slotは次のステンシルで置き換わるため、通常の命令列はfall-throughし、次opcode fetchやoperation dispatcherを持たない。
+`native/tier3_plugins/jit/trace_compiler.cxx`はWASM命令をcompile時に復号し、型・offsetに対応するステンシルと定数を一つのtrace blobへ連結する。x64の`operations.S`、`trace.S`、`common.S`は`tools/jit_stencil_gen/generate_assembly.py`でPIC raw binaryにアセンブルし、`.text`を抽出してC++ byte arrayへ変換する。操作間の成功slotは次のステンシルで置き換わるため、通常の命令列はfall-throughし、次opcode fetchやoperation dispatcherを持たない。
 
 Runtime APIが必要な操作はtrace内のAPI stencilから共通コード領域にあるAPI tableを呼ぶ。Runtime APIが通常継続を返すと後続のJIT operationを実行する。trapや明示的な境界exitが記録された場合だけ共通abort経路を通る。Interpreter handlerは同じRuntime APIを呼び、テンプレートadapterがCPS継続へ接続する。API呼出しはインタープリタへのフォールバックではない。
 

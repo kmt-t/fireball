@@ -113,7 +113,7 @@ def optimized_assembly_source(role: str, source: Path, directory: Path) -> Path:
     if role == "operations":
         pattern = re.compile(
             r"/\* Call one opcode API through the common-area table; false exits the trace\. \*/\n"
-            r".*?(?=\n\.macro FB_LOCAL_SET_CONST_I32)",
+            r".*?(?=\n\n/\* Tail-call one Interpreter CPS call handler)",
             re.DOTALL,
         )
         text, replacements = pattern.subn(

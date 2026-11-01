@@ -1447,8 +1447,11 @@ def test_jitr_clang_wasm_ngrams_embed_i32_immediates_in_trace_code():
         assert len({trace_sizes[name] for name in names_for_opcode}) == 1
 
 
-def test_jitr_local_pair_ngrams_use_x64_memory_operand_stencils():
-    """TEST-JITC-64: local-pair traces use the operation-specific assembly variants."""
+def test_jitr_local_pair_binary_results_match_reference():
+    """TEST-JITC-64: local.get, local.get, i32.* traces return the reference result.
+
+    Each operation is lowered through its own stencil; no sequence-level fusion is used.
+    """
 
     class RuntimeCompilerOnly(TraceCompiler):
         __slots__ = ()
@@ -1503,34 +1506,34 @@ def test_jitr_local_pair_ngrams_use_x64_memory_operand_stencils():
     manager = engine.jit_runtime
     assert manager is not None
     cases = (
-        ("add", 10, 3, 13, bytes.fromhex("01 42 fc")),
-        ("sub", 10, 3, 7, bytes.fromhex("29 42 fc")),
-        ("mul", 10, 3, 30, bytes.fromhex("0f af 42 fc 89 42 fc")),
-        ("and", 0x55AA, 0xF0F0, 0x50A0, bytes.fromhex("21 42 fc")),
-        ("or", 0x55AA, 0x0F0F, 0x5FAF, bytes.fromhex("09 42 fc")),
-        ("xor", 0x55AA, 0x0F0F, 0x5AA5, bytes.fromhex("31 42 fc")),
-        ("eq", 7, 7, 1, bytes.fromhex("39 42 fc 0f 94 c0")),
-        ("eq", 7, 8, 0, bytes.fromhex("39 42 fc 0f 94 c0")),
-        ("ne", 7, 8, 1, bytes.fromhex("39 42 fc 0f 95 c0")),
-        ("ne", 7, 7, 0, bytes.fromhex("39 42 fc 0f 95 c0")),
-        ("lt_s", 0xFFFF_FFF0, 1, 1, bytes.fromhex("39 42 fc 0f 9c c0")),
-        ("lt_s", 1, 0xFFFF_FFFF, 0, bytes.fromhex("39 42 fc 0f 9c c0")),
-        ("lt_u", 1, 0xFFFF_FFFF, 1, bytes.fromhex("39 42 fc 0f 92 c0")),
-        ("lt_u", 1, 0, 0, bytes.fromhex("39 42 fc 0f 92 c0")),
-        ("gt_s", 1, 0xFFFF_FFFF, 1, bytes.fromhex("39 42 fc 0f 9f c0")),
-        ("gt_s", 0xFFFF_FFFF, 1, 0, bytes.fromhex("39 42 fc 0f 9f c0")),
-        ("gt_u", 0xFFFF_FFFF, 1, 1, bytes.fromhex("39 42 fc 0f 97 c0")),
-        ("gt_u", 1, 0xFFFF_FFFF, 0, bytes.fromhex("39 42 fc 0f 97 c0")),
-        ("le_s", 0xFFFF_FFFF, 1, 1, bytes.fromhex("39 42 fc 0f 9e c0")),
-        ("le_s", 1, 0xFFFF_FFFF, 0, bytes.fromhex("39 42 fc 0f 9e c0")),
-        ("le_u", 1, 1, 1, bytes.fromhex("39 42 fc 0f 96 c0")),
-        ("le_u", 0xFFFF_FFFF, 1, 0, bytes.fromhex("39 42 fc 0f 96 c0")),
-        ("ge_s", 1, 0xFFFF_FFFF, 1, bytes.fromhex("39 42 fc 0f 9d c0")),
-        ("ge_s", 0xFFFF_FFFF, 1, 0, bytes.fromhex("39 42 fc 0f 9d c0")),
-        ("ge_u", 0xFFFF_FFFF, 1, 1, bytes.fromhex("39 42 fc 0f 93 c0")),
-        ("ge_u", 1, 0xFFFF_FFFF, 0, bytes.fromhex("39 42 fc 0f 93 c0")),
+        ("add", 10, 3, 13),
+        ("sub", 10, 3, 7),
+        ("mul", 10, 3, 30),
+        ("and", 0x55AA, 0xF0F0, 0x50A0),
+        ("or", 0x55AA, 0x0F0F, 0x5FAF),
+        ("xor", 0x55AA, 0x0F0F, 0x5AA5),
+        ("eq", 7, 7, 1),
+        ("eq", 7, 8, 0),
+        ("ne", 7, 8, 1),
+        ("ne", 7, 7, 0),
+        ("lt_s", 0xFFFF_FFF0, 1, 1),
+        ("lt_s", 1, 0xFFFF_FFFF, 0),
+        ("lt_u", 1, 0xFFFF_FFFF, 1),
+        ("lt_u", 1, 0, 0),
+        ("gt_s", 1, 0xFFFF_FFFF, 1),
+        ("gt_s", 0xFFFF_FFFF, 1, 0),
+        ("gt_u", 0xFFFF_FFFF, 1, 1),
+        ("gt_u", 1, 0xFFFF_FFFF, 0),
+        ("le_s", 0xFFFF_FFFF, 1, 1),
+        ("le_s", 1, 0xFFFF_FFFF, 0),
+        ("le_u", 1, 1, 1),
+        ("le_u", 0xFFFF_FFFF, 1, 0),
+        ("ge_s", 1, 0xFFFF_FFFF, 1),
+        ("ge_s", 0xFFFF_FFFF, 1, 0),
+        ("ge_u", 0xFFFF_FFFF, 1, 1),
+        ("ge_u", 1, 0xFFFF_FFFF, 0),
     )
-    for name, left, right, expected, fused_stencil in cases:
+    for name, left, right, expected in cases:
         function_index = module.export_func_index(name)
         invocations_before = engine.stat_jit_invocations
         for _ in range(3):
@@ -1541,11 +1544,6 @@ def test_jitr_local_pair_ngrams_use_x64_memory_operand_stencils():
         trace = manager.cache.find_trace(module.function_pc_offset(function_index))
         assert trace is not None and trace.raw_addr is not None
         assert engine.stat_jit_invocations > invocations_before
-        code_blob_address = ctypes.cast(trace._native.code_blob, ctypes.c_void_p).value
-        assert code_blob_address is not None
-        native_blob = ctypes.string_at(code_blob_address, trace._native.blob_bytes)
-        native_body = native_blob[JIT_TRACE_HEADER_BYTES:]
-        assert fused_stencil in native_body, f"{name}: {native_blob.hex()}"
 
 
 def test_jitr_cross_frame_loop_branch_returns_through_interpreter_cps():

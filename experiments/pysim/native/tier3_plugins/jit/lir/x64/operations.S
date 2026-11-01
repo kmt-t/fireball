@@ -184,42 +184,6 @@ FB_I32_COMPARE fb_stencil_i32_le_u, setbe
 FB_I32_COMPARE fb_stencil_i32_ge_s, setge
 FB_I32_COMPARE fb_stencil_i32_ge_u, setae
 
-.macro FB_I32_IMMEDIATE name, operation
-  FB_STENCIL_BEGIN \name
-    .byte 0xb8
-    FB_PATCH_SLOT_4 \name
-    \operation dword ptr [FB_SP_REG - 4], eax
-  FB_STENCIL_END \name
-.endm
-
-FB_I32_IMMEDIATE fb_stencil_i32_add_immediate, add
-FB_I32_IMMEDIATE fb_stencil_i32_sub_immediate, sub
-FB_I32_IMMEDIATE fb_stencil_i32_and_immediate, and
-FB_I32_IMMEDIATE fb_stencil_i32_or_immediate, or
-FB_I32_IMMEDIATE fb_stencil_i32_xor_immediate, xor
-
-FB_STENCIL_BEGIN fb_stencil_i32_mul_immediate
-  .byte 0xb8
-  FB_PATCH_SLOT_4 fb_stencil_i32_mul_immediate
-  imul eax, dword ptr [FB_SP_REG - 4]
-  mov dword ptr [FB_SP_REG - 4], eax
-FB_STENCIL_END fb_stencil_i32_mul_immediate
-
-.macro FB_I32_IMMEDIATE_SHIFT name, group
-  FB_STENCIL_BEGIN \name
-#if defined(_WIN32)
-    .byte 0x41, 0xc1, (0x40 + (\group * 8)), 0xfc
-#else
-    .byte 0xc1, (0x42 + (\group * 8)), 0xfc
-#endif
-    FB_PATCH_SLOT_1 \name
-  FB_STENCIL_END \name
-.endm
-
-FB_I32_IMMEDIATE_SHIFT fb_stencil_i32_shl_immediate, 4
-FB_I32_IMMEDIATE_SHIFT fb_stencil_i32_shr_s_immediate, 7
-FB_I32_IMMEDIATE_SHIFT fb_stencil_i32_shr_u_immediate, 5
-
 .macro FB_LOCAL_GET_NARROW type
   FB_STENCIL_BEGIN fb_stencil_local_get_\type
     mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_LOCAL_BASE_OFFSET]
@@ -360,17 +324,6 @@ FB_RUNTIME_API_STENCIL fb_stencil_runtime_api_immediate_one, 16
 FB_RUNTIME_API_STENCIL fb_stencil_runtime_api_immediate_two, 20
 FB_RUNTIME_API_STENCIL fb_stencil_runtime_api_immediate_three, 24
 
-.macro FB_LOCAL_SET_CONST_I32
-  FB_STENCIL_BEGIN fb_stencil_local_set_const_i32
-    .byte 0xb8
-    FB_PATCH_SLOT_4 fb_stencil_local_set_const_i32
-    mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_LOCAL_BASE_OFFSET]
-    FB_INSTRUCTION_SLOT fb_stencil_local_set_const_i32
-  FB_STENCIL_END fb_stencil_local_set_const_i32
-.endm
-
-FB_LOCAL_SET_CONST_I32
-
 /* Tail-call one Interpreter CPS call handler through the borrowed function table. */
 FB_STENCIL_BEGIN fb_stencil_cps_call
   movzx eax, byte ptr [FB_REL_REG]
@@ -391,47 +344,3 @@ FB_STENCIL_BEGIN fb_stencil_cps_call
   jmp rax
 FB_STENCIL_END fb_stencil_cps_call
 
-.macro FB_FUSED_BINARY name, operation
-  FB_STENCIL_BEGIN fb_stencil_i32_\name\()_local
-    mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_LOCAL_BASE_OFFSET]
-    FB_INSTRUCTION_SLOT fb_stencil_i32_\name\()_local
-    \operation dword ptr [FB_SP_REG - 4], eax
-  FB_STENCIL_END fb_stencil_i32_\name\()_local
-.endm
-
-.macro FB_FUSED_MUL
-  FB_STENCIL_BEGIN fb_stencil_i32_mul_local
-    mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_LOCAL_BASE_OFFSET]
-    FB_INSTRUCTION_SLOT fb_stencil_i32_mul_local
-    imul eax, dword ptr [FB_SP_REG - 4]
-    mov dword ptr [FB_SP_REG - 4], eax
-  FB_STENCIL_END fb_stencil_i32_mul_local
-.endm
-
-.macro FB_FUSED_COMPARE name, condition
-  FB_STENCIL_BEGIN fb_stencil_i32_\name\()_local
-    mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_LOCAL_BASE_OFFSET]
-    FB_INSTRUCTION_SLOT fb_stencil_i32_\name\()_local
-    cmp dword ptr [FB_SP_REG - 4], eax
-    \condition al
-    movzx eax, al
-    mov dword ptr [FB_SP_REG - 4], eax
-  FB_STENCIL_END fb_stencil_i32_\name\()_local
-.endm
-
-FB_FUSED_BINARY add,add
-FB_FUSED_BINARY sub,sub
-FB_FUSED_MUL
-FB_FUSED_BINARY and,and
-FB_FUSED_BINARY or,or
-FB_FUSED_BINARY xor,xor
-FB_FUSED_COMPARE eq,sete
-FB_FUSED_COMPARE ne,setne
-FB_FUSED_COMPARE lt_s,setl
-FB_FUSED_COMPARE lt_u,setb
-FB_FUSED_COMPARE gt_s,setg
-FB_FUSED_COMPARE gt_u,seta
-FB_FUSED_COMPARE le_s,setle
-FB_FUSED_COMPARE le_u,setbe
-FB_FUSED_COMPARE ge_s,setge
-FB_FUSED_COMPARE ge_u,setae

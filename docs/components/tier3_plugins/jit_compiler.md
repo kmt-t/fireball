@@ -30,7 +30,7 @@ trace末尾の定数領域は、traceごとのheader相対参照1個、Runtime A
 別方式を採用する場合は、命令数だけで断定せず、代表traceのコードサイズと実測性能で比較する。
 WASM値は共有オペランドスタックに保持する。
 アセンブリ操作はSysV AMD64またはWindows x64の引数レジスタを明示し、caller-save scratch registerを使う。
-`i32.const`と直後の整数演算、localアクセスと整数演算、`drop`、`i32.eqz`は一部を融合する。
+WASM命令は1命令ずつ対応するステンシルへlowerし、命令列の融合は行わない。
 Loaderが受理したopcodeに直接assembly stencilがない場合は、対応するJIT Runtime API stencilへlowerする。APIが通常継続を返す限り、後続operationも同じflat trace内で実行する。WASM命令セットの範囲外や不正な命令はLoaderが拒否する。
 Tier 3のC++ JitRuntimeはコンパイラを直接呼び、生成結果を所有キャッシュへ登録する。
 WASMコードと実行メタデータはLoaderからRuntime構成へ借用ビューとして渡す。
@@ -54,7 +54,7 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 - **`trace_compiler.cxx`**: C++フロントエンドがWASM命令をデコードし、選択したステンシル本体を接続slotで連結して固定長traceへ合成する。成功経路は命令間の転送命令なしでfall-throughする。直接stencilを持たない有効opcodeはRuntime API stencilへlowerする。定数poolはtraceごとに一つの4-byte header相対参照、実行後Interpreter annotation offsetを持つRuntime API record、終端Runtime API record内の4-byte Interpreter annotation offsetで構成する。即値は命令型に応じた幅で保持し、Interpreter注釈bytesは複製しない。WASM検証違反はLoaderが拒否し、ABI不整合は構成時に検出する。
 - **`JIT_AssemblyStencilCodegen`**: アセンブリsourceから操作、trace entry/exit、terminal result、共通chain dispatcherをビルド時にraw binaryとmetadataへ変換する責務を表す。実行時trace builderは生成済みraw binaryを固定長bufferへ組み立てる。
 - **共通コード領域**: x64 JIT領域には`lir/x64/common.S`から生成したchain dispatcherを配置する。配置offsetはTier 1構成から渡し、C++ ABI probeから得た構造体offsetをassembly macroへ反映する。共通chain dispatcherはopcodeを判定しない。x64の領域サイズとoffsetは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) および [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) を正本とする。ARMv8-Mのサイズと配置はTBDである。 `{JIT_MultiBuffer_Cache}`
-- **操作ステンシル (`lir/x64/operations.S`)**: 算術、local操作、融合操作、Runtime API呼出しをアセンブリで定義する。生成器はPIC raw binaryとsymbol・分岐・即値・命令slot metadataを出力する。実行時trace builderは操作コードを連結し、即値slotを埋め、local memory instructionをエンコードする。ARMv8-Mの物理仕様はTBD。
+- **操作ステンシル (`lir/x64/operations.S`)**: 算術、local操作、Runtime API呼出しをアセンブリで定義する。生成器はPIC raw binaryとsymbol・分岐・即値・命令slot metadataを出力する。実行時trace builderは操作コードを連結し、即値slotを埋め、local memory instructionをエンコードする。ARMv8-Mの物理仕様はTBD。
 - **JIT トレースヘッダ (`jit_trace_header`)**: 各ネイティブtraceの先頭に配置する実行時ヘッダである。x64では32バイトで、chain target、chain dispatcherへの相対値、配置サイズ、stack境界値、frame depth、exit種別、u16基本ブロック番号、定数領域offsetを保持する。bodyはヘッダ直後の`+0x20`から始まる。exit種別は既存reserved byteを用いてcall CPS終端operationを識別し、そのtraceを通常のnative chainから除外する。定数領域の先頭4 byteにheader相対参照をtraceごとに一つ置き、その後にRuntime API recordを使用順に並べる。pool footerやノードごとのheader参照は置かない。chain先ではtarget headerのpool anchorからrecord先頭へ`rel`を初期化する。
 - **トレース境界metadata (`jit_trace_boundary_metadata`)**: JIT exitでInterpreterへ返す20バイトrecordである。`body_end_ip`、`next_pc`、`loops_to`、注釈消費byte数をu32で保持し、offset 16にu16の次BasicBlock index、offset 18にu8の制御深度、offset 19にu8の結果word数を置く。`block_index`はLoaderから渡された`next_block_index`を格納し、Interpreterはindexと`next_pc`の一致を検証する。`boundary_next_pc`と`boundary_loops_to`は`run_step`との境界比較用にPCのまま保持する。
 
@@ -135,7 +135,7 @@ Interpreterでも同じRuntime APIを使う。Interpreter側のopcode handlerは
 
 | 命令経路 | 実行方法 | 次の処理 |
 | :--- | :--- | :--- |
-| 直接assembly variantがある | 型・offset・融合形に対応するstencilをtraceへ合成する | 次のstencilへfall-throughする |
+| 直接assembly variantがある | 型・offsetに対応するstencilをtraceへ合成する | 次のstencilへfall-throughする |
 | ローカル操作 | 型・操作別テンプレートを合成し、x64命令エンコーダがmemory instructionと`disp8`を書き込む | 次のstencilへfall-throughする |
 | 直接assembly variantがない有効opcode | `runtime_api` stencilが共通API tableから対応するAPIを呼ぶ | 通常継続なら同じJIT traceの次のstencilへ進む。trapまたは境界exitならtraceを終了する |
 | `call`、`call_indirect` | 呼出しopcodeを最後のoperationとしてtraceへ含め、x64用handler slotとInterpreter annotation offsetを記録する | 共通コード領域の借用table pointerを経由し、handler slotの添字でTier 2 CPS handlerへtail-callする。traceに関数の絶対アドレスを埋め込まない |
@@ -156,7 +156,7 @@ Interpreter opcode handlerとJIT trace entryは`ctx`, `ip`, `sp`, `rel`の4引�
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| operation symbol | trace compile時に命令の型・offset・fusion結果で選択するステンシル名 | fixed array entry | build時にraw binary化したステンシル本体をtraceへ連結する |
+| operation symbol | trace compile時に命令の型・offsetで選択するステンシル名 | fixed array entry | build時にraw binary化したステンシル本体をtraceへ連結する |
 | trace link metadata | 各stencilの成功slot、abort slot、trace entryのstart/exit slotと局所分岐 | build artifact | 成功slotを次の操作本体で置き換え、必要な局所分岐を再配置する |
 | operation source | x64操作、trace entry/exit、共通chain dispatcherのアセンブリ定義 | build-time source | 共有ライブラリへ埋め込まず、ビルド時にraw binaryへ変換する |
 | 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | x64ではプロセス絶対アドレスを命令列へ埋め込まず、トレースヘッダ、共通領域オフセット、基底相対アドレス、`rel32` 分岐を用いる。ARMv8-Mの方式はTBD |
@@ -192,8 +192,8 @@ JIT トレースとインタープリタが共有オペランド領域上で相�
    - 分岐は、JIT入口のときだけInterpreter CPSへ戻る。yieldしきい値到達時はyield statusをC++ dispatcherへ返す。
    - トラップ、外部呼出し、関数完了は各契約の実行境界としてRuntimeEngineへ返す。
 4. **共有スタック範囲不変条件 (Shared Stack Range Invariant)**:
-   - Interpreterは全WASM値を共有オペランド領域に保持する。JITは定数畳込みや隣接命令の融合で実行時に不要な中間値を除去できる。融合後も生存する値は共有オペランド領域に置く。
-   - コンパイラは、トレースが実際に使用する最大スタックワード数を `stack_words` としてヘッダに記録する。Runtime API operationが要求する入力・結果の領域も含める。融合により、この値はWASM意味論上の最大スタック深さ以下になることがある。
+   - Interpreterは全WASM値を共有オペランド領域に保持する。生存する値は共有オペランド領域に置く。
+   - コンパイラは、トレースが実際に使用する最大スタックワード数を `stack_words` としてヘッダに記録する。Runtime API operationが要求する入力・結果の領域も含める。
    - 入口以前から存在する値へのアクセスはWASM検証済みのstack shapeに基づき、トレース中に追加で確保する領域は共有スタック上限内へ書き込む。
 
 #### JIT トレース物理メモリレイアウト (`jit_trace_header`)
@@ -221,9 +221,6 @@ Clang integrated assemblerはx64操作、trace entry/exit、common dispatcherの
 即値ごとに異なるx64ステンシルvariantは作らない。
 即値は単一ステンシル内のpatch slotへtrace compile時に書き込むため、実行時に`rel`から読まない。
 operation間に接続用jump/callは置かない。成功link slotを次のstencil bytesで置き換え、連続配置した本体へfall-throughする。
-加算0、乗算1、シフト量0などの恒等演算はC++フロントエンドが除去する。
-`i32.const; i32.*`融合では、演算即値を命令slotへ焼き込む。
-`drop`はコードを出さず、定数`i32.eqz`はtrace生成時に評価する。
 
 `local.get`、`local.set`、`local.tee`はoperationとWASM値型に対応するstencilへlowerする。trace compilerはLoaderが確定したcompact word offsetを命令エンコーダへ渡し、エンコーダがlocal memory instructionへ直接書き込む。offsetごとのstencil variantは作らない。
 trace compilerは関数引数を含む論理ローカル数を16以下に制限する。
@@ -231,13 +228,8 @@ trace compilerは関数引数を含む論理ローカル数を16以下に制限�
 エンコーダはWASM local indexをLoaderのcompact offsetへ変換し、offsetをlocal memory instructionへ直接書き込む。
 local indexやoffsetを実行時に`rel`から読み出さず、local Runtime APIやopcode dispatchも使わない。
 i64/f64は2 word幅として処理する。
-`i32.const; local.set/tee`融合は、即値slotとlocal instruction slotを一度に埋める。
-`local.get, local.get, i32.*`融合は2つのlocal offsetをそれぞれ命令エンコーダで焼き込む。
 C++ local get/set/tee Runtime API経路は設けない。
 
-命令列を短くする融合候補として空スタックからの`local.get, local.get, i32.*`を実装する。第1localを共有スタックへロードし、第2localを融合アセンブリstencilのmemory operandにする。機械語サイズや命令数は生成stencilごとに測定する。
-
-`i32.const, local.set`融合（{GOTCHA-JITC-08}）は即値を命令へ埋め込み、localへ書く。融合で定数pushを除去するため、この操作は`sp`も`rel`も変更しない。`i32.const, local.tee`融合は同じ即値をlocalと共有スタックへ書く。 <!-- definition: {GOTCHA-JITC-08} -->
 
 1トレースは `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS` WASM命令、`FB_CONF_JIT_MAX_BODY_BYTES` のbodyと末尾定数pool、共有stack深さ `2 × FB_CONF_MAX_VALUE_STACK` wordを上限とする。WASM数値即値とlocal offsetはtrace codeに直接埋め込む。定数領域は先頭のheader相対参照4 byte、Runtime API argument record、終端recordのInterpreter annotation offsetを保持する。各recordのslot、immediate count、immediate byte spanはそれぞれu8であり、API最大 `FB_CONF_JIT_RUNTIME_API_MAX_IMMEDIATES` immediateのpayloadは値の型幅で格納する。ヘッダは定数領域の先頭offsetだけを保持し、slot数fieldを持たない。C++フロントエンドのoperation用固定長配列は `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS + 1` 件、再配置record用配列は `8 × FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS + 1` 件を保持する。
 
@@ -365,7 +357,7 @@ sequenceDiagram
 <!-- traceability: {JIT_AssemblyStencilCodegen} {JIT_RegisterMapping} {JIT_MultiBuffer_Cache} -->
 - **目標**: コンパイルレイテンシを最小化し、WAMRインタープリタを上回る実行速度を実現。
 - **方策**:
-     - **trace単位native composition**: C++はcompile時だけopcodeを復号してLIR variantを選ぶ。操作ごとのreturn/エピローグを生成せず、成功slotを後続のraw stencil本体で置換する。完成traceはoperation間call/jump、次opcode fetch、indirect dispatchを持たない。恒等演算はtrace構築前に除去する。
+     - **trace単位native composition**: C++はcompile時だけopcodeを復号してLIR variantを選ぶ。操作ごとのreturn/エピローグを生成せず、成功slotを後続のraw stencil本体で置換する。完成traceはoperation間call/jump、次opcode fetch、indirect dispatchを持たない。
     - **レジスタ割り当て**: assembly sourceは対象ABIの引数レジスタを明示し、Runtime API stencilは対象ABIの呼出し保存規則を守る。
     - **実行時検索との分離**: コード生成後の検索方式とキャッシュ管理は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) に従う。
 
@@ -386,7 +378,7 @@ ARMv8-Mのコンパイラと実機検証はTBDである。
 
 ### 7.1 検証対象の不変条件
 - **位置独立性 (PIC)**: x64コードが任意のキャッシュバンクで再コンパイル不要で動作すること。ARMv8-Mの位置独立性と分岐範囲はTBD（`TEST-INT-40`, `TEST-JITC-40`）。
-    - **トレース境界状態**: 融合後も生存するWASM値は共有オペランドスタックに保持する。x64ではchain先も同じスタック状態を引き継ぐ。ARMv8-Mのポインタ配置とスタック位置の更新はTBDである（`TEST-INT-41`, `TEST-JITC-52`）。
+    - **トレース境界状態**: 命令の後も生存するWASM値は共有オペランドスタックに保持する。x64ではchain先も同じスタック状態を引き継ぐ。ARMv8-Mのポインタ配置とスタック位置の更新はTBDである（`TEST-INT-41`, `TEST-JITC-52`）。
 - **x64実行可能メモリ**: OSが公開する権限が初期化からRWXで変わらないことを確認する。パッチ区間外のAPI書込み拒否と、パッチ確定後のコード実行を別々に確認する。ARMv8-Mの物理実装と実機検証はTBDである。
 
 ### 7.2 テスト仕様書との連携

@@ -519,8 +519,8 @@ def test_trace_local_layout_is_fixed_during_compilation():
         assert tuple(context.stack) == expected_stack
 
 
-def test_i32_const_local_set_fusion_preserves_existing_stack():
-    """The fused constant store has no net operand-stack effect."""
+def test_i32_const_local_store_preserves_existing_stack():
+    """The constant store (ordinary path, no fusion) has no net operand-stack effect."""
     compiler = TraceCompiler()
     sentinel = 0xA5A5_5A5A
     value = 0x1234_5678
@@ -547,8 +547,8 @@ def test_i32_const_local_set_fusion_preserves_existing_stack():
         assert tuple(context.stack) == expected_stack
 
 
-def test_local_fusions_select_by_offset_without_index_cap():
-    """High local indexes use fused native stencils when their offsets fit."""
+def test_local_offsets_without_index_cap():
+    """High local indexes use the ordinary per-instruction stencils when their offsets fit."""
     compiler = TraceCompiler()
     layout = LocalLayout((I32,) * 16)
     value = 0x1234_5678

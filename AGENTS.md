@@ -18,6 +18,8 @@
 - 変更前に関連する既存ルール（`.agents/rules/**`）を読む。
 - 仕様の追加・改定・レビューでは、[仕様の必要性と既存機構の確認](.agents/skills/specification-review.md)を適用する。
 - 迷ったら `docs/plans/backlog_list.md` と `docs/plans/roadmap_phase.md` を確認する。
+- 仕様を決める前に、関係する仕様書（`docs/requires/requirement_list.md` と `docs/components/**`）を読む。決めた内容には、根拠とした要求と仕様の箇所を書く。
+- 判断を仰ぐ前に、自分で調べる。調べた事実、選択肢、推奨を説明してから判断を仰ぐ。
 - 仕様変更時は `docs/components/`、`docs/requires/` を必要に応じて更新し、形式検証モデル（`docs/components/<tier>/formal/`）を整合させる。
 - 仕様、計画、検証に触れる変更では、`docs/architecture/document_structure.md` に従って、文書間の紐付け（definition と traceability）を保つ。
 - ルールの再掲は `GLOBAL` / `LOCAL` のスコープ差がある場合のみ意図的とみなす。

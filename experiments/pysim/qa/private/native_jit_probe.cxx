@@ -38,9 +38,6 @@ static void qa_runtime_trace_executed(const fb_native_dispatch_call *input,
     if (header->const_rel_offset <= header->blob_bytes) {
       const auto *rel = reinterpret_cast<const std::uint8_t *>(header) + header->const_rel_offset;
       if (context->rel == rel) {
-        const auto *exit = reinterpret_cast<const fb_native_jit_trace_exit *>(context->rel);
-        runtime.record_runtime_trace_exit(header->block_index, exit->result_words,
-                                          header->frame_depth);
         return;
       }
     }
@@ -157,7 +154,7 @@ static int build_dispatch_table(qa_jit_runtime *runtime, fb_native_trace_descrip
     output[count++] = {selected.head_pc,
                        runtime->trace_entry_address(selected),
                        block->byte_span,
-                       header->result_words,
+                       static_cast<std::uint32_t>(header->result_words),
                        header->stack_words,
                        block->frame_depth,
                        block->next_pc,

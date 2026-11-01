@@ -65,6 +65,8 @@ class WasmBlock:
     interpreter_annotation_byte_offset: int = 0
     # Module global value widths in words, one byte per global; byte_length is the global count.
     global_widths: NativeByteView = NativeByteView(0, 0)
+    # Operand stack words when control reaches this block; fixed by WASM validation.
+    entry_stack_words: int = 0
 
 
 class CacheField(IntEnum):
@@ -99,7 +101,7 @@ class NativeTraceHeader(ctypes.Structure):
         ("head_pc", ctypes.c_uint32),
         ("blob_bytes", ctypes.c_uint32),
         ("stack_words", ctypes.c_uint8),
-        ("result_words", ctypes.c_uint8),
+        ("result_words", ctypes.c_int8),
         ("chain_words", ctypes.c_uint8),
         ("chain_body_count", ctypes.c_uint8),
         ("frame_depth", ctypes.c_uint8),
@@ -119,7 +121,7 @@ class NativeTraceExit(ctypes.Structure):
         ("interpreter_rel_bytes", ctypes.c_uint32),
         ("block_index", ctypes.c_uint16),
         ("frame_depth", ctypes.c_uint8),
-        ("result_words", ctypes.c_uint8),
+        ("result_words", ctypes.c_int8),
     )
 
 
@@ -223,6 +225,7 @@ class _NativeWasmBlock(ctypes.Structure):
         ("loops_to_block_index", ctypes.c_uint16),
         ("interpreter_annotations", _NativeByteView),
         ("interpreter_annotation_byte_offset", ctypes.c_uint32),
+        ("entry_stack_words", ctypes.c_uint16),
         ("global_widths", _NativeByteView),
     )
 
@@ -236,6 +239,7 @@ assert _NativeWasmBlock.extension_data.offset == 88
 assert _NativeWasmBlock.block_index.offset == 96
 assert _NativeWasmBlock.interpreter_annotations.offset == 104
 assert _NativeWasmBlock.interpreter_annotation_byte_offset.offset == 120
+assert _NativeWasmBlock.entry_stack_words.offset == 124
 assert _NativeWasmBlock.global_widths.offset == 128
 assert ctypes.sizeof(_NativeWasmBlock) == 144
 
@@ -907,6 +911,7 @@ def marshal_block(block: WasmBlock) -> _NativeWasmBlock:
             block.interpreter_annotations.byte_length,
         ),
         block.interpreter_annotation_byte_offset,
+        block.entry_stack_words,
         _NativeByteView(block.global_widths.address, block.global_widths.byte_length),
     )
 

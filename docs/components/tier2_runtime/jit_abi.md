@@ -78,7 +78,7 @@ Interpreter opcode handlerの型は`void (execution_context*, const uint8_t*, ui
 | `+0x0C` | `head_pc` | 4バイト | キャッシュ常駐entryのWASM開始PC |
 | `+0x10` | `blob_bytes` | 4バイト | ヘッダからtrace末尾定数領域末尾までの配置サイズ |
 | `+0x14` | `stack_words` | 1バイト | 当該トレースが書き込む最大スタック領域 |
-| `+0x15` | `result_words` | 1バイト | トレースが確定する結果ワード数 |
+| `+0x15` | `result_words` | 1バイト | トレースが確定する結果ワード数。実行時のsp計算と連結の判定には使わない（sp の正本は`execution_context.stack_pointer`） |
 | `+0x16` | `chain_words` | 1バイト | 現在のchain全体が必要とする最大スタック領域 |
 | `+0x17` | `chain_body_count` | 1バイト | rootから終端または最初の再訪までに含む相異なるtrace body数。循環時もchain更新で有限に再計算 |
 | `+0x18` | `frame_depth` | 1バイト | 関数開始位置から当該ブロック開始位置までの制御フレーム深さ（最大 `FB_CONF_MAX_NESTING_DEPTH`） |
@@ -120,7 +120,7 @@ CallFrameとCallStackの配置、容量、および関数呼出し時の状態�
 
 ### 委譲シグネチャ
 
-JIT trace entryは`bool (execution_context*, const uint8_t*, uint32_t*, const uint8_t*) noexcept`を使う。`true`なら通常完了で、未接続chain targetに到達した終端dispatcherだけが終端metadata pointerを一時的に`execution_context.rel`へ格納し、`execution_context.ip`へ終端命令位置を設定する。`false`ならtrapまたはCPS exitであり、Interpreter dispatcherは後続実行を中断する。JIT trace entryの`false`は、`execution_context`の終了状態（trap状態、CPS終了状態）と一致する。entryは、この状態を読んでから`false`を返す。Interpreter Runtime APIは`bool (execution_context*, const uint8_t *&, uint32_t *&, uint32_t *&, const uint8_t *&)`、JIT Runtime APIは`bool (execution_context*, uint32_t *&, uint32_t *&, const uint8_t*)`を使う。Interpreter側の`rel`は関数注釈プールを指し、JIT側の`rel` cursorはtrace pool anchor内のRuntime API recordを指す。recordはu8 slot/count/span、`code_ip_t` source IP、型幅のimmediate payloadから成る。traceごとのanchorはheader相対参照を一つ持ち、終端API recordのannotation offsetから関数注釈プールを読む。InterpreterとJITのopcode handler/API tableは独立している。
+JIT trace entryは`bool (execution_context*, const uint8_t*, uint32_t*, const uint8_t*) noexcept`を使う。`true`なら通常完了で、未接続chain targetに到達した終端dispatcherだけが終端metadata pointerを一時的に`execution_context.rel`へ格納し、`execution_context.ip`へ終端命令位置を設定する。値スタックのsp（`FB_SP_REG`）の正本は`execution_context.stack_pointer`の一つであり、trace本体は正常完了の終端（`fb_trace_return_success`）でそれを書き戻す。Interpreterは完了後にspを作り直さない。連結された後続traceも同じ書き戻しで終わる。`false`ならtrapまたはCPS exitであり、Interpreter dispatcherは後続実行を中断する。JIT trace entryの`false`は、`execution_context`の終了状態（trap状態、CPS終了状態）と一致する。entryは、この状態を読んでから`false`を返す。Interpreter Runtime APIは`bool (execution_context*, const uint8_t *&, uint32_t *&, uint32_t *&, const uint8_t *&)`、JIT Runtime APIは`bool (execution_context*, uint32_t *&, uint32_t *&, const uint8_t*)`を使う。Interpreter側の`rel`は関数注釈プールを指し、JIT側の`rel` cursorはtrace pool anchor内のRuntime API recordを指す。recordはu8 slot/count/span、`code_ip_t` source IP、型幅のimmediate payloadから成る。traceごとのanchorはheader相対参照を一つ持ち、終端API recordのannotation offsetから関数注釈プールを読む。InterpreterとJITのopcode handler/API tableは独立している。
 
 Runtime APIはtrace operationとして共通コード領域のtableから呼び出す。API固有の実行状態・trap状態を`execution_context`へ反映し、`true`で後続JIT operationへ継続する。`false`ではJIT stencilが後続operationを実行せずabort slotへ分岐し、RuntimeEngineが`execution_context`の終了理由を判定する。 `{JIT_RuntimeAPI}`
 

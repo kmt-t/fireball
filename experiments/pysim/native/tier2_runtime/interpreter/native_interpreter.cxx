@@ -1166,9 +1166,6 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Resul
   assert(completed_trace_exit->block_index == completed_block.next_block_index);
   frame.boundary_next_pc = completed_trace_exit->next_pc;
   frame.boundary_loops_to = completed_trace_exit->loops_to;
-  assert(completed_trace_exit->result_words <=
-         static_cast<std::uint32_t>(context.stack_limit - context.stack_pointer));
-  context.stack_pointer += completed_trace_exit->result_words;
   const auto interpreter_terminator_pending =
       context.ip < context.code_size &&
       (context.code[context.ip] == 0x04 || context.code[context.ip] == 0x0C ||

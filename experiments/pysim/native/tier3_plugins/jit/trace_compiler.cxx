@@ -929,11 +929,27 @@ struct trace_builder {
   std::array<std::uint8_t, kMaxOperationStencilBytes> scaffold_code{};
 };
 
+/**
+ * @brief 命令の並びのスタックを、語数と型付きの値の列で表す。
+ *
+ * 入口のスタックは型のない語として持つ。WASM の検証規則が型を定めるため、消費する命令が
+ * 自分の幅で語を消費する（entry_words を減らす）。型付きの値は widths に積む。
+ */
 struct stack_model {
   std::array<std::uint8_t, kMaxStackDepth> widths{};
   std::size_t value_count = 0;
   jit_stack_words_t word_count = 0;
   jit_stack_words_t max_words = 0;
+  jit_stack_words_t entry_words = 0;
+  jit_stack_words_t seeded_words = 0;
+
+  /** @brief 入口の語数で初期化する。型付きの値は積まれていない状態から始まる。 */
+  void seed_entry(jit_stack_words_t words) {
+    entry_words = words;
+    seeded_words = words;
+    word_count = words;
+    max_words = words;
+  }
 
   bool push(std::uint8_t width) {
     if ((width != 1 && width != 2) || value_count == widths.size() ||
@@ -947,10 +963,21 @@ struct stack_model {
   }
 
   bool top_is(std::uint8_t width) const {
-    return value_count != 0 && widths[value_count - 1] == width;
+    if (value_count == 0) {
+      return entry_words >= width;
+    }
+    return widths[value_count - 1] == width;
   }
 
   bool pop(std::uint8_t width) {
+    if (value_count == 0) {
+      if (entry_words < width) {
+        return false;
+      }
+      entry_words = static_cast<jit_stack_words_t>(entry_words - width);
+      word_count = static_cast<jit_stack_words_t>(word_count - width);
+      return true;
+    }
     if (!top_is(width)) {
       return false;
     }
@@ -959,14 +986,7 @@ struct stack_model {
     return true;
   }
 
-  bool binary(std::uint8_t width) {
-    if (value_count < 2 || widths[value_count - 1] != width || widths[value_count - 2] != width) {
-      return false;
-    }
-    value_count -= 2;
-    word_count -= 2 * width;
-    return push(width);
-  }
+  bool binary(std::uint8_t width) { return pop(width) && pop(width) && push(width); }
 
   bool unary(std::uint8_t input_width, std::uint8_t output_width) {
     return pop(input_width) && push(output_width);
@@ -976,15 +996,8 @@ struct stack_model {
     return pop(input_width) && pop(input_width) && push(output_width);
   }
 
-  bool pop_any() { return value_count != 0 && pop(widths[value_count - 1]); }
-
-  bool select() {
-    if (value_count < 3 || widths[value_count - 2] != widths[value_count - 3]) {
-      return false;
-    }
-    const auto width = widths[value_count - 2];
-    return pop(1) && pop(width) && pop(width) && push(width);
-  }
+  /** @brief 幅 width の select（条件は i32）。幅は命令の注釈が決める。 */
+  bool select(std::uint8_t width) { return pop(1) && pop(width) && pop(width) && push(width); }
 };
 
 stencil_view get_stencil(generated::stencil_range range) { return generated_stencil(range); }
@@ -1290,10 +1303,7 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
     }
 
     if (op == kDrop) {
-      if (stack.value_count == 0) {
-        return false;
-      }
-      const auto width = stack.widths[stack.value_count - 1];
+      const auto width = static_cast<std::uint8_t>(instruction.operand);
       const auto stencil =
           width == 1 ? get_stencil(asm_generated::drop) : get_stencil(asm_generated::drop_wide);
       if (!stack.pop(width) || !builder.append_linked(stencil)) {
@@ -1303,14 +1313,10 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       continue;
     }
     if (op == kSelect) {
-      if (stack.value_count < 3 ||
-          stack.widths[stack.value_count - 2] != stack.widths[stack.value_count - 3]) {
-        return false;
-      }
-      const auto width = stack.widths[stack.value_count - 2];
+      const auto width = static_cast<std::uint8_t>(instruction.operand);
       const auto stencil = width == 1 ? get_stencil(asm_generated::select_i32)
                                       : get_stencil(asm_generated::select_i64);
-      if (!stack.select() || !builder.append_linked(stencil)) {
+      if (!stack.select(width) || !builder.append_linked(stencil)) {
         return false;
       }
       ++index;
@@ -1419,7 +1425,8 @@ int finish_trace(trace_builder &builder, stack_model &stack, fireball::jit_compi
     return 0;
   }
   result->max_stack_words = stack.max_words;
-  result->result_words = stack.word_count;
+  // Signed net change above the entry stack; negative when the trace consumed entry words.
+  result->result_words = static_cast<jit_result_words_t>(stack.word_count - stack.seeded_words);
   return 1;
 }
 
@@ -1464,12 +1471,6 @@ bool apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_mod
 
   if (op == 0x01) {
     return true;
-  }
-  if (op == 0x1A) {
-    return stack.pop_any();
-  }
-  if (op == 0x1B) {
-    return stack.select();
   }
   if (op >= 0x28 && op <= 0x35) {
     const auto result_width = (op == 0x29 || (op >= 0x30 && op <= 0x35)) ? 2u : 1u;
@@ -1796,7 +1797,8 @@ int fireball::compile_wasm_trace(
     std::uint32_t has_loops_to, wasm_pc_t loops_to, const std::uint8_t *interpreter_annotations,
     annotation_offset_t interpreter_annotation_byte_count,
     annotation_offset_t interpreter_annotation_byte_offset, const jit_byte_view &global_widths,
-    const frame_word_offset_t *local_offsets, const std::uint8_t *local_types,
+    jit_stack_words_t entry_stack_words, const frame_word_offset_t *local_offsets,
+    const std::uint8_t *local_types,
     local_count_t local_count, local_count_t local_slot_count, std::uint8_t *output,
     code_offset_t output_capacity, fireball::jit_compile_result *result) {
 #if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
@@ -1886,6 +1888,8 @@ int fireball::compile_wasm_trace(
         return -1;
       }
       sync_annotation_rel();
+      // The operand width is not an immediate: has_operand stays 0, and operand carries the width.
+      instruction.operand = operand_width_field;
     }
 
     if (opcode == kFcPrefix) {
@@ -2034,6 +2038,7 @@ int fireball::compile_wasm_trace(
 
   trace_builder builder{output, output_capacity};
   stack_model stack{};
+  stack.seed_entry(entry_stack_words);
   if (!builder.begin_trace() ||
       !compile_instructions(builder, instructions.data(), instruction_count, local_offsets,
                             local_types, local_count, local_slot_count, stack, global_widths,

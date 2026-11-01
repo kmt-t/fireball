@@ -20,6 +20,8 @@ typedef uint8_t frame_depth_t;
 typedef uint8_t instruction_width_t;
 
 typedef uint8_t jit_stack_words_t;
+// Net stack change of a trace: negative when the trace consumes words of its entry stack.
+typedef int8_t jit_result_words_t;
 typedef uint8_t jit_body_count_t;
 typedef uint32_t card_index_t;
 

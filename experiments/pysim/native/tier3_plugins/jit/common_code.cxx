@@ -145,9 +145,9 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
       pool_offset + r->relocation_bytes > std::numeric_limits<std::uint16_t>::max()) {
     return 0;
   }
-  const auto result_words = r->result_words;
+  const jit_result_words_t result_words = r->result_words;
   const auto words = r->max_stack_words;
-  if (words > 0xFFu || result_words > 0xFFu) {
+  if (words > 0xFFu) {
     return 0;
   }
   auto *header = reinterpret_cast<jit_trace_header *>(output);
@@ -156,7 +156,7 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
              head_pc,
              static_cast<std::uint32_t>(pool_offset + r->relocation_bytes),
              static_cast<std::uint8_t>(words),
-             static_cast<std::uint8_t>(result_words),
+             static_cast<jit_result_words_t>(result_words),
              static_cast<std::uint8_t>(words),
              1,
              frame_depth,
@@ -184,7 +184,8 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
                                                       r->interpreter_rel_bytes,
                                                       next_block_index,
                                                       frame_depth,
-                                                      static_cast<operand_words_t>(result_words)};
+                                                      static_cast<jit_result_words_t>(
+                                                          result_words)};
   std::memcpy(output + metadata_offset, &boundary_metadata, sizeof(boundary_metadata));
   return 1;
 }
@@ -204,7 +205,8 @@ extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block *block, std::
       block->code.data, block->code.bytes, block->offset, block->byte_span, next != UINT32_MAX,
       static_cast<std::uint32_t>(next), 0, 0, block->interpreter_annotations.data,
       block->interpreter_annotations.bytes, block->interpreter_annotation_byte_offset,
-      block->global_widths, reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data),
+      block->global_widths, block->entry_stack_words,
+      reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data),
       block->locals.types.data,
       block->locals.count, block->locals.total_words, body_scratch, kMaxBodyBytes, &result);
   if (status != 1) {

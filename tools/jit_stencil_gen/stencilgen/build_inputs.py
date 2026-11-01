@@ -180,6 +180,7 @@ def role_definitions(role: str, abi: tuple[int, ...], config_path: Path) -> dict
             "FB_CPS_EXIT_MASK": 0xF00,
             "FB_TRACE_COMMON_RELATIVE_OFFSET": common_relative,
             "FB_CONTEXT_REL_OFFSET": context_rel,
+            "FB_CONTEXT_SP_OFFSET": context_sp,
         }
     if role == "common":
         return {

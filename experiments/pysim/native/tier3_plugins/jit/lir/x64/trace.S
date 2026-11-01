@@ -21,6 +21,9 @@
 #ifndef FB_CONTEXT_REL_OFFSET
 #error "FB_CONTEXT_REL_OFFSET must come from the production C++ ABI probe"
 #endif
+#ifndef FB_CONTEXT_SP_OFFSET
+#error "FB_CONTEXT_SP_OFFSET must come from the production C++ ABI probe"
+#endif
 .intel_syntax noprefix
 #include "branch_records.inc"
 .text
@@ -243,9 +246,10 @@ FB_TRACE_BEGIN fb_trace_entry
   FB_SLOT_MARK fb_jit_exit_slot__fb_trace_entry, 0xe9
 FB_TRACE_END fb_trace_entry
 
-/* Normal completion of a body: sp and rel are already in FB_SP_REG and FB_REL_REG.
-   The wrapper decides success from execution_context, so nothing is packed here. */
+/* Normal completion of a body: the operand stack pointer is the single owner of sp, so the body
+   writes it back to execution_context. The wrapper decides success from execution_context. */
 FB_TRACE_BEGIN fb_trace_return_success
+  mov qword ptr [FB_CTX_REG + FB_CONTEXT_SP_OFFSET], FB_SP_REG
   ret
 FB_TRACE_END fb_trace_return_success
 

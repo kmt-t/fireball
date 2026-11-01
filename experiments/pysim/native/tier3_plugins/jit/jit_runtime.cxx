@@ -103,6 +103,7 @@ jit_runtime<Measurement>::make_compiler_block_view(block_index_t index,
             b.loops_to_block_index,
             {f.interpreter_annotation_pool, f.interpreter_annotation_byte_count},
             b.interpreter_annotation_byte_offset,
+            b.entry_stack_words,
             {module_view->global_widths, module_view->global_count}};
   return &output;
 }
@@ -588,14 +589,6 @@ chain_source_rejection_reason(const jit_trace_header &header, const jit_wasm_blo
   if (source.loops_to != jit_invalid_pc) {
     return jit_chain_reason::loop_target;
   }
-  const auto opcode = terminator < source.code.bytes && source.code.data != nullptr
-                          ? source.code.data[terminator]
-                          : std::uint8_t{0xFF};
-  const bool syntax_delimiter =
-      opcode == 0x02 || opcode == 0x03 || opcode == 0x05 || opcode == 0x0B;
-  if (header.result_words != 0 && !syntax_delimiter) {
-    return jit_chain_reason::result_words;
-  }
   return chain_terminator_is_unsupported(&header, source)
              ? jit_chain_reason::unsupported_control_flow
              : jit_chain_reason::linked;
@@ -621,21 +614,16 @@ bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
   assert(source != nullptr);
   if constexpr (!std::is_void_v<Measurement>) {
     if (source->code.data == nullptr) {
-      // QA metadata-only fixtures can establish same-depth forward chaining.
-      return header->result_words == 0;
+      // QA metadata-only fixtures can establish forward chaining.
+      return true;
     }
   }
   assert(source->code.data != nullptr);
   const auto terminator = source->offset + source->byte_span;
   if (terminator >= source->code.bytes) {
-    return header->result_words == 0;
+    return true;
   }
   const auto opcode = source->code.data[terminator];
-  const bool syntax_delimiter =
-      opcode == 0x02 || opcode == 0x03 || opcode == 0x05 || opcode == 0x0B;
-  if (header->result_words != 0 && !syntax_delimiter) {
-    return false;
-  }
   switch (opcode) {
   case 0x02: // Syntax delimiters have no emitted operation; loader metadata links past them.
   case 0x03:
@@ -701,33 +689,6 @@ bool jit_runtime<Measurement>::can_chain_to(jit_cache_entry value, jit_cache_ent
 }
 
 template <jit_measurement_policy Measurement>
-void jit_runtime<Measurement>::record_runtime_trace_exit(block_index_t source_block_index,
-                                                         jit_stack_words_t result_words,
-                                                         frame_depth_t frame_depth)
-  requires(!std::is_void_v<Measurement>)
-{
-  auto &measurements = this->measurements;
-  if (measurements.pending_runtime_source_block != jit_invalid_block_index) {
-    ++measurements.chain_runtime_unobserved_trace_exits;
-  }
-  measurements.pending_runtime_source_block = jit_invalid_block_index;
-  measurements.pending_runtime_result_words = 0;
-  measurements.pending_runtime_frame_depth = 0;
-  jit_wasm_block source_storage{};
-  const auto *source = diagnostic_block_view(source_block_index, source_storage);
-  if (source == nullptr) {
-    ++measurements.chain_runtime_unobserved_trace_exits;
-    return;
-  }
-  if (source->next_pc == jit_invalid_pc && source->loops_to == jit_invalid_pc) {
-    return;
-  }
-  measurements.pending_runtime_source_block = source_block_index;
-  measurements.pending_runtime_result_words = result_words;
-  measurements.pending_runtime_frame_depth = frame_depth;
-}
-
-template <jit_measurement_policy Measurement>
 void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_block_index,
                                                          wasm_pc_t target_pc)
   requires(!std::is_void_v<Measurement>)
@@ -759,8 +720,6 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
     reason = jit_chain_reason::backedge;
   } else if (source->loops_to != jit_invalid_pc && target_pc == source->loops_to) {
     reason = jit_chain_reason::loop_target;
-  } else if (measurements.pending_runtime_result_words != 0) {
-    reason = jit_chain_reason::result_words;
   } else if (chain_terminator_is_unsupported(source_header, *source) ||
              (target_pc != source->next_pc && target_pc != source->loops_to)) {
     reason = jit_chain_reason::unsupported_control_flow;
@@ -794,7 +753,6 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
     source_opcode = source->code.data[source_terminator];
   }
   measurements.record_chain_runtime(reason, source_opcode);
-  measurements.pending_runtime_result_words = 0;
   measurements.pending_runtime_frame_depth = 0;
 }
 

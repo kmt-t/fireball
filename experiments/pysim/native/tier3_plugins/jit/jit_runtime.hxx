@@ -194,9 +194,6 @@ public:
   /** @brief 後続PCとフレーム境界が連結可能かを判定する。 */
   bool can_chain_to(jit_cache_entry value, jit_cache_entry target) const;
   /** @brief QA計測で実行済みトレース終端を保留する。 */
-  void record_runtime_trace_exit(block_index_t source_block_index, jit_stack_words_t result_words,
-                                 frame_depth_t frame_depth)
-    requires(!std::is_void_v<Measurement>);
   /** @brief QA計測で実際に解釈器へ戻った後続辺を分類する。 */
   void record_runtime_transition(block_index_t target_block_index, wasm_pc_t target_pc)
     requires(!std::is_void_v<Measurement>);

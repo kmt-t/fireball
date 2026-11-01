@@ -1237,6 +1237,25 @@ def _build_stack_analysis_dispatch() -> SequenceView[_StackAnalysisHandler | Non
 _STACK_ANALYSIS_DISPATCH = _build_stack_analysis_dispatch()
 
 
+def stack_words_before_instructions(module: Module, function_index: int) -> dict[int, int]:
+    """Return the operand stack height in words before each instruction, keyed by code offset.
+
+    The height is fixed by the WASM validation rules at every instruction, so a block head reads its
+    entry height from this table. The walk is the same stack type analysis the loader runs.
+    """
+    from tier2_runtime.interpreter.control_flow import iter_scan_instrs
+
+    state = _StackTypeAnalysisState(module, function_index)
+    heights: dict[int, int] = {}
+    for instruction in iter_scan_instrs(state.code):
+        heights[instruction.offset] = state.stack_words
+        handler = _STACK_ANALYSIS_DISPATCH[instruction.opcode]
+        if handler is not None:
+            operand = instruction.operand if instruction.operand is not None else 0
+            handler(state, instruction.opcode, instruction.offset, operand)
+    return heights
+
+
 def _index_stack_value_widths(module: Module, function_index: function_index_t) -> None:
     """Record wide DROP and SELECT operands by direct-indexed type analysis."""
     from tier2_runtime.interpreter.control_flow import iter_scan_instrs

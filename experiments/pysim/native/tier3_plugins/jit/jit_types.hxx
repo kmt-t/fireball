@@ -31,6 +31,8 @@ struct jit_wasm_block {
   block_index_t loops_to_block_index = FIREBALL_INVALID_BLOCK_INDEX;
   jit_byte_view interpreter_annotations;
   annotation_offset_t interpreter_annotation_byte_offset = 0;
+  // Operand stack words when control reaches this block (fixed by WASM validation).
+  std::uint16_t entry_stack_words = 0;
   // Module global value widths in words, one byte per global; bytes is the global count.
   jit_byte_view global_widths;
 };
@@ -42,6 +44,7 @@ static_assert(offsetof(jit_wasm_block, extension_data) == 88);
 static_assert(offsetof(jit_wasm_block, block_index) == 96);
 static_assert(offsetof(jit_wasm_block, interpreter_annotations) == 104);
 static_assert(offsetof(jit_wasm_block, interpreter_annotation_byte_offset) == 120);
+static_assert(offsetof(jit_wasm_block, entry_stack_words) == 124);
 static_assert(offsetof(jit_wasm_block, global_widths) == 128);
 static_assert(sizeof(jit_wasm_block) == 144);
 struct jit_instruction_block {
@@ -74,7 +77,7 @@ struct jit_trace_header {
   wasm_pc_t head_pc;
   code_offset_t blob_bytes;
   jit_stack_words_t stack_words;
-  jit_stack_words_t result_words;
+  jit_result_words_t result_words;
   jit_stack_words_t chain_words;
   jit_body_count_t chain_body_count;
   frame_depth_t frame_depth;

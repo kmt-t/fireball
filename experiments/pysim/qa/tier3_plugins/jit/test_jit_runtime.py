@@ -4332,6 +4332,37 @@ def test_native_plugin_compiles_global_access_blocks_with_the_module_global_widt
             backing.close()
 
 
+AO_WASM = Path(__file__).resolve().parents[3] / "benchmarks" / "aobench" / "aobench.wasm"
+_DELIMITER_OPCODES = frozenset((0x02, 0x03, 0x05, 0x0B))
+
+
+def test_every_ao_block_compiles_from_loader_metadata():
+    """Every non-delimiter block of the AO benchmark compiles; only a block with no operation is None."""
+    from tier2_runtime.interpreter.control_flow import iter_scan_instrs
+
+    module = parse_standalone(AO_WASM.read_bytes())
+    failures = []
+    compiled = 0
+    for block in module.blocks:
+        if block.byte_span == 0:
+            continue
+        code = module.code_for(block.func_index)
+        start = block.head_pc - module.function_pc_offset(block.func_index)
+        opcodes = [
+            instruction.opcode
+            for instruction in iter_scan_instrs(code)
+            if start <= instruction.offset < start + block.byte_span
+        ]
+        if all(opcode in _DELIMITER_OPCODES for opcode in opcodes):
+            continue
+        trace = compile_module_block(TraceCompiler(), module, block)
+        if trace is None:
+            failures.append((block.func_index, block.head_pc, block.byte_span))
+        else:
+            compiled += 1
+    assert compiled > 0
+    assert failures == [], f"{len(failures)} AO blocks did not compile: {failures}"
+
 
 @pytest.mark.parametrize("local_count", (17, 32, 33, 256))
 def test_jit_compiles_blocks_that_access_any_local_of_a_function(local_count):
@@ -4352,3 +4383,23 @@ def test_jit_compiles_blocks_that_access_any_local_of_a_function(local_count):
     assert blocks
     for block in blocks:
         assert compile_module_block(TraceCompiler(), module, block) is not None
+
+
+ENTRY_VALUE_WAT = {
+    "i32": '(module (func $g (result i32) i32.const 5) (func (export "f") (result i32) (local $t i32) call $g local.set $t local.get $t))',
+    "i64": '(module (func $g (result i64) i64.const 5) (func (export "f") (result i64) (local $t i64) call $g local.set $t local.get $t))',
+    "i64_add": '(module (func $g (result i64) i64.const 5) (func (export "f") (result i64) call $g i64.const 2 i64.add))',
+}
+
+
+@pytest.mark.parametrize("kind", tuple(ENTRY_VALUE_WAT))
+def test_jit_compiles_continuation_blocks_that_consume_values_from_before_the_block(kind):
+    """A block entered after a call consumes the call's result, which is on the stack at its entry."""
+    module = parse_standalone(wat_to_wasm(ENTRY_VALUE_WAT[kind]))
+    function_index = module.export_func_index("f")
+    blocks = [
+        block for block in module.blocks if block.func_index == function_index and block.byte_span
+    ]
+    assert len(blocks) >= 2
+    for block in blocks:
+        assert compile_module_block(TraceCompiler(), module, block) is not None, hex(block.head_pc)

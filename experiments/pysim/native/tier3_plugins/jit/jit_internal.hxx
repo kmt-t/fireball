@@ -16,7 +16,7 @@ inline constexpr code_ip_t kNoTraceExitIp = UINT32_MAX;
 struct jit_compile_result {
   code_offset_t body_bytes;
   jit_stack_words_t max_stack_words;
-  jit_stack_words_t result_words;
+  jit_result_words_t result_words;
   code_offset_t relocation_bytes;
   annotation_offset_t interpreter_rel_bytes;
   code_ip_t body_end_ip = kNoTraceExitIp;
@@ -39,7 +39,7 @@ int compile_wasm_trace(const std::uint8_t *code, code_offset_t code_bytes,
                        wasm_pc_t loops_to, const std::uint8_t *interpreter_annotations,
                        annotation_offset_t interpreter_annotation_byte_count,
                        annotation_offset_t interpreter_annotation_byte_offset,
-                       const jit_byte_view &global_widths,
+                       const jit_byte_view &global_widths, jit_stack_words_t entry_stack_words,
                        const frame_word_offset_t *local_offsets, const std::uint8_t *local_types,
                        local_count_t local_count, local_count_t local_slot_count,
                        std::uint8_t *output, code_offset_t output_capacity,

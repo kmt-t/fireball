@@ -95,7 +95,7 @@ class BasicBlock(ctypes.Structure):
         ("_loops_to", ctypes.c_uint32),
         ("frame_depth", ctypes.c_uint8),
         ("jit_cache_reference", ctypes.c_uint8),
-        ("_reserved0", ctypes.c_uint16),
+        ("entry_stack_words", ctypes.c_uint16),
         ("byte_span", ctypes.c_uint32),
         ("interpreter_annotation_byte_offset", ctypes.c_uint32),
         ("_next_block_index", ctypes.c_uint16),
@@ -113,6 +113,7 @@ class BasicBlock(ctypes.Structure):
         interpreter_annotation_byte_offset: annotation_offset_t = annotation_offset_t(0),
         next_block_index: block_index_t = block_index_t(0xFFFF),
         loops_to_block_index: block_index_t = block_index_t(0xFFFF),
+        entry_stack_words: int = 0,
     ) -> None:
         self.head_pc = head_pc
         self.function_index = func_index
@@ -121,7 +122,9 @@ class BasicBlock(ctypes.Structure):
         assert 0 <= frame_depth <= 0xFF
         self.frame_depth = frame_depth
         self.jit_cache_reference = 0xFF
-        self._reserved0 = 0
+        # Operand stack height in words when control reaches this block (WASM validation fixes it).
+        assert 0 <= entry_stack_words <= 0xFF
+        self.entry_stack_words = entry_stack_words
         self.byte_span = byte_span
         self.interpreter_annotation_byte_offset = interpreter_annotation_byte_offset
         self.next_block_index = next_block_index
@@ -1052,6 +1055,7 @@ class Module:
             fit_rpn_expressions,
             rpn_native_code,
         )
+        from tier2_runtime.wasm.reader import stack_words_before_instructions
 
         n_imports = len(self.imports)
         block_capacity = self.total_basic_blocks
@@ -1063,6 +1067,7 @@ class Module:
             function_pc_offset = self.function_pc_offset(func_idx)
             function = self.functions[idx]
             function_block_base = len(all_blocks)
+            entry_words = stack_words_before_instructions(self, func_idx)
             assert function.control_map is not None
             assert function.local_layout_cache is not None
             extracted = extract_basic_blocks(code, function.control_map, pc_base=function_pc_offset)
@@ -1120,6 +1125,7 @@ class Module:
                         interpreter_annotation_byte_offset=block_annotation_offsets[block_index],
                         next_block_index=next_block_index,
                         loops_to_block_index=loops_to_block_index,
+                        entry_stack_words=entry_words[head_pc - function_pc_offset],
                     )
                 )
 

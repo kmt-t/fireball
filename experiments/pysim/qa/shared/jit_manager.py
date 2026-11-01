@@ -247,6 +247,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
                     0 if annotations is None else len(annotations),
                 ),
                 block.interpreter_annotation_byte_offset,
+                block.entry_stack_words,
                 native_abi._NativeByteView(module.global_widths_address, len(module.globals)),
             )
         self._bind_profile()
@@ -329,6 +330,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
                 0 if annotations is None else len(annotations),
             ),
             interpreter_annotation_byte_offset=block.interpreter_annotation_byte_offset,
+            entry_stack_words=block.entry_stack_words,
             global_widths=native_abi.NativeByteView(
                 self.module.global_widths_address, len(self.module.globals)
             ),

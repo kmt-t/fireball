@@ -714,6 +714,7 @@ class JitRuntimeBoundary:
                 loops_to_block_index,
                 empty_view,
                 0,
+                0,
                 empty_view,
             )
         bind_result = native_abi.RUNTIME_BIND_BLOCKS(

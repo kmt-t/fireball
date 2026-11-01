@@ -101,7 +101,7 @@ typedef struct fireball_wasm_table_execution_view_native {
 typedef struct fireball_wasm_block_execution_view_native {
   wasm_pc_t head_pc;
   function_index_t function_index;
-  uint16_t reserved0;
+  uint16_t entry_stack_words;
   wasm_pc_t next_pc, loops_to;
   frame_depth_t frame_depth;
   uint8_t jit_cache_reference;

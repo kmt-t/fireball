@@ -4435,7 +4435,7 @@ def test_jitr_if_else_arms_do_not_chain_into_the_join_at_a_shallower_frame_depth
     assert then.header._native.frame_depth == other.header._native.frame_depth == 1
     assert join.header._native.frame_depth == 0
     cache = JitRuntimeBoundary(bank_capacity=512)
-    assert cache.insert(join)
-    assert cache.insert(then) and cache.insert(other)
+    inserted = [cache.insert(join), cache.insert(then), cache.insert(other)]
+    assert all(inserted)
     assert then.chain_next is None and other.chain_next is None
     assert then.header.chain_target_addr == 0 and other.header.chain_target_addr == 0

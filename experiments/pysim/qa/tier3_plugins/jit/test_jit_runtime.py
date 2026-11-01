@@ -672,14 +672,17 @@ def test_jitc_20_trace_header_32byte_x64_physical_layout():
 
 def test_jitc_trace_header_stores_u8_frame_depth_and_u16_block_index():
     """The compact trace header stores bounded loader indexes at their ABI widths."""
-    code = (ctypes.c_uint8 * 3)(0x41, 0x07, 0x0B)
-    # The i32.const annotation the loader writes: width record (1) and the i32 value (4).
-    annotations = ctypes.create_string_buffer(bytes(5))
+    # The loader owns the code and its annotation pool; only the header's ABI fields are chosen here.
+    module = parse_standalone(wat_to_wasm('(module (func (export "f") (result i32) i32.const 7))'))
+    function = module.functions[0]
+    code_view = module.code_for(module.export_func_index("f"))
+    code = (ctypes.c_uint8 * len(code_view)).from_buffer_copy(bytes(code_view))
+    annotations = ctypes.create_string_buffer(bytes(function.interpreter_annotation_pool))
     block = native_abi.WasmBlock(
         head_pc=0x100,
         code=native_abi.NativeByteView(ctypes.addressof(code), len(code)),
         offset=0,
-        byte_length=2,
+        byte_length=len(code_view) - 1,
         next_pc=None,
         loops_to=None,
         locals=native_abi.NativeLocalLayout(
@@ -691,7 +694,7 @@ def test_jitc_trace_header_stores_u8_frame_depth_and_u16_block_index():
         frame_depth=0x20,
         block_index=0x4321,
         interpreter_annotations=native_abi.NativeByteView(
-            ctypes.addressof(annotations), len(bytes(5))
+            ctypes.addressof(annotations), len(function.interpreter_annotation_pool)
         ),
     )
     trace = native_abi.TraceQaState()

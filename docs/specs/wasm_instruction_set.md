@@ -6,8 +6,11 @@
 -->
 
 ## 1. 概要と適用方針
-<!-- traceability: {ThreadedInterpreter} {JIT_AssemblyStencilCodegen} {Wasm32Only} {WasmFCSubset} {META_ZeroCostAbstraction} -->
-本仕様書は、wasm32単一リニアメモリのWASM Core 1.0 MVPを基礎とし、`0xFC`のうち飽和型浮動小数点→整数変換8命令と`memory.copy`/`memory.fill`だけを追加した命令意味論とインタープリタ動作を定義する。その他の`0xFC`サブオペコードは非対応とする。ARMv8-M向けJITの物理命令列・レジスタ・ABI・メモリ保護方式はTBDとし、本書で確定しない。
+<!-- traceability: {ThreadedInterpreter} {JIT_AssemblyStencilCodegen} {Wasm32Only} {WasmFCSubset} {META_ZeroCostAbstraction} {RPN_ExpressionEvaluation} -->
+本仕様書は、wasm32単一リニアメモリのWASM Core 1.0 MVPを基礎とする。
+符号拡張命令5種（`0xC0`〜`0xC4`）は、WASM 1.0 MVPの外の選択拡張として追加する。
+`0xFC`のうち、飽和型浮動小数点→整数変換8命令と`memory.copy`/`memory.fill`だけを追加する。
+本仕様書は、これらの追加を含む命令意味論とインタープリタ動作を定義する。その他の`0xFC`サブオペコードは非対応とする。ARMv8-M向けJITの物理命令列・レジスタ・ABI・メモリ保護方式はTBDとし、本書で確定しない。
 
 x64で確認したInterpreter/JIT間の3論理引数契約と物理ABIは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を参照する。共有オペランドスタックを値の正本とし、TOS値を別途キャッシュしない。ARMv8-Mの論理引数の物理配置、callee-save規則、トレース境界同期はTBDとする。
 
@@ -43,6 +46,7 @@ x64で確認したInterpreter/JIT間の3論理引数契約と物理ABIは [`jit_
 | `0x0C` | `br` | `[] -> []` | 指定深度のラベルへ無条件ジャンプ | TBD | TBD |
 | `0x0D` | `br_if` | `[i32] -> []` | TOS $\ne 0$ ならラベルへジャンプ | TBD | TBD |
 | `0x0E` | `br_table` | `[i32] -> []` | テーブルインデックス分岐 | TBD | TBD |
+| `0x0F` | `return` | `[t1* t*] -> [t2*]` | 結果値を呼出し元へ渡して関数から復帰する | TBD | TBD |
 | `0x10` | `call` | `[t1*] -> [t2*]`| 関数呼出し記述子を積んで関数を呼び出す | TBD | TBD |
 | `0x11` | `call_indirect`| `[t1*, i32] -> [t2*]`| 関数テーブル照合 $\to$ 間接呼出 | TBD | TBD |
 
@@ -94,12 +98,21 @@ x64で確認したInterpreter/JIT間の3論理引数契約と物理ABIは [`jit_
 | `0x2D` | `i32.load8_u`| `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ ゼロ拡張 8-bit ロード | TBD | TBD |
 | `0x2E` | `i32.load16_s`| `[i32] -> [i32]`| 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ 符号拡張 16-bit ロード | TBD | TBD |
 | `0x2F` | `i32.load16_u`| `[i32] -> [i32]`| 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ ゼロ拡張 16-bit ロード | TBD | TBD |
+| `0x30` | `i64.load8_s` | `[i32] -> [i64]` | 境界チェック（比較+トラップ） $\to$ 符号拡張 8-bit ロード | TBD | TBD |
+| `0x31` | `i64.load8_u` | `[i32] -> [i64]` | 境界チェック（比較+トラップ） $\to$ ゼロ拡張 8-bit ロード | TBD | TBD |
+| `0x32` | `i64.load16_s` | `[i32] -> [i64]` | 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ 符号拡張 16-bit ロード | TBD | TBD |
+| `0x33` | `i64.load16_u` | `[i32] -> [i64]` | 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ ゼロ拡張 16-bit ロード | TBD | TBD |
+| `0x34` | `i64.load32_s` | `[i32] -> [i64]` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 符号拡張 32-bit ロード | TBD | TBD |
+| `0x35` | `i64.load32_u` | `[i32] -> [i64]` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ ゼロ拡張 32-bit ロード | TBD | TBD |
 | `0x36` | `i32.store` | `[i32, i32] -> []` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 32-bit メモリストア | TBD | TBD |
 | `0x37` | `i64.store` | `[i32, i64] -> []` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 64-bit メモリストア | TBD | TBD |
 | `0x38` | `f32.store` | `[i32, f32] -> []` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 単精度メモリストア | TBD | TBD |
 | `0x39` | `f64.store` | `[i32, f64] -> []` | 開始・終端 (`addr+7`) の境界チェック（比較+トラップ） $\to$ 倍精度メモリストア | TBD | TBD |
 | `0x3A` | `i32.store8` | `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 8-bit メモリストア | TBD | TBD |
 | `0x3B` | `i32.store16`| `[i32, i32] -> []` | 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ 16-bit メモリストア | TBD | TBD |
+| `0x3C` | `i64.store8` | `[i32, i64] -> []` | 境界チェック（比較+トラップ） $\to$ 8-bit メモリストア | TBD | TBD |
+| `0x3D` | `i64.store16` | `[i32, i64] -> []` | 開始・終端 (`addr+1`) の境界チェック（比較+トラップ） $\to$ 16-bit メモリストア | TBD | TBD |
+| `0x3E` | `i64.store32` | `[i32, i64] -> []` | 開始・終端 (`addr+3`) の境界チェック（比較+トラップ） $\to$ 32-bit メモリストア | TBD | TBD |
 | `0x3F` | `memory.size`| `[] -> [i32]` | 現在のリニアメモリページ数を返す | TBD | TBD |
 | `0x40` | `memory.grow`| `[i32] -> [i32]` | リニアメモリ拡張 (ランタイムAPI呼出) | TBD | TBD |
 
@@ -128,11 +141,19 @@ x64で確認したInterpreter/JIT間の3論理引数契約と物理ABIは [`jit_
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `0x41` | `i32.const` | `[] -> [i32]` | 即値を TOS へプッシュ | TBD | TBD |
 | `0x42` | `i64.const` | `[] -> [i64]` | 64-bit 即値をプッシュ | TBD | TBD |
+| `0x43` | `f32.const` | `[] -> [f32]` | 単精度即値をプッシュ | TBD | TBD |
+| `0x44` | `f64.const` | `[] -> [f64]` | 倍精度即値をプッシュ | TBD | TBD |
 | `0x45` | `i32.eqz` | `[i32] -> [i32]` | $x == 0$ 判定 | TBD | TBD |
 | `0x46` | `i32.eq` | `[i32, i32] -> [i32]` | $a == b$ 判定 | TBD | TBD |
 | `0x47` | `i32.ne` | `[i32, i32] -> [i32]` | $a \ne b$ 判定 | TBD | TBD |
 | `0x48` | `i32.lt_s` | `[i32, i32] -> [i32]` | 符号付き $a < b$ | TBD | TBD |
 | `0x49` | `i32.lt_u` | `[i32, i32] -> [i32]` | 符号なし $a < b$ | TBD | TBD |
+| `0x4A` | `i32.gt_s` | `[i32, i32] -> [i32]` | 符号付き $a > b$ | TBD | TBD |
+| `0x4B` | `i32.gt_u` | `[i32, i32] -> [i32]` | 符号なし $a > b$ | TBD | TBD |
+| `0x4C` | `i32.le_s` | `[i32, i32] -> [i32]` | 符号付き $a \le b$ | TBD | TBD |
+| `0x4D` | `i32.le_u` | `[i32, i32] -> [i32]` | 符号なし $a \le b$ | TBD | TBD |
+| `0x4E` | `i32.ge_s` | `[i32, i32] -> [i32]` | 符号付き $a \ge b$ | TBD | TBD |
+| `0x4F` | `i32.ge_u` | `[i32, i32] -> [i32]` | 符号なし $a \ge b$ | TBD | TBD |
 | `0x67` | `i32.clz` | `[i32] -> [i32]` | 先頭連続ゼロビット数 | TBD | TBD |
 | `0x68` | `i32.ctz` | `[i32] -> [i32]` | 末尾連続ゼロビット数 | TBD | TBD |
 | `0x69` | `i32.popcnt`| `[i32] -> [i32]` | 立っているビット数 | TBD | TBD |
@@ -167,6 +188,7 @@ x64で確認したInterpreter/JIT間の3論理引数契約と物理ABIは [`jit_
 | `0x99`〜`0xA6` | **f64 倍精度浮動小数点** (`f64.add`, `f64.sub`, `f64.mul`, `f64.div`, `f64.sqrt`, `f64.min`, `f64.max`, `f64.ceil/floor/trunc/nearest`) | `[f64, f64] -> [f64]` | C++ `double` / `libgcc` soft-float | TBD | TBD |
 | `0x5B`〜`0x66` | **f32/f64 浮動小数点比較** (`f32/f64.eq`, `ne`, `lt`, `gt`, `le`, `ge`) | `[f*, f*] -> [i32]` | IEEE 754 準拠比較 | TBD | TBD |
 | `0xA7`〜`0xBF` | **型変換・再解釈命令** (`i32.wrap_i64`, `i64.extend_i32_*`, `i32/i64.trunc_f*`, `f32/f64.convert_i*`, `reinterpret`) | `[t1] -> [t2]` | 型変換・ビット再解釈ハンドラ | TBD | TBD |
+| `0xC0`〜`0xC4` | **符号拡張** (`i32.extend8_s`, `i32.extend16_s`, `i64.extend8_s`, `i64.extend16_s`, `i64.extend32_s`) | `0xC0`、`0xC1`: `[i32] -> [i32]`。`0xC2`〜`0xC4`: `[i64] -> [i64]` | 下位ビットを符号拡張する Runtime API | TBD | TBD |
 
 ### 3.7 飽和型浮動小数点→整数変換 ({WasmFCSubset})
 <!-- traceability: {WasmFCSubset} {ThreadedInterpreter} {JIT_RuntimeAPI} -->

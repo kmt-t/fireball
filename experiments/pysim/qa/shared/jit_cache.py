@@ -39,6 +39,8 @@ if TYPE_CHECKING:
 
 NativeTraceFn = Callable[[ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p], None]
 TraceArgument = ctypes.c_void_p
+# WebAssembly `nop`: the straight-line terminator of a QA fixture block.
+FIXTURE_TERMINATOR_OPCODE = 0x01
 
 
 class CardState:
@@ -581,6 +583,7 @@ class JitRuntimeBoundary:
         "_before",
         "_busy",
         "_fixture_blocks",
+        "_fixture_code",
         "_native",
         "_references",
         "_retire_observer",
@@ -603,6 +606,7 @@ class JitRuntimeBoundary:
         self._fixture_blocks = (
             native_abi._NativeWasmBlock * (JIT_CACHE_BANK_COUNT * entry_capacity + 1)
         )()
+        self._fixture_code: tuple[ctypes.Array[ctypes.c_uint8], ...] = ()
         self.metadata_provider: Callable[[JITTrace], None] | None = None
         self._native = native_abi.NativeRuntimeStorage(
             bank_capacity,
@@ -634,6 +638,7 @@ class JitRuntimeBoundary:
         boundary._busy = False
         boundary._retire_observer = retire_observer
         boundary._fixture_blocks = (native_abi._NativeWasmBlock * 0)()
+        boundary._fixture_code = ()
         boundary.metadata_provider = None
         boundary._before = ()
         return boundary
@@ -679,6 +684,7 @@ class JitRuntimeBoundary:
         block_indices = {trace.head_pc: index for index, trace in indexed_traces}
         empty_view = native_abi._NativeByteView(None, 0)
         empty_layout = native_abi._NativeLocalLayout(empty_view, empty_view, 0, 0)
+        fixture_code: list[ctypes.Array[ctypes.c_uint8]] = []
         for position, (index, trace) in enumerate(sorted_traces):
             next_block_index = block_indices.get(trace._native.dispatch_next_pc, 0xFFFF)
             loops_to_block_index = block_indices.get(trace._native.dispatch_loops_to, 0xFFFF)
@@ -688,6 +694,12 @@ class JitRuntimeBoundary:
                 header.block_index = index
                 trace.code_blob = bytes(blob)
                 trace.bind_code()
+            # A fixture has no Wasm body. Its code view holds one straight-line `nop`
+            # at the terminator position, so chain decisions read a real opcode.
+            code = (ctypes.c_uint8 * (trace._native.byte_span + 1))()
+            code[trace._native.byte_span] = FIXTURE_TERMINATOR_OPCODE
+            fixture_code.append(code)
+            code_view = native_abi._NativeByteView(ctypes.addressof(code), len(code))
             self._fixture_blocks[position] = native_abi._NativeWasmBlock(
                 trace.head_pc,
                 0,
@@ -696,7 +708,7 @@ class JitRuntimeBoundary:
                 trace._native.dispatch_loops_to,
                 trace._native.frame_depth,
                 0,
-                empty_view,
+                code_view,
                 empty_layout,
                 ctypes.cast(trace._native.exec_count, ctypes.c_void_p).value,
                 index,
@@ -707,6 +719,8 @@ class JitRuntimeBoundary:
                 0,
                 empty_view,
             )
+        # The native block table points into these views until the next bind.
+        self._fixture_code = tuple(fixture_code)
         bind_result = native_abi.RUNTIME_BIND_BLOCKS(
             self._native.pointer,
             self._fixture_blocks,

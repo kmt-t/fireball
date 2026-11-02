@@ -552,9 +552,7 @@ static bool chain_terminator_is_unsupported(const jit_trace_header *header,
   if (header != nullptr && header->exit_kind == jit_trace_exit_kind::call_cps) {
     return true;
   }
-  if (source.code.data == nullptr) {
-    return false;
-  }
+  assert(source.code.data != nullptr);
   const auto terminator = source.offset + source.byte_span;
   if (terminator < source.code.bytes) {
     switch (source.code.data[terminator]) {
@@ -575,7 +573,6 @@ static bool chain_terminator_is_unsupported(const jit_trace_header *header,
 
 [[maybe_unused]] static jit_chain_reason
 chain_source_rejection_reason(const jit_trace_header &header, const jit_wasm_block &source) {
-  const auto terminator = source.offset + source.byte_span;
   if (chain_terminator_is_unsupported(&header, source)) {
     return jit_chain_reason::unsupported_control_flow;
   }
@@ -612,12 +609,6 @@ bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
   jit_wasm_block source_storage{};
   const auto *source = block_metadata_for_trace(*header, source_storage);
   assert(source != nullptr);
-  if constexpr (!std::is_void_v<Measurement>) {
-    if (source->code.data == nullptr) {
-      // QA metadata-only fixtures can establish forward chaining.
-      return true;
-    }
-  }
   assert(source->code.data != nullptr);
   const auto terminator = source->offset + source->byte_span;
   if (terminator >= source->code.bytes) {
@@ -666,12 +657,6 @@ bool jit_runtime<Measurement>::can_chain_to(jit_cache_entry value, jit_cache_ent
   jit_wasm_block source_storage{};
   const auto *source = block_metadata_for_trace(*trace_header(value), source_storage);
   assert(source != nullptr);
-  if constexpr (!std::is_void_v<Measurement>) {
-    if (source->code.data == nullptr) {
-      // Metadata-only fixtures cannot prove a control-flow depth transition.
-      return false;
-    }
-  }
   assert(source->code.data != nullptr);
   const auto terminator = source->offset + source->byte_span;
   if (terminator >= source->code.bytes) {
@@ -749,7 +734,8 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
   }
   auto source_opcode = std::uint8_t{0xFF};
   const auto source_terminator = static_cast<std::uint64_t>(source->offset) + source->byte_span;
-  if (source->code.data != nullptr && source_terminator < source->code.bytes) {
+  assert(source->code.data != nullptr);
+  if (source_terminator < source->code.bytes) {
     source_opcode = source->code.data[source_terminator];
   }
   measurements.record_chain_runtime(reason, source_opcode);

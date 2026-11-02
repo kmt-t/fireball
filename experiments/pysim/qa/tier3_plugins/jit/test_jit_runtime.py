@@ -403,22 +403,40 @@ def test_jitr_entry_limit_rotates_before_code_region_is_full():
     assert cache.find_trace(newcomer.head_pc) is newcomer
 
 
+_LOADER_BLOCK_BODY = "(block i32.const 1 drop) "
+
+
+def _loader_traces(count: int) -> list[JITTrace]:
+    """Compile `count` identical loader blocks; each has the same trace size and falls through."""
+    module = parse_standalone(
+        wasmtime.wat2wasm(f'(module (func (export "f") {_LOADER_BLOCK_BODY * (count + 1)}))')
+    )
+    compiler = TraceCompiler()
+    traces = [compile_module_block(compiler, module, block) for block in module.blocks[:count]]
+    assert all(trace is not None for trace in traces)
+    assert len({trace.size_bytes for trace in traces}) == 1
+    return traces
+
+
 def test_jitr_three_banks_hold_72_entries_and_retire_one_generation():
     """TEST-JITR-25: all 72 slots are usable; the next insertion retires 24 traces."""
+    # 24 loader traces fit one bank: 24 * the trace size is below the default bank capacity.
+    traces = _loader_traces(73)
+    assert 24 * traces[0].size_bytes <= JIT_CACHE_BANK_CAPACITY_BYTES
     cache = JitRuntimeBoundary()
     assert JIT_CACHE_BANK_ENTRY_CAPACITY == 24
     assert JIT_CACHE_TOTAL_ENTRY_CAPACITY == 72
     assert cache.scalar(native_abi.CacheField.BANK_ENTRY_CAPACITY) == 72
-    for pc in range(72):
-        assert_result_35 = cache.insert(JITTrace(head_pc=pc, size_bytes=JIT_TRACE_HEADER_BYTES))
+    for trace in traces[:72]:
+        assert_result_35 = cache.insert(trace)
         assert assert_result_35
     assert cache.resident_count == 72 and cache.rotations == 2
-    assert all(cache.lookup(pc) is not None for pc in range(72))
-    assert_result_8 = cache.insert(JITTrace(head_pc=72, size_bytes=JIT_TRACE_HEADER_BYTES))
+    assert all(cache.lookup(trace.head_pc) is not None for trace in traces[:72])
+    assert_result_8 = cache.insert(traces[72])
     assert assert_result_8
     assert cache.resident_count == 49 and cache.rotations == 3
-    assert all(cache.find_trace(pc) is None for pc in range(24))
-    assert all(cache.find_trace(pc) is not None for pc in range(24, 73))
+    assert all(cache.find_trace(trace.head_pc) is None for trace in traces[:24])
+    assert all(cache.find_trace(trace.head_pc) is not None for trace in traces[24:73])
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Uses Linux process assertion signals")

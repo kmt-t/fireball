@@ -1125,7 +1125,7 @@ def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
 
 
 def test_jitr_26_sorted_index_folds_high_pc_bits():
-    """GOTCHA-JITR-05: the sorted index folds the high PC bits into its key.
+    """TEST-JITR-95 / GOTCHA-JITR-05: the sorted index folds the high PC bits into its key.
 
     The index is the loader's radix storage over `(fold_mix32(pc), index)` entries, so a PC
     with high bits set is found by its folded key and nothing else is needed.
@@ -4142,6 +4142,47 @@ def test_native_product_plugin_is_opaque_and_executes_compiled_code():
     assert engine.call(interpreter, function, [7]).unwrap() == [28]
     plugin.close()
 
+
+def test_jitr_26_compiled_block_dispatch_hits_the_direct_cache_reference():
+    """TEST-JITR-26: a compiled block's direct reference is set by a dispatch and reused.
+
+    The direct reference is kept on the product module's blocks, so the test runs the product
+    plugin. After compilation a dispatch sets the reference; repeated dispatch of the loop keeps
+    it and returns the right sums. The head-PC agreement of the referenced trace is checked by
+    the native invalidation code, which asserts it on every reference change.
+    """
+    import mmap
+
+    from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
+    from tier3_plugins.jit.jit_manager import JITRuntimeManager as ProductPlugin
+
+    module = parse_standalone(
+        wat_to_wasm("""(module
+      (func (export "sum") (param i32) (result i32) (local i32)
+        (loop $loop local.get 1 local.get 0 i32.add local.set 1
+          local.get 0 i32.const 1 i32.sub local.tee 0 br_if $loop) local.get 1))""")
+    )
+
+    def reserve_region(size: int, alignment: int) -> memoryview:
+        assert alignment == mmap.PAGESIZE
+        return memoryview(mmap.mmap(-1, size))
+
+    plugin = ProductPlugin(reserve_region)
+    interpreter = NativeInterpreter.with_module_allocator(
+        module, InterpreterBindings.empty(), execution_plugin=plugin
+    )
+    try:
+        assert interpreter.call(0, [100]).unwrap() == [5050]
+        plugin.idle_hook()
+        referenced = [block for block in module.blocks if block.jit_cache_reference != 0xFF]
+        assert referenced, "a dispatch through a resident trace sets a block's direct reference"
+        for value in (50, 20, 7):
+            assert interpreter.call(0, [value]).unwrap() == [value * (value + 1) // 2]
+        assert all(block.jit_cache_reference != 0xFF for block in referenced), (
+            "the direct reference survives repeated dispatch"
+        )
+    finally:
+        plugin.close()
 
 def test_native_product_plugin_close_clears_borrowed_block_references():
     """Closing a product cache releases every reference before the next owner binds."""

@@ -35,7 +35,7 @@ from qa.shared.helpers import (
 )
 from qa.shared.helpers import make_interpreter as Interpreter
 from qa.shared.ipc import lookup_channel_as
-from qa.shared.jit_cache import CardState, JitRuntimeBoundary, JITTrace
+from qa.shared.jit_cache import CardState, JitRuntimeBoundary
 from qa.shared.memory import snapshot_ipc_storage
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
 from system import System, WasiErrno
@@ -64,6 +64,7 @@ def _make_memory_manager() -> tuple[MemoryManager, Scheduler]:
 
 
 from qa.shared.runtime_support import (
+    compile_module_block,
     instruction_blocks,
     make_runtime_engine,
 )
@@ -216,9 +217,10 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     engine.jit_runtime.record_block_head(pc)
     engine.jit_runtime.on_yield()
     assert engine.jit_runtime.has_pending_compilation()
-    resident = JITTrace(pc, lambda: 0, size_bytes=64)
-    assert_result_1 = engine.jit_runtime.cache.insert(resident)
-    assert assert_result_1
+    resident = compile_module_block(TraceCompiler(), mod, mod.blocks[0])
+    assert resident is not None
+    inserted = engine.jit_runtime.cache.insert(resident)
+    assert inserted
 
     compiled = engine.idle_hook()
 
@@ -228,26 +230,36 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     assert engine.jit_runtime.cache.find_trace(pc) is resident
 
 
+def _loader_chain_traces(count: int) -> list:
+    """Compile `count` identical loader blocks that fall through to each other."""
+    module = parse_standalone(
+        wat_to_wasm('(module (func (export "f") ' + "(block i32.const 1 drop) " * (count + 1) + "))")
+    )
+    traces = [compile_module_block(TraceCompiler(), module, block) for block in module.blocks[:count]]
+    assert all(trace is not None for trace in traces)
+    return traces
+
+
 def test_jitr_gotcha_02_oldest_preserves_existing_chain_until_retirement():
     """GOTCHA-JITR-02: Oldest hits preserve existing chains until the target is retired."""
+    t1, t2 = _loader_chain_traces(2)
     cache = JitRuntimeBoundary(bank_capacity=512)
-    t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
-    cache.insert(t2)  # t2 -> Active
+    inserted = cache.insert(t2)  # t2 -> Active
+    assert inserted
     cache.rotate()  # t2's bank -> Warm
-    t1 = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=64, next_pc=0x200)
-    cache.insert(t1)  # t1 in Active records the Warm-resident t2 as its logical successor
-    assert t1.chain_next == 0x200
+    inserted = cache.insert(t1)  # t1 in Active records the Warm-resident t2 as its logical successor
+    assert inserted
+    assert t1.chain_next == t2.head_pc
     assert cache.find_trace(t2.head_pc) is t2 and t1.chain_next == t2.head_pc
 
     cache.rotate()  # t2's bank -> Oldest
     address = t2.raw_addr
-    assert cache.lookup(0x200) is t2
+    assert cache.lookup(t2.head_pc) is t2
     assert t2.raw_addr == address and t1.header.chain_target_addr == address
     cache.rotate()
     assert cache.find_trace(t2.head_pc) is None
     assert cache.find_trace(t1.head_pc) is t1 and t1.chain_next is None
     assert t1.header.chain_target_addr == 0
-
 
 def test_jitr_gotcha_03_lifo_reverse_compilation_order():
     """GOTCHA-JITR-03: LIFO compile order records later straight-line successors first."""

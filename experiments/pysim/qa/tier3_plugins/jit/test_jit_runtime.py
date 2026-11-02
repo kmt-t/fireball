@@ -776,21 +776,22 @@ def test_jitr_native_trace_lookup_uses_resident_snapshot():
 
 def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
     """TEST-JITR-31..TEST-JITR-35: Successor metadata for resident traces and O(k) unlinking on Oldest purge."""
+    t1, t2 = _loader_traces(2)
     cache = JitRuntimeBoundary(bank_capacity=512)
     # t1 falls through to t2
-    t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
-    cache.insert(t2)  # t2 in Active
-    t1 = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=64, next_pc=0x200)
-    cache.insert(t1)  # t1 records t2 as its logical successor in Active
-    assert t1.chain_next == 0x200
+    inserted = cache.insert(t2)  # t2 in Active
+    assert inserted
+    inserted = cache.insert(t1)  # t1 records t2 as its logical successor in Active
+    assert inserted
+    assert t1.chain_next == t2.head_pc
     # Rotate 1: t1, t2 -> Warm
     cache.rotate()
-    assert cache.find_trace(0x100) is not None
-    assert t1.chain_next == 0x200  # Preserved
+    assert cache.find_trace(t1.head_pc) is not None
+    assert t1.chain_next == t2.head_pc  # Preserved
     # Rotate 2: t1, t2 -> Oldest
     cache.rotate()
-    assert cache.find_trace(0x100) is not None
-    assert t1.chain_next == 0x200  # Existing chain is preserved in Oldest
+    assert cache.find_trace(t1.head_pc) is not None
+    assert t1.chain_next == t2.head_pc  # Existing chain is preserved in Oldest
     # Rotate 3: Oldest is purged. O(k) unlinking resets chain_next of source pointing to purged targets
     cache.rotate()
     assert cache.find_trace(t1.head_pc) is None
@@ -3978,9 +3979,8 @@ def test_jitr_branch_terminator_returns_through_interpreter_cps():
 def test_jitr_trace_execution_retirement_records_zero_and_used_traces():
     """TEST-JITR-74: traces without block extension data keep a null counter."""
     records = []
+    used, unused = _loader_traces(2)
     cache = JitRuntimeBoundary(retire_observer=lambda pc, count: records.append((pc, count)))
-    used = JITTrace(0x100)
-    unused = JITTrace(0x200)
     assert_result_29 = cache.insert(used)
     assert assert_result_29
     assert_result_30 = cache.insert(unused)
@@ -3996,7 +3996,8 @@ def test_jitr_trace_execution_retirement_records_zero_and_used_traces():
     assert cache.find_trace(unused.head_pc) is None
     cache.rotate()
     assert cache.lookup(used.head_pc) is None
-    replacement = JITTrace(used.head_pc)
+    replacement = _loader_traces(1)[0]
+    assert replacement.head_pc == used.head_pc
     assert_result_31 = cache.insert(replacement)
     assert assert_result_31
     assert records == [(used.head_pc, 0), (unused.head_pc, 0)]

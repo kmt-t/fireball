@@ -142,10 +142,10 @@ _SCORE_ENTRIES: tuple[tuple[int, int], ...] = (
     (SELECT, 4),
     (RETURN, 4),
     (NOP, 4),
-    (I32_REM_S, 4),
+    (I32_REM_S, 5),
+    (I32_REM_U, 5),
     (I32_ROTL, 5),
     (I32_ROTR, 5),
-    (I32_REM_U, 4),
     (0x23, 4),  # global.get
     (0x24, 4),  # global.set
     (0x3F, 4),  # memory.size

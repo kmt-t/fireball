@@ -54,6 +54,9 @@ def test_plugin_scores_basic_block() -> None:
         # i32.rotl and i32.rotr are Runtime API operations with score +5 (const +6, const +6, drop +4).
         (bytes.fromhex("41 01 41 02 77 1a 0b"), (), 21, True),
         (bytes.fromhex("41 01 41 02 78 1a 0b"), (), 21, True),
+        # i32.rem_s and i32.rem_u are +5 in the spec table (const +6, const +6, drop +4).
+        (bytes.fromhex("41 01 41 02 6f 1a 0b"), (), 21, True),
+        (bytes.fromhex("41 01 41 02 70 1a 0b"), (), 21, True),
     ),
 )
 def test_plugin_candidate_gate_uses_specification_threshold(

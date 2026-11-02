@@ -6,7 +6,8 @@ import json
 import sys
 
 import wasmtime
-from qa.shared.jit_cache import HotspotBitmap, JitRuntimeBoundary
+from qa.shared.jit_cache import HotspotBitmap
+from qa.shared.jit_manager import JITRuntimeManager
 from qa.shared.runtime_support import compile_module_block
 from qa.shared.x64_jit import TraceCompiler
 from qa.tier2_runtime.interpreter.test_cps_interpreter import _run_step
@@ -23,7 +24,6 @@ def main() -> None:
     result = _run_step(code, context, stack, locals_stack, 0, stack.capacity, 0)
     registers = _make_register_test_view()
     bitmap = HotspotBitmap(card_shift=2, code_lengths=(256,), function_pc_bases=(0,))
-    cache = JitRuntimeBoundary(bank_capacity=512)
     # Two straight-line loader blocks: the first falls through to the second.
     module = parse_standalone(
         wasmtime.wat2wasm(
@@ -31,6 +31,9 @@ def main() -> None:
             " (block i32.const 3 drop)))"
         )
     )
+    manager = JITRuntimeManager(bank_capacity=512)
+    manager.register_module(module)
+    cache = manager.cache
     first, second = (compile_module_block(TraceCompiler(), module, block) for block in module.blocks[:2])
     first_inserted = cache.insert(first)
     second_inserted = cache.insert(second)

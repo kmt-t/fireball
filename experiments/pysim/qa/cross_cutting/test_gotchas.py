@@ -35,7 +35,8 @@ from qa.shared.helpers import (
 )
 from qa.shared.helpers import make_interpreter as Interpreter
 from qa.shared.ipc import lookup_channel_as
-from qa.shared.jit_cache import CardState, JitRuntimeBoundary
+from qa.shared.jit_cache import CardState
+from qa.shared.jit_manager import JITRuntimeManager
 from qa.shared.memory import snapshot_ipc_storage
 from scheduler import ChannelAction, Scheduler, Task, WaitDir
 from system import System, WasiErrno
@@ -230,11 +231,15 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     assert engine.jit_runtime.cache.find_trace(pc) is resident
 
 
-def _loader_chain_traces(count: int) -> list:
-    """Compile `count` identical loader blocks that fall through to each other."""
-    module = parse_standalone(
+def _loader_chain_module(count: int):
+    """Parse a module of `count` + 1 identical loader blocks that fall through to each other."""
+    return parse_standalone(
         wat_to_wasm('(module (func (export "f") ' + "(block i32.const 1 drop) " * (count + 1) + "))")
     )
+
+
+def _loader_chain_traces(module, count: int) -> list:
+    """Compile the first `count` loader blocks of `module`."""
     traces = [compile_module_block(TraceCompiler(), module, block) for block in module.blocks[:count]]
     assert all(trace is not None for trace in traces)
     return traces
@@ -242,8 +247,11 @@ def _loader_chain_traces(count: int) -> list:
 
 def test_jitr_gotcha_02_oldest_preserves_existing_chain_until_retirement():
     """GOTCHA-JITR-02: Oldest hits preserve existing chains until the target is retired."""
-    t1, t2 = _loader_chain_traces(2)
-    cache = JitRuntimeBoundary(bank_capacity=512)
+    module = _loader_chain_module(2)
+    t1, t2 = _loader_chain_traces(module, 2)
+    manager = JITRuntimeManager(bank_capacity=512)
+    manager.register_module(module)
+    cache = manager.cache
     inserted = cache.insert(t2)  # t2 -> Active
     assert inserted
     cache.rotate()  # t2's bank -> Warm

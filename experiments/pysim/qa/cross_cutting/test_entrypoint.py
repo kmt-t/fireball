@@ -133,18 +133,20 @@ def test_optimized_qa_setup_preserves_real_fixture_state(optimization: int) -> N
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert json.loads(result.stdout.splitlines()[-1]) == {
+    payload = json.loads(result.stdout.splitlines()[-1])
+    jit_cache = payload.pop("jit_cache")
+    assert payload == {
         "optimization": optimization,
         "outcome": [1, 0xFFFF_FFFF, 1, 0],
         "top": 7,
         "registers": [[10, 20, 30], 1, 999],
-        "jit_cache": {
-            "card_count": 64,
-            "inserted": [True, True],
-            "cycle_links": [0x200, 0x100],
-            "cycle_body_counts": [2, 2],
-        },
     }
+    assert jit_cache["card_count"] == 64
+    assert jit_cache["inserted"] == [True, True]
+    # The first loader block falls through to the second, which has no successor in the cache.
+    head_pcs = jit_cache["head_pcs"]
+    assert jit_cache["chain_targets"] == [head_pcs[1], None]
+    assert jit_cache["chain_body_counts"] == [2, 1]
 
 
 @pytest.mark.parametrize("optimization", (0, 1, 2))

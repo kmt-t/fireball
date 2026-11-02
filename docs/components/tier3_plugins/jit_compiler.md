@@ -398,11 +398,11 @@ ARMv8-Mのコンパイラと実機検証はTBDである。
 
 ### 7.4 既知の制限・未検証範囲
 
-現行x64参照実装は直線後続の常駐traceを直接chainする。`if`、`br`、`br_if`はtraceへ含めず、Interpreter CPS handlerへ戻す。分岐先への直接chainは行わない。`br_table`、`return`、関数境界のその他経路も各Interpreter復帰契約に従う。chain更新時のbody数とstack要件は、`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下の常駐trace内で循環を検出し、相異なるtraceを一度ずつ集計する。
+現行x64参照実装は直線後続の常駐traceを直接chainする。`if`、`br`、`br_if`はtraceへ含めず、Interpreter CPS handlerへ戻す。分岐先への直接chainは行わない。`br_table`、`return`、関数境界のその他経路も各Interpreter復帰契約に従う。連結は直線後続の常駐traceにだけ張るので、連結の列は循環しない。chain更新時のbody数とstack要件は、連結の列を根から終端まで一度ずつ辿って求め、辿る回数が `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件を超えないことをassertする。
 
 次の機能をテストで検証する。
 
-- 直線chainの循環集計、退役時のリンク解除、QA計測: `TEST-JITR-35`, `TEST-JITR-76`, `TEST-JITR-77`、循環chain試験。
+- 直線chainの集計、退役時のリンク解除、QA計測: `TEST-JITR-35`, `TEST-JITR-76`, `TEST-JITR-77`。
 - 分岐opcodeのtrace除外、Interpreter CPS処理、LOOP後方辺のyield判定: `TEST-JITR-63`, `TEST-JITR-67`, `TEST-JITR-69`, `TEST-JITR-73`、対応するInterpreter試験。
 
 形式モデルはキャッシュ寿命とyield到達時の復帰を抽象検証する。条件評価、スタック巻き戻し、関数呼出しの生成コードは対象に含まない。

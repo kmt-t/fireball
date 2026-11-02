@@ -5,10 +5,14 @@ from __future__ import annotations
 import json
 import sys
 
-from qa.shared.jit_cache import HotspotBitmap, JitRuntimeBoundary, JITTrace
+import wasmtime
+from qa.shared.jit_cache import HotspotBitmap, JitRuntimeBoundary
+from qa.shared.runtime_support import compile_module_block
+from qa.shared.x64_jit import TraceCompiler
 from qa.tier2_runtime.interpreter.test_cps_interpreter import _run_step
 from qa.tier3_plugins.debugger.test_debugger import _make_register_test_view
 from tier2_runtime.abi.interpreter_abi import ExecutionContextABI, NativeValueStack
+from tier2_runtime.wasm.reader import parse_standalone
 
 
 def main() -> None:
@@ -20,8 +24,14 @@ def main() -> None:
     registers = _make_register_test_view()
     bitmap = HotspotBitmap(card_shift=2, code_lengths=(256,), function_pc_bases=(0,))
     cache = JitRuntimeBoundary(bank_capacity=512)
-    first = JITTrace(head_pc=0x100, size_bytes=64, next_pc=0x200)
-    second = JITTrace(head_pc=0x200, size_bytes=64, next_pc=0x100)
+    # Two straight-line loader blocks: the first falls through to the second.
+    module = parse_standalone(
+        wasmtime.wat2wasm(
+            '(module (func (export "f") (block i32.const 1 drop) (block i32.const 2 drop)'
+            " (block i32.const 3 drop)))"
+        )
+    )
+    first, second = (compile_module_block(TraceCompiler(), module, block) for block in module.blocks[:2])
     first_inserted = cache.insert(first)
     second_inserted = cache.insert(second)
     print(
@@ -38,8 +48,9 @@ def main() -> None:
                 "jit_cache": {
                     "card_count": bitmap.card_count,
                     "inserted": [first_inserted, second_inserted],
-                    "cycle_links": [first.chain_next, second.chain_next],
-                    "cycle_body_counts": [
+                    "head_pcs": [first.head_pc, second.head_pc],
+                    "chain_targets": [first.chain_next, second.chain_next],
+                    "chain_body_counts": [
                         first.header._native.chain_body_count,
                         second.header._native.chain_body_count,
                     ],

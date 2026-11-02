@@ -1106,54 +1106,16 @@ void jit_runtime<Measurement>::refresh_chain_requirements() {
   };
   for (std::uint32_t i = 0; i < cache.pc_index_count; ++i) {
     auto *root = trace_header(cache_entry_at_reference(cache.pc_index[i]));
-    const auto *slow = root;
-    const auto *fast = root;
-    bool cycle_found = false;
-    for (std::uint32_t step = 0; step < jit_cache_total_entry_capacity; ++step) {
-      slow = successor(slow);
-      fast = successor(successor(fast));
-      if (slow == nullptr || fast == nullptr) {
-        break;
-      }
-      if (slow == fast) {
-        cycle_found = true;
-        break;
-      }
-    }
-
+    // A chain follows only straight-line successors, so it is a finite list. The walk is bounded
+    // by the resident entry capacity; exceeding it means the chain construction broke its rule.
     std::uint32_t body_count = 0;
-    if (!cycle_found) {
-      for (const auto *current = root; current != nullptr; current = successor(current)) {
-        assert(body_count < jit_cache_total_entry_capacity);
-        ++body_count;
-      }
-    } else {
-      const auto *cycle_start = root;
-      const auto *meeting = slow;
-      std::uint32_t prefix_count = 0;
-      while (cycle_start != meeting) {
-        assert(prefix_count < jit_cache_total_entry_capacity);
-        cycle_start = successor(cycle_start);
-        meeting = successor(meeting);
-        ++prefix_count;
-      }
-      std::uint32_t cycle_count = 1;
-      for (const auto *current = successor(cycle_start); current != cycle_start;
-           current = successor(current)) {
-        assert(cycle_count < jit_cache_total_entry_capacity);
-        ++cycle_count;
-      }
-      body_count = prefix_count + cycle_count;
+    std::uint32_t chain_words = 0;
+    for (const auto *current = root; current != nullptr; current = successor(current)) {
+      assert(body_count < jit_cache_total_entry_capacity);
+      ++body_count;
+      chain_words = std::max(chain_words, static_cast<std::uint32_t>(current->stack_words));
     }
     assert(body_count != 0 && body_count <= jit_cache_total_entry_capacity);
-
-    std::uint32_t chain_words = 0;
-    const auto *current = root;
-    for (std::uint32_t body = 0; body < body_count; ++body) {
-      assert(current != nullptr);
-      chain_words = std::max(chain_words, static_cast<std::uint32_t>(current->stack_words));
-      current = successor(current);
-    }
     root->chain_body_count = static_cast<jit_body_count_t>(body_count);
     root->chain_words = static_cast<jit_stack_words_t>(chain_words);
   }

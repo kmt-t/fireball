@@ -79,7 +79,7 @@ Interpreter opcode handlerの型は`void (execution_context*, const uint8_t*, ui
 | `+0x10` | `blob_bytes` | 4バイト | ヘッダからtrace末尾定数領域末尾までの配置サイズ |
 | `+0x14` | `stack_words` | 1バイト | 当該トレースが書き込む最大スタック領域 |
 | `+0x15` | `chain_words` | 1バイト | 現在のchain全体が必要とする最大スタック領域 |
-| `+0x16` | `chain_body_count` | 1バイト | rootから終端または最初の再訪までに含む相異なるtrace body数。循環時もchain更新で有限に再計算 |
+| `+0x16` | `chain_body_count` | 1バイト | rootから終端までに含むtrace body数 |
 | `+0x17` | `frame_depth` | 1バイト | 関数開始位置から当該ブロック開始位置までの制御フレーム深さ（最大 `FB_CONF_MAX_NESTING_DEPTH`） |
 | `+0x18` | `exit_kind` | 1バイト | trace終了種別（normalは0、call_cpsは1） |
 | `+0x19` | 予約 | 1バイト | `block_index`を2-byte境界へ揃える |

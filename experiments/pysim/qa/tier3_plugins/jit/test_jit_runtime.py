@@ -530,32 +530,55 @@ def test_jitr_insert_preserves_one_resident_trace_per_pc():
     assert cache.resident_count == 1 and cache.find_trace(trace.head_pc) is replacement
 
 
-def test_jitr_oldest_keeps_existing_chain_and_rejects_new_links():
-    """GOTCHA-JITR-02: Oldest hits stay in place; new chains do not target Oldest."""
-    cache = JitRuntimeBoundary(bank_capacity=512)
-    t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
-    cache.insert(t2)  # t2 -> Active
-    cache.rotate()  # t2's bank -> Warm
-    t1 = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=64, next_pc=0x200)
-    cache.insert(t1)  # t1 -> new Active, chains into Warm-resident t2
-    assert t1.chain_next == 0x200
-    assert cache.find_trace(t2.head_pc) is t2 and t1.chain_next == t2.head_pc
+_SIDE_EFFECT_BODY = "(block i32.const 7 local.set 0) "
 
+
+def _run_for_local0(trace: JITTrace) -> int:
+    """Execute a trace's own code and return local 0, which the block writes."""
+    context = ExecutionContext()
+    extended = context.local_stack.extend((0,))
+    assert extended
+    context.local_base = context.local_stack.value_ptr(0).value
+    instruction_ip = ctypes.c_void_p(int(context.code or 0) + int(context.ip))
+    trace.execute(context.context_ptr, instruction_ip, context.sp_ptr)
+    return context.local_stack[0]
+
+
+def test_jitr_oldest_keeps_existing_chain_and_executes_in_place():
+    """GOTCHA-JITR-02: an existing chain into an Oldest hit stays linked, and the hit runs in place."""
+    t1, t2 = _loader_traces(2, body=_SIDE_EFFECT_BODY)
+    cache = JitRuntimeBoundary(bank_capacity=512)
+    inserted = cache.insert(t2)
+    assert inserted  # t2 -> Active
+    cache.rotate()  # t2's bank -> Warm
+    inserted = cache.insert(t1)
+    assert inserted  # t1 -> Active, chains into the Warm-resident t2
+    assert t1.chain_next == t2.head_pc
     cache.rotate()  # t2's bank -> Oldest
     address = t2.raw_addr
-    assert cache.lookup(0x200) is t2
+    assert cache.lookup(t2.head_pc) is t2
     assert t2.raw_addr == address and t1.header.chain_target_addr == address
-    t3 = JITTrace(head_pc=0x180, native_fn=lambda: 3, size_bytes=64, next_pc=0x200)
-    assert_result_11 = cache.insert(t3)
-    assert assert_result_11
-    assert t3.chain_next is None and t3.header.chain_target_addr == 0
+    assert t1.chain_next == t2.head_pc
+    # The Oldest hit runs its own code; the bank and the code address are unchanged.
+    assert _run_for_local0(t2) == 7
+    assert cache.find_trace(t2.head_pc) is t2 and t2.raw_addr == address
     assert t1.chain_next == t2.head_pc and t1.header.chain_target_addr == address
-    cache.rotate()
-    assert cache.find_trace(t2.head_pc) is None
-    assert cache.lookup(t1.head_pc) is t1
+
+
+def test_jitr_oldest_target_rejects_a_new_chain_link():
+    """GOTCHA-JITR-02: a new source does not link into a target that already sits in Oldest."""
+    t1, t2 = _loader_traces(2, body=_SIDE_EFFECT_BODY)
+    cache = JitRuntimeBoundary(bank_capacity=512)
+    inserted = cache.insert(t2)
+    assert inserted  # t2 -> Active
+    cache.rotate()  # t2's bank -> Warm
+    cache.rotate()  # t2's bank -> Oldest
+    assert cache.find_trace(t2.head_pc) is t2
+    inserted = cache.insert(t1)
+    assert inserted  # the new source t1 must not chain into Oldest
+    assert t1.chain_next is None and t1.header.chain_target_addr == 0
     assert cache.find_trace(t1.head_pc) is t1 and t1.chain_next is None
-    assert t1.header.chain_target_addr == 0
-    assert cache.find_trace(t3.head_pc) is t3 and t3.header.chain_target_addr == 0
+
 
 
 def test_jitr_chained_successor_trap_stops_at_its_body_after_the_source_ran():
@@ -4024,7 +4047,8 @@ if __name__ == "__main__":
     test_hotspot_03_lifo_compile_queue_batch_drain()
     test_hotspot_04_3bank_cache_hits_preserve_residency()
     test_jitr_cache_lookup_accepts_unsorted_insertions_and_retirement()
-    test_jitr_oldest_keeps_existing_chain_and_rejects_new_links()
+    test_jitr_oldest_keeps_existing_chain_and_executes_in_place()
+    test_jitr_oldest_target_rejects_a_new_chain_link()
     test_jitr_native_trace_lookup_uses_resident_snapshot()
     test_jitr_31_to_35_trace_chaining_and_ok_unlinking()
     test_jitc_20_trace_header_32byte_x64_physical_layout()

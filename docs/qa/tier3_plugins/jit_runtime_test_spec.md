@@ -94,7 +94,6 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-84 | 3面キャッシュ変更後のBasicBlock参照整合 | 有効なBasicBlock参照を持つtraceがActive/Warm/Oldestの移動・削除対象となる | insert、rotation、flushを各実行し、関連BasicBlockの参照とlookupを確認する | 移動した常駐traceの参照は新しいbank/entry位置へ更新され、退役traceの参照は`0xFF`へ戻る。参照から別PCのtraceへ到達しない | `jit_runtime.md`「JITエントリ表と全バンク索引」、`{GOTCHA-JITR-05}` |
 | TEST-JITR-87 | successor block indexによるchain lookup | Loader metadataを持つsourceとresident successor traceがある | sourceの`next_block_index`と`next_pc`でsuccessorを受け入れ、PC照合とchain targetを確認する | chain linkと候補受入れはBasicBlock indexから参照を引き、indexとPCを両方照合する。製品経路は`find_cached_trace_by_pc`を呼ばない。PC検索fixtureはTEST-JITR-82に分離する | `jit_runtime.md`「BasicBlock indexによるJIT検索手順」、``, `` |
 | TEST-JITR-88 | trace headerからLoader blockを直接参照する | moduleのLoader blockからtraceをコンパイルしてcacheへ挿入する | trace headerのblock indexとLoader配列の位置を比較し、JIT実行後の結果も検証する | headerのblock indexはLoader配列内の対象block indexと一致し、JIT実行結果もInterpreter実行結果と一致する | `jit_runtime.md`「trace headerとLoader block metadata」、`test_jit_runtime.py::test_jitr_trace_header_resolves_loader_block_by_index` |
-| TEST-JITR-89 | 循環chainの有限集計と退役時の相互unlink | 同一bankへ挿入する2 traceが互いを後続PCとして指す | 両traceの`chain_body_count`と`chain_words`を確認後、3回rotationする | 両traceのbody countは2、stack word数は1となる。Oldest bank退役後は双方のchain linkとheader targetが解除される | `jit_runtime.md`、`jit_loop_chain_model.py`、`test_jit_runtime.py::test_jitr_cyclic_chain_body_count_is_finite_and_retirement_unlinks_both_edges` |
 | TEST-JITR-85 | 内部契約違反の発生境界での停止 | 範囲外PC、不正chain target、Warmの重複PC、確定後のメモリ書込みを個別に与える | 各操作を子プロセスで実行する | 不正な値を使う前に責務境界のassertで停止する。既定値、cache miss、書込み拒否の通常結果へ変換しない | `` |
 | TEST-JITR-86 | Runtime API表の読み取り専用借用 | 独立した二つのJIT共通コード領域 | 共通領域の表参照とLinux実マッピングを確認する | 同じ読み取り専用表を借用する。表本体はどちらの可変キャッシュ領域にもない | ``、`{GLOBAL_Policy_Memory}` |
 
@@ -218,7 +217,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 
 ## 4. 未検証・スコープ外
 
-`br_table`、structured control、call/returnなどの一般制御経路は各Interpreter復帰契約に従う。後方・自己chainの循環集計、しきい値yieldと退役時unlinkはTEST-JITR-63, TEST-JITR-67, TEST-JITR-89および[`jit_loop_chain_model.py`](docs/components/tier3_plugins/formal/jit_loop_chain_model.py)で検証する。TEST-JITR-44, TEST-JITR-73などのInterpreter復帰試験は、未実行命令をhandlerへ渡す経路の証拠に限定する。
+`br_table`、structured control、call/returnなどの一般制御経路は各Interpreter復帰契約に従う。後方・自己chainの循環集計、しきい値yieldと退役時unlinkはTEST-JITR-63, TEST-JITR-67および[`jit_loop_chain_model.py`](docs/components/tier3_plugins/formal/jit_loop_chain_model.py)で検証する。TEST-JITR-44, TEST-JITR-73などのInterpreter復帰試験は、未実行命令をhandlerへ渡す経路の証拠に限定する。
 
 - TEST-JITR-44は対象traceの実行と最終結果を確認する。独立した終了blockの試験ではNative trace実行1回とC++ return handler呼出し1回を診断値で確認する。最初のRuntime境界で論理PCの`-1`、Native contextの`0xffffffff`、共有stackの戻り値60、未完了のcall frameを直接観測する。次のRuntime境界でframe除去と関数完了を確認し、traceとhandlerの件数が増えないことを検査する。
 

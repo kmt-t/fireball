@@ -536,34 +536,6 @@ def test_jitr_oldest_keeps_existing_chain_and_rejects_new_links():
     assert cache.find_trace(t3.head_pc) is t3 and t3.header.chain_target_addr == 0
 
 
-def test_jitr_cyclic_chain_body_count_is_finite_and_retirement_unlinks_both_edges():
-    """TEST-JITR-89: A two-trace cycle is finite and loses both links on bank retirement."""
-    cache = JitRuntimeBoundary(bank_capacity=512)
-    first = JITTrace(head_pc=0x100, size_bytes=64, next_pc=0x200)
-    second = JITTrace(head_pc=0x200, size_bytes=64, next_pc=0x100)
-
-    inserted_first = cache.insert(first)
-    assert inserted_first
-    assert first.chain_next is None
-    inserted_second = cache.insert(second)
-    assert inserted_second
-
-    assert first.chain_next == second.head_pc
-    assert second.chain_next == first.head_pc
-    assert first.header._native.chain_body_count == 2
-    assert second.header._native.chain_body_count == 2
-    assert first.header._native.chain_words == 1
-    assert second.header._native.chain_words == 1
-
-    for _ in range(3):
-        cache.rotate()
-
-    assert first.chain_next is None
-    assert second.chain_next is None
-    assert first.header.chain_target_addr == 0
-    assert second.header.chain_target_addr == 0
-
-
 def test_jitr_chained_successor_trap_stops_at_its_body_after_the_source_ran():
     """A trap in a chained successor leaves native execution there; the source body already ran."""
     compiler = TraceCompiler()

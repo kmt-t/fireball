@@ -98,17 +98,6 @@ fb_jit_runtime_bind_profile(fireball::qa_jit_runtime *runtime,
                             fireball::jit_measurements::profile_type p) {
   return provider_adapter::fb_jit_runtime_bind_profile(runtime, p);
 }
-extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_bind_blocks(qa_jit_runtime *runtime,
-                                                             const fireball::jit_wasm_block *blocks,
-                                                             std::uint32_t count) {
-  if (count != 0 && blocks == nullptr) {
-    return 0;
-  }
-  runtime->hotspots.configuration.blocks = blocks;
-  runtime->hotspots.configuration.block_count = count;
-  return 1;
-}
-
 // Snapshot records are QA fixtures, not an interpreter/plugin contract.
 struct fb_native_trace_descriptor {
   std::uint32_t head_pc;

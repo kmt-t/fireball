@@ -229,15 +229,6 @@ assert _NativeWasmBlock.global_widths.offset == 128
 assert ctypes.sizeof(_NativeWasmBlock) == 144
 
 
-RUNTIME_BIND_BLOCKS = _NATIVE_LIBRARY.fb_qa_runtime_bind_blocks
-RUNTIME_BIND_BLOCKS.argtypes = (
-    ctypes.c_void_p,
-    ctypes.POINTER(_NativeWasmBlock),
-    ctypes.c_uint32,
-)
-RUNTIME_BIND_BLOCKS.restype = ctypes.c_int
-
-
 class NativeProfile(ctypes.Structure):
     _fields_ = (
         ("trackable", ctypes.POINTER(ctypes.c_uint8)),

@@ -10,14 +10,9 @@ import ctypes
 from collections.abc import Callable
 from typing import TYPE_CHECKING, ClassVar
 
-from bump_allocator import BumpAllocator
 from config import (
-    JIT_CACHE_ACTIVE_OFFSET_BYTES,
-    JIT_CACHE_BANK_CAPACITY_BYTES,
     JIT_CACHE_BANK_COUNT,
     JIT_CACHE_BANK_ENTRY_CAPACITY,
-    JIT_CACHE_OLDEST_OFFSET_BYTES,
-    JIT_CACHE_WARM_OFFSET_BYTES,
     JIT_CARD_SHIFT,
     JIT_TRACE_DEFAULT_BYTES,
     JIT_X64_TRACE_HEADER_BYTES,
@@ -39,8 +34,6 @@ if TYPE_CHECKING:
 
 NativeTraceFn = Callable[[ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p], None]
 TraceArgument = ctypes.c_void_p
-# WebAssembly `nop`: the straight-line terminator of a QA fixture block.
-FIXTURE_TERMINATOR_OPCODE = 0x01
 
 
 class CardState:
@@ -595,49 +588,11 @@ class JitRuntimeBoundary:
     __slots__ = (
         "_before",
         "_busy",
-        "_fixture_blocks",
-        "_fixture_code",
         "_native",
         "_references",
         "_retire_observer",
         "metadata_provider",
     )
-
-    def __init__(
-        self,
-        bank_capacity: int = JIT_CACHE_BANK_CAPACITY_BYTES,
-        allocator: BumpAllocator | None = None,
-        entry_capacity: int = JIT_CACHE_BANK_ENTRY_CAPACITY,
-        retire_observer: Callable[[int, int], None] | None = None,
-    ) -> None:
-        assert JIT_X64_TRACE_HEADER_BYTES <= bank_capacity <= JIT_CACHE_BANK_CAPACITY_BYTES
-        assert 0 < entry_capacity <= JIT_CACHE_BANK_ENTRY_CAPACITY
-        self._references: StaticVector[JITTrace | None] | None = None
-        self._busy = False
-        self._retire_observer = retire_observer
-        self._before: tuple[tuple[int, int, int], ...] = ()
-        self._fixture_blocks = (
-            native_abi._NativeWasmBlock * (JIT_CACHE_BANK_COUNT * entry_capacity + 1)
-        )()
-        self._fixture_code: tuple[ctypes.Array[ctypes.c_uint8], ...] = ()
-        self.metadata_provider: Callable[[JITTrace], None] | None = None
-        self._native = native_abi.NativeRuntimeStorage(
-            bank_capacity,
-            entry_capacity,
-            (
-                JIT_CACHE_ACTIVE_OFFSET_BYTES,
-                JIT_CACHE_WARM_OFFSET_BYTES,
-                JIT_CACHE_OLDEST_OFFSET_BYTES,
-            ),
-        )
-        if allocator is not None:
-            self.bind_allocator(allocator)
-        bind_result = native_abi.RUNTIME_BIND_BLOCKS(
-            self._native.pointer,
-            self._fixture_blocks,
-            0,
-        )
-        assert bind_result == 1
 
     @classmethod
     def borrow(
@@ -650,8 +605,6 @@ class JitRuntimeBoundary:
         boundary._references = None
         boundary._busy = False
         boundary._retire_observer = retire_observer
-        boundary._fixture_blocks = (native_abi._NativeWasmBlock * 0)()
-        boundary._fixture_code = ()
         boundary.metadata_provider = None
         boundary._before = ()
         return boundary
@@ -680,66 +633,6 @@ class JitRuntimeBoundary:
                     self._native.pointer, index + 1
                 ):
                     self._references[index] = None
-        self._bind_fixture_blocks()
-
-    def _bind_fixture_blocks(self) -> None:
-        if (
-            self.metadata_provider is not None
-            or self._references is None
-            or len(self._fixture_blocks) == 0
-        ):
-            return
-        indexed_traces = tuple(
-            (index, trace) for index, trace in enumerate(self._references) if trace is not None
-        )
-        assert len(indexed_traces) <= len(self._fixture_blocks)
-        sorted_traces = tuple(sorted(indexed_traces, key=lambda item: item[1].head_pc))
-        block_indices = {trace.head_pc: index for index, trace in indexed_traces}
-        empty_view = native_abi._NativeByteView(None, 0)
-        empty_layout = native_abi._NativeLocalLayout(empty_view, empty_view, 0, 0)
-        fixture_code: list[ctypes.Array[ctypes.c_uint8]] = []
-        for position, (index, trace) in enumerate(sorted_traces):
-            next_block_index = block_indices.get(trace._native.dispatch_next_pc, 0xFFFF)
-            loops_to_block_index = block_indices.get(trace._native.dispatch_loops_to, 0xFFFF)
-            if trace._native_owner is None and trace.code_blob is not None:
-                blob = bytearray(trace.code_blob)
-                header = native_abi.NativeTraceHeader.from_buffer(blob)
-                header.block_index = index
-                trace.code_blob = bytes(blob)
-                trace.bind_code()
-            # A fixture has no Wasm body. Its code view holds one straight-line `nop`
-            # at the terminator position, so chain decisions read a real opcode.
-            code = (ctypes.c_uint8 * (trace._native.byte_span + 1))()
-            code[trace._native.byte_span] = FIXTURE_TERMINATOR_OPCODE
-            fixture_code.append(code)
-            code_view = native_abi._NativeByteView(ctypes.addressof(code), len(code))
-            self._fixture_blocks[position] = native_abi._NativeWasmBlock(
-                trace.head_pc,
-                0,
-                trace._native.byte_span,
-                trace._native.dispatch_next_pc,
-                trace._native.dispatch_loops_to,
-                trace._native.frame_depth,
-                0,
-                code_view,
-                empty_layout,
-                ctypes.cast(trace._native.exec_count, ctypes.c_void_p).value,
-                index,
-                next_block_index,
-                loops_to_block_index,
-                empty_view,
-                0,
-                0,
-                empty_view,
-            )
-        # The native block table points into these views until the next bind.
-        self._fixture_code = tuple(fixture_code)
-        bind_result = native_abi.RUNTIME_BIND_BLOCKS(
-            self._native.pointer,
-            self._fixture_blocks,
-            len(sorted_traces),
-        )
-        assert bind_result == 1
 
     def _reference(self, token: int, pc: int) -> JITTrace | None:
         if token == 0:
@@ -778,9 +671,6 @@ class JitRuntimeBoundary:
         assert empty >= 0, "fixed trace lifetime registry is full"
         self._references[empty] = trace
         return empty + 1, True
-
-    def bind_allocator(self, allocator: BumpAllocator) -> None:
-        self._native.bind_allocator(allocator)
 
     def bind_cards(
         self, bitmap: HotspotBitmap, update: CardUpdateBitmap, units: int, scan_bytes: int
@@ -863,7 +753,6 @@ class JitRuntimeBoundary:
         token, added = self._keep(trace)
         assert self._references is not None
         assert trace.code_blob is not None
-        self._bind_fixture_blocks()
         blob = (ctypes.c_uint8 * len(trace.code_blob)).from_buffer_copy(trace.code_blob)
         result = native_abi.RUNTIME_INSERT(self._native.pointer, blob, len(blob), token)
         if not result and added and not native_abi.RUNTIME_HAS_TOKEN(self._native.pointer, token):

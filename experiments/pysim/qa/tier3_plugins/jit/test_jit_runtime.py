@@ -602,6 +602,56 @@ def test_jitr_chained_successor_trap_stops_at_its_body_after_the_source_ran():
     assert context.local_stack[0] == 1, "the source body must run before the successor traps"
 
 
+def test_jitr_chained_successor_cps_boundary_stops_at_its_block():
+    """A CPS boundary in a chained successor stops the chain at that successor's block."""
+    module = parse_standalone(
+        wasmtime.wat2wasm(
+            '(module (memory 1) (func (export "run") (result i32) (local i32)'
+            " (block i32.const 7 local.set 0) (block memory.size drop) local.get 0))"
+        )
+    )
+    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), candidate_threshold=0)
+    engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
+    engine.register_module_blocks(module)
+    base = module.function_pc_offset(0)
+    for pc in range(base, base + len(module.code_for(0))):
+        manager.trackable.mark(pc)
+    code = module.code_for(0)
+    memory_size_ip = bytes(code).index(b"\x3f\x00")  # memory.size with its memory index
+    boundary_block = next(
+        index for index, block in enumerate(module.blocks)
+        if block.head_pc <= base + memory_size_ip < block.head_pc + block.byte_span
+    )
+    source_block = next(
+        index for index, block in enumerate(module.blocks) if block.next_pc == module.blocks[boundary_block].head_pc
+    )
+
+    # Compile both blocks with the loader metadata; inserting the successor first links the chain.
+    compiler = TraceCompiler()
+    successor = compile_module_block(compiler, module, module.blocks[boundary_block])
+    source_trace = compile_module_block(compiler, module, module.blocks[source_block])
+    assert successor is not None and source_trace is not None
+    inserted_successor = manager.cache.insert(successor)
+    assert inserted_successor
+    inserted_source = manager.cache.insert(source_trace)
+    assert inserted_source
+
+    source = manager.cache.find_trace(module.blocks[source_block].head_pc)
+    assert source is not None and source.chain_next == module.blocks[boundary_block].head_pc
+
+    # The second run starts at the source; the native chain reaches the boundary block and stops.
+    interpreter = Interpreter(module)
+    call = interpreter.start(0, [])
+    result = dispatch_for_test(
+        interpreter, call, manager.native_dispatch_state(), manager.exec_counter,
+        native_dispatcher=select_native_jit_dispatch_entry(False),
+    )
+    assert result[0] == NATIVE_DISPATCH_RUNTIME_API_BOUNDARY
+    assert int(call.context.ip) == memory_size_ip, "the CPS exit ip is the memory.size operation"
+    assert int(call.context.current_block_index) == boundary_block
+    assert call.context.local_stack[0] == 7, "the source body ran before the successor stopped"
+
+
 def test_jitr_trace_blob_has_no_entry_or_exit_stencil():
     """The body begins at the header; the shared entry lives in the common area, not in the trace."""
     compiler = TraceCompiler()

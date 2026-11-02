@@ -22,15 +22,6 @@ struct jit_compile_result {
   jit_trace_exit_kind exit_kind = jit_trace_exit_kind::normal;
 };
 
-// Returns 1 for a compiled trace, 0 when the trace is unsupported, and a
-// negative value when the call or output buffer violates the ABI contract.
-int compile_instruction_body(const fireball::jit_instruction *instructions,
-                             std::uint32_t instruction_count, std::uint32_t has_next_pc,
-                             wasm_pc_t next_pc, std::uint32_t has_loops_to, wasm_pc_t loops_to,
-                             code_offset_t byte_span, const frame_word_offset_t *local_offsets,
-                             const std::uint8_t *local_types, local_count_t local_count,
-                             local_count_t local_slot_count, std::uint8_t *output,
-                             code_offset_t output_capacity, fireball::jit_compile_result *result);
 
 int compile_wasm_trace(const std::uint8_t *code, code_offset_t code_bytes,
                        code_offset_t code_offset, code_offset_t byte_span,

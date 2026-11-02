@@ -221,28 +221,3 @@ extern "C" int fb_jit_region_init(fireball::executable_memory *memory) {
   return 1;
 }
 
-extern "C" int fb_jit_compile_instructions(const fireball::jit_instruction_block *block,
-                                           std::uint8_t *output, std::uint32_t capacity,
-                                           std::uint8_t *body_scratch) {
-  using namespace fireball;
-  if (block == nullptr || output == nullptr || capacity <= header_bytes ||
-      body_scratch == nullptr ||
-      capacity > header_bytes + kMaxBodyBytes + trace_blob_overhead_bytes) {
-    return -1;
-  }
-  fireball::jit_compile_result result{};
-  const auto status = compile_instruction_body(
-      block->instructions, block->instruction_count, block->next_pc != UINT32_MAX, block->next_pc,
-      block->loops_to != UINT32_MAX, block->loops_to, block->byte_span,
-      reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data), block->locals.types.data,
-      block->locals.count, block->locals.total_words, body_scratch, kMaxBodyBytes, &result);
-  if (status != 1) {
-    return status;
-  }
-  return build_trace(body_scratch, result.body_bytes, &result, block->head_pc, 0,
-                     FIREBALL_INVALID_BLOCK_INDEX, block->head_pc + block->byte_span,
-                     block->next_pc, block->loops_to, FIREBALL_INVALID_BLOCK_INDEX, output,
-                     capacity)
-             ? 1
-             : -1;
-}

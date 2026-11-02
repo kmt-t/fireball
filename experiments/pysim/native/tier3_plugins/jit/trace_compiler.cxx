@@ -1680,35 +1680,6 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
 
 } // namespace
 
-int fireball::compile_instruction_body(
-    const fireball::jit_instruction *instructions, std::uint32_t instruction_count,
-    std::uint32_t has_next_pc, wasm_pc_t next_pc, std::uint32_t has_loops_to, wasm_pc_t loops_to,
-    code_offset_t byte_span, const frame_word_offset_t *local_offsets,
-    const std::uint8_t *local_types, local_count_t local_count, local_count_t local_slot_count,
-    std::uint8_t *output, code_offset_t output_capacity, fireball::jit_compile_result *result) {
-  static_cast<void>(has_next_pc);
-  static_cast<void>(next_pc);
-  static_cast<void>(has_loops_to);
-  static_cast<void>(loops_to);
-  assert(result != nullptr && output != nullptr && byte_span != 0 &&
-         instruction_count <= byte_span && (instruction_count == 0 || instructions != nullptr));
-  *result = {};
-  result->body_end_ip = kNoTraceExitIp;
-  if (instruction_count == 0 || instruction_count > kMaxTraceInstructions ||
-      output_capacity > kMaxBodyBytes) {
-    return 0;
-  }
-
-  trace_builder builder{output, output_capacity};
-  stack_model stack{};
-  if (!builder.begin_trace() ||
-      !compile_instructions(builder, instructions, instruction_count, local_offsets, local_types,
-                            local_count, local_slot_count, stack, fireball::jit_byte_view{})) {
-    return 0;
-  }
-  return finish_trace(builder, stack, result);
-}
-
 int fireball::compile_wasm_trace(
     const std::uint8_t *code, code_offset_t code_bytes, code_offset_t code_offset,
     code_offset_t byte_span, std::uint32_t has_next_pc, wasm_pc_t next_pc,

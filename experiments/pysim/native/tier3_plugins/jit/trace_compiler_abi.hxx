@@ -30,8 +30,6 @@ struct jit_const_pool_diagnostics {
 } // namespace fireball
 
 extern "C" {
-int fb_jit_compile_instructions(const fireball::jit_instruction_block *block, std::uint8_t *output,
-                                std::uint32_t capacity, std::uint8_t *body_scratch);
 // Return only the cache-ready code blob; trace state is kept in its header.
 int fb_jit_compile_block(const fireball::jit_wasm_block *block, std::uint8_t *output,
                          std::uint32_t capacity, std::uint8_t *body_scratch);

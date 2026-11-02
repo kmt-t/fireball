@@ -47,13 +47,6 @@ static_assert(offsetof(jit_wasm_block, interpreter_annotation_byte_offset) == 12
 static_assert(offsetof(jit_wasm_block, entry_stack_words) == 124);
 static_assert(offsetof(jit_wasm_block, global_widths) == 128);
 static_assert(sizeof(jit_wasm_block) == 144);
-struct jit_instruction_block {
-  wasm_pc_t head_pc, next_pc, loops_to;
-  code_offset_t byte_span;
-  const fireball::jit_instruction *instructions;
-  jit_body_count_t instruction_count;
-  jit_local_layout locals;
-};
 using jit_trace_boundary_metadata = fb_native_jit_trace_exit;
 static_assert(offsetof(jit_trace_boundary_metadata, body_end_ip) == 0);
 static_assert(offsetof(jit_trace_boundary_metadata, block_index) == 16);

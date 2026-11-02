@@ -513,7 +513,10 @@ fb_jit_runtime_reset_chain_measurements(qa_jit_runtime *runtime) {
 extern "C" FB_PYSIM_ABI_EXPORT int
 fb_qa_runtime_print_measurements(const qa_jit_runtime *runtime,
                                  const fireball::printk_writer *writer) {
-  return runtime->measurements.write_measurements(*writer);
+  const auto *view = runtime->module_view;
+  return runtime->measurements.write_measurements(
+      *writer, view == nullptr ? nullptr : view->block_execution_counts,
+      view == nullptr ? 0 : view->block_count);
 }
 
 extern "C" FB_PYSIM_ABI_EXPORT std::size_t fb_jit_runtime_size() { return sizeof(qa_jit_runtime); }

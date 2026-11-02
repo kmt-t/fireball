@@ -72,7 +72,8 @@ struct jit_measurements {
     return found != end && found->head_pc == pc ? found : nullptr;
   }
 
-  bool write_measurements(const printk_writer &writer) const {
+  bool write_measurements(const printk_writer &writer, const std::uint32_t *block_counts,
+                          block_index_t block_count) const {
     return printk_u64(writer, "jit.evictions", evictions) &&
            printk_u64(writer, "jit.generation", generation) &&
            printk_u64(writer, "jit.rotations", rotations) &&
@@ -85,7 +86,7 @@ struct jit_measurements {
            printk_u64(writer, "jit.installs", installs) &&
            printk_u64(writer, "jit.distinct_installs", distinct_installs) &&
            printk_u64(writer, "jit.installed_bytes_total", installed_bytes_total) &&
-           write_block_installs(writer) &&
+           write_block_installs(writer, block_counts, block_count) &&
            printk_u64(writer, "jit.execution_count", execution_count) &&
            printk_u64(writer, "jit.history_overwritten", history_overwritten) &&
            printk_u64(writer, "jit.last_overwritten", last_overwritten) &&
@@ -210,11 +211,13 @@ struct jit_measurements {
   }
   void lookup_called() { ++lookup_calls; }
   void trace_evicted(std::uint32_t) { ++evictions; }
-  bool write_block_installs(const printk_writer &writer) const {
+  bool write_block_installs(const printk_writer &writer, const std::uint32_t *block_counts,
+                            block_index_t block_count) const {
     for (std::size_t index = 0; index < per_block_capacity; ++index) {
       if (installed_block_count[index] == 0) {
         continue;
       }
+      assert(block_counts == nullptr || index < block_count);
       std::array<char, 40> label{};
       std::size_t offset = 0;
       const auto append = [&label, &offset](std::string_view text) {
@@ -234,10 +237,19 @@ struct jit_measurements {
       while (digit_count != 0) {
         append(std::string_view(&digits[--digit_count], 1));
       }
+      const auto prefix_length = offset;
       append(".bytes");
       label[offset] = '\0';
       if (!printk_u64(writer, label.data(), installed_block_bytes[index])) {
         return false;
+      }
+      if (block_counts != nullptr) {
+        offset = prefix_length;
+        append(".entries");
+        label[offset] = '\0';
+        if (!printk_u64(writer, label.data(), block_counts[index])) {
+          return false;
+        }
       }
     }
     return true;

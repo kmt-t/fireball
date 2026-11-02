@@ -53,21 +53,9 @@ from tier2_runtime.interpreter.control_flow import build_control_map, extract_ba
 from tier2_runtime.interpreter.interpreter import ExecutionContext
 from tier2_runtime.wasm.module import I32, I64, BasicBlock, LocalLayout
 from tier2_runtime.wasm.opcodes import (
-    F32_ADD,
-    F32_CONST,
-    F32_DIV,
-    F32_MUL,
-    F32_SUB,
-    F64_ADD,
-    F64_CONST,
-    F64_DIV,
-    F64_MUL,
-    F64_SUB,
     I32_ADD,
     I32_AND,
     I32_CONST,
-    I32_DIV_S,
-    I32_DIV_U,
     I32_EQ,
     I32_GE_S,
     I32_GT_S,
@@ -77,21 +65,42 @@ from tier2_runtime.wasm.opcodes import (
     I32_MUL,
     I32_NE,
     I32_OR,
-    I32_REM_S,
-    I32_REM_U,
     I32_SHL,
     I32_SHR_S,
     I32_SHR_U,
     I32_SUB,
     I32_XOR,
-    I64_ADD,
-    I64_CONST,
-    I64_MUL,
-    I64_SUB,
     LOCAL_GET,
     LOCAL_SET,
     LOCAL_TEE,
 )
+from tier2_runtime.wasm.reader import parse_standalone
+
+
+def _loader_block(wat_body: str, result: str = "", params: str = "", locals_decl: str = ""):
+    """Compile the nonempty loader block of one Wasm function through the Loader.
+
+    The function is `(func PARAMS RESULT LOCALS BODY)`; `result` is a value type or empty.
+    The module is returned with the block because the trace reads its code through the module.
+    """
+    result_clause = f"(result {result})" if result else ""
+    module = parse_standalone(
+        wat_to_wasm(
+            f'(module (func (export "f") {params} {result_clause} {locals_decl} {wat_body}))'
+        )
+    )
+    block = next(b for b in module.blocks if b.byte_span > 0)
+    trace = compile_module_block(TraceCompiler(), module, block)
+    assert trace is not None
+    return module, block, trace
+
+
+def _invoke_loader_block(module, block, trace, ctx) -> int:
+    """Run a loader trace on the shared context; ctx.code is the module code and ctx.ip the head."""
+    code = bytes(module.source)
+    ctx.code = ctypes.cast(ctypes.c_char_p(code), ctypes.c_void_p).value
+    ctx.ip = block.head_pc
+    return trace.invoke(ctx)
 
 
 def _extract_test_blocks(code: bytes):
@@ -124,103 +133,59 @@ def _assert_trace_uses_common_chain_dispatcher(trace: JITTrace) -> None:
 
 def test_x64_wide_arithmetic_uses_native_stencils():
     """Wide arithmetic executes through the compiled stencil and Runtime API paths."""
-    compiler = TraceCompiler()
     ctx = ExecutionContext()
 
-    def run_i64(op, left: int, right: int, expected: int) -> None:
+    def run_i64(op: str, left: int, right: int, expected: int) -> None:
         ctx.stack.set_size(0)
-        trace = compiler.compile_instructions(
-            head_pc=0,
-            instructions=((I64_CONST, left), (I64_CONST, right), (op, None)),
-            next_pc=3,
-            loops_to=None,
-            byte_length=3,
-            local_layout=LocalLayout(()),
+        module, block, trace = _loader_block(
+            f"(i64.const {left}) (i64.const {right}) ({op})", "i64"
         )
-        assert trace is not None
-        trace.invoke(ctx)
+        _invoke_loader_block(module, block, trace, ctx)
         assert tuple(ctx.stack) == (expected & 0xFFFF_FFFF, expected >> 32)
 
-    def run_f32(op, left: float, right: float, expected: float) -> None:
+    def run_f32(op: str, left: float, right: float, expected: float) -> None:
         ctx.stack.set_size(0)
-        left_bits = struct.unpack("<I", struct.pack("<f", left))[0]
-        right_bits = struct.unpack("<I", struct.pack("<f", right))[0]
-        trace = compiler.compile_instructions(
-            head_pc=0,
-            instructions=((F32_CONST, left_bits), (F32_CONST, right_bits), (op, None)),
-            next_pc=3,
-            loops_to=None,
-            byte_length=3,
-            local_layout=LocalLayout(()),
+        module, block, trace = _loader_block(
+            f"(f32.const {left}) (f32.const {right}) ({op})", "f32"
         )
-        assert trace is not None
-        trace.invoke(ctx)
+        _invoke_loader_block(module, block, trace, ctx)
         actual = struct.unpack("<f", struct.pack("<I", ctx.stack[0]))[0]
         assert abs(actual - expected) < 1e-6
 
-    def run_f64(op, left: float, right: float, expected: float) -> None:
+    def run_f64(op: str, left: float, right: float, expected: float) -> None:
         ctx.stack.set_size(0)
-        left_bits = struct.unpack("<Q", struct.pack("<d", left))[0]
-        right_bits = struct.unpack("<Q", struct.pack("<d", right))[0]
-        trace = compiler.compile_instructions(
-            head_pc=0,
-            instructions=((F64_CONST, left_bits), (F64_CONST, right_bits), (op, None)),
-            next_pc=3,
-            loops_to=None,
-            byte_length=3,
-            local_layout=LocalLayout(()),
+        module, block, trace = _loader_block(
+            f"(f64.const {left}) (f64.const {right}) ({op})", "f64"
         )
-        assert trace is not None
-        trace.invoke(ctx)
+        _invoke_loader_block(module, block, trace, ctx)
         actual = struct.unpack("<d", struct.pack("<II", ctx.stack[0], ctx.stack[1]))[0]
         assert abs(actual - expected) < 1e-12
 
-    run_i64(I64_ADD, 0x0000_0001_0000_0002, 3, 0x0000_0001_0000_0005)
-    run_i64(I64_SUB, 9, 4, 5)
-    run_i64(I64_MUL, 9, 4, 36)
-    run_f32(F32_ADD, 1.5, 2.25, 3.75)
-    run_f32(F32_SUB, 9.0, 4.0, 5.0)
-    run_f32(F32_MUL, 9.0, 4.0, 36.0)
-    run_f32(F32_DIV, 9.0, 4.0, 2.25)
-    run_f64(F64_ADD, 1.5, 2.25, 3.75)
-    run_f64(F64_SUB, 9.0, 4.0, 5.0)
-    run_f64(F64_MUL, 9.0, 4.0, 36.0)
-    run_f64(F64_DIV, 9.0, 4.0, 2.25)
+    run_i64("i64.add", 0x0000_0001_0000_0002, 3, 0x0000_0001_0000_0005)
+    run_i64("i64.sub", 9, 4, 5)
+    run_i64("i64.mul", 9, 4, 36)
+    run_f32("f32.add", 1.5, 2.25, 3.75)
+    run_f32("f32.sub", 9.0, 4.0, 5.0)
+    run_f32("f32.mul", 9.0, 4.0, 36.0)
+    run_f32("f32.div", 9.0, 4.0, 2.25)
+    run_f64("f64.add", 1.5, 2.25, 3.75)
+    run_f64("f64.sub", 9.0, 4.0, 5.0)
+    run_f64("f64.mul", 9.0, 4.0, 36.0)
+    run_f64("f64.div", 9.0, 4.0, 2.25)
 
 
 def test_trace_compiler_cps_4arg_and_pic():
     """TEST-JITC-01, TEST-JITC-22: Verify the logical entry ABI and execute a CPS trace."""
-    compiler = TraceCompiler()
     # Block: local[1] = (local[0] + 10) * 3 - 5 -- real WASM bytecode, run through
-    # The test prepares the same loader metadata passed by the runtime.
-    code = bytes(
-        [
-            LOCAL_GET,
-            0,
-            I32_CONST,
-            10,
-            I32_ADD,
-            I32_CONST,
-            3,
-            I32_MUL,
-            I32_CONST,
-            5,
-            I32_SUB,
-            LOCAL_SET,
-            1,
-        ]
+    # the Loader's block metadata. Local 0 is the parameter, local 1 is declared.
+    module, block, trace = _loader_block(
+        "(local.get 0) (i32.const 10) (i32.add) (i32.const 3) (i32.mul) (i32.const 5) (i32.sub)"
+        " (local.set 1)",
+        params="(param i32)",
+        locals_decl="(local i32)",
     )
-    head_pc, next_pc, loops_to, frame_depth, byte_span = _extract_test_blocks(code)[0]
-    block = BasicBlock(
-        head_pc=head_pc,
-        next_pc=next_pc,
-        loops_to=loops_to,
-        frame_depth=frame_depth,
-        byte_span=byte_span,
-    )
-    trace = compile_test_block(compiler, code, block, (I32, I32))
     # The ordinary entry begins at the first assembled stencil.
-    assert trace.head_pc == head_pc
+    assert trace.head_pc == block.head_pc
     assert trace.size_bytes > 31
     assert trace.raw_addr is not None and trace.code_offset is not None
     header_address = trace.raw_addr - JIT_X64_TRACE_HEADER_BYTES
@@ -240,63 +205,33 @@ def test_trace_compiler_cps_4arg_and_pic():
 
 def test_x64_division_and_remainder_use_runtime_api_stencils() -> None:
     """Integer div/rem call their registered runtime APIs and preserve Wasm trap behavior."""
-    compiler = TraceCompiler()
     for operation, left, right, expected in (
-        (I32_DIV_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFD),
-        (I32_DIV_U, 0xFFFF_FFF0, 2, 0x7FFF_FFF8),
-        (I32_REM_S, 0xFFFF_FFF9, 2, 0xFFFF_FFFF),
-        (I32_REM_U, 0xFFFF_FFF0, 3, 0),
+        ("i32.div_s", 0xFFFF_FFF9, 2, 0xFFFF_FFFD),
+        ("i32.div_u", 0xFFFF_FFF0, 2, 0x7FFF_FFF8),
+        ("i32.rem_s", 0xFFFF_FFF9, 2, 0xFFFF_FFFF),
+        ("i32.rem_u", 0xFFFF_FFF0, 3, 0),
     ):
-        instructions = [(I32_CONST, left), (I32_CONST, right), (operation, None)]
-        trace = compiler.compile_instructions(
-            head_pc=0,
-            instructions=instructions,
-            next_pc=len(instructions),
-            loops_to=None,
-            byte_length=len(instructions),
-            local_layout=LocalLayout(()),
+        module, block, trace = _loader_block(
+            f"(i32.const {left}) (i32.const {right}) ({operation})", "i32"
         )
-        assert trace is not None
         ctx = ExecutionContext()
-        trace.invoke(ctx)
+        _invoke_loader_block(module, block, trace, ctx)
         assert ctx.stack[0] == expected, (operation, ctx.stack[0], expected)
 
 
 def test_trace_compiler_bitwise_and_shifts_pic():
     """TEST-JITC-02: TraceCompiler compiles bitwise ops into PIC code."""
-    compiler = TraceCompiler()
     # local[2] = local[0] & local[1]; local[3] = local[0] << 2
-    code = bytes(
-        [
-            LOCAL_GET,
-            0,
-            LOCAL_GET,
-            1,
-            I32_AND,
-            LOCAL_SET,
-            2,
-            LOCAL_GET,
-            0,
-            I32_CONST,
-            2,
-            I32_SHL,
-            LOCAL_SET,
-            3,
-        ]
+    module, block, trace = _loader_block(
+        "(local.get 0) (local.get 1) (i32.and) (local.set 2)"
+        " (local.get 0) (i32.const 2) (i32.shl) (local.set 3)",
+        params="(param i32 i32)",
+        locals_decl="(local i32 i32)",
     )
-    head_pc, next_pc, loops_to, frame_depth, byte_span = _extract_test_blocks(code)[0]
-    block = BasicBlock(
-        head_pc=head_pc,
-        next_pc=next_pc,
-        loops_to=loops_to,
-        frame_depth=frame_depth,
-        byte_span=byte_span,
-    )
-    trace = compile_test_block(compiler, code, block, (I32, I32, I32, I32))
     ctx = ExecutionContext()
     assert_result_1 = ctx.local_stack.extend((15, 7, 0, 0))
     assert assert_result_1
-    trace.invoke(ctx)
+    _invoke_loader_block(module, block, trace, ctx)
     assert ctx.local_stack[2] == (0x0F & 0x07)
     assert ctx.local_stack[3] == (0x0F << 2)
 
@@ -434,18 +369,12 @@ def test_jit_chaining_uses_loader_resolved_successors():
 
 def test_trace_local_addressing_uses_precomputed_compact_offsets():
     """TEST-JITC-59: direct local displacements use loader-computed offsets."""
-    code = bytes([LOCAL_GET, 0, LOCAL_SET, 2])
-    head_pc, next_pc, loops_to, frame_depth, byte_span = _extract_test_blocks(code)[0]
-    block = BasicBlock(
-        head_pc=head_pc,
-        next_pc=next_pc,
-        loops_to=loops_to,
-        frame_depth=frame_depth,
-        byte_span=byte_span,
-    )
-    for types in ((I32, I32, I32), (I32, I64, I32)):
+    for params, types in (
+        ("(param i32 i32 i32)", (I32, I32, I32)),
+        ("(param i32 i64 i32)", (I32, I64, I32)),
+    ):
         layout = LocalLayout(types)
-        trace = compile_test_block(TraceCompiler(), code, block, types)
+        _, _, trace = _loader_block("(local.get 0) (local.set 2)", params=params)
         assert trace is not None
         locals_arr = (ctypes.c_uint32 * layout.total_words)()
         for index in range(len(locals_arr)):
@@ -460,59 +389,45 @@ def test_trace_local_addressing_uses_precomputed_compact_offsets():
 
 def test_trace_local_layout_is_fixed_during_compilation():
     """TEST-JITC-65: local offsets and sizes are constants in the compiled trace."""
-    compiler = TraceCompiler()
     value = 0x0123_4567_89AB_CDEF
     words = (value & 0xFFFF_FFFF, value >> 32)
-    layout = LocalLayout((I64,))
 
-    get_trace = compiler.compile_instructions(
-        head_pc=0,
-        instructions=((LOCAL_GET, 0),),
-        next_pc=1,
-        loops_to=None,
-        byte_length=1,
-        local_layout=layout,
-    )
+    module, block, get_trace = _loader_block("(local.get 0)", result="i64", params="(param i64)")
     assert get_trace is not None
     context = ExecutionContext()
     assert_result_2 = context.local_stack.extend(words)
     assert assert_result_2
-    get_trace.invoke(context)
+    _invoke_loader_block(module, block, get_trace, context)
     assert tuple(context.stack) == words
     assert context.local_stack.raw_at(0) == words[0]
     assert context.local_stack.raw_at(1) == words[1]
     assert get_trace.code_blob is not None
 
-    add_trace = compiler.compile_instructions(
-        head_pc=0,
-        instructions=((LOCAL_GET, 0), (I64_CONST, 1), (I64_ADD, None)),
-        next_pc=1,
-        loops_to=None,
-        byte_length=3,
-        local_layout=layout,
+    module, block, add_trace = _loader_block(
+        "(local.get 0) (i64.const 1) (i64.add)", result="i64", params="(param i64)"
     )
     assert add_trace is not None
     context = ExecutionContext()
     assert_result_3 = context.local_stack.extend(words)
     assert assert_result_3
-    add_trace.invoke(context)
+    _invoke_loader_block(module, block, add_trace, context)
     result = value + 1
     assert tuple(context.stack) == (result & 0xFFFF_FFFF, result >> 32)
 
-    for opcode in (LOCAL_SET, LOCAL_TEE):
-        trace = compiler.compile_instructions(
-            head_pc=0,
-            instructions=((I64_CONST, value), (opcode, 0)),
-            next_pc=1,
-            loops_to=None,
-            byte_length=2,
-            local_layout=layout,
+    for opcode, instruction, result_type in (
+        (LOCAL_SET, "local.set", ""),
+        (LOCAL_TEE, "local.tee", "i64"),
+    ):
+        module, block, trace = _loader_block(
+            f"(i64.const {value}) ({instruction} 0)",
+            result=result_type,
+            params="(param i64)",
         )
         assert trace is not None
         context = ExecutionContext()
         assert_result_7 = context.local_stack.extend((0, 0))
         assert assert_result_7
-        trace.invoke(context)
+        _invoke_loader_block(module, block, trace, context)
         assert context.local_stack.raw_at(0) == words[0]
         assert context.local_stack.raw_at(1) == words[1]
         expected_stack = words if opcode == LOCAL_TEE else ()
@@ -549,121 +464,83 @@ def test_i32_const_local_store_preserves_existing_stack():
 
 def test_local_offsets_without_index_cap():
     """High local indexes use the ordinary per-instruction stencils when their offsets fit."""
-    compiler = TraceCompiler()
-    layout = LocalLayout((I32,) * 16)
     value = 0x1234_5678
+    locals_decl = "(local " + "i32 " * 16 + ")"
 
-    store_trace = compiler.compile_instructions(
-        head_pc=0,
-        instructions=((I32_CONST, value), (LOCAL_SET, 8)),
-        next_pc=1,
-        loops_to=None,
-        byte_length=2,
-        local_layout=layout,
+    module, block, store_trace = _loader_block(
+        f"(i32.const 2779077210) (i32.const {value}) (local.set 8)",
+        result="i32",
+        locals_decl=locals_decl,
     )
     assert store_trace is not None
     context = ExecutionContext()
     assert_result_4 = context.local_stack.extend((0,) * 16)
     assert assert_result_4
-    assert_result_5 = context.stack.extend((2779077210,))
-    assert assert_result_5
-    store_trace.invoke(context)
+    _invoke_loader_block(module, block, store_trace, context)
     assert context.local_stack[8] == value
     assert tuple(context.stack) == (0xA5A5_5A5A,)
 
-    pair_trace = compiler.compile_instructions(
-        head_pc=0,
-        instructions=((LOCAL_GET, 8), (LOCAL_GET, 9), (I32_ADD, None)),
-        next_pc=1,
-        loops_to=None,
-        byte_length=3,
-        local_layout=layout,
+    module, block, pair_trace = _loader_block(
+        "(local.get 8) (local.get 9) (i32.add)", result="i32", locals_decl=locals_decl
     )
     assert pair_trace is not None
     context = ExecutionContext()
     assert_result_6 = context.local_stack.extend((0,) * 8 + (17, 25) + (0,) * 6)
     assert assert_result_6
-    pair_trace.invoke(context)
+    _invoke_loader_block(module, block, pair_trace, context)
     assert tuple(context.stack) == (42,)
 
 
 def test_local_stencils_encode_each_compact_offset_into_the_trace():
     """The x64 instruction encoder writes each compact local displacement."""
-    compiler = TraceCompiler()
-    layout = LocalLayout((I32,) * 16)
-    for opcode in (LOCAL_GET, LOCAL_SET, LOCAL_TEE):
-        operand = 7
-        instructions = (
-            ((opcode, operand),)
-            if opcode == LOCAL_GET
-            else ((I32_CONST, 0xCAFEBABE), (opcode, operand))
-        )
-        trace = compiler.compile_instructions(
-            head_pc=0,
-            instructions=instructions,
-            next_pc=1,
-            loops_to=None,
-            byte_length=len(instructions),
-            local_layout=layout,
-        )
+    layout_decl = "(local " + "i32 " * 16 + ")"
+    for result_type, body in (
+        ("i32", "(local.get 7)"),
+        ("", "(i32.const 3405691582) (local.set 7)"),
+        ("i32", "(i32.const 3405691582) (local.tee 7)"),
+    ):
+        _, _, trace = _loader_block(body, result=result_type, locals_decl=layout_decl)
         assert trace is not None
 
     wide_layout = LocalLayout((I64,) * 16)
+    wide_decl = "(local " + "i64 " * 16 + ")"
     for operand in (8, 9, 15):
-        trace = compiler.compile_instructions(
-            head_pc=0,
-            instructions=((LOCAL_GET, operand),),
-            next_pc=1,
-            loops_to=None,
-            byte_length=1,
-            local_layout=wide_layout,
+        module, block, trace = _loader_block(
+            f"(local.get {operand})", result="i64", locals_decl=wide_decl
         )
         assert trace is not None
         context = ExecutionContext()
         values = tuple(range(32))
         assert_result_10 = context.local_stack.extend(values)
         assert assert_result_10
-        trace.invoke(context)
+        _invoke_loader_block(module, block, trace, context)
         start = wide_layout.offset(operand)
         assert tuple(context.stack) == values[start : start + 2]
 
     # The local count is capped only by the loader (FB_CONF_MAX_LOCALS); 17 locals compile, and an
     # offset past byte 127 uses the disp32 form.
     many_locals = LocalLayout((I32,) * 40)
-    far_local = compiler.compile_instructions(
-        head_pc=0,
-        instructions=((LOCAL_GET, 39),),
-        next_pc=1,
-        loops_to=None,
-        byte_length=1,
-        local_layout=many_locals,
+    module, block, far_local = _loader_block(
+        "(local.get 39)", result="i32", locals_decl="(local " + "i32 " * 40 + ")"
     )
     assert far_local is not None
     context = ExecutionContext()
     extended = context.local_stack.extend(tuple(range(64)))
     assert extended
-    far_local.invoke(context)
+    _invoke_loader_block(module, block, far_local, context)
     assert tuple(context.stack) == (many_locals.offset(39),)
 
 
 def test_jit_embeds_immutable_numeric_immediates_in_native_code():
     """Numeric constants live in generated instructions, not the trace-tail pool."""
-    compiler = TraceCompiler()
     cases = (
-        (I32_CONST, 0x1234_5678, 4),
-        (F32_CONST, 0x7FC1_2345, 4),
-        (I64_CONST, 0x0123_4567_89AB_CDEF, 8),
-        (F64_CONST, 0x7FF8_1234_5678_9ABC, 8),
+        ("i32.const 305419896", "i32", 0x1234_5678, 4),
+        ("f32.const nan:0x412345", "f32", 0x7FC1_2345, 4),
+        ("i64.const 81985529216486895", "i64", 0x0123_4567_89AB_CDEF, 8),
+        ("f64.const nan:0x8123456789abc", "f64", 0x7FF8_1234_5678_9ABC, 8),
     )
-    for opcode, value, width in cases:
-        trace = compiler.compile_instructions(
-            head_pc=0,
-            instructions=((opcode, value),),
-            next_pc=1,
-            loops_to=None,
-            byte_length=1,
-            local_layout=LocalLayout(()),
-        )
+    for instruction, result_type, value, width in cases:
+        _, _, trace = _loader_block(f"({instruction})", result=result_type)
         assert trace is not None and trace.code_blob is not None
         header = native_abi.NativeTraceHeader.from_buffer_copy(
             trace.code_blob[:JIT_X64_TRACE_HEADER_BYTES]
@@ -741,16 +618,43 @@ def _reference(program, locals_values) -> tuple[int, int]:
     return stack[0], peak_depth
 
 
+_SPILL_OP_NAMES = {
+    I32_ADD: "i32.add",
+    I32_SUB: "i32.sub",
+    I32_MUL: "i32.mul",
+    I32_AND: "i32.and",
+    I32_OR: "i32.or",
+    I32_XOR: "i32.xor",
+    I32_SHL: "i32.shl",
+    I32_SHR_U: "i32.shr_u",
+    I32_SHR_S: "i32.shr_s",
+    I32_EQ: "i32.eq",
+    I32_NE: "i32.ne",
+    I32_LT_S: "i32.lt_s",
+    I32_LT_U: "i32.lt_u",
+    I32_GT_S: "i32.gt_s",
+    I32_LE_U: "i32.le_u",
+    I32_GE_S: "i32.ge_s",
+}
+
+
+def _spill_wat(program) -> str:
+    """Wasm text of an RPN program: each entry is one instruction of the function body."""
+    parts = []
+    for op, arg in program:
+        if op == I32_CONST:
+            parts.append(f"(i32.const {arg})")
+        elif op == LOCAL_GET:
+            parts.append(f"(local.get {arg})")
+        else:
+            parts.append(f"({_SPILL_OP_NAMES[op]})")
+    return " ".join(parts)
+
+
 def _run_spill_trace(program, locals_values, sp_index: int, total: int = 96):
     """Run the compiled program at `sp_index` in a sentinel-filled operand stack buffer."""
-    trace = TraceCompiler().compile_instructions(
-        head_pc=0,
-        instructions=program,
-        next_pc=None,
-        loops_to=None,
-        byte_length=len(program) * 3,
-        local_layout=LocalLayout((I32,) * len(locals_values)),
-    )
+    params = "(param " + "i32 " * len(locals_values) + ")"
+    _, _, trace = _loader_block(_spill_wat(program), result="i32", params=params)
     assert trace is not None, "a straight-line i32 expression must compile"
     words = (ctypes.c_uint32 * total)(*([_SENTINEL] * total))
     locals_arr = (ctypes.c_uint32 * len(locals_values))(*locals_values)

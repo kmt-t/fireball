@@ -69,7 +69,6 @@ struct jit_measurements {
   std::uint64_t chain_runtime_unclassified = 0;
   std::uint64_t chain_runtime_unobserved_trace_exits = 0;
   block_index_t pending_runtime_source_block = std::numeric_limits<block_index_t>::max();
-  frame_depth_t pending_runtime_frame_depth = 0;
 
   static const jit_wasm_block *fixture_block(const profile_type &profile, std::uint32_t pc) {
     if (profile.block_count == 0) {
@@ -187,7 +186,6 @@ struct jit_measurements {
     chain_runtime_unclassified = 0;
     chain_runtime_unobserved_trace_exits = 0;
     pending_runtime_source_block = std::numeric_limits<block_index_t>::max();
-    pending_runtime_frame_depth = 0;
   }
 
   struct compile_scope {

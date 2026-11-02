@@ -708,9 +708,6 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
       reason = jit_chain_reason::successor_block_index_mismatch;
     } else if (target.trace_entry == nullptr) {
       reason = jit_chain_reason::successor_not_resident;
-    } else if (measurements.pending_runtime_frame_depth !=
-               trace_header(*target.trace_entry)->frame_depth) {
-      reason = jit_chain_reason::frame_depth_mismatch;
     } else if (target.bank_id == cache.oldest_bank_id) {
       reason = jit_chain_reason::oldest_bank;
     } else {
@@ -729,7 +726,6 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
     source_opcode = source->code.data[source_terminator];
   }
   measurements.record_chain_runtime(reason, source_opcode);
-  measurements.pending_runtime_frame_depth = 0;
 }
 
 template <jit_measurement_policy Measurement>

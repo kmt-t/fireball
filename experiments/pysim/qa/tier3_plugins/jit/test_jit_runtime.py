@@ -279,46 +279,43 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
 
 def test_hotspot_04_3bank_cache_hits_preserve_residency():
     """TEST-HOTSPOT-04 / TEST-JITR-22, TEST-JITR-23: Warm and Oldest hits execute in place."""
+    traces = _loader_traces(4, body="(block i32.const 7 local.set 0) ")
+    t1, t2, t3 = traces[0], traces[1], traces[2]
     cache = JitRuntimeBoundary(bank_capacity=512)
-    t1 = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=64)
-    t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
     cache.insert(t1)  # In Active
     cache.rotate()  # t1 moved to Warm
     cache.insert(t2)  # t2 in Active
     address = t1.raw_addr
     state = (cache.resident_bytes, cache.generation)
-    assert cache.lookup(0x100) is t1
+    assert cache.lookup(t1.head_pc) is t1
     assert t1.raw_addr == address and (cache.resident_bytes, cache.generation) == state
     location = native_abi.CacheLookup()
-    assert native_abi.RUNTIME_FIND(cache._native.pointer, 0x100, ctypes.byref(location)) == 1
+    assert native_abi.RUNTIME_FIND(cache._native.pointer, t1.head_pc, ctypes.byref(location)) == 1
     assert location.bank_id == 0
-    assert cache.find_trace(0x100) is not None
+    assert cache.find_trace(t1.head_pc) is not None
     cache.rotate()  # t1 moved to Oldest, t2 moved to Warm
-    t3 = JITTrace(head_pc=0x300, native_fn=lambda: 3, size_bytes=64)
     cache.insert(t3)  # t3 remains in Active
-    assert cache.find_trace(0x100) is not None
-    for pc, bank_id in ((0x100, 0), (0x200, 2), (0x300, 1)):
-        assert native_abi.RUNTIME_FIND(cache._native.pointer, pc, ctypes.byref(location)) == 1
+    assert cache.find_trace(t1.head_pc) is not None
+    for trace, bank_id in ((t1, 0), (t2, 2), (t3, 1)):
+        assert native_abi.RUNTIME_FIND(cache._native.pointer, trace.head_pc, ctypes.byref(location)) == 1
         assert location.bank_id == bank_id
     state = (cache.resident_bytes, cache.generation)
-    assert cache.lookup(0x100) is t1
+    assert cache.lookup(t1.head_pc) is t1
     assert t1.raw_addr == address and (cache.resident_bytes, cache.generation) == state
-    assert native_abi.RUNTIME_FIND(cache._native.pointer, 0x100, ctypes.byref(location)) == 1
+    assert native_abi.RUNTIME_FIND(cache._native.pointer, t1.head_pc, ctypes.byref(location)) == 1
     assert location.bank_id == 0
-    assert cache.find_trace(0x100) is not None
-    assert cache.lookup(0x100) is t1 and t1.raw_addr == address
-    called = False
-
-    def run_trace(*_args) -> None:
-        nonlocal called
-        called = True
-
-    trace = JITTrace(head_pc=0x400, native_fn=run_trace, size_bytes=64)
-    assert trace.native_fn is not None
-    trace(0, 0, 0)
-    assert called
-    trace.execute(0, 0, 0)
-
+    assert cache.find_trace(t1.head_pc) is not None
+    assert cache.lookup(t1.head_pc) is t1 and t1.raw_addr == address
+    # A hit runs the trace's own code: the block writes local 0 to 7 in every bank.
+    for trace in (t1, t2, t3):
+        context = ExecutionContext()
+        assert context.local_stack.extend((0,))
+        context.local_base = context.local_stack.value_ptr(0).value
+        assert context.local_stack[0] == 0
+        assert cache.lookup(trace.head_pc) is trace
+        instruction_ip = ctypes.c_void_p(int(context.code or 0) + int(context.ip))
+        trace.execute(context.context_ptr, instruction_ip, context.sp_ptr)
+        assert context.local_stack[0] == 7
 
 def test_jitr_cache_lookup_accepts_unsorted_insertions_and_retirement():
     """Sorted native index preserves lookup until its bank is retired."""
@@ -406,10 +403,16 @@ def test_jitr_entry_limit_rotates_before_code_region_is_full():
 _LOADER_BLOCK_BODY = "(block i32.const 1 drop) "
 
 
-def _loader_traces(count: int) -> list[JITTrace]:
-    """Compile `count` identical loader blocks; each has the same trace size and falls through."""
+def _loader_traces(count: int, body: str = _LOADER_BLOCK_BODY) -> list[JITTrace]:
+    """Compile `count` identical loader blocks; each has the same trace size and falls through.
+
+    `body` is a block of Wasm text; a body that writes local 0 needs the local declared here.
+    """
+    locals_decl = "(local i32)" if "local.set" in body else ""
     module = parse_standalone(
-        wasmtime.wat2wasm(f'(module (func (export "f") {_LOADER_BLOCK_BODY * (count + 1)}))')
+        wasmtime.wat2wasm(
+            f'(module (func (export "f") {locals_decl} {body * (count + 1)}))'
+        )
     )
     compiler = TraceCompiler()
     traces = [compile_module_block(compiler, module, block) for block in module.blocks[:count]]

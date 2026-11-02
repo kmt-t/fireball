@@ -26,7 +26,11 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 import wasmtime
 from bump_allocator import BumpAllocator
-from config import JIT_CACHE_BANK_CAPACITY_BYTES
+from config import (
+    JIT_CACHE_BANK_CAPACITY_BYTES,
+    JIT_CACHE_BANK_COUNT,
+    JIT_CACHE_BANK_ENTRY_CAPACITY,
+)
 from qa.shared.jit_cache import JITTrace
 from qa.shared.jit_manager import JITRuntimeManager
 from qa.shared.runtime_support import compile_module_block
@@ -183,27 +187,37 @@ class JITCacheMetabolismBenchmark:
         # ----------------------------------------------------------------------
         # 3. BENCHMARK-METAB-03: Cache Metabolism & Eviction Throughput (Churn Test)
         # ----------------------------------------------------------------------
-        # 5000 insertions cycle over 1000 loader traces. The cycle is longer than the 72 entries
-        # of the three banks, so each insertion finds its trace absent.
+        # 5000 insertions cycle over 1000 loader traces. The cycle is longer than the resident
+        # capacity, so each insertion finds its trace absent.
         churn_traces = 5_000
         churn_block_count = 1_000
+        resident_capacity = JIT_CACHE_BANK_COUNT * JIT_CACHE_BANK_ENTRY_CAPACITY
+        assert churn_block_count > resident_capacity
         module = _loader_module(churn_block_count)
         manager = _bound_manager(module, self.bank_capacity)
         cache_churn = manager.cache
         churn = _compile(compiler, module, churn_block_count)
         t0 = time.perf_counter()
         for i in range(churn_traces):
-            cache_churn.insert(churn[i % churn_block_count])
+            inserted = cache_churn.insert(churn[i % churn_block_count])
+            assert inserted
         t1 = time.perf_counter()
 
         metabolism_time_s = t1 - t0
-        eviction_rate = cache_churn.evictions / metabolism_time_s if metabolism_time_s > 0 else 0
+        assert metabolism_time_s > 0
+        resident = [trace for trace in churn if cache_churn.find_trace(trace.head_pc) is trace]
+        # No trace leaks: every insertion either stays resident or was evicted.
+        assert churn_traces == cache_churn.evictions + cache_churn.resident_count
+        assert cache_churn.resident_count == len(resident) <= resident_capacity
+        # Resident bytes equal the sum of the sizes of the resident traces.
+        assert cache_churn.resident_bytes == sum(trace.size_bytes for trace in resident)
+        eviction_rate = cache_churn.evictions / metabolism_time_s
         results["churn_total_inserted"] = churn_traces
         results["churn_total_evicted"] = cache_churn.evictions
+        results["churn_resident_count"] = cache_churn.resident_count
         results["churn_eviction_rate_per_sec"] = eviction_rate
         results["churn_rotations"] = cache_churn.rotations
         assert cache_churn.rotations > 0
-        assert cache_churn.resident_count <= 72, "resident entries stay within the three banks"
 
         # ----------------------------------------------------------------------
         # 4. BENCHMARK-METAB-04: Local Chaining & Bounded Dangling Chain Unlinking
@@ -320,6 +334,7 @@ def main():
         f"  * Cache Metabolism Rate:              {res['churn_eviction_rate_per_sec']:,.0f} Evictions / Sec"
     )
     print(f"  * Total Cache Rotations:              {res['churn_rotations']} generations")
+    print(f"  * Resident Traces After Churn:        {res['churn_resident_count']} traces")
 
     print("\n[Section 4: Safety & Multi-Module Invariants]")
     print("-" * 80)

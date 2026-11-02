@@ -682,6 +682,7 @@ def test_dbg_gotcha_01_debugger_bypasses_native_execution_plugin():
     module = parse_standalone(wat_to_wasm("(module (func))"))
     interpreter = make_native_interpreter(module)
     plugin = JITRuntimeManager(jit_compiler=TraceCompiler())
+    plugin.register_module(module)
     try:
         interpreter.attach_execution_plugin(plugin)
         debugger = DebuggerManager()

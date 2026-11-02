@@ -646,6 +646,7 @@ def test_dbg_13_debugger_disables_native_plugin_execution_without_rejecting_atta
     module = RuntimeEngineDebugDriver().load_wasm(wat_to_wasm("(module (func))"))
     interpreter = make_native_interpreter(module)
     plugin = JITRuntimeManager(jit_compiler=TraceCompiler())
+    plugin.register_module(module)
     try:
         interpreter.attach_execution_plugin(plugin)
         debugger = DebuggerManager()

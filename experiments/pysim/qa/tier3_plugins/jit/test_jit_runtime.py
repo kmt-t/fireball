@@ -650,6 +650,10 @@ def test_jitr_chained_successor_cps_boundary_stops_at_its_block():
     assert int(call.context.ip) == memory_size_ip, "the CPS exit ip is the memory.size operation"
     assert int(call.context.current_block_index) == boundary_block
     assert call.context.local_stack[0] == 7, "the source body ran before the successor stopped"
+    # The boundary publishes the interpreter rel inside the function's annotation pool.
+    pool = module.functions[0].interpreter_annotation_pool
+    pool_base = ctypes.addressof(pool._bytes)
+    assert pool_base <= (call.context.rel or 0) <= pool_base + pool._size
 
 
 def test_jitr_trace_blob_has_no_entry_or_exit_stencil():

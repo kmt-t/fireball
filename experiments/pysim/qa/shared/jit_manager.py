@@ -15,6 +15,7 @@ from config import (
     JIT_CACHE_OLDEST_OFFSET_BYTES,
     JIT_CACHE_WARM_OFFSET_BYTES,
     JIT_CARD_SHIFT,
+    JIT_X64_TRACE_HEADER_BYTES,
 )
 from qa.private import jit_native_abi as native_abi
 from qa.private.interpreter_native_abi import RUN_DISPATCH_JIT
@@ -111,7 +112,11 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         history_capacity: int = 32,
         module_id: int = 0,
         retire_observer: Callable[[int, int], None] | None = None,
+        bank_capacity: int = JIT_CACHE_BANK_CAPACITY_BYTES,
+        entry_capacity: int = JIT_CACHE_BANK_ENTRY_CAPACITY,
     ):
+        assert JIT_X64_TRACE_HEADER_BYTES <= bank_capacity <= JIT_CACHE_BANK_CAPACITY_BYTES
+        assert 0 < entry_capacity <= JIT_CACHE_BANK_ENTRY_CAPACITY
         assert 0 <= candidate_threshold <= 0xFFFF_FFFF
         assert compile_queue_capacity >= 1
         assert aging_step_units >= 1 and aging_scan_bytes >= 1
@@ -130,8 +135,8 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         self._card_shift = card_shift
         self._retire_observer = retire_observer
         self._native = native_abi.NativeRuntimeStorage(
-            JIT_CACHE_BANK_CAPACITY_BYTES,
-            JIT_CACHE_BANK_ENTRY_CAPACITY,
+            bank_capacity,
+            entry_capacity,
             (
                 JIT_CACHE_ACTIVE_OFFSET_BYTES,
                 JIT_CACHE_WARM_OFFSET_BYTES,

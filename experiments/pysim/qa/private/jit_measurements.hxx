@@ -49,8 +49,9 @@ struct jit_measurements {
   std::array<std::uint64_t, per_block_capacity> install_entries{};
   std::array<std::uint64_t, per_block_capacity> block_evictions{};
   std::array<std::uint64_t, per_block_capacity> block_evicted_entries{};
-  // Eviction buckets by entries since install: 0, 1, 2-9, 10-99, 100 or more.
-  static constexpr std::size_t eviction_bucket_count = 5;
+  // Eviction buckets by entries since install; the edges match candidate thresholds 2, 5, 10,
+  // 20, 50 and 100: 0, 1, 2-4, 5-9, 10-19, 20-49, 50-99, 100 or more.
+  static constexpr std::size_t eviction_bucket_count = 8;
   std::array<std::uint64_t, eviction_bucket_count> eviction_buckets{};
   std::uint64_t lookup_calls = 0;
   std::uint64_t execution_count = 0, history_overwritten = 0, last_overwritten = 0;
@@ -223,8 +224,14 @@ struct jit_measurements {
     assert(index < per_block_capacity);
     ++evictions;
     const auto entries = install_entries[index];
-    const auto bucket = entries == 0 ? 0u : entries == 1 ? 1u : entries < 10 ? 2u
-                        : entries < 100 ? 3u : 4u;
+    const auto bucket = entries == 0   ? 0u
+                        : entries == 1 ? 1u
+                        : entries < 5  ? 2u
+                        : entries < 10 ? 3u
+                        : entries < 20 ? 4u
+                        : entries < 50 ? 5u
+                        : entries < 100 ? 6u
+                                        : 7u;
     ++eviction_buckets[bucket];
     ++block_evictions[index];
     block_evicted_entries[index] += entries;
@@ -237,8 +244,9 @@ struct jit_measurements {
   }
   bool write_eviction_buckets(const printk_writer &writer) const {
     constexpr std::array<std::string_view, eviction_bucket_count> names{
-        "jit.evicted.entries_0", "jit.evicted.entries_1", "jit.evicted.entries_2_9",
-        "jit.evicted.entries_10_99", "jit.evicted.entries_100_up"};
+        "jit.evicted.entries_0", "jit.evicted.entries_1", "jit.evicted.entries_2_4",
+        "jit.evicted.entries_5_9", "jit.evicted.entries_10_19", "jit.evicted.entries_20_49",
+        "jit.evicted.entries_50_99", "jit.evicted.entries_100_up"};
     for (std::size_t bucket = 0; bucket < eviction_bucket_count; ++bucket) {
       std::array<char, 48> label{};
       std::size_t offset = 0;

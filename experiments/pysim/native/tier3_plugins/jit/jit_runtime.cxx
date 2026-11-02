@@ -916,7 +916,7 @@ void jit_runtime<Measurement>::retire_cache_bank(std::uint32_t id) {
     const auto value = b.entries[i];
     if (value.resident()) {
       if constexpr (!std::is_void_v<Measurement>) {
-        measurements.trace_evicted(value.head_pc);
+        measurements.trace_evicted(trace_header(value)->block_index);
       }
       if constexpr (!std::is_void_v<Measurement>) {
         if (hotspots.card_states == nullptr) {
@@ -1487,6 +1487,9 @@ int jit_provider_adapter<Measurement>::lookup_runtime_trace(std::uintptr_t owner
              start_header->chain_body_count,
              static_cast<std::uint8_t>(start_header->exit_kind),
              reinterpret_cast<std::uintptr_t>(start_header)};
+  if constexpr (!std::is_void_v<Measurement>) {
+    runtime.measurements.trace_entered(block_index);
+  }
   return 1;
 }
 

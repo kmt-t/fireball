@@ -17,8 +17,6 @@ from qa.shared.jit_scoring import JIT_CANDIDATE_THRESHOLD
 from qa.shared.runtime_stats import RuntimeStatsEngine
 from qa.shared.x64_jit import TraceCompiler
 from system_containers import (
-    ReadOnlyRadixBinaryTreeStorage,
-    StaticVector,
     fold_mix32,
 )
 from tier2_runtime.abi.native_abi import BufferLease
@@ -26,16 +24,9 @@ from tier2_runtime.interpreter.control_flow import iter_block_ops
 from tier2_runtime.runtime.engine import RuntimeDriveMode
 from tier2_runtime.wasm.module import (
     BasicBlock,
-    BasicBlockStorage,
-    Function,
-    FuncTypeRecord,
-    FuncTypeStorage,
     LocalLayout,
     Module,
 )
-
-PC_ONLY_FUNCTION_STRIDE = 0x2000
-PC_ONLY_FUNCTION_BASE = 0x100
 
 
 def make_runtime_engine(
@@ -166,67 +157,6 @@ def instruction_blocks(module: Module) -> tuple[BasicBlock, ...]:
     blocks = tuple(block for block in module.blocks if block.byte_span > 0)
     assert blocks, "module has no nonempty basic blocks"
     return blocks
-
-
-def make_pc_only_functions_module(blocks_per_function: tuple[tuple[int, ...], ...]) -> Module:
-    """Build test-only loader metadata for tests that need several functions.
-
-    Function `f` owns one block at every code offset in `blocks_per_function[f]`;
-    the tuple may be empty (a function without blocks).
-    """
-
-    assert blocks_per_function
-    functions = []
-    heads = []
-    source = bytearray(b"\x60\x00\x00")
-    for func_index, offsets in enumerate(blocks_per_function):
-        assert all(offset < 0x1_0000 for offset in offsets)
-        code_size = max(offsets, default=0) + 1
-        code_offset = len(source)
-        source.extend(bytes(code_size))
-        functions.append(
-            Function(
-                type_index=0,
-                locals_extra=StaticVector(capacity=0),
-                code_offset=code_offset,
-                code_size=code_size,
-                code_pc_offset=PC_ONLY_FUNCTION_BASE + func_index * PC_ONLY_FUNCTION_STRIDE,
-            )
-        )
-        heads.extend((func_index, offset) for offset in offsets)
-    assert heads
-    types = FuncTypeStorage(capacity=1)
-    types.append(FuncTypeRecord(param_offset=2, param_count=0, result_offset=3, result_count=0))
-    module = Module(
-        types=types,
-        functions=StaticVector.of(functions, capacity=len(functions)),
-        source=memoryview(bytes(source)),
-    )
-    module.prepare_function_layouts()
-    blocks = BasicBlockStorage(capacity=len(heads))
-    for func_index, offset in sorted(heads):
-        blocks.append(
-            BasicBlock(
-                head_pc=module.function_pc_offset(func_index) + offset,
-                func_index=func_index,
-                next_pc=module.function_pc_offset(func_index) + offset + 1,
-                loops_to=None,
-                frame_depth=0,
-                byte_span=1,
-            )
-        )
-    module.blocks = blocks
-    entries = tuple(
-        sorted(
-            ((fold_mix32(block.head_pc), block_index) for block_index, block in enumerate(blocks)),
-            key=lambda entry: (entry[0], entry[1]),
-        )
-    )
-    module.block_storage = ReadOnlyRadixBinaryTreeStorage.from_sorted_entries(
-        entries,
-        radix_shift=28,
-    )
-    return module
 
 
 def compile_runtime_block(manager: JITRuntimeManager, block: BasicBlock) -> JITTrace | None:

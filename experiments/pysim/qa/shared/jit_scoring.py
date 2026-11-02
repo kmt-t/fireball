@@ -48,6 +48,8 @@ from tier2_runtime.wasm.opcodes import (
     I32_OR,
     I32_REM_S,
     I32_REM_U,
+    I32_ROTL,
+    I32_ROTR,
     I32_SHL,
     I32_SHR_S,
     I32_SHR_U,
@@ -141,6 +143,8 @@ _SCORE_ENTRIES: tuple[tuple[int, int], ...] = (
     (RETURN, 4),
     (NOP, 4),
     (I32_REM_S, 4),
+    (I32_ROTL, 5),
+    (I32_ROTR, 5),
     (I32_REM_U, 4),
     (0x23, 4),  # global.get
     (0x24, 4),  # global.set

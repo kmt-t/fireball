@@ -1174,6 +1174,8 @@ constexpr std::int8_t opcode_benefit_value(std::uint8_t op) {
     return 4;
   case 0x0c:
   case 0x0d:
+  case 0x77: // i32.rotl, Runtime API path
+  case 0x78: // i32.rotr, Runtime API path
     return 5;
   case 0x28:
   case 0x2c:

@@ -658,26 +658,9 @@ bool jit_runtime<Measurement>::can_chain_to(jit_cache_entry value, jit_cache_ent
       successor_index != trace_header(target)->block_index) {
     return false;
   }
-  if (trace_header(value)->frame_depth == trace_header(target)->frame_depth) {
-    return true;
-  }
-  jit_wasm_block source_storage{};
-  const auto *source = block_metadata_for_trace(*trace_header(value), source_storage);
-  assert(source != nullptr);
-  assert(source->code.data != nullptr);
-  const auto terminator = source->offset + source->byte_span;
-  if (terminator >= source->code.bytes) {
-    return false;
-  }
-  switch (source->code.data[terminator]) {
-  case 0x02: // block delimiter opens one static nesting level.
-  case 0x03: // loop delimiter opens one static nesting level.
-  case 0x05: // else delimiter skips to after the matching end.
-  case 0x0B: // end delimiter closes one static nesting level.
-    return true;
-  default:
-    return false;
-  }
+  // A straight-line successor chains at any static frame depth: control frames are not runtime
+  // state, and the dispatcher takes stack and Interpreter `rel` from the target metadata.
+  return true;
 }
 
 template <jit_measurement_policy Measurement>
@@ -771,9 +754,7 @@ void jit_runtime<Measurement>::record_chain_construction(jit_cache_entry source)
     } else if (trace_header(*target.trace_entry)->block_index != successor_index) {
       reason = jit_chain_reason::successor_block_index_mismatch;
     } else if (!can_chain_to(source, *target.trace_entry)) {
-      reason = header->frame_depth != trace_header(*target.trace_entry)->frame_depth
-                   ? jit_chain_reason::frame_depth_mismatch
-                   : jit_chain_reason::unsupported_control_flow;
+      reason = jit_chain_reason::unsupported_control_flow;
     } else if (target.bank_id == cache.oldest_bank_id &&
                header->chain_target_address != trace_body_address(*target.trace_entry)) {
       reason = jit_chain_reason::oldest_bank;

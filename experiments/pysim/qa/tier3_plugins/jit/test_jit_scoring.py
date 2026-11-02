@@ -57,6 +57,10 @@ def test_plugin_scores_basic_block() -> None:
         # i32.rem_s and i32.rem_u are +5 in the spec table (const +6, const +6, drop +4).
         (bytes.fromhex("41 01 41 02 6f 1a 0b"), (), 21, True),
         (bytes.fromhex("41 01 41 02 70 1a 0b"), (), 21, True),
+        # A block ends before its br or br_if terminator, so the span scores only the operations
+        # before it: const +6, drop +4 for the first, const +6 for the second.
+        (bytes.fromhex("02 40 41 01 1a 0c 00 0b 0b"), (), 10, True),
+        (bytes.fromhex("02 40 41 01 0d 00 0b 0b"), (), 6, False),
     ),
 )
 def test_plugin_candidate_gate_uses_specification_threshold(

@@ -617,10 +617,9 @@ bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
   const auto *source = block_metadata_for_trace(*header, source_storage);
   assert(source != nullptr);
   assert(source->code.data != nullptr);
+  // A block ends before a terminator instruction inside its function body, which ends in `end`.
   const auto terminator = source->offset + source->byte_span;
-  if (terminator >= source->code.bytes) {
-    return true;
-  }
+  assert(terminator < source->code.bytes);
   const auto opcode = source->code.data[terminator];
   switch (opcode) {
   case 0x02: // Syntax delimiters have no emitted operation; loader metadata links past them.
@@ -719,12 +718,10 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
     ++measurements.chain_runtime_unclassified;
     return;
   }
-  auto source_opcode = std::uint8_t{0xFF};
   const auto source_terminator = static_cast<std::uint64_t>(source->offset) + source->byte_span;
   assert(source->code.data != nullptr);
-  if (source_terminator < source->code.bytes) {
-    source_opcode = source->code.data[source_terminator];
-  }
+  assert(source_terminator < source->code.bytes);
+  const auto source_opcode = source->code.data[source_terminator];
   measurements.record_chain_runtime(reason, source_opcode);
 }
 

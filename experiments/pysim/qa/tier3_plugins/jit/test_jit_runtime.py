@@ -320,47 +320,53 @@ def test_hotspot_04_3bank_cache_hits_preserve_residency():
 
 def test_jitr_cache_lookup_accepts_unsorted_insertions_and_retirement():
     """Sorted native index preserves lookup until its bank is retired."""
+    traces = _loader_traces(5)
     cache = JitRuntimeBoundary(bank_capacity=2048)
-    for pc in (0x300, 0x100, 0x500, 0x200, 0x400):
-        assert_result_33 = cache.insert(JITTrace(head_pc=pc, native_fn=lambda: 0, size_bytes=64))
-        assert assert_result_33
+    # Loader PCs ascend with block order; inserting in this order is an unsorted insertion.
+    t_300, t_100, t_500, t_200, t_400 = traces[2], traces[0], traces[4], traces[1], traces[3]
+    for trace in (t_300, t_100, t_500, t_200, t_400):
+        inserted = cache.insert(trace)
+        assert inserted
     assert cache.resident_count == 5
-    for pc in (0x100, 0x200, 0x300, 0x400, 0x500):
-        assert cache.find_trace(pc).head_pc == pc
-    replacement = JITTrace(head_pc=0x300, native_fn=lambda: 1, size_bytes=64)
-    assert_result_2 = cache.insert(replacement)
-    assert assert_result_2
-    assert cache.resident_count == 5 and cache.find_trace(0x300) is replacement
+    for trace in (t_100, t_200, t_300, t_400, t_500):
+        assert cache.find_trace(trace.head_pc).head_pc == trace.head_pc
+    replacement = _loader_traces(5)[2]
+    assert replacement.head_pc == t_300.head_pc
+    inserted = cache.insert(replacement)
+    assert inserted
+    assert cache.resident_count == 5 and cache.find_trace(t_300.head_pc) is replacement
     cache.rotate()
     cache.rotate()
-    assert cache.lookup(0x300) is replacement
-    assert cache.resident_count == 5 and cache.find_trace(0x300) is not None
-    for pc in (0x100, 0x200, 0x400, 0x500):
-        assert cache.find_trace(pc) is not None
+    assert cache.lookup(t_300.head_pc) is replacement
+    assert cache.resident_count == 5 and cache.find_trace(t_300.head_pc) is not None
+    for trace in (t_100, t_200, t_400, t_500):
+        assert cache.find_trace(trace.head_pc) is not None
     cache.rotate()
     assert cache.resident_count == 0
-    assert all(cache.find_trace(pc) is None for pc in (0x100, 0x200, 0x300, 0x400, 0x500))
+    assert all(cache.find_trace(trace.head_pc) is None for trace in traces)
 
 
 def test_jitr_bank_entry_limit_preserves_state_and_reuses_existing_slots():
     """Replacement reuses the existing slot; a third distinct PC rotates a full index."""
-    cache = JitRuntimeBoundary(bank_capacity=128, entry_capacity=2)
-    first = JITTrace(head_pc=0x100, native_fn=lambda: 0, size_bytes=JIT_TRACE_HEADER_BYTES)
-    second = JITTrace(head_pc=0x200, native_fn=lambda: 0, size_bytes=JIT_TRACE_HEADER_BYTES)
-    assert_result_3 = cache.insert(first)
-    assert assert_result_3
-    assert_result_4 = cache.insert(second)
-    assert assert_result_4
+    traces = _loader_traces(3)
+    size = traces[0].size_bytes
+    # Two traces fill one bank by entries, so the bank byte capacity is two trace sizes.
+    cache = JitRuntimeBoundary(bank_capacity=2 * size, entry_capacity=2)
+    first, second, newcomer = traces
+    inserted = cache.insert(first)
+    assert inserted
+    inserted = cache.insert(second)
+    assert inserted
     assert cache.entry_capacity == 6
     used = cache.resident_bytes
-    replacement = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=JIT_TRACE_HEADER_BYTES)
-    assert_result_5 = cache.insert(replacement)
-    assert assert_result_5
+    replacement = _loader_traces(3)[0]
+    assert replacement.head_pc == first.head_pc
+    inserted = cache.insert(replacement)
+    assert inserted
     assert replacement.code_offset == first.code_offset
     assert cache.resident_bytes == used and cache.resident_count == 2
-    newcomer = JITTrace(head_pc=0x300, native_fn=lambda: 0, size_bytes=JIT_TRACE_HEADER_BYTES)
-    assert_result_6 = cache.insert(newcomer)
-    assert assert_result_6
+    inserted = cache.insert(newcomer)
+    assert inserted
     assert cache.rotations == 1
     assert cache.find_trace(first.head_pc) is replacement
     assert cache.find_trace(second.head_pc) is second
@@ -378,30 +384,45 @@ def test_jitr_bank_entry_limit_preserves_state_and_reuses_existing_slots():
 
 
 def test_jitr_entry_limit_rotates_before_code_region_is_full():
+    traces = _loader_traces(JIT_CACHE_BANK_ENTRY_CAPACITY + 1)
+    size = traces[0].size_bytes
     cache = JitRuntimeBoundary()
-    for pc in range(JIT_CACHE_BANK_ENTRY_CAPACITY):
-        assert_result_34 = cache.insert(JITTrace(head_pc=pc, size_bytes=JIT_TRACE_HEADER_BYTES))
-        assert assert_result_34
+    for trace in traces[:JIT_CACHE_BANK_ENTRY_CAPACITY]:
+        inserted = cache.insert(trace)
+        assert inserted
     assert cache.resident_bytes < JIT_CACHE_BANK_CAPACITY_BYTES
     assert cache.resident_count == JIT_CACHE_BANK_ENTRY_CAPACITY
-    newcomer = JITTrace(head_pc=0x300, size_bytes=JIT_TRACE_HEADER_BYTES)
-    assert_result_7 = cache.insert(newcomer)
-    assert assert_result_7
+    newcomer = traces[JIT_CACHE_BANK_ENTRY_CAPACITY]
+    inserted = cache.insert(newcomer)
+    assert inserted
     assert cache.rotations == 1
-    assert cache.find_trace(0x300) is newcomer
-    assert all(cache.find_trace(pc) is not None for pc in range(JIT_CACHE_BANK_ENTRY_CAPACITY))
-    assert (
-        cache.resident_bytes
-        == JIT_CACHE_BANK_ENTRY_CAPACITY * JIT_TRACE_HEADER_BYTES + newcomer.size_bytes
+    assert cache.find_trace(newcomer.head_pc) is newcomer
+    assert all(
+        cache.find_trace(trace.head_pc) is not None for trace in traces[:JIT_CACHE_BANK_ENTRY_CAPACITY]
+    )
+    assert cache.resident_bytes == JIT_CACHE_BANK_ENTRY_CAPACITY * size + newcomer.size_bytes
+    cache.rotate()
+    assert all(
+        cache.find_trace(trace.head_pc) is not None for trace in traces[:JIT_CACHE_BANK_ENTRY_CAPACITY]
     )
     cache.rotate()
-    assert all(cache.find_trace(pc) is not None for pc in range(JIT_CACHE_BANK_ENTRY_CAPACITY))
-    cache.rotate()
-    assert all(cache.find_trace(pc) is None for pc in range(JIT_CACHE_BANK_ENTRY_CAPACITY))
-    assert cache.find_trace(newcomer.head_pc) is newcomer
+    assert all(
+        cache.find_trace(trace.head_pc) is None for trace in traces[:JIT_CACHE_BANK_ENTRY_CAPACITY]
+    )
 
 
 _LOADER_BLOCK_BODY = "(block i32.const 1 drop) "
+
+
+def _terminal_loader_trace() -> JITTrace:
+    """Compile a block that ends in `return`: it has no successor, so it chains to nothing."""
+    module = parse_standalone(
+        wasmtime.wat2wasm('(module (func (export "f") (block i32.const 1 drop return)))')
+    )
+    block = next(b for b in module.blocks if b.next_pc is None and b.byte_span > 0)
+    trace = compile_module_block(TraceCompiler(), module, block)
+    assert trace is not None
+    return trace
 
 
 def _loader_traces(count: int, body: str = _LOADER_BLOCK_BODY) -> list[JITTrace]:
@@ -476,18 +497,21 @@ if sys.argv[1] == 'invalid_pc':
     manager = JITRuntimeManager(code_lengths=(0x1000,), card_shift=4)
     native_abi.RUNTIME_RECORD(manager._native.pointer, 0x1000)
 elif sys.argv[1] == 'invalid_chain':
+    from qa.tier3_plugins.jit.test_jit_runtime import _loader_traces, _terminal_loader_trace
     cache = JitRuntimeBoundary()
-    trace = JITTrace(head_pc=0x100)
+    trace = _terminal_loader_trace()
+    successor = _loader_traces(2)[1]
     inserted = cache.insert(trace)
     assert inserted
     ctypes.c_uint64.from_address(trace.raw_addr - JIT_TRACE_HEADER_BYTES).value = 1
-    cache.insert(JITTrace(head_pc=0x200))
+    cache.insert(successor)
 elif sys.argv[1] == 'duplicate_pc':
+    from qa.tier3_plugins.jit.test_jit_runtime import _loader_traces
     cache = JitRuntimeBoundary()
-    inserted = cache.insert(JITTrace(head_pc=0x100))
+    inserted = cache.insert(_loader_traces(1)[0])
     assert inserted
     cache.rotate()
-    cache.insert(JITTrace(head_pc=0x100))
+    cache.insert(_loader_traces(1)[0])
 else:
     memory = native_abi.NativeExecutableMemory()
     native_abi.MEMORY_INIT(ctypes.byref(memory), 64)
@@ -509,7 +533,7 @@ else:
 
 def test_jitr_insert_preserves_one_resident_trace_per_pc():
     cache = JitRuntimeBoundary()
-    trace = JITTrace(head_pc=0x100)
+    trace = _loader_traces(1)[0]
     assert_result_9 = cache.insert(trace)
     assert assert_result_9
     for _ in range(2):
@@ -524,9 +548,10 @@ def test_jitr_insert_preserves_one_resident_trace_per_pc():
         assert cache.find_trace(trace.head_pc) is trace
     cache.rotate()
     assert cache.find_trace(trace.head_pc) is None
-    replacement = JITTrace(head_pc=trace.head_pc)
-    assert_result_10 = cache.insert(replacement)
-    assert assert_result_10
+    replacement = _loader_traces(1)[0]
+    assert replacement.head_pc == trace.head_pc
+    inserted = cache.insert(replacement)
+    assert inserted
     assert cache.resident_count == 1 and cache.find_trace(trace.head_pc) is replacement
 
 

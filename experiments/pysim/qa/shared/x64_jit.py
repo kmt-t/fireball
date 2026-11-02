@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 from config import JIT_CACHE_ACTIVE_OFFSET_BYTES, JIT_X64_TRACE_HEADER_BYTES
 from qa.private import jit_native_abi as native_abi
-from tier2_runtime.wasm.module import LocalLayout, WasmOperand
 
 from .common_code import JITCodeCacheRegion
 from .jit_cache import JITTrace
-
-# A trace compiled from explicit instructions belongs to no loader block.
-NO_LOADER_BLOCK_INDEX = 0xFFFF
 
 
 class TraceCompiler:
@@ -20,7 +14,6 @@ class TraceCompiler:
 
     Explicit callers pass loader-owned WASM bytes in one call. The native
     JitRuntime compiles its registered blocks directly in C++.
-    ``compile_instructions`` also installs a standalone trace.
     """
 
     __slots__ = ("_standalone_region",)
@@ -44,32 +37,6 @@ class TraceCompiler:
         if trace is None:
             return None
         self._install_standalone(trace, block.block_index)
-        return trace
-
-    def compile_instructions(
-        self,
-        *,
-        head_pc: int,
-        instructions: Iterable[tuple[int, WasmOperand]],
-        next_pc: int | None,
-        loops_to: int | None,
-        byte_length: int,
-        local_layout: LocalLayout,
-    ) -> JITTrace | None:
-        """Compile one loader-owned block and install its standalone trace."""
-
-        trace = JITTrace(
-            head_pc=head_pc,
-            next_pc=next_pc,
-            loops_to=loops_to,
-        )
-        blob = native_abi.compile_instructions(
-            trace._native, instructions, byte_length, local_layout
-        )
-        if blob is None:
-            return None
-        self._attach_code(trace, blob)
-        self._install_standalone(trace, NO_LOADER_BLOCK_INDEX)
         return trace
 
     def _install_standalone(self, trace: JITTrace, block_index: int) -> None:

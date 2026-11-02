@@ -256,20 +256,18 @@ class JITTrace:
     def __init__(
         self,
         head_pc: int,
-        fn: NativeTraceFn | None = None,
         size_bytes: int = JIT_TRACE_DEFAULT_BYTES,
         next_pc: int | None = None,
         loops_to: int | None = None,
         stack_words: int = 1,
         buf: ExecutableBuffer | None = None,
-        native_fn: NativeTraceFn | None = None,
         raw_addr: int | None = None,
         code_blob: bytes | None = None,
     ):
         self._header = JITTraceHeader()
         self._qa_state = native_abi.TraceQaState()
         self.head_pc = head_pc
-        self.fn = fn or native_fn  # Direct ctypes CFUNCTYPE function pointer or callable
+        self.fn = None  # Set when the trace is installed in an executable region
         self.raw_addr = raw_addr  # Entry point address consumed by native dispatch
         self.code_blob = code_blob
         self._blob_storage: ctypes.c_char_p | None = None

@@ -13,7 +13,6 @@ import ctypes
 import mmap
 import struct
 import sys
-from collections.abc import Iterable
 from itertools import pairwise
 from pathlib import Path
 
@@ -87,7 +86,7 @@ from tier2_runtime.interpreter.interpreter import (
 )
 from tier2_runtime.runtime.engine import RuntimeEngine as ProductRuntimeEngine
 from tier2_runtime.vmmio.controller import VMMIOController
-from tier2_runtime.wasm.module import BasicBlock, LocalLayout, Module, WasmOperand
+from tier2_runtime.wasm.module import BasicBlock, Module
 from tier2_runtime.wasm.opcodes import (
     BR_IF,
     BR_TABLE,
@@ -1438,26 +1437,11 @@ def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
 def test_jitr_native_compiler_scans_queued_traces_without_python_opcode_marshalling():
     """The Tier 3 extension passes original WASM bytes to the C++ compiler once per trace."""
 
-    class RuntimeCompilerOnly(TraceCompiler):
-        __slots__ = ()
-
-        def compile_instructions(
-            self,
-            *,
-            head_pc: int,
-            instructions: Iterable[tuple[int, WasmOperand]],
-            next_pc: int | None,
-            loops_to: int | None,
-            byte_length: int,
-            local_layout: LocalLayout,
-        ) -> JITTrace | None:
-            raise AssertionError("runtime traces must not be decoded into Python opcode records")
-
     module = parse_standalone(
         wat_to_wasm('(module (func (export "add") (result i32) i32.const 19 i32.const 23 i32.add))')
     )
     engine = make_runtime_engine(
-        jit_compiler=RuntimeCompilerOnly(),
+        jit_compiler=TraceCompiler(),
         min_trace_bytes=1,
         candidate_threshold=0,
     )
@@ -1477,21 +1461,6 @@ def test_jitr_native_compiler_scans_queued_traces_without_python_opcode_marshall
 
 def test_jitr_clang_wasm_ngrams_embed_i32_immediates_in_trace_code():
     """TEST-JITC-63: i32 immediate n-grams bake constants into native code."""
-
-    class RuntimeCompilerOnly(TraceCompiler):
-        __slots__ = ()
-
-        def compile_instructions(
-            self,
-            *,
-            head_pc: int,
-            instructions: Iterable[tuple[int, WasmOperand]],
-            next_pc: int | None,
-            loops_to: int | None,
-            byte_length: int,
-            local_layout: LocalLayout,
-        ) -> JITTrace | None:
-            raise AssertionError("runtime traces must reach the native WASM scanner")
 
     module = parse_standalone(
         wat_to_wasm(
@@ -1539,7 +1508,7 @@ def test_jitr_clang_wasm_ngrams_embed_i32_immediates_in_trace_code():
         )
     )
     engine = make_runtime_engine(
-        jit_compiler=RuntimeCompilerOnly(),
+        jit_compiler=TraceCompiler(),
         min_trace_bytes=1,
         candidate_threshold=0,
     )
@@ -1600,21 +1569,6 @@ def test_jitr_local_pair_binary_results_match_reference():
     Each operation is lowered through its own stencil; no sequence-level fusion is used.
     """
 
-    class RuntimeCompilerOnly(TraceCompiler):
-        __slots__ = ()
-
-        def compile_instructions(
-            self,
-            *,
-            head_pc: int,
-            instructions: Iterable[tuple[int, WasmOperand]],
-            next_pc: int | None,
-            loops_to: int | None,
-            byte_length: int,
-            local_layout: LocalLayout,
-        ) -> JITTrace | None:
-            raise AssertionError("runtime traces must reach the native WASM scanner")
-
     names = (
         "add",
         "sub",
@@ -1644,7 +1598,7 @@ def test_jitr_local_pair_binary_results_match_reference():
     )
     module = parse_standalone(wat_to_wasm(module_text))
     engine = make_runtime_engine(
-        jit_compiler=RuntimeCompilerOnly(),
+        jit_compiler=TraceCompiler(),
         min_trace_bytes=1,
         candidate_threshold=0,
     )

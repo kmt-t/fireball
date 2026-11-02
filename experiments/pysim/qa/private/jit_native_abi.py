@@ -5,7 +5,6 @@ from __future__ import annotations
 import ctypes
 import struct
 import sys
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
@@ -13,21 +12,12 @@ from pathlib import Path
 from bump_allocator import BumpAllocator
 from tier1_core.native_printk import NativePrintkWriter
 from tier2_runtime.abi.native_abi import JIT_CALL_HANDLER_TABLE
-from tier2_runtime.wasm.module import LocalLayout, WasmOperand
 
 _NATIVE_LIBRARY_PATH = Path(__file__).with_name(
     "jit_probe.dll" if sys.platform == "win32" else "libjit_probe.so"
 )
 _NATIVE_LIBRARY = ctypes.PyDLL(str(_NATIVE_LIBRARY_PATH))
 _COMPILE_MAX_BODY_BYTES = 1536
-
-
-class JitInstruction(ctypes.Structure):
-    _fields_ = (
-        ("opcode", ctypes.c_uint32),
-        ("has_operand", ctypes.c_uint32),
-        ("operand", ctypes.c_uint64),
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -923,97 +913,6 @@ REGION_INIT.argtypes = (ctypes.POINTER(NativeExecutableMemory),)
 
 
 REGION_INIT.restype = ctypes.c_int
-
-
-class _NativeInstructionBlock(ctypes.Structure):
-    _fields_ = (
-        ("head_pc", ctypes.c_uint32),
-        ("next_pc", ctypes.c_uint32),
-        ("loops_to", ctypes.c_uint32),
-        ("byte_span", ctypes.c_uint32),
-        ("instructions", ctypes.POINTER(JitInstruction)),
-        ("instruction_count", ctypes.c_uint32),
-        ("locals", _NativeLocalLayout),
-    )
-
-
-_COMPILE_INSTRUCTIONS = _NATIVE_LIBRARY.fb_jit_compile_instructions
-
-
-_COMPILE_INSTRUCTIONS.argtypes = (
-    ctypes.POINTER(_NativeInstructionBlock),
-    ctypes.POINTER(ctypes.c_uint8),
-    ctypes.c_uint32,
-    ctypes.POINTER(ctypes.c_uint8),
-)
-
-
-_COMPILE_INSTRUCTIONS.restype = ctypes.c_int
-
-
-def compile_instructions(
-    trace: TraceQaState,
-    instructions: Iterable[tuple[int, WasmOperand]],
-    byte_length: int,
-    local_layout: LocalLayout,
-) -> bytes | None:
-    """Marshal explicit instructions through one complete native compiler boundary."""
-    assert 0 < byte_length <= 0xFFFF_FFFF
-    records = (JitInstruction * byte_length)()
-    count = 0
-    for opcode, operand in instructions:
-        assert count < byte_length and 0 <= opcode <= 0xFFFF_FFFF
-        records[count] = JitInstruction(
-            opcode,
-            int(operand is not None),
-            0 if operand is None else operand & 0xFFFF_FFFF_FFFF_FFFF,
-        )
-        count += 1
-    request = _NativeInstructionBlock(
-        trace.head_pc,
-        trace.next_pc,
-        trace.loops_to,
-        byte_length,
-        records,
-        count,
-        _NativeLocalLayout(
-            _NativeByteView(local_layout.offsets_address, local_layout.count * 2),
-            _NativeByteView(local_layout.types_address, local_layout.count),
-            local_layout.count,
-            local_layout.total_words,
-        ),
-    )
-    output = (
-        ctypes.c_uint8
-        * (
-            _COMPILE_MAX_BODY_BYTES
-            + COMMON_LAYOUT.header_bytes
-            + ctypes.sizeof(NativeTraceExit)
-            + ctypes.alignment(ctypes.c_void_p)
-            - 1
-        )
-    )()
-    body_scratch = (ctypes.c_uint8 * _COMPILE_MAX_BODY_BYTES)()
-    status = int(
-        _COMPILE_INSTRUCTIONS(
-            ctypes.byref(request),
-            output,
-            len(output),
-            body_scratch,
-        )
-    )
-    if status == 0:
-        return None
-    assert status == 1, "native instruction compiler contract violation"
-    header = NativeTraceHeader.from_buffer(output)
-    assert COMMON_LAYOUT.header_bytes == ctypes.sizeof(NativeTraceHeader)
-    trace.size_bytes = header.blob_bytes
-    trace.frame_depth = header.frame_depth
-    trace.stack_words = header.stack_words
-    trace.chain_target_address = header.chain_target_address
-    trace.blob_bytes = header.blob_bytes
-    trace.code_blob = ctypes.cast(output, ctypes.POINTER(ctypes.c_uint8))
-    return bytes(output[: header.blob_bytes])
 
 
 OWNED_PC = _NATIVE_LIBRARY.fb_qa_owned_pc

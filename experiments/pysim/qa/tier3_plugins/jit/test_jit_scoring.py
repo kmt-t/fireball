@@ -100,3 +100,35 @@ def test_plugin_candidate_gate_uses_specification_threshold(
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+_BLOCK_TERMINATING_SAMPLES: tuple[tuple[int, str], ...] = (
+    (0x04, '(module (func (export "f") (param i32) local.get 0 if i32.const 2 drop else i32.const 3 drop end))'),
+    (0x0C, '(module (func (export "f") (block i32.const 1 drop br 0 i32.const 2 drop)))'),
+    (0x0D, '(module (func (export "f") (param i32) (block i32.const 1 drop local.get 0 br_if 0 i32.const 2 drop)))'),
+    (0x0E, '(module (func (export "f") (param i32) (block (block local.get 0 br_table 0 1 i32.const 2 drop))))'),
+    (0x0F, '(module (func (export "f") (param i32) i32.const 1 drop return i32.const 2 drop))'),
+    (0x11, '(module (type $t (func)) (table 1 funcref) (func (export "f") i32.const 0 call_indirect (type $t) i32.const 2 drop))'),
+)
+
+
+@pytest.mark.parametrize(("opcode", "wat"), _BLOCK_TERMINATING_SAMPLES)
+def test_block_terminating_opcodes_never_lie_inside_a_block_span(opcode: int, wat: str) -> None:
+    """TEST-LOAD-50: if, br, br_if, br_table, return and call_indirect end a block outside its span."""
+    import wasmtime
+    from tier2_runtime.interpreter.control_flow import iter_scan_instrs
+    from tier2_runtime.wasm.reader import parse_standalone
+
+    module = parse_standalone(bytes(wasmtime.wat2wasm(wat)))
+    spans = [(b.head_pc, b.head_pc + b.byte_span) for b in module.blocks if b.byte_span]
+    found = []
+    for function_index in range(len(module.functions)):
+        base = module.function_pc_offset(function_index)
+        for instruction in iter_scan_instrs(module.code_for(function_index), 0):
+            if instruction.opcode == opcode:
+                pc = base + instruction.offset
+                found.append(pc)
+                assert not any(lo <= pc < hi for lo, hi in spans), (
+                    f"opcode {opcode:#x} at {pc:#x} lies inside a block span"
+                )
+    assert found, f"the sample must contain opcode {opcode:#x}"

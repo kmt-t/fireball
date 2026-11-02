@@ -8,11 +8,7 @@ from typing import Final
 from system_containers import BitView
 from tier2_runtime.wasm.opcodes import (
     BLOCK,
-    BR,
-    BR_IF,
-    BR_TABLE,
     CALL,
-    CALL_INDIRECT,
     DROP,
     ELSE,
     END,
@@ -65,7 +61,6 @@ from tier2_runtime.wasm.opcodes import (
     LOOP,
     MEMORY_GROW,
     NOP,
-    RETURN,
     SELECT,
     UNREACHABLE,
 )
@@ -140,7 +135,6 @@ _SCORE_ENTRIES: tuple[tuple[int, int], ...] = (
     (I32_DIV_U, 4),
     (DROP, 4),
     (SELECT, 4),
-    (RETURN, 4),
     (NOP, 4),
     (I32_REM_S, 5),
     (I32_REM_U, 5),
@@ -149,8 +143,6 @@ _SCORE_ENTRIES: tuple[tuple[int, int], ...] = (
     (0x23, 4),  # global.get
     (0x24, 4),  # global.set
     (0x3F, 4),  # memory.size
-    (BR, 5),
-    (BR_IF, 5),
     (0x28, 5),  # i32.load
     (0x2C, 5),  # i32.load8_s
     (0x2D, 5),  # i32.load8_u
@@ -175,8 +167,6 @@ _SCORE_ENTRIES: tuple[tuple[int, int], ...] = (
     (ELSE, 0),
     (END, 0),
     (CALL, -1),
-    (CALL_INDIRECT, -1),
-    (BR_TABLE, -1),
     (MEMORY_GROW, -2),
     (0xFC, -2),  # 0xfc prefix; its admitted subopcodes share the API score.
     (UNREACHABLE, -8),

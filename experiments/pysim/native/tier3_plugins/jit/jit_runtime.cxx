@@ -1163,15 +1163,12 @@ constexpr std::int8_t opcode_benefit_value(std::uint8_t op) {
   case 0x6e:
   case 0x1a:
   case 0x1b:
-  case 0x0f:
   case 0x01:
     return 4;
   case 0x23:
   case 0x24:
   case 0x3f:
     return 4;
-  case 0x0c:
-  case 0x0d:
   case 0x6f: // i32.rem_s
   case 0x70: // i32.rem_u
   case 0x77: // i32.rotl, Runtime API path
@@ -1204,8 +1201,6 @@ constexpr std::int8_t opcode_benefit_value(std::uint8_t op) {
   case 0x0b:
     return 0;
   case 0x10:
-  case 0x11:
-  case 0x0e:
     return -1;
   case 0x40:
     return -2;
@@ -1258,21 +1253,14 @@ std::int64_t score_block(const jit_wasm_block &block) {
     const auto opcode = block.code.data[offset++];
     const auto benefit = (opcode_benefit_table[opcode / 2] >> (4 * (opcode % 2))) & 15;
     score += benefit < 8 ? benefit : benefit - 16;
-    if (opcode == 0x02 || opcode == 0x03 || opcode == 0x04 || opcode == 0x0c || opcode == 0x0d ||
-        opcode == 0x10 || (opcode >= 0x20 && opcode <= 0x24) || opcode == 0x41 || opcode == 0x42 ||
-        opcode == 0x3f || opcode == 0x40) {
+    if (opcode == 0x02 || opcode == 0x03 || opcode == 0x10 || (opcode >= 0x20 && opcode <= 0x24) ||
+        opcode == 0x41 || opcode == 0x42 || opcode == 0x3f || opcode == 0x40) {
       read_score_operand(block.code.data, end, offset);
-    } else if (opcode == 0x11 || (opcode >= 0x28 && opcode <= 0x3e)) {
+    } else if (opcode >= 0x28 && opcode <= 0x3e) {
       read_score_operand(block.code.data, end, offset);
       read_score_operand(block.code.data, end, offset);
     } else if (opcode == 0x43 || opcode == 0x44) {
       offset += opcode == 0x43 ? 4 : 8;
-    } else if (opcode == 0x0e) {
-      const auto label_count = read_score_operand(block.code.data, end, offset);
-      assert(label_count < end - offset);
-      for (std::uint32_t label = 0; label <= label_count; ++label) {
-        read_score_operand(block.code.data, end, offset);
-      }
     } else if (opcode == 0xfc) {
       const auto subopcode = read_score_operand(block.code.data, end, offset);
       assert(subopcode <= 7 || subopcode == 10 || subopcode == 11);

@@ -39,6 +39,10 @@ struct jit_measurements {
   std::uint64_t compile_attempts = 0, compile_ns = 0;
   std::uint64_t installs = 0, distinct_installs = 0;
   std::array<std::uint64_t, std::numeric_limits<block_index_t>::max() / 64 + 1> installed_blocks{};
+  static constexpr std::size_t per_block_capacity = 1024;
+  std::uint64_t installed_bytes_total = 0;
+  std::array<std::uint16_t, per_block_capacity> installed_block_bytes{};
+  std::array<std::uint32_t, per_block_capacity> installed_block_count{};
   std::uint64_t lookup_calls = 0;
   std::uint64_t execution_count = 0, history_overwritten = 0, last_overwritten = 0;
   std::uint64_t history_dropped = 0;
@@ -80,6 +84,8 @@ struct jit_measurements {
            printk_u64(writer, "jit.compile_ns", compile_ns) &&
            printk_u64(writer, "jit.installs", installs) &&
            printk_u64(writer, "jit.distinct_installs", distinct_installs) &&
+           printk_u64(writer, "jit.installed_bytes_total", installed_bytes_total) &&
+           write_block_installs(writer) &&
            printk_u64(writer, "jit.execution_count", execution_count) &&
            printk_u64(writer, "jit.history_overwritten", history_overwritten) &&
            printk_u64(writer, "jit.last_overwritten", last_overwritten) &&
@@ -204,8 +210,44 @@ struct jit_measurements {
   }
   void lookup_called() { ++lookup_calls; }
   void trace_evicted(std::uint32_t) { ++evictions; }
-  void trace_installed(block_index_t index) {
+  bool write_block_installs(const printk_writer &writer) const {
+    for (std::size_t index = 0; index < per_block_capacity; ++index) {
+      if (installed_block_count[index] == 0) {
+        continue;
+      }
+      std::array<char, 40> label{};
+      std::size_t offset = 0;
+      const auto append = [&label, &offset](std::string_view text) {
+        for (const auto character : text) {
+          assert(offset + 1 < label.size());
+          label[offset++] = character;
+        }
+      };
+      append("jit.block.");
+      std::array<char, 8> digits{};
+      std::size_t digit_count = 0;
+      auto value = index;
+      do {
+        digits[digit_count++] = static_cast<char>('0' + value % 10);
+        value /= 10;
+      } while (value != 0);
+      while (digit_count != 0) {
+        append(std::string_view(&digits[--digit_count], 1));
+      }
+      append(".bytes");
+      label[offset] = '\0';
+      if (!printk_u64(writer, label.data(), installed_block_bytes[index])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  void trace_installed(block_index_t index, std::uint32_t blob_bytes) {
     assert(index != std::numeric_limits<block_index_t>::max());
+    assert(index < per_block_capacity && blob_bytes <= 0xFFFF);
+    installed_bytes_total += blob_bytes;
+    installed_block_bytes[index] = static_cast<std::uint16_t>(blob_bytes);
+    ++installed_block_count[index];
     ++installs;
     const auto word = index / 64;
     const auto bit = std::uint64_t{1} << (index % 64);

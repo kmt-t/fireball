@@ -20,11 +20,9 @@ from system_containers import (
     fold_mix32,
 )
 from tier2_runtime.abi.native_abi import BufferLease
-from tier2_runtime.interpreter.control_flow import iter_block_ops
 from tier2_runtime.runtime.engine import RuntimeDriveMode
 from tier2_runtime.wasm.module import (
     BasicBlock,
-    LocalLayout,
     Module,
 )
 
@@ -81,24 +79,6 @@ def make_runtime_engine(
         drive_mode=drive_mode,
         collect_runtime_stats=collect_runtime_stats,
         bump_allocator=bump_allocator,
-    )
-
-
-def compile_test_block(
-    compiler: TraceCompiler,
-    code: bytes,
-    block: BasicBlock,
-    local_types: Sequence[int],
-) -> JITTrace | None:
-    """Test-only adapter: `local_types` are the locals' value types, params first."""
-
-    return compiler.compile_instructions(
-        head_pc=block.head_pc,
-        instructions=iter_block_ops(code, block.head_pc, block.byte_span),
-        next_pc=block.next_pc,
-        loops_to=block.loops_to,
-        byte_length=block.byte_span,
-        local_layout=LocalLayout(local_types),
     )
 
 

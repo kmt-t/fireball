@@ -87,17 +87,13 @@ from tier2_runtime.interpreter.interpreter import (
 )
 from tier2_runtime.runtime.engine import RuntimeEngine as ProductRuntimeEngine
 from tier2_runtime.vmmio.controller import VMMIOController
-from tier2_runtime.wasm.module import I32, BasicBlock, LocalLayout, Module, WasmOperand
+from tier2_runtime.wasm.module import BasicBlock, LocalLayout, Module, WasmOperand
 from tier2_runtime.wasm.opcodes import (
     BR_IF,
     BR_TABLE,
     FC_PREFIX,
-    I32_ADD,
     I32_CONST,
-    I32_DIV_S,
     IF,
-    LOCAL_GET,
-    LOCAL_SET,
     RETURN,
 )
 
@@ -628,35 +624,36 @@ def test_jitr_oldest_target_rejects_a_new_chain_link():
 
 def test_jitr_chained_successor_trap_stops_at_its_body_after_the_source_ran():
     """A trap in a chained successor leaves native execution there; the source body already ran."""
+    module = parse_standalone(
+        wasmtime.wat2wasm(
+            '(module (func (export "run") (result i32) (local i32)'
+            " (block i32.const 1 local.set 0)"
+            " (block i32.const 1 i32.const 0 i32.div_s local.set 0)"
+            " local.get 0))"
+        )
+    )
+    source_block, successor_block = [b for b in module.blocks if b.byte_span > 0][:2]
+    assert source_block.next_pc == successor_block.head_pc
+    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), candidate_threshold=0)
+    engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
+    engine.register_module_blocks(module)
     compiler = TraceCompiler()
-    source = compiler.compile_instructions(
-        head_pc=0x100,
-        instructions=((I32_CONST, 1), (LOCAL_SET, 0)),
-        next_pc=0x200,
-        loops_to=None,
-        byte_length=8,
-        local_layout=LocalLayout((I32,)),
-    )
-    target = compiler.compile_instructions(
-        head_pc=0x200,
-        instructions=((I32_CONST, 1), (I32_CONST, 0), (I32_DIV_S, None), (LOCAL_SET, 0)),
-        next_pc=None,
-        loops_to=None,
-        byte_length=16,
-        local_layout=LocalLayout((I32,)),
-    )
+    target = compile_module_block(compiler, module, successor_block)
+    source = compile_module_block(compiler, module, source_block)
     assert source is not None and target is not None
-    cache = JitRuntimeBoundary()
-    inserted_target = cache.insert(target)
+    inserted_target = manager.cache.insert(target)
     assert inserted_target
-    inserted_source = cache.insert(source)
+    inserted_source = manager.cache.insert(source)
     assert inserted_source
-    assert source.chain_next == 0x200
+    assert source.chain_next == successor_block.head_pc
 
+    code = bytes(module.source)
     context = ExecutionContext()
     extended_locals = context.local_stack.extend((0,))
     assert extended_locals
     context.local_base = context.local_stack.value_ptr(0).value
+    context.code = ctypes.cast(ctypes.c_char_p(code), ctypes.c_void_p).value
+    context.ip = source_block.head_pc
     instruction_ip = ctypes.c_void_p(int(context.code or 0) + int(context.ip))
     source.execute(context.context_ptr, instruction_ip, context.sp_ptr)
     # Integer division by zero: the Wasm trap code 15 is set by the successor's stencil.
@@ -720,15 +717,7 @@ def test_jitr_chained_successor_cps_boundary_stops_at_its_block():
 
 def test_jitr_trace_blob_has_no_entry_or_exit_stencil():
     """The body begins at the header; the shared entry lives in the common area, not in the trace."""
-    compiler = TraceCompiler()
-    trace = compiler.compile_instructions(
-        head_pc=0x100,
-        instructions=((I32_CONST, 7), (LOCAL_SET, 0)),
-        next_pc=0x200,
-        loops_to=None,
-        byte_length=8,
-        local_layout=LocalLayout((I32,)),
-    )
+    trace = _compile_body("(i32.const 7) (local.set 0)", locals_decl="(local i32)")
     assert trace is not None
     blob = bytes(trace.code_blob)
     const_rel = struct.unpack_from("<I", blob, 28)[0]
@@ -926,23 +915,19 @@ def test_jitr_trace_exit_reuses_loader_successor_block_index_and_pc() -> None:
 def test_jitr_native_header_chain_executes_successor_body_once(entry_name: str):
     """A resolved x64 header chain jumps to the successor body without re-entry."""
 
+    module = parse_standalone(
+        wasmtime.wat2wasm(
+            '(module (func (export "run") (result i32) (local i32)'
+            " (block i32.const 1 local.set 0)"
+            " (block local.get 0 i32.const 2 i32.add local.set 0)"
+            " local.get 0))"
+        )
+    )
+    source_block, target_block = [b for b in module.blocks if b.byte_span > 0][:2]
+    assert source_block.next_pc == target_block.head_pc
     compiler = TraceCompiler()
-    source = compiler.compile_instructions(
-        head_pc=0x100,
-        instructions=((I32_CONST, 1), (LOCAL_SET, 0)),
-        next_pc=0x200,
-        loops_to=None,
-        byte_length=8,
-        local_layout=LocalLayout((I32,)),
-    )
-    target = compiler.compile_instructions(
-        head_pc=0x200,
-        instructions=((LOCAL_GET, 0), (I32_CONST, 2), (I32_ADD, None), (LOCAL_SET, 0)),
-        next_pc=None,
-        loops_to=None,
-        byte_length=12,
-        local_layout=LocalLayout((I32,)),
-    )
+    source = compile_module_block(compiler, module, source_block)
+    target = compile_module_block(compiler, module, target_block)
     assert source is not None and target is not None
 
     cache = JitRuntimeBoundary()
@@ -950,7 +935,7 @@ def test_jitr_native_header_chain_executes_successor_body_once(entry_name: str):
     assert assert_result_12
     assert_result_13 = cache.insert(source)
     assert assert_result_13
-    assert source.chain_next == 0x200
+    assert source.chain_next == target_block.head_pc
     assert source.header.chain_target_addr != 0
     assert source.code_offset is not None
     assert source.raw_addr is not None
@@ -978,6 +963,9 @@ def test_jitr_native_header_chain_executes_successor_body_once(entry_name: str):
         entry = source.native_fn
     assert entry is not None
     context.local_base = context.local_stack.value_ptr(0).value
+    code = bytes(module.source)
+    context.code = ctypes.cast(ctypes.c_char_p(code), ctypes.c_void_p).value
+    context.ip = source_block.head_pc
     instruction_ip = ctypes.c_void_p(int(context.code or 0) + int(context.ip))
     if entry_name in ("fn", "native_fn"):
         entry(context.context_ptr, instruction_ip, context.sp_ptr, source.relocation_pointer())
@@ -3828,33 +3816,39 @@ def test_gotcha_jitr_09_aging_never_drops_compiled_or_hot():
 
 
 CHAIN_STRESS_TRACES = 14
-CHAIN_STRESS_HEAD = 0x100
-CHAIN_STRESS_STRIDE = 0x10
-CHAIN_STRESS_EXIT_PC = 0x9990
 
 
-def _chain_stress_compile(compiler: TraceCompiler, index: int) -> JITTrace:
-    """Trace `index` adds `1 << index` to local 0 and falls through to trace `index + 1`."""
-    head_pc = CHAIN_STRESS_HEAD + index * CHAIN_STRESS_STRIDE
-    is_last = index == CHAIN_STRESS_TRACES - 1
-    next_pc = CHAIN_STRESS_EXIT_PC if is_last else head_pc + CHAIN_STRESS_STRIDE
-    trace = compiler.compile_instructions(
-        head_pc=head_pc,
-        instructions=((LOCAL_GET, 0), (I32_CONST, 1 << index), (I32_ADD, None), (LOCAL_SET, 0)),
-        next_pc=next_pc,
-        loops_to=None,
-        byte_length=12,
-        local_layout=LocalLayout((I32,)),
+def _chain_stress_module():
+    """A straight chain of CHAIN_STRESS_TRACES blocks; block i adds 1 << i to local 0."""
+    blocks = "".join(
+        f"(block local.get 0 i32.const {1 << index} i32.add local.set 0) "
+        for index in range(CHAIN_STRESS_TRACES)
     )
+    module = parse_standalone(
+        wasmtime.wat2wasm(f'(module (func (export "run") (local i32) {blocks}))')
+    )
+    blocks = tuple(b for b in module.blocks if b.byte_span > 0)
+    assert len(blocks) == CHAIN_STRESS_TRACES
+    return module
+
+
+def _chain_stress_compile(compiler: TraceCompiler, module, index: int) -> JITTrace:
+    """Compile block `index` of the chain module with its loader successor."""
+    block = _chain_stress_blocks(module)[index]
+    trace = compile_module_block(compiler, module, block)
     assert trace is not None
     return trace
 
 
-def _chain_stress_check_links(cache: JitRuntimeBoundary) -> None:
+def _chain_stress_blocks(module):
+    return tuple(b for b in module.blocks if b.byte_span > 0)
+
+
+def _chain_stress_check_links(cache: JitRuntimeBoundary, module) -> None:
     """Every chain pointer, Python and native, must name a resident trace's live entry."""
+    pcs = tuple(b.head_pc for b in _chain_stress_blocks(module))
     observed = 0
-    for index in range(CHAIN_STRESS_TRACES):
-        pc = CHAIN_STRESS_HEAD + index * CHAIN_STRESS_STRIDE
+    for index, pc in enumerate(pcs):
         trace = cache.find_trace(pc)
         if trace is None:
             continue
@@ -3871,9 +3865,8 @@ def _chain_stress_check_links(cache: JitRuntimeBoundary) -> None:
         if trace.chain_next is None:
             assert native == 0, f"unchained trace {pc:#x} keeps a native jump"
             continue
-        index = (pc - CHAIN_STRESS_HEAD) // CHAIN_STRESS_STRIDE
         assert index < CHAIN_STRESS_TRACES - 1
-        assert trace.chain_next == CHAIN_STRESS_HEAD + (index + 1) * CHAIN_STRESS_STRIDE
+        assert trace.chain_next == pcs[index + 1]
         target = cache.find_trace(trace.chain_next)
         assert target is not None, f"{pc:#x} chains into evicted {trace.chain_next:#x}"
         assert target.raw_addr is not None, (
@@ -3883,24 +3876,27 @@ def _chain_stress_check_links(cache: JitRuntimeBoundary) -> None:
     assert observed == cache.resident_count, "duplicate or unexpected resident PC"
 
 
-def _chain_stress_run(cache: JitRuntimeBoundary, start: JITTrace) -> None:
+def _chain_stress_run(cache: JitRuntimeBoundary, module, start: JITTrace) -> None:
     """Run natively; derive successors and effects from the generated linear chain input."""
+    pcs = tuple(b.head_pc for b in _chain_stress_blocks(module))
     expected_mask = 0
     walked = start
     while True:
-        expected_mask |= 1 << ((walked.head_pc - CHAIN_STRESS_HEAD) // CHAIN_STRESS_STRIDE)
+        index = pcs.index(walked.head_pc)
+        expected_mask |= 1 << index
         if walked.chain_next is None:
             break
-        index = (walked.head_pc - CHAIN_STRESS_HEAD) // CHAIN_STRESS_STRIDE
-        expected_next = CHAIN_STRESS_HEAD + (index + 1) * CHAIN_STRESS_STRIDE
-        assert walked.chain_next == expected_next
-        successor = cache.find_trace(expected_next)
+        assert walked.chain_next == pcs[index + 1]
+        successor = cache.find_trace(pcs[index + 1])
         assert successor is not None
         walked = successor
     context = ExecutionContext()
     assert_result_24 = context.local_stack.extend((0,))
     assert assert_result_24
     context.local_base = context.local_stack.value_ptr(0).value
+    code = bytes(module.source)
+    context.code = ctypes.cast(ctypes.c_char_p(code), ctypes.c_void_p).value
+    context.ip = start.head_pc
     instruction_ip = ctypes.c_void_p(int(context.code or 0) + int(context.ip))
     start.execute(context.context_ptr, instruction_ip, context.sp_ptr)
     assert context.local_stack[0] == expected_mask, (
@@ -3920,6 +3916,8 @@ def test_jitr_62_chain_links_stay_valid_across_lookup_and_rotation():
     """
     import random
 
+    module = _chain_stress_module()
+    pcs = tuple(b.head_pc for b in _chain_stress_blocks(module))
     compiler = TraceCompiler()
     lookup_hits = 0
     evicted_total = 0
@@ -3929,11 +3927,11 @@ def test_jitr_62_chain_links_stay_valid_across_lookup_and_rotation():
         cache = JitRuntimeBoundary(bank_capacity=512)
         for _ in range(90):
             index = rng.randrange(CHAIN_STRESS_TRACES)
-            pc = CHAIN_STRESS_HEAD + index * CHAIN_STRESS_STRIDE
+            pc = pcs[index]
             action = rng.randrange(10)
             if action < 5:
                 if cache.find_trace(pc) is None:
-                    assert_result_36 = cache.insert(_chain_stress_compile(compiler, index))
+                    assert_result_36 = cache.insert(_chain_stress_compile(compiler, module, index))
                     assert assert_result_36
             elif action < 9:
                 found = cache.lookup(pc)
@@ -3943,12 +3941,12 @@ def test_jitr_62_chain_links_stay_valid_across_lookup_and_rotation():
                     assert cache.lookup(pc) is found
                     assert (found.raw_addr, cache.resident_bytes, cache.generation) == state
                     lookup_hits += 1
-                    _chain_stress_check_links(cache)
-                    _chain_stress_run(cache, found)
+                    _chain_stress_check_links(cache, module)
+                    _chain_stress_run(cache, module, found)
                     chained_runs += found.chain_next is not None
             else:
                 cache.rotate()
-            _chain_stress_check_links(cache)
+            _chain_stress_check_links(cache, module)
         evicted_total += cache.evictions
     assert lookup_hits > 0, "sequences never looked up a resident trace"
     assert evicted_total > 0, "sequences never evicted a trace"

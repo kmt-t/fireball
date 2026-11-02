@@ -49,7 +49,7 @@ def main():
 
     # 4. JIT Cache Metabolism & Corner Cases
     print("\n>>> [4/6] Running JIT Cache Metabolism & Corner Cases Benchmark...")
-    metab_bench = JITCacheMetabolismBenchmark(bank_capacity=1024)
+    metab_bench = JITCacheMetabolismBenchmark()
     metab_res = metab_bench.run_all()
 
     # 5. JIT Card Aging under cache pressure

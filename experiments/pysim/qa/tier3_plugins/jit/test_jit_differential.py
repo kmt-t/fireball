@@ -26,12 +26,17 @@ import wasmtime
 from bump_allocator import BumpAllocator
 from qa.shared.helpers import make_interpreter, make_native_interpreter, wat_to_wasm
 from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
-from qa.shared.runtime_support import make_runtime_engine, resident_module_traces
+from qa.shared.runtime_support import (
+    compile_module_block,
+    make_runtime_engine,
+    resident_module_traces,
+)
 from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.abi.interpreter_abi import NATIVE_VALUE_STACK_CAPACITY
+from tier2_runtime.interpreter.control_flow import iter_block_ops
 from tier2_runtime.interpreter.interpreter import NativeInterpreter, TrapCode
 from tier2_runtime.wasm.module import Module
-from tier2_runtime.wasm.opcodes import BR
+from tier2_runtime.wasm.opcodes import BR, I32_ROTL, I32_ROTR
 from tier2_runtime.wasm.reader import parse_standalone
 
 MASK32 = 0xFFFFFFFF
@@ -639,6 +644,119 @@ MEMORY_THEN_POOLED_NODES_WAT = """
         (br $l)))
     (i32.add (i32.load (i32.const 0)) (i32.load (i32.const 4)))))
 """
+
+
+def _assert_blocks_with_opcodes_are_resident(engine: RuntimeEngine, export: str, opcodes):
+    """At least one block of `export` that contains one of `opcodes` has a resident trace."""
+    module = engine.module
+    assert module is not None
+    function_index = module.export_func_index(export)
+    function_pc = module.function_pc_offset(function_index)
+    code = module.code_for(function_index)
+    blocks = [
+        block
+        for block in module.blocks
+        if block.func_index == function_index
+        and block.byte_span > 0
+        and any(
+            op in opcodes
+            for op, _ in iter_block_ops(code, block.head_pc - function_pc, block.byte_span)
+        )
+    ]
+    assert blocks, f"the module must contain blocks with opcodes {sorted(opcodes)}"
+    # Blocks outside the loop run once and stay cold, so the hot loop body must provide a trace.
+    assert any(engine.jit_runtime.cache.find_trace(block.head_pc) is not None for block in blocks), (
+        f"no block with opcodes {sorted(opcodes)} has a resident trace"
+    )
+
+
+# i32.rotl and i32.rotr have no direct stencil: their blocks run through the Runtime API path.
+ROTATION_WAT = """
+(module
+  (func (export "main") (param $n i32) (result i32) (local $i i32) (local $s i32)
+    (block $exit
+      (loop $l
+        (br_if $exit (i32.ge_s (local.get $i) (local.get $n)))
+        (local.set $s (i32.add (local.get $s) (i32.rotl (local.get $i) (i32.const 4))))
+        (local.set $s (i32.xor (local.get $s) (i32.rotr (local.get $i) (i32.const 3))))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $l)))
+    (local.get $s)))
+"""
+
+
+def test_jitr_97_i32_rotations_run_through_the_runtime_api_on_the_jit():
+    """TEST-JITR-97: i32.rotl and i32.rotr compile as Runtime API operations and match wasmtime."""
+    engine = _check_three_ways(ROTATION_WAT, "main", [60])
+    assert engine.stat_jit_invocations > 0
+    _assert_blocks_with_opcodes_are_resident(engine, "main", {I32_ROTL, I32_ROTR})
+
+
+# f64 memory operations carry two-word values, so their stack widths differ from i32 accesses.
+F64_MEMORY_WAT = """
+(module (memory 1)
+  (func (export "main") (param $n i32) (result i32) (local $i i32)
+    (block $exit
+      (loop $l
+        (br_if $exit (i32.ge_s (local.get $i) (local.get $n)))
+        (f64.store (i32.const 8) (f64.add (f64.load (i32.const 8)) (f64.const 1.5)))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $l)))
+    (i32.trunc_f64_s (f64.load (i32.const 8)))))
+"""
+
+
+def test_jitr_98_f64_memory_operations_compile_with_two_word_values():
+    """TEST-JITR-98: f64.load and f64.store blocks compile and match wasmtime."""
+    engine = _check_three_ways(F64_MEMORY_WAT, "main", [20])
+    assert engine.stat_jit_invocations > 0
+    _assert_blocks_with_opcodes_are_resident(engine, "main", {0x2B, 0x39})
+
+
+# Measured sizes of the built native library: a trace without operations is about 80 bytes, a
+# direct stencil adds 16 to 40 bytes, and a Runtime API operation adds about 240 bytes.
+_BODY_BASE_BYTES = 80
+_DIRECT_OPERATION_BYTES = 30
+_RUNTIME_API_OPERATION_BYTES = 240
+_BODY_CHECK_BYTES = 1000  # below the 1536-byte body limit, with a margin for the estimate
+_STRUCTURAL_OPCODES = frozenset({0x02, 0x03, 0x05, 0x0B})
+_DIRECT_STENCIL_OPCODES = frozenset(
+    {0x1A, 0x20, 0x21, 0x22, 0x41, 0x42, 0x43, 0x44, 0x45, *range(0x46, 0x50)}
+    | {0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76}
+    | {0x7C, 0x7D, 0x7E}
+)
+
+
+def test_jitr_99_suite_blocks_within_the_body_budget_compile():
+    """TEST-JITR-99: every suite block estimated under the body check size compiles."""
+    module = parse_standalone(SUITE_WASM.read_bytes())
+    compiler = TraceCompiler()
+    checked = 0
+    for block in module.blocks:
+        if block.byte_span == 0:
+            continue
+        code = module.code_for(block.func_index)
+        offset = block.head_pc - module.function_pc_offset(block.func_index)
+        ops = [
+            op
+            for op, _ in iter_block_ops(code, offset, block.byte_span)
+            if op not in _STRUCTURAL_OPCODES
+        ]
+        # A block without instructions makes no trace, and more than 64 instructions is a listed
+        # compile failure; neither is checked against the body budget.
+        if not ops or len(ops) > 64:
+            continue
+        estimate = _BODY_BASE_BYTES + sum(
+            _DIRECT_OPERATION_BYTES if op in _DIRECT_STENCIL_OPCODES else _RUNTIME_API_OPERATION_BYTES
+            for op in ops
+        )
+        if estimate > _BODY_CHECK_BYTES:
+            continue
+        assert compile_module_block(compiler, module, block) is not None, (
+            f"block {block.head_pc:#x} ({len(ops)} operations, estimate {estimate} bytes) must compile"
+        )
+        checked += 1
+    assert checked > 300, f"only {checked} suite blocks fell under the body check size"
 
 
 def test_jitr_memory_operation_followed_by_pooled_nodes_keeps_each_record():

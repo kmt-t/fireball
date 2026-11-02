@@ -1173,6 +1173,11 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       ++index;
       continue;
     }
+    // nop has no effect on the stack, locals, memory or control, so it emits no operation.
+    if (op == 0x01) {
+      ++index;
+      continue;
+    }
 
     // The scanner attaches an operand to exactly these opcodes; the instruction list must agree.
     assert((op == kI32Const || op == kI64Const || op == kF32Const || op == kF64Const ||
@@ -1378,15 +1383,15 @@ bool apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_mod
     return pop_values(stack, 3, 1);
   }
 
-  if (op == 0x01) {
-    return true;
-  }
   if (op >= 0x28 && op <= 0x35) {
-    const auto result_width = (op == 0x29 || (op >= 0x30 && op <= 0x35)) ? 2u : 1u;
+    // i64.load, f64.load and the i64 narrow loads push two words.
+    const auto result_width =
+        (op == 0x29 || op == 0x2B || (op >= 0x30 && op <= 0x35)) ? 2u : 1u;
     return stack.unary(1, static_cast<std::uint8_t>(result_width));
   }
   if (op >= 0x36 && op <= 0x3E) {
-    const auto value_width = (op == 0x37 || (op >= 0x3C && op <= 0x3E)) ? 2u : 1u;
+    // i64.store, f64.store and the i64 narrow stores pop two words.
+    const auto value_width = (op == 0x37 || op == 0x39 || (op >= 0x3C && op <= 0x3E)) ? 2u : 1u;
     return stack.pop(static_cast<std::uint8_t>(value_width)) && stack.pop(1);
   }
   if (op == 0x3F) {
@@ -1397,6 +1402,10 @@ bool apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_mod
   }
   if (op >= 0x67 && op <= 0x69) {
     return stack.unary(1, 1);
+  }
+  if (op == 0x77 || op == 0x78) {
+    // i32.rotl and i32.rotr have no direct stencil; they pop two i32 and push one.
+    return stack.binary(1);
   }
   if (op == 0x50) {
     return stack.unary(2, 1);

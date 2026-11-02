@@ -138,6 +138,7 @@ Interpreterでも同じRuntime APIを使う。Interpreter側のopcode handlerは
 | :--- | :--- | :--- |
 | 直接assembly variantがある | 型・offsetに対応するstencilをtraceへ合成する | 次のstencilへfall-throughする |
 | ローカル操作 | 型・操作別テンプレートを合成し、x64命令エンコーダがmemory instructionを書き込む。byte offset 127 以下は`disp8`、128 以上は`disp32`の版のstencilを選ぶ | 次のstencilへfall-throughする |
+| `nop` | 何も合成しない。stackとlocalを変えず、traceのoperationを増やさない | 次の命令へ進む |
 | 直接assembly variantがない有効opcode | `runtime_api` stencilが共通API tableから対応するAPIを呼ぶ | 通常継続なら同じJIT traceの次のstencilへ進む。trapまたは境界exitならtraceを終了する |
 | `call`、`call_indirect` | 呼出しopcodeを最後のoperationとしてtraceへ含め、x64用handler slotとInterpreter annotation offsetを記録する | 共通コード領域の借用table pointerを経由し、handler slotの添字でTier 2 CPS handlerへtail-callする。traceに関数の絶対アドレスを埋め込まない |
 

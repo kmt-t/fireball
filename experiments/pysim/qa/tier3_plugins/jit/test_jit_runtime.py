@@ -528,6 +528,30 @@ else:
     assert boundary in process.stderr
 
 
+def _compile_body(body: str, locals_decl: str = "") -> JITTrace | None:
+    """Compile the first nonempty loader block of a one-function module with `body` as Wasm text."""
+    module = parse_standalone(
+        wasmtime.wat2wasm(f'(module (func (export "f") {locals_decl} {body}))')
+    )
+    block = next(b for b in module.blocks if b.byte_span > 0)
+    return compile_module_block(TraceCompiler(), module, block)
+
+
+def test_jitr_96_nop_adds_no_operation_so_nop_blocks_compile():
+    """TEST-JITR-96: nop has no runtime effect, so a block of nops compiles to the same trace as one nop."""
+    one = _compile_body("(block nop)")
+    assert one is not None
+    for count in (7, 26):
+        trace = _compile_body("(block " + "nop " * count + ")")
+        assert trace is not None, f"a block of {count} nops must compile"
+        assert trace.size_bytes == one.size_bytes, "nop adds no body bytes"
+    mixed = _compile_body(
+        "(block i32.const 7 local.set 0 " + "nop " * 8 + ")", locals_decl="(local i32)"
+    )
+    assert mixed is not None, "an i32.const, a local.set and eight nops must compile"
+    assert _run_for_local0(mixed) == 7
+
+
 def test_jitr_insert_preserves_one_resident_trace_per_pc():
     cache = JitRuntimeBoundary()
     trace = _loader_traces(1)[0]

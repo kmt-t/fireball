@@ -309,7 +309,8 @@ def test_hotspot_04_3bank_cache_hits_preserve_residency():
     # A hit runs the trace's own code: the block writes local 0 to 7 in every bank.
     for trace in (t1, t2, t3):
         context = ExecutionContext()
-        assert context.local_stack.extend((0,))
+        extended = context.local_stack.extend((0,))
+        assert extended
         context.local_base = context.local_stack.value_ptr(0).value
         assert context.local_stack[0] == 0
         assert cache.lookup(trace.head_pc) is trace

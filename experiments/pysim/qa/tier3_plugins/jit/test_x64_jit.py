@@ -99,18 +99,18 @@ def _extract_test_blocks(code: bytes):
     return extract_basic_blocks(code_view, build_control_map(code_view))
 
 
-def _call_trace(fn, context, local_words, stack_words, sp_index: int = 0) -> None:
-    """Invoke a trace with its header-located constant pool as the rel argument."""
+def _call_trace(trace: JITTrace, context, local_words, stack_words, sp_index: int = 0) -> None:
+    """Invoke a trace's shared entry with its header-located constant pool as the rel argument."""
     context.local_base = ctypes.addressof(local_words)
     code_address = int(context.code or 0)
     ip = ctypes.c_void_p(code_address + int(context.ip))
     stack_address = ctypes.addressof(stack_words) + sp_index * ctypes.sizeof(ctypes.c_uint32)
-    entry_address = ctypes.cast(fn, ctypes.c_void_p).value
-    assert entry_address is not None
-    header_address = entry_address - JIT_X64_TRACE_HEADER_BYTES
+    body_address = trace.raw_addr
+    assert body_address is not None
+    header_address = body_address - JIT_X64_TRACE_HEADER_BYTES
     header = native_abi.NativeTraceHeader.from_address(header_address)
     rel = ctypes.c_void_p(header_address + header.const_rel_offset)
-    fn(ctypes.byref(context), ip, ctypes.c_void_p(stack_address), rel)
+    trace.fn(ctypes.byref(context), ip, ctypes.c_void_p(stack_address), rel)
 
 
 def _assert_trace_uses_common_chain_dispatcher(trace: JITTrace) -> None:
@@ -233,7 +233,7 @@ def test_trace_compiler_cps_4arg_and_pic():
     locals_arr[0] = 5
     context = ExecutionContextABI()
     stack_words = (ctypes.c_uint32 * 8)()
-    _call_trace(trace.fn, context, locals_arr, stack_words)
+    _call_trace(trace, context, locals_arr, stack_words)
     # The precomputed offset of the second i32 local is raw word 1.
     assert locals_arr[1] == 40
 
@@ -454,7 +454,7 @@ def test_trace_local_addressing_uses_precomputed_compact_offsets():
         expected[layout.offset(2)] = expected[layout.offset(0)]
         context = ExecutionContextABI()
         stack_words = (ctypes.c_uint32 * 8)()
-        _call_trace(trace.fn, context, locals_arr, stack_words)
+        _call_trace(trace, context, locals_arr, stack_words)
         assert list(locals_arr) == expected, f"types {types}: all untouched words must survive"
 
 
@@ -755,7 +755,7 @@ def _run_spill_trace(program, locals_values, sp_index: int, total: int = 96):
     words = (ctypes.c_uint32 * total)(*([_SENTINEL] * total))
     locals_arr = (ctypes.c_uint32 * len(locals_values))(*locals_values)
     context = ExecutionContextABI()
-    _call_trace(trace.fn, context, locals_arr, words, sp_index)
+    _call_trace(trace, context, locals_arr, words, sp_index)
     return trace, words
 
 

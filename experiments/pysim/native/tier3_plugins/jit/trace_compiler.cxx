@@ -57,7 +57,6 @@ constexpr std::size_t kMaxLocalInstructionBytes = 7;
 constexpr std::size_t kX64Rel32SlotBytes = 5;
 constexpr std::size_t kMaxOperationStencilBytes = 512;
 constexpr auto kNoLinkSlot = generated::no_link_slot;
-static_assert(generated::trace_entry.start_slot_offset == FB_CONF_JIT_X64_TRACE_CHAIN_ENTRY_OFFSET);
 
 constexpr std::uint8_t kWasmI32 = 0x7F;
 constexpr std::uint8_t kWasmI64 = 0x7E;
@@ -559,93 +558,12 @@ struct trace_builder {
       return false;
     }
 
-    const auto entry_stencil = generated_stencil(generated::trace_entry);
-    const auto exit_stencil = generated_stencil(generated::trace_exit);
+    // The shared entry in the common area runs the body, so the body starts at the header.
     const auto success_stencil = generated_stencil(generated::trace_return_success);
     const auto abort_stencil = generated_stencil(generated::trace_return_abort);
     branch_prefix_table branch_prefix{};
-    if (entry_stencil.size == 0 || entry_stencil.size > scaffold_scratch.size() ||
-        exit_stencil.size == 0 || exit_stencil.size > scaffold_scratch.size() ||
-        success_stencil.size == 0 || success_stencil.size > body_capacity) {
-      return false;
-    }
-
-    std::size_t expanded_size = 0;
-    const auto *entry_code = generated::fb_jit_stencils_start.data() + entry_stencil.code_offset;
-    if (entry_stencil.start_slot_offset == kNoLinkSlot ||
-        entry_stencil.exit_slot_offset == kNoLinkSlot || !entry_stencil.branch_range_valid() ||
-        entry_stencil.start_slot_offset > entry_stencil.size ||
-        kX64Rel32SlotBytes > entry_stencil.size - entry_stencil.start_slot_offset ||
-        entry_stencil.exit_slot_offset > entry_stencil.size ||
-        kX64Rel32SlotBytes > entry_stencil.size - entry_stencil.exit_slot_offset ||
-        entry_code[entry_stencil.start_slot_offset] != 0xe8 ||
-        entry_code[entry_stencil.exit_slot_offset] != 0xe9 ||
-        !build_branch_prefix(entry_stencil, entry_code, branch_prefix) ||
-        !expand_stencil_branches(entry_stencil, entry_code, scaffold_scratch.data(),
-                                 scaffold_scratch.size(), expanded_size)) {
-      return false;
-    }
-
-    std::size_t expanded_start_slot = 0;
-    std::size_t expanded_exit_slot = 0;
-    if (!map_stencil_offset(entry_stencil.start_slot_offset, entry_stencil, branch_prefix,
-                            expanded_start_slot) ||
-        !map_stencil_offset(entry_stencil.exit_slot_offset, entry_stencil, branch_prefix,
-                            expanded_exit_slot) ||
-        expanded_exit_slot > expanded_size ||
-        kX64Rel32SlotBytes > expanded_size - expanded_exit_slot) {
-      return false;
-    }
-    const auto wrapper_size = expanded_size - kX64Rel32SlotBytes + exit_stencil.size;
-    if (wrapper_size > scaffold_code.size() || wrapper_size > body_capacity) {
-      return false;
-    }
-    const auto sequence_capacity = body_capacity - wrapper_size;
-    if (success_stencil.size > sequence_capacity) {
-      return false;
-    }
-
-    std::copy_n(scaffold_scratch.data(), expanded_exit_slot, scaffold_code.data());
-    std::copy_n(generated::fb_jit_stencils_start.data() + exit_stencil.code_offset,
-                exit_stencil.size, scaffold_code.data() + expanded_exit_slot);
-    const auto wrapper_suffix_offset = expanded_exit_slot + kX64Rel32SlotBytes;
-    const auto wrapper_suffix_size = expanded_size - wrapper_suffix_offset;
-    std::copy_n(scaffold_scratch.data() + wrapper_suffix_offset, wrapper_suffix_size,
-                scaffold_code.data() + expanded_exit_slot + exit_stencil.size);
-
-    for (std::size_t branch_index = 0; branch_index < entry_stencil.branch_count; ++branch_index) {
-      const auto branch = entry_stencil.branch_fixup(branch_index);
-      std::size_t source_offset = 0;
-      std::size_t target_offset = 0;
-      std::size_t wrapper_source = 0;
-      std::size_t wrapper_target = 0;
-      if (!map_stencil_offset(branch.instruction_offset, entry_stencil, branch_prefix,
-                              source_offset) ||
-          !map_stencil_offset(branch.target_offset, entry_stencil, branch_prefix, target_offset) ||
-          !map_linked_offset(source_offset, expanded_exit_slot, exit_stencil.size,
-                             wrapper_source) ||
-          !map_linked_offset(target_offset, expanded_exit_slot, exit_stencil.size,
-                             wrapper_target)) {
-        return false;
-      }
-      const auto instruction_size = widened_branch_size(entry_code, branch);
-      const auto opcode = entry_code[branch.instruction_offset];
-      const auto displacement_offset =
-          branch.instruction_size == 2 ? (opcode == 0xeb ? 1u : 2u) : (opcode == 0xe9 ? 1u : 2u);
-      if (wrapper_source > wrapper_size || instruction_size > wrapper_size - wrapper_source ||
-          displacement_offset + sizeof(std::int32_t) > instruction_size ||
-          !write_rel32(scaffold_code.data(), wrapper_size, wrapper_source + displacement_offset,
-                       wrapper_target)) {
-        return false;
-      }
-    }
-
-    std::size_t wrapper_start_slot = 0;
-    if (!map_linked_offset(expanded_start_slot, expanded_exit_slot, exit_stencil.size,
-                           wrapper_start_slot) ||
-        wrapper_start_slot > wrapper_size ||
-        kX64Rel32SlotBytes > wrapper_size - wrapper_start_slot ||
-        scaffold_code[wrapper_start_slot] != 0xe8) {
+    const auto sequence_capacity = body_capacity;
+    if (success_stencil.size == 0 || success_stencil.size > sequence_capacity) {
       return false;
     }
 
@@ -763,7 +681,7 @@ struct trace_builder {
       return false;
     }
 
-    auto *trace_body = body + wrapper_size;
+    auto *trace_body = body;
     std::size_t body_cursor = 0;
     for (std::size_t index = 0; index < operation_count; ++index) {
       std::size_t operation_size = 0;
@@ -842,7 +760,7 @@ struct trace_builder {
                                linked_abort_slot)) {
           return false;
         }
-        const auto absolute_slot = wrapper_size + operation_starts[index] + linked_abort_slot;
+        const auto absolute_slot = operation_starts[index] + linked_abort_slot;
         if (absolute_slot > body_capacity || kX64Rel32SlotBytes > body_capacity - absolute_slot) {
           return false;
         }
@@ -860,8 +778,8 @@ struct trace_builder {
       }
       terminal_size = abort_stencil.size;
       std::copy_n(abort_code, abort_stencil.size, trace_body + sequence_size);
-      const auto abort_target = wrapper_size + sequence_size;
-      const auto total_body_size = wrapper_size + sequence_size + terminal_size;
+      const auto abort_target = sequence_size;
+      const auto total_body_size = sequence_size + terminal_size;
       for (std::size_t index = 0; index < operation_count; ++index) {
         if (expanded_abort_slots[index] == kNoLinkSlot) {
           continue;
@@ -875,12 +793,10 @@ struct trace_builder {
       }
     }
 
-    body_size = wrapper_size + sequence_size + terminal_size;
-    if (body_size > body_capacity ||
-        !write_rel32(scaffold_code.data(), wrapper_size, wrapper_start_slot + 1, wrapper_size)) {
+    body_size = sequence_size + terminal_size;
+    if (body_size > body_capacity) {
       return false;
     }
-    std::copy_n(scaffold_code.data(), wrapper_size, body);
 
     constexpr auto pool_alignment = alignof(std::uintptr_t);
     if (body_capacity < relocation_bytes + pool_alignment - 1 ||
@@ -924,8 +840,6 @@ struct trace_builder {
   }
 
   std::array<std::uint8_t, kMaxOperationStencilBytes> stencil_scratch{};
-  std::array<std::uint8_t, kMaxOperationStencilBytes> scaffold_scratch{};
-  std::array<std::uint8_t, kMaxOperationStencilBytes> scaffold_code{};
 };
 
 /**

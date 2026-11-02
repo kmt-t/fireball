@@ -66,6 +66,7 @@ class NativeDispatchSnapshot:
         "_arena_size",
         "_workspace_released",
         "block_history",
+        "common_trace_entry",
         "entries",
         "entry_count",
         "trackable_card_count",
@@ -89,8 +90,10 @@ class NativeDispatchSnapshot:
         block_history: ctypes.Array,
         allocator: BumpAllocator | None = None,
         trackable_shift: int = 0,
+        common_trace_entry: int = 0,
     ) -> None:
         assert 0 <= entry_count <= len(entries)
+        assert 0 <= common_trace_entry or entry_count == 0
         assert 0 <= trackable_card_count <= len(trackable_mask) * 8
         assert 0 <= trackable_shift < 32
         self.entries = entries
@@ -98,6 +101,8 @@ class NativeDispatchSnapshot:
         self.trackable_mask = trackable_mask
         self.trackable_card_count = trackable_card_count
         self.trackable_shift = trackable_shift
+        # The callable of every snapshot trace: the shared entry in the common area.
+        self.common_trace_entry = common_trace_entry
         self.block_history = NativeBlockVisitHistory(block_history)
         self._allocator = allocator
         self._arena_offset: int | None = None
@@ -168,6 +173,7 @@ class _DispatchBuffers(ctypes.Structure):
         ("mask_bytes", ctypes.c_uint32),
         ("history", ctypes.c_void_p),
         ("history_bytes", ctypes.c_uint64),
+        ("common_trace_entry", ctypes.c_uint64),
     )
 
 
@@ -188,6 +194,7 @@ def dispatch_for_test(interpreter, call_state, snapshot, execution_count, native
         ctypes.sizeof(snapshot.trackable_mask),
         snapshot.block_history.native_address,
         snapshot.block_history.native_bytes,
+        snapshot.common_trace_entry,
     )
     snapshot.block_history.clear()
     entry = partial(wrapper, ctypes.cast(native_dispatcher, ctypes.c_void_p), ctypes.byref(buffers))
@@ -244,6 +251,7 @@ def make_qa_jit_dispatch_entry(manager: _NativeSnapshotProvider, collect_stats: 
             ctypes.sizeof(snapshot.trackable_mask),
             snapshot.block_history.native_address,
             snapshot.block_history.native_bytes,
+            snapshot.common_trace_entry,
         )
         status = qa_dispatch(
             ctypes.cast(dispatch, ctypes.c_void_p),

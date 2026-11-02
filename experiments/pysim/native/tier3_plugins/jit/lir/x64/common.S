@@ -2,8 +2,10 @@
 
 #if defined(_WIN32)
 #define FB_REL_REG r9
+#define FB_ENTRY_CTX_REG rcx
 #else
 #define FB_REL_REG rcx
+#define FB_ENTRY_CTX_REG rdi
 #endif
 #define FB_CTX_REG r12
 
@@ -16,8 +18,17 @@
 #ifndef FB_TRACE_CHAIN_TARGET_OFFSET
 #error "FB_TRACE_CHAIN_TARGET_OFFSET must come from the production C++ ABI probe"
 #endif
-#ifndef FB_TRACE_CHAIN_ENTRY_OFFSET
-#error "FB_TRACE_CHAIN_ENTRY_OFFSET must come from tier1_core/config.py"
+#ifndef FB_TRACE_COMMON_ENTRY_OFFSET
+#error "FB_TRACE_COMMON_ENTRY_OFFSET must come from tier1_core/config.py"
+#endif
+#ifndef FB_CONTEXT_TRAP_CODE_OFFSET
+#error "FB_CONTEXT_TRAP_CODE_OFFSET must come from the production C++ ABI probe"
+#endif
+#ifndef FB_CONTEXT_RUNTIME_FLAGS_OFFSET
+#error "FB_CONTEXT_RUNTIME_FLAGS_OFFSET must come from the production C++ ABI probe"
+#endif
+#ifndef FB_CPS_EXIT_MASK
+#error "FB_CPS_EXIT_MASK must come from the production C++ ABI probe"
 #endif
 #ifndef FB_TRACE_BOUNDARY_METADATA_BYTES
 #error "FB_TRACE_BOUNDARY_METADATA_BYTES must come from the production C++ ABI probe"
@@ -42,6 +53,7 @@
 #if !defined(_WIN32)
 .type fb_common_chain_dispatcher,@function
 #endif
+.Lchain_dispatcher:
 fb_common_chain_dispatcher:
   mov rax, qword ptr [FB_REL_REG + FB_TRACE_CHAIN_TARGET_OFFSET]
   test rax, rax
@@ -61,8 +73,7 @@ fb_common_chain_dispatcher:
   lea FB_REL_REG, [rax + r10 - FB_TRACE_HEADER_BYTES]
   mov qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET], FB_REL_REG
   add FB_REL_REG, 4
-  add rax, FB_TRACE_CHAIN_ENTRY_OFFSET
-  jmp rax
+  jmp fb_common_trace_call
 
 .Lchain_return:
   /* Only the unlinked terminal path publishes its footer and terminal opcode
@@ -78,4 +89,42 @@ fb_common_chain_dispatcher:
   ret
 #if !defined(_WIN32)
 .size fb_common_chain_dispatcher,.-fb_common_chain_dispatcher
+#endif
+
+/* Shared trace entry. The caller passes the trace pool anchor in the rel register. The
+ * body starts at header + FB_TRACE_HEADER_BYTES, and the pool anchor holds the
+ * header-relative offset in its first four bytes. The dispatcher enters at fb_common_trace_call
+ * with rax set to the body and rel set to the anchor after its first four bytes. */
+.org FB_TRACE_COMMON_ENTRY_OFFSET
+.globl fb_common_trace_entry
+#if !defined(_WIN32)
+.type fb_common_trace_entry,@function
+#endif
+fb_common_trace_entry:
+  push r12
+  sub rsp, 8
+  mov r12, FB_ENTRY_CTX_REG
+  mov qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET], FB_REL_REG
+  movsxd rax, dword ptr [FB_REL_REG]
+  lea rax, [FB_REL_REG + rax + FB_TRACE_HEADER_BYTES]
+  add FB_REL_REG, 4
+fb_common_trace_call:
+  call rax
+  /* A trap or a CPS exit stores its reason in execution_context before the body returns. */
+  cmp dword ptr [FB_CTX_REG + FB_CONTEXT_TRAP_CODE_OFFSET], 0
+  jne .Ltrace_abort
+  test dword ptr [FB_CTX_REG + FB_CONTEXT_RUNTIME_FLAGS_OFFSET], FB_CPS_EXIT_MASK
+  jne .Ltrace_abort
+  mov FB_REL_REG, qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET]
+  movsxd r10, dword ptr [FB_REL_REG]
+  add FB_REL_REG, r10
+  /* Local alias: a global jump would leave a PLT relocation in the PIC stencil object. */
+  jmp .Lchain_dispatcher
+.Ltrace_abort:
+  xor eax, eax
+  add rsp, 8
+  pop r12
+  ret
+#if !defined(_WIN32)
+.size fb_common_trace_entry,.-fb_common_trace_entry
 #endif

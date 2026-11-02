@@ -487,8 +487,23 @@ class JITTrace:
 
     @property
     def fn(self) -> NativeTraceFn | None:
-        """Resolve the entry from its descriptor after native installation."""
+        """Resolve the callable: the shared trace entry in the common area.
 
+        `raw_addr` is the body address, which chain targets and the header use. The callable
+        reads its body from the pool anchor, so it is the common entry of the owning runtime.
+        """
+
+        if self._native_owner is not None and self.raw_addr is not None:
+            entry = native_abi.RUNTIME_COMMON_TRACE_ENTRY(self._native_owner.pointer)
+            return ctypes.CFUNCTYPE(
+                None,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+            )(int(entry))
+        if self._fn is not None:
+            return self._fn
         if self.raw_addr is not None:
             return ctypes.CFUNCTYPE(
                 None,
@@ -497,7 +512,7 @@ class JITTrace:
                 ctypes.c_void_p,
                 ctypes.c_void_p,
             )(self.raw_addr)
-        return self._fn
+        return None
 
     @fn.setter
     def fn(self, value: NativeTraceFn | None) -> None:
@@ -878,6 +893,11 @@ class JitRuntimeBoundary:
         result = native_abi.RUNTIME_FLUSH(self._native.pointer)
         self._check()
         assert result == 1
+
+    @property
+    def common_trace_entry(self) -> int:
+        """Return the shared trace entry that snapshot callables use."""
+        return int(native_abi.RUNTIME_COMMON_TRACE_ENTRY(self._native.pointer))
 
     def build_snapshot(self, entries: ctypes.Array) -> int:
         count = int(native_abi.RUNTIME_SNAPSHOT(self._native.pointer, entries, len(entries)))

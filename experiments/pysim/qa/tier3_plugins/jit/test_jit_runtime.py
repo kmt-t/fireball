@@ -97,6 +97,7 @@ from tier2_runtime.wasm.opcodes import (
     FC_PREFIX,
     I32_ADD,
     I32_CONST,
+    I32_DIV_S,
     IF,
     LOCAL_GET,
     LOCAL_SET,
@@ -561,6 +562,66 @@ def test_jitr_cyclic_chain_body_count_is_finite_and_retirement_unlinks_both_edge
     assert second.chain_next is None
     assert first.header.chain_target_addr == 0
     assert second.header.chain_target_addr == 0
+
+
+def test_jitr_chained_successor_trap_stops_at_its_body_after_the_source_ran():
+    """A trap in a chained successor leaves native execution there; the source body already ran."""
+    compiler = TraceCompiler()
+    source = compiler.compile_instructions(
+        head_pc=0x100,
+        instructions=((I32_CONST, 1), (LOCAL_SET, 0)),
+        next_pc=0x200,
+        loops_to=None,
+        byte_length=8,
+        local_layout=LocalLayout((I32,)),
+    )
+    target = compiler.compile_instructions(
+        head_pc=0x200,
+        instructions=((I32_CONST, 1), (I32_CONST, 0), (I32_DIV_S, None), (LOCAL_SET, 0)),
+        next_pc=None,
+        loops_to=None,
+        byte_length=16,
+        local_layout=LocalLayout((I32,)),
+    )
+    assert source is not None and target is not None
+    cache = JitRuntimeBoundary()
+    inserted_target = cache.insert(target)
+    assert inserted_target
+    inserted_source = cache.insert(source)
+    assert inserted_source
+    assert source.chain_next == 0x200
+
+    context = ExecutionContext()
+    extended_locals = context.local_stack.extend((0,))
+    assert extended_locals
+    context.local_base = context.local_stack.value_ptr(0).value
+    instruction_ip = ctypes.c_void_p(int(context.code or 0) + int(context.ip))
+    source.execute(context.context_ptr, instruction_ip, context.sp_ptr)
+    # Integer division by zero: the Wasm trap code 15 is set by the successor's stencil.
+    assert context.trap_code == 15
+    assert context.local_stack[0] == 1, "the source body must run before the successor traps"
+
+
+def test_jitr_trace_blob_has_no_entry_or_exit_stencil():
+    """The body begins at the header; the shared entry lives in the common area, not in the trace."""
+    compiler = TraceCompiler()
+    trace = compiler.compile_instructions(
+        head_pc=0x100,
+        instructions=((I32_CONST, 7), (LOCAL_SET, 0)),
+        next_pc=0x200,
+        loops_to=None,
+        byte_length=8,
+        local_layout=LocalLayout((I32,)),
+    )
+    assert trace is not None
+    blob = bytes(trace.code_blob)
+    const_rel = struct.unpack_from("<I", blob, 28)[0]
+    assert len(blob) == trace.size_bytes
+    # The removed entry began with `push r12` (41 54); the removed exit began with `mov r11, [ctx+rel]`.
+    assert blob[JIT_TRACE_HEADER_BYTES:JIT_TRACE_HEADER_BYTES + 2] != bytes((0x41, 0x54))
+    # The boundary metadata is 20 bytes and precedes the constant pool.
+    body = blob[JIT_TRACE_HEADER_BYTES:const_rel - 20]
+    assert 0xC3 in body, "the body contains the success return"
 
 
 def test_jitr_native_trace_lookup_uses_resident_snapshot():

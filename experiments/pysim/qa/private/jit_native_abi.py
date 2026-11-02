@@ -1044,6 +1044,10 @@ def resident_records(pointer: int) -> tuple[tuple[int, int, int, int], ...]:
     return tuple(records)
 
 
+RUNTIME_COMMON_TRACE_ENTRY = _NATIVE_LIBRARY.fb_qa_runtime_common_trace_entry
+RUNTIME_COMMON_TRACE_ENTRY.argtypes = (ctypes.c_void_p,)
+RUNTIME_COMMON_TRACE_ENTRY.restype = ctypes.c_size_t
+
 RUNTIME_PROVIDER = _NATIVE_LIBRARY.fb_qa_runtime_provider
 RUNTIME_PROVIDER.argtypes = (ctypes.c_void_p,)
 RUNTIME_PROVIDER.restype = ctypes.c_void_p

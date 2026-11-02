@@ -531,8 +531,13 @@ jit_trace_header *jit_runtime<Measurement>::trace_header(jit_cache_entry value) 
 }
 
 template <jit_measurement_policy Measurement>
-std::uintptr_t jit_runtime<Measurement>::trace_entry_address(jit_cache_entry value) const {
+std::uintptr_t jit_runtime<Measurement>::trace_body_address(jit_cache_entry value) const {
   return reinterpret_cast<std::uintptr_t>(trace_header(value)) + jit_trace_header_bytes;
+}
+
+template <jit_measurement_policy Measurement>
+std::uintptr_t jit_runtime<Measurement>::common_trace_entry_address() const {
+  return cache.code_memory.base + FB_CONF_JIT_TRACE_COMMON_TRACE_ENTRY_OFFSET;
 }
 
 template <jit_measurement_policy Measurement>
@@ -770,7 +775,7 @@ void jit_runtime<Measurement>::record_chain_construction(jit_cache_entry source)
                    ? jit_chain_reason::frame_depth_mismatch
                    : jit_chain_reason::unsupported_control_flow;
     } else if (target.bank_id == cache.oldest_bank_id &&
-               header->chain_target_address != trace_entry_address(*target.trace_entry)) {
+               header->chain_target_address != trace_body_address(*target.trace_entry)) {
       reason = jit_chain_reason::oldest_bank;
     }
   }
@@ -798,7 +803,7 @@ void jit_runtime<Measurement>::set_chain_target(jit_cache_entry source,
   assert(source.resident());
   assert(target == nullptr || target->resident());
   assert(target == nullptr || can_chain_to(source, *target));
-  const auto address = target == nullptr ? 0 : trace_entry_address(*target);
+  const auto address = target == nullptr ? 0 : trace_body_address(*target);
   if (trace_header(source)->chain_target_address == address) {
     return;
   }
@@ -825,7 +830,7 @@ void jit_runtime<Measurement>::link_resident_successor(jit_cache_entry source) {
       set_chain_target(source, target.trace_entry);
     } else if (target.bank_id == cache.oldest_bank_id && target_can_chain &&
                trace_header(source)->chain_target_address !=
-                   trace_entry_address(*target.trace_entry)) {
+                   trace_body_address(*target.trace_entry)) {
       set_chain_target(source, nullptr);
     } else if (!target_can_chain) {
       set_chain_target(source, nullptr);
@@ -942,7 +947,7 @@ void jit_runtime<Measurement>::unlink_retiring_bank(std::uint32_t id) {
     if (!target.resident()) {
       continue;
     }
-    const auto address = trace_entry_address(target);
+    const auto address = trace_body_address(target);
     for (auto reference = cache.inbound_chain_heads[chain_bucket_for_pc(target.head_pc)];
          reference != jit_cache_state::no_reference;
          reference = cache.inbound_chain_next[reference]) {
@@ -1480,7 +1485,7 @@ int jit_provider_adapter<Measurement>::lookup_runtime_trace(std::uintptr_t owner
   assert(start_header->chain_body_count != 0);
   const auto *rel = reinterpret_cast<const std::uint8_t *>(
       reinterpret_cast<const std::uint8_t *>(start_header) + start_header->const_rel_offset);
-  *output = {runtime.trace_entry_address(*start),
+  *output = {runtime.common_trace_entry_address(),
              rel,
              start_header->frame_depth,
              start_header->chain_words,

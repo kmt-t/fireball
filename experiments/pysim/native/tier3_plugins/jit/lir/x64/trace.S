@@ -211,41 +211,6 @@ FB_TRACE_BEGIN fb_stencil_i32_rem_u
   FB_NEXT_MARK fb_stencil_i32_rem_u
 FB_TRACE_END fb_stencil_i32_rem_u
 
-FB_TRACE_BEGIN fb_trace_exit
-  mov r11, qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET]
-  movsxd r10, dword ptr [r11]
-  add r11, r10
-  movsxd r10, dword ptr [r11 + FB_TRACE_COMMON_RELATIVE_OFFSET]
-  lea rax, [r11 + r10]
-  mov FB_REL_REG, r11
-  jmp rax
-FB_TRACE_END fb_trace_exit
-
-FB_TRACE_BEGIN fb_trace_entry
-  push r12
-  sub rsp, 8
-  mov r12, FB_CTX_REG
-  mov qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET], FB_REL_REG
-  add FB_REL_REG, 4
-  FB_SLOT_MARK fb_jit_start_slot__fb_trace_entry, 0xe8
-  /* The body returns with sp in FB_SP_REG and rel in FB_REL_REG. A trap or a CPS exit
-     always stores its termination reason in execution_context before the abort slot,
-     so the decision reads that state, not the return value (jit_abi.md, jit_compiler.md).
-     The abort block sits before the exit slot; both branch targets lie at or before the
-     exit slot, so the stencil builder maps them without shifting. */
-  cmp dword ptr [r12 + FB_CONTEXT_TRAP_CODE_OFFSET], 0
-  FB_LOCAL_BRANCH_REL32 0x85, .Ltrace_entry_abort
-  test dword ptr [r12 + FB_CONTEXT_RUNTIME_FLAGS_OFFSET], FB_CPS_EXIT_MASK
-  FB_LOCAL_BRANCH_REL32 0x84, .Ltrace_entry_exit
-.Ltrace_entry_abort:
-  xor eax, eax
-  add rsp, 8
-  pop r12
-  ret
-.Ltrace_entry_exit:
-  FB_SLOT_MARK fb_jit_exit_slot__fb_trace_entry, 0xe9
-FB_TRACE_END fb_trace_entry
-
 /* Normal completion of a body: the operand stack pointer is the single owner of sp, so the body
    writes it back to execution_context. The wrapper decides success from execution_context. */
 FB_TRACE_BEGIN fb_trace_return_success

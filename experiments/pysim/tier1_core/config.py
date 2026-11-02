@@ -65,9 +65,6 @@ JIT_X64_TRACE_HEADER_BYTES: int = 32
 JIT_X64_CHAIN_TARGET_OFFSET: int = 0x00
 JIT_X64_COMMON_CODE_RELATIVE_OFFSET: int = 0x08
 JIT_X64_CONST_REL_OFFSET_OFFSET: int = 0x1C
-# The chain dispatcher resumes at the entry stencil's call slot, after its
-# callee-saved register prologue. trace_compiler.cxx verifies the stencil offset.
-JIT_X64_TRACE_CHAIN_ENTRY_OFFSET: int = 20
 # Compatibility name for existing simulator-wide capacity calculations.
 JIT_TRACE_HEADER_BYTES: int = JIT_X64_TRACE_HEADER_BYTES
 # Trace-header offsets describe the x64 code-cache ABI.
@@ -76,6 +73,8 @@ JIT_TRACE_HEADER_BYTES: int = JIT_X64_TRACE_HEADER_BYTES
 # The read-only table itself remains in Tier 3 JIT plugin storage.
 JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET: int = 0
 JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES: int = 256
+# The shared trace entry follows the dispatcher inside the same fixed slot.
+JIT_TRACE_COMMON_TRACE_ENTRY_OFFSET: int = 128
 # Default for synthetic traces; generated traces use their actual byte length.
 JIT_TRACE_DEFAULT_BYTES: int = 64
 RUNTIME_BLOCK_CACHE_SLOT_COUNT: int = 16

@@ -145,14 +145,14 @@ static int build_dispatch_table(qa_jit_runtime *runtime, fb_native_trace_descrip
     if (count == capacity) {
       return -1;
     }
-    assert(output != nullptr && block != nullptr && runtime->trace_entry_address(selected) != 0 &&
+    assert(output != nullptr && block != nullptr && runtime->trace_body_address(selected) != 0 &&
            header->blob_bytes > 0);
     auto *executions = static_cast<std::uint32_t *>(block->extension_data);
     const auto *next = runtime->chain_target_header(*header);
     const auto next_pc = next == nullptr ? fireball::jit_invalid_pc : next->head_pc;
     const auto words = header->chain_words;
     output[count++] = {selected.head_pc,
-                       runtime->trace_entry_address(selected),
+                       runtime->trace_body_address(selected),
                        block->byte_span,
                        header->stack_words,
                        block->frame_depth,
@@ -375,6 +375,8 @@ struct qa_dispatch_buffers {
   std::uint32_t cards, shift, mask_bytes;
   std::uint32_t *history;
   std::uint64_t history_bytes;
+  // The shared trace entry: the callable of every trace in `entries`.
+  std::uintptr_t common_trace_entry;
 };
 struct qa_dispatch_owner {
   const qa_dispatch_buffers &buffers;
@@ -411,7 +413,8 @@ static int qa_lookup_trace(std::uintptr_t owner, [[maybe_unused]] block_index_t 
   }
   const auto *rel = reinterpret_cast<const std::uint8_t *>(
       reinterpret_cast<const std::uint8_t *>(header) + header->const_rel_offset);
-  *output = {start->entry_address,    rel,
+  assert(b.common_trace_entry != 0);
+  *output = {b.common_trace_entry,    rel,
              header->frame_depth,     static_cast<jit_stack_words_t>(start->chain_stack_words),
              static_cast<jit_body_count_t>(start->chain_body_count),
              static_cast<std::uint8_t>(header->exit_kind),
@@ -657,6 +660,11 @@ struct qa_resident_record {
   std::uint32_t pc;
   std::uint32_t count;
 };
+extern "C" FB_PYSIM_ABI_EXPORT std::uintptr_t
+fb_qa_runtime_common_trace_entry(const qa_jit_runtime *runtime) {
+  return runtime->common_trace_entry_address();
+}
+
 extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_resident_record(const qa_jit_runtime *runtime,
                                                          std::uint32_t index,
                                                          qa_resident_record *output) {

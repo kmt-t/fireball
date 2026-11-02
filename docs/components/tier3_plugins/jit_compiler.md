@@ -10,7 +10,7 @@
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {JIT_AssemblyStencilCodegen} {SimpleJITArchitecture} {PositionIndependentCode} -->
 JIT Compilerは、Tier 2 Interpreterの任意拡張としてWASM命令列をネイティブコードへ変換するTier 3コンポーネントである。
-x64の操作、trace entry/exit、共通chain dispatcherを手書きアセンブリで記述する。
+x64の操作、共通trace入口、共通chain dispatcherを手書きアセンブリで記述する。
 Clang integrated assemblerがPIC objectを生成し、生成器がELFとして読み（pyelftools）、`.text`をraw binaryとして抽出する。
 生成器はsymbol範囲と分岐metadataを含むC++ byte array headerを出力する。
 
@@ -51,7 +51,7 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 
 ### 3.1 データ構造
 - **`trace_compiler.cxx`**: C++フロントエンドがWASM命令をデコードし、選択したステンシル本体を接続slotで連結して固定長traceへ合成する。成功経路は命令間の転送命令なしでfall-throughする。直接stencilを持たない有効opcodeはRuntime API stencilへlowerする。定数poolはtraceごとに一つの4-byte header相対参照、実行後Interpreter annotation offsetを持つRuntime API record、終端Runtime API record内の4-byte Interpreter annotation offsetで構成する。即値は命令型に応じた幅で保持し、Interpreter注釈bytesは複製しない。WASM検証違反はLoaderが拒否し、ABI不整合は構成時に検出する。
-- **`JIT_AssemblyStencilCodegen`**: アセンブリsourceから操作、trace entry/exit、terminal result、共通chain dispatcherをビルド時にraw binaryとmetadataへ変換する責務を表す。実行時trace builderは生成済みraw binaryを固定長bufferへ組み立てる。
+- **`JIT_AssemblyStencilCodegen`**: アセンブリsourceから操作、共通trace入口、terminal result、共通chain dispatcherをビルド時にraw binaryとmetadataへ変換する責務を表す。実行時trace builderは生成済みraw binaryを固定長bufferへ組み立てる。
 - **共通コード領域**: x64 JIT領域には`lir/x64/common.S`から生成したchain dispatcherを配置する。配置offsetはTier 1構成から渡し、C++ ABI probeから得た構造体offsetをassembly macroへ反映する。共通chain dispatcherはopcodeを判定しない。x64の領域サイズとoffsetは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) および [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) を正本とする。ARMv8-Mのサイズと配置はTBDである。 `{JIT_MultiBuffer_Cache}`
 - **操作ステンシル (`lir/x64/operations.S`)**: 算術、local操作、Runtime API呼出しをアセンブリで定義する。生成器はPIC raw binaryとsymbol・分岐・即値・命令slot metadataを出力する。実行時trace builderは操作コードを連結し、即値slotを埋め、local memory instructionをエンコードする。ARMv8-Mの物理仕様はTBD。
 - **JIT トレースヘッダ (`jit_trace_header`)**: 各ネイティブtraceの先頭に配置する実行時ヘッダである。x64では32バイトで、chain target、chain dispatcherへの相対値、配置サイズ、stack境界値、frame depth、exit種別、u16基本ブロック番号、定数領域offsetを保持する。bodyはヘッダ直後の`+0x20`から始まる。exit種別は既存reserved byteを用いてcall CPS終端operationを識別し、そのtraceを通常のnative chainから除外する。定数領域の先頭4 byteにheader相対参照をtraceごとに一つ置き、その後にRuntime API recordを使用順に並べる。pool footerやノードごとのheader参照は置かない。chain先ではtarget headerのpool anchorからrecord先頭へ`rel`を初期化する。
@@ -64,7 +64,7 @@ C++フロントエンドは命令をデコードし、ステンシルと定数�
 trace builderは各operationの成功link slotを除去して、次の操作本体を同じ位置へ配置する。
 slotはbuild artifact上の接続markerであり、実行traceには残らない。
 operation本体にreturnやスタック復元を置かず、成功経路を次の操作本体へ直接fall-throughさせる。
-trace entryのABI prologueとtrace単位のterminal resultだけが外部呼出し境界を持つ。
+共通trace入口のABI prologueとtrace単位のterminal resultだけが外部呼出し境界を持つ。
 Runtime API引数は定数領域へ配置し、数値即値とlocal offsetはコードslotへ焼き込んで完成したtraceをJIT cacheへ登録する。
 単体コンパイラ入力と状態検査はQA専用ライブラリで扱う。
 
@@ -158,8 +158,8 @@ Interpreter opcode handlerとJIT trace entryは`ctx`, `ip`, `sp`, `rel`の4引�
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | operation symbol | trace compile時に命令の型・offsetで選択するステンシル名 | fixed array entry | build時にraw binary化したステンシル本体をtraceへ連結する |
-| trace link metadata | 各stencilの成功slot、abort slot、trace entryのstart/exit slotと局所分岐 | build artifact | 成功slotを次の操作本体で置き換え、必要な局所分岐を再配置する |
-| operation source | x64操作、trace entry/exit、共通chain dispatcherのアセンブリ定義 | build-time source | 共有ライブラリへ埋め込まず、ビルド時にraw binaryへ変換する |
+| trace link metadata | 各stencilの成功slot、abort slot、局所分岐 | build artifact | 成功slotを次の操作本体で置き換え、必要な局所分岐を再配置する |
+| operation source | x64操作、共通trace入口、共通chain dispatcherのアセンブリ定義 | build-time source | 共有ライブラリへ埋め込まず、ビルド時にraw binaryへ変換する |
 | 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | x64ではプロセス絶対アドレスを命令列へ埋め込まず、トレースヘッダ、共通領域オフセット、基底相対アドレス、`rel32` 分岐を用いる。ARMv8-Mの方式はTBD |
 
 ##### 操作状態の受け渡し
@@ -171,7 +171,7 @@ InterpreterはWASM値を共有オペランドスタックに保持する。
 trace builderは各成功link slotを除いて後続operationを配置するため、合成後の成功経路に操作間call/jumpはない。
 生成器は各operation stencilに`ret`、スタック操作、Runtime API stencil以外のcallがないことを検査し、操作単位のエピローグ生成を拒否する。
 trapを検出したoperationはabort link slotから一つのtrace共通terminal resultへ移る。
-trace entry wrapperは、trace bodyの実行結果を、`execution_context` の終了状態（trap 状態と CPS 終了状態）から判定する。未接続chain targetに到達した場合だけ終端dispatcherが末尾境界metadata pointerを`ctx.rel`へ置き、`body_end_ip`を`ctx.ip`に設定して`true`を返す。trap/CPS exitではtrace entryが`false`を返す。戻り値の内部表現（レジスタの使い方）は規定しない。Interpreter dispatcherは正常復帰後にmetadataから実行状態を確定し、未実行の終端命令と次BasicBlockを処理する。
+共通trace入口は、trace bodyの実行結果を、`execution_context` の終了状態（trap 状態と CPS 終了状態）から判定する。未接続chain targetに到達した場合だけ終端dispatcherが末尾境界metadata pointerを`ctx.rel`へ置き、`body_end_ip`を`ctx.ip`に設定して`true`を返す。trap/CPS exitではtrace entryが`false`を返す。戻り値の内部表現（レジスタの使い方）は規定しない。Interpreter dispatcherは正常復帰後にmetadataから実行状態を確定し、未実行の終端命令と次BasicBlockを処理する。
 ARMv8-MのABIはTBDである。
 
 #### トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)
@@ -216,7 +216,7 @@ local offsetは固定長instruction slotへx64 memory instructionとしてエン
 追加する場合は、コードサイズと実行時のロード・カーソル更新コストを代表traceで比較する。
 traceは次opcodeをfetchせず、次操作を間接dispatchしない。
 JIT共有ライブラリはbuild時に生成したassembly byte arrayとC++ runtimeだけで動作する。
-Clang integrated assemblerはx64操作、trace entry/exit、common dispatcherのraw binary生成にbuild時だけ使う。
+Clang integrated assemblerはx64操作、共通trace入口、common dispatcherのraw binary生成にbuild時だけ使う。
 実行時trace compilerはWASMをdecodeしてoperation templateを選び、埋め込みraw binaryの即値slotを埋め、local instructionをエンコードして固定長traceへ組み立てる。
 
 即値ごとに異なるx64ステンシルvariantは作らない。

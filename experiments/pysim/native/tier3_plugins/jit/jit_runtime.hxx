@@ -185,7 +185,8 @@ public:
   jit_trace_location trace_location_from_reference(std::uint8_t reference_value);
   jit_trace_header *trace_header(jit_cache_entry value) const;
   /** @brief 常駐トレースの実行エントリアドレスを返す。 */
-  std::uintptr_t trace_entry_address(jit_cache_entry value) const;
+  std::uintptr_t trace_body_address(jit_cache_entry value) const;
+  std::uintptr_t common_trace_entry_address() const;
   /** @brief Loaderが解決した後続PCを返す。 */
   wasm_pc_t trace_successor_pc(jit_cache_entry value) const;
   block_index_t trace_successor_block_index(jit_cache_entry value) const;

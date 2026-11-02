@@ -40,8 +40,8 @@ read -r bank_entries <<< "${cache_runtime_config}"
 
 native_jit_config=$(PYTHONPATH="${project_root}/experiments/pysim/tier1_core" \
     uv run --offline --no-sync --python "${uv_python}" python -c \
-    "from config import JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET, JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES, JIT_X64_TRACE_HEADER_BYTES, JIT_X64_CHAIN_TARGET_OFFSET, JIT_X64_COMMON_CODE_RELATIVE_OFFSET, JIT_X64_TRACE_CHAIN_ENTRY_OFFSET; print(JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET, JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES, JIT_X64_TRACE_HEADER_BYTES, JIT_X64_CHAIN_TARGET_OFFSET, JIT_X64_COMMON_CODE_RELATIVE_OFFSET, JIT_X64_TRACE_CHAIN_ENTRY_OFFSET)")
-read -r chain_dispatch_offset chain_dispatch_bytes header_bytes chain_target_offset common_relative_offset chain_entry_offset <<< "${native_jit_config}"
+    "from config import JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET, JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES, JIT_X64_TRACE_HEADER_BYTES, JIT_X64_CHAIN_TARGET_OFFSET, JIT_X64_COMMON_CODE_RELATIVE_OFFSET, JIT_TRACE_COMMON_TRACE_ENTRY_OFFSET; print(JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET, JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES, JIT_X64_TRACE_HEADER_BYTES, JIT_X64_CHAIN_TARGET_OFFSET, JIT_X64_COMMON_CODE_RELATIVE_OFFSET, JIT_TRACE_COMMON_TRACE_ENTRY_OFFSET)")
+read -r chain_dispatch_offset chain_dispatch_bytes header_bytes chain_target_offset common_relative_offset common_trace_entry_offset <<< "${native_jit_config}"
 
 common_config=$(PYTHONPATH="${project_root}/experiments/pysim/tier1_core" \
     uv run --offline --no-sync --python "${uv_python}" python -c \
@@ -94,7 +94,7 @@ clang++ -std=c++23 -O3 -flto=thin -fuse-ld=lld -fomit-frame-pointer -g -Wall -We
     -DFB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES="${chain_dispatch_bytes}" \
     -DFB_CONF_JIT_X64_TRACE_HEADER_BYTES="${header_bytes}" \
     -DFB_CONF_JIT_X64_CHAIN_TARGET_OFFSET="${chain_target_offset}" \
-    -DFB_CONF_JIT_X64_TRACE_CHAIN_ENTRY_OFFSET="${chain_entry_offset}" \
+    -DFB_CONF_JIT_TRACE_COMMON_TRACE_ENTRY_OFFSET="${common_trace_entry_offset}" \
     -DFB_CONF_JIT_X64_COMMON_CODE_RELATIVE_OFFSET="${common_relative_offset}" \
     -DFB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY="${bank_entries}" \
     "${common_definitions[@]}" -fno-exceptions -fno-rtti \

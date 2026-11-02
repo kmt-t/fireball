@@ -187,12 +187,15 @@ def role_definitions(role: str, abi: tuple[int, ...], config_path: Path) -> dict
             "FB_TRACE_CONST_REL_OFFSET": const_rel,
             "FB_TRACE_HEADER_BYTES": header,
             "FB_TRACE_CHAIN_TARGET_OFFSET": chain_target,
-            "FB_TRACE_CHAIN_ENTRY_OFFSET": config["JIT_X64_TRACE_CHAIN_ENTRY_OFFSET"],
             "FB_TRACE_BOUNDARY_METADATA_BYTES": boundary_metadata_bytes,
             "FB_CONTEXT_IP_OFFSET": context_ip,
             "FB_CONTEXT_REL_OFFSET": context_rel,
             "FB_CONTEXT_CURRENT_BLOCK_INDEX_OFFSET": context_current_block_index,
             "FB_TRACE_BLOCK_INDEX_OFFSET": trace_block_index,
+            "FB_CONTEXT_TRAP_CODE_OFFSET": trap_code,
+            "FB_CONTEXT_RUNTIME_FLAGS_OFFSET": context_flags,
+            "FB_CPS_EXIT_MASK": 0xF00,
+            "FB_TRACE_COMMON_ENTRY_OFFSET": config["JIT_TRACE_COMMON_TRACE_ENTRY_OFFSET"],
         }
     raise GenerationError(f"unsupported assembly role {role!r}")
 

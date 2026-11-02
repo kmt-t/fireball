@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 from typing import Protocol, cast
 
+from config import JIT_TRACE_COMMON_TRACE_ENTRY_OFFSET
 from qa.private import jit_native_abi as native_abi
 
 from .exec_memory import ExecutableBuffer
@@ -55,6 +56,8 @@ class JITCodeCacheRegion:
             offset,
             blob,
         )
+        # The callable is the shared entry; `entry` is the body address that chain targets use.
+        common_entry = self.buffer.base + JIT_TRACE_COMMON_TRACE_ENTRY_OFFSET
         fn = cast(
             NativeTraceFunction,
             ctypes.CFUNCTYPE(
@@ -63,7 +66,7 @@ class JITCodeCacheRegion:
                 ctypes.c_void_p,
                 ctypes.c_void_p,
                 ctypes.c_void_p,
-            )(entry),
+            )(common_entry),
         )
         return fn, entry
 

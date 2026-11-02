@@ -370,6 +370,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             block_history,
             allocator=module.allocator,
             trackable_shift=self.trackable.card_shift,
+            common_trace_entry=self.cache.common_trace_entry,
         )
         self._native_dispatch_cache_key = cache_key
         return self._native_dispatch_cache_snapshot

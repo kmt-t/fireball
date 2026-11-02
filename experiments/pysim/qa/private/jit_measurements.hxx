@@ -37,6 +37,8 @@ struct jit_measurements {
   std::uint64_t evictions = 0, generation = 0, rotations = 0;
   std::uint64_t aging_steps = 0, aging_units = 0, aging_scanned = 0, aging_ns = 0;
   std::uint64_t compile_attempts = 0, compile_ns = 0;
+  std::uint64_t installs = 0, distinct_installs = 0;
+  std::array<std::uint64_t, std::numeric_limits<block_index_t>::max() / 64 + 1> installed_blocks{};
   std::uint64_t lookup_calls = 0;
   std::uint64_t execution_count = 0, history_overwritten = 0, last_overwritten = 0;
   std::uint64_t history_dropped = 0;
@@ -76,6 +78,8 @@ struct jit_measurements {
            printk_u64(writer, "jit.aging_ns", aging_ns) &&
            printk_u64(writer, "jit.compile_attempts", compile_attempts) &&
            printk_u64(writer, "jit.compile_ns", compile_ns) &&
+           printk_u64(writer, "jit.installs", installs) &&
+           printk_u64(writer, "jit.distinct_installs", distinct_installs) &&
            printk_u64(writer, "jit.execution_count", execution_count) &&
            printk_u64(writer, "jit.history_overwritten", history_overwritten) &&
            printk_u64(writer, "jit.last_overwritten", last_overwritten) &&
@@ -200,6 +204,16 @@ struct jit_measurements {
   }
   void lookup_called() { ++lookup_calls; }
   void trace_evicted(std::uint32_t) { ++evictions; }
+  void trace_installed(block_index_t index) {
+    assert(index != std::numeric_limits<block_index_t>::max());
+    ++installs;
+    const auto word = index / 64;
+    const auto bit = std::uint64_t{1} << (index % 64);
+    if ((installed_blocks[word] & bit) == 0) {
+      installed_blocks[word] |= bit;
+      ++distinct_installs;
+    }
+  }
   void mask_changed() { ++trackable_generation; }
   void cache_changed() { ++generation; }
   void aging_started() { ++aging_steps; }

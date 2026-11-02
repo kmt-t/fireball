@@ -269,6 +269,7 @@ int jit_runtime<Measurement>::compile_one_candidate(block_index_t block_index, w
   mark_trace_card_compiled(compiled.head_pc);
   if constexpr (!std::is_void_v<Measurement>) {
     measurements.trace_inserted(compiled.head_pc);
+    measurements.trace_installed(trace_header(compiled)->block_index);
   }
   if constexpr (!std::is_void_v<Measurement>) {
     measurements.cache_changed();

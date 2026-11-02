@@ -154,10 +154,9 @@ def test_jitr_00_cache_region_is_two_pages_with_fixed_common_area():
 def test_jitr_00_common_apccs_area_survives_rotation_and_flush():
     """x64 common helper stubs stay in the shared 2KB prefix while banks rotate; ARMv8-M placement is TBD."""
     cache = JitRuntimeBoundary()
-    trace_blob = bytes(JIT_TRACE_HEADER_BYTES + 16)
-    trace = JITTrace(head_pc=0x100, size_bytes=len(trace_blob), code_blob=trace_blob)
-    assert_result_1 = cache.insert(trace)
-    assert assert_result_1
+    trace = _loader_traces(1)[0]
+    inserted = cache.insert(trace)
+    assert inserted
     assert trace.code_offset == JIT_CACHE_ACTIVE_OFFSET_BYTES
     assert trace.raw_addr is not None
     region_base = trace.raw_addr - JIT_TRACE_HEADER_BYTES - trace.code_offset
@@ -165,7 +164,7 @@ def test_jitr_00_common_apccs_area_survives_rotation_and_flush():
     expected_blob = bytearray(trace.code_blob)
     struct.pack_into("<i", expected_blob, 8, -trace.code_offset)
     expected_blob[22] = 1  # The trace header starts with one body in its chain.
-    assert ctypes.string_at(region_base + trace.code_offset, len(trace_blob)) == expected_blob
+    assert ctypes.string_at(region_base + trace.code_offset, len(expected_blob)) == expected_blob
 
     cache.rotate()
     cache.flush_all()

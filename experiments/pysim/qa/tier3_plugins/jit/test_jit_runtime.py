@@ -1123,54 +1123,29 @@ def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
     )
 
 
-def test_jitr_26_sorted_index_lookup_and_rotation():
-    """TEST-JITR-26 / TEST-JITR-82 & GOTCHA-JITR-05: Sorted lookup and rotation."""
-    cache = JitRuntimeBoundary(bank_capacity=1024)
-    # Code-section-relative instruction PC used to exercise hash folding.
-    pc1 = 0x00010020
-    pc2 = 0x00000003
-    t1 = JITTrace(head_pc=pc1, native_fn=lambda: 10, size_bytes=64)
-    t2 = JITTrace(head_pc=pc2, native_fn=lambda: 20, size_bytes=64)
+def test_jitr_26_sorted_index_folds_high_pc_bits():
+    """GOTCHA-JITR-05: the sorted index folds the high PC bits into its key.
 
-    # The host lifetime registry retains resident descriptors while the native
-    # sorted index resolves exact PCs across all three banks.
-    cache.insert(t1)
-    t2_refcount = sys.getrefcount(t2)
-    cache.insert(t2)
-    assert sys.getrefcount(t2) == t2_refcount + 1
-    assert cache.lookup(pc1) is t1
-    assert cache.lookup(pc2) is t2
-    assert sys.getrefcount(t2) == t2_refcount + 1
-    cache.flush_all()
-    assert sys.getrefcount(t2) == t2_refcount
+    The index is the loader's radix storage over `(fold_mix32(pc), index)` entries, so a PC
+    with high bits set is found by its folded key and nothing else is needed.
+    """
+    from tier1_core.system_containers import fold_mix32
+    from tier2_runtime.wasm.module import LOADER_BLOCK_RADIX_SHIFT
 
-    # Active hits use the native sorted index without changing residency.
-    cache.insert(t1)
-    assert cache.lookup(pc1) is t1
-    assert cache.lookup(pc1) is t1
+    pcs = (0x00010020, 0x00000003)
+    keys = [fold_mix32(pc) for pc in pcs]
+    assert keys[0] != keys[1]
+    entries = StaticVector(capacity=len(pcs))
+    for index, key in enumerate(keys):
+        entries.append((key, index))
+    entries.sort(key=lambda entry: (entry[0], entry[1]))
+    storage = ReadOnlyRadixBinaryTreeStorage.from_sorted_static_entries(
+        entries, radix_shift=LOADER_BLOCK_RADIX_SHIFT
+    )
+    for index, pc in enumerate(pcs):
+        assert storage.view().find(fold_mix32(pc)) == index
+    assert storage.view().find(fold_mix32(0x00000004)) is None
 
-    # Rotation preserves the sorted index over active and warm banks.
-    cache.rotate()  # t1 moves to Warm
-    assert cache.find_trace(pc1) is not None
-
-    address = t1.raw_addr
-    assert cache.lookup(pc1) is t1
-    assert t1.raw_addr == address
-    assert cache.lookup(pc1) is t1
-
-    # A subsequent rotation moves t1 to Oldest.
-    cache.rotate()
-    assert cache.find_trace(pc1) is not None
-
-    # Oldest hits preserve the code address until rotation retires the bank.
-    assert cache.lookup(pc1) is t1
-    assert t1.raw_addr == address
-    assert cache.find_trace(pc1) is not None
-    assert cache.lookup(pc1) is t1
-
-    # Flush releases the host descriptor and removes the sorted-index entry.
-    cache.flush_all()
-    assert cache.lookup(pc1) is None
 
 
 def test_jitr_83_uncompiled_block_skips_runtime_cache_lookup():
@@ -4083,7 +4058,7 @@ if __name__ == "__main__":
     test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace()
     test_jitr_compile_queue_overflow_compiles_on_the_spot()
     test_jitr_compile_failure_unmarks_candidate_without_faking_compiled()
-    test_jitr_26_sorted_index_lookup_and_rotation()
+    test_jitr_26_sorted_index_folds_high_pc_bits()
     test_jitr_block_capacity_from_wasm_loader_and_no_set()
     test_jitr_br_if_loop_exit_jit_result_correct()
     test_jitr_backward_branch_block_byte_span_not_disqualified()

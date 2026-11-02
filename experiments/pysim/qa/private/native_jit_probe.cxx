@@ -530,8 +530,9 @@ extern "C" FB_PYSIM_ABI_EXPORT qa_jit_runtime *
 fb_jit_runtime_init(std::uint8_t *storage, std::size_t bytes, std::uint32_t bank_bytes,
                     std::uint32_t entry_capacity, const std::uint32_t *offsets,
                     const fireball_native_cps_handler *call_handlers) {
+  assert(storage == nullptr ||
+         reinterpret_cast<std::uintptr_t>(storage) % alignof(qa_jit_runtime) == 0);
   if (storage == nullptr || bytes < sizeof(qa_jit_runtime) || offsets == nullptr ||
-      reinterpret_cast<std::uintptr_t>(storage) % alignof(qa_jit_runtime) != 0 ||
       bank_bytes < fireball::jit_trace_header_bytes || entry_capacity == 0 ||
       entry_capacity > fireball::jit_cache_bank_entry_capacity) {
     return nullptr;

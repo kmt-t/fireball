@@ -441,6 +441,7 @@ class NativeRuntimeStorage:
         "_closed",
         "_cursor",
         "_dirty",
+        "_raw",
         "_states",
         "_storage",
         "arena_size",
@@ -451,9 +452,13 @@ class NativeRuntimeStorage:
         self.pointer = None
         self._closed = False
         self.arena_size = int(RUNTIME_SIZE())
-        self._storage = (ctypes.c_uint64 * ((self.arena_size + 7) // 8))()
-        # The native init rejects a misaligned arena by returning null; check the address here.
-        assert ctypes.addressof(self._storage) % int(RUNTIME_ALIGNMENT()) == 0
+        # Over-allocate by one alignment unit and start the arena at the first aligned address.
+        alignment = int(RUNTIME_ALIGNMENT())
+        assert alignment > 0 and alignment & (alignment - 1) == 0
+        self._raw = (ctypes.c_uint8 * (self.arena_size + alignment))()
+        offset = -ctypes.addressof(self._raw) % alignment
+        self._storage = (ctypes.c_uint8 * self.arena_size).from_buffer(self._raw, offset)
+        assert ctypes.addressof(self._storage) % alignment == 0
         native_offsets = (ctypes.c_uint32 * 3)(*offsets)
         self.pointer = RUNTIME_INIT(
             ctypes.cast(self._storage, ctypes.POINTER(ctypes.c_uint8)),

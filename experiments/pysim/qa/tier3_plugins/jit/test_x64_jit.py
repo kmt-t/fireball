@@ -41,7 +41,6 @@ from qa.shared.helpers import wat_to_wasm
 from qa.shared.jit_cache import JITTrace
 from qa.shared.runtime_support import (
     compile_module_block,
-    compile_test_block,
     instruction_blocks,
     make_runtime_engine,
 )
@@ -51,7 +50,7 @@ from tier2_runtime.abi.interpreter_abi import (
 )
 from tier2_runtime.interpreter.control_flow import build_control_map, extract_basic_blocks
 from tier2_runtime.interpreter.interpreter import ExecutionContext
-from tier2_runtime.wasm.module import I32, I64, BasicBlock, LocalLayout
+from tier2_runtime.wasm.module import I32, I64, LocalLayout
 from tier2_runtime.wasm.opcodes import (
     I32_ADD,
     I32_AND,
@@ -435,29 +434,29 @@ def test_trace_local_layout_is_fixed_during_compilation():
 
 
 def test_i32_const_local_store_preserves_existing_stack():
-    """The constant store (ordinary path, no fusion) has no net operand-stack effect."""
-    compiler = TraceCompiler()
+    """The constant store (ordinary path, no fusion) has no net operand-stack effect.
+
+    The first block ends at a loop head, a branch target, so its trace exits normally with the
+    operands on the stack. The sentinel is pushed inside the block and must stay below the value.
+    """
     sentinel = 0xA5A5_5A5A
     value = 0x1234_5678
-    for opcode, expected_stack in (
-        (LOCAL_SET, (sentinel,)),
-        (LOCAL_TEE, (sentinel, value)),
+    for instruction, expected_stack in (
+        ("local.set", (sentinel,)),
+        ("local.tee", (sentinel, value)),
     ):
-        trace = compiler.compile_instructions(
-            head_pc=0,
-            instructions=((I32_CONST, value), (opcode, 0)),
-            next_pc=1,
-            loops_to=None,
-            byte_length=2,
-            local_layout=LocalLayout((I32,)),
+        drop = " drop" if instruction == "local.tee" else ""
+        module, block, trace = _loader_block(
+            f"(i32.const {sentinel}) (i32.const {value}) ({instruction} 0)"
+            f" loop end{drop}",
+            result="i32",
+            locals_decl="(local i32)",
         )
         assert trace is not None
         context = ExecutionContext()
         assert_result_8 = context.local_stack.extend((0,))
         assert assert_result_8
-        assert_result_9 = context.stack.extend((sentinel,))
-        assert assert_result_9
-        trace.invoke(context)
+        _invoke_loader_block(module, block, trace, context)
         assert context.local_stack[0] == value
         assert tuple(context.stack) == expected_stack
 
@@ -724,17 +723,12 @@ if __name__ == "__main__":
 
 def test_trace_generated_size_is_variable_and_uses_compact_header():
     """TEST-JITC-23: actual generated length is independent of the 64-byte default."""
-    compiler = TraceCompiler()
     sizes = []
-    for code in (
-        bytes((LOCAL_GET, 0, LOCAL_SET, 0)),
-        bytes((LOCAL_GET, 0, I32_CONST, 3, I32_ADD, LOCAL_SET, 0)),
+    for body in (
+        "(local.get 0) (local.set 0)",
+        "(local.get 0) (i32.const 3) (i32.add) (local.set 0)",
     ):
-        head, next_pc, loops_to, depth, span = _extract_test_blocks(code)[0]
-        block = BasicBlock(
-            head_pc=head, next_pc=next_pc, loops_to=loops_to, frame_depth=depth, byte_span=span
-        )
-        trace = compile_test_block(compiler, code, block, (I32,))
+        module, block, trace = _loader_block(body, params="(param i32)")
         assert trace.code_blob is not None
         assert trace.size_bytes == len(trace.code_blob)
         source_header = native_abi.NativeTraceHeader.from_buffer_copy(
@@ -745,6 +739,10 @@ def test_trace_generated_size_is_variable_and_uses_compact_header():
         assert resident_header.common_code_relative == (
             COMMON_CHAIN_DISPATCH_OFFSET - JIT_CACHE_ACTIVE_OFFSET_BYTES
         )
+        # The block index is the position of the compiled block in the module's block list.
+        block_index = next(i for i, b in enumerate(module.blocks) if b.head_pc == block.head_pc)
+        assert resident_header.block_index == block_index
+        source_header.block_index = block_index
         source_header.common_code_relative = resident_header.common_code_relative
         assert bytes(source_header) == trace.header.pack()
         sizes.append(trace.size_bytes)

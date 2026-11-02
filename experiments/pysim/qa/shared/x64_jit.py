@@ -11,6 +11,9 @@ from tier2_runtime.wasm.module import LocalLayout, WasmOperand
 from .common_code import JITCodeCacheRegion
 from .jit_cache import JITTrace
 
+# A trace compiled from explicit instructions belongs to no loader block.
+NO_LOADER_BLOCK_INDEX = 0xFFFF
+
 
 class TraceCompiler:
     """Build/install native trace bodies for the upper runtime.
@@ -40,7 +43,7 @@ class TraceCompiler:
         trace = self.compile_wasm(block)
         if trace is None:
             return None
-        self._install_standalone(trace)
+        self._install_standalone(trace, block.block_index)
         return trace
 
     def compile_instructions(
@@ -66,10 +69,10 @@ class TraceCompiler:
         if blob is None:
             return None
         self._attach_code(trace, blob)
-        self._install_standalone(trace)
+        self._install_standalone(trace, NO_LOADER_BLOCK_INDEX)
         return trace
 
-    def _install_standalone(self, trace: JITTrace) -> None:
+    def _install_standalone(self, trace: JITTrace, block_index: int) -> None:
         """Install an attached trace into this compiler's QA executable region."""
         assert trace.code_blob is not None
         if self._standalone_region is None:
@@ -81,6 +84,7 @@ class TraceCompiler:
         fn, raw_addr = self._standalone_region.install_trace(
             trace.code_offset,
             trace.code_blob,
+            block_index,
         )
         trace.fn = fn
         trace.raw_addr = raw_addr

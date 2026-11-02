@@ -49,12 +49,14 @@ class JITCodeCacheRegion:
         self,
         offset: int,
         blob: bytes,
+        block_index: int,
     ) -> tuple[NativeTraceFunction, int]:
         assert self.buffer.base is not None
         entry = native_abi.install_common_trace(
             self.buffer._native,
             offset,
             blob,
+            block_index,
         )
         # The callable is the shared entry; `entry` is the body address that chain targets use.
         common_entry = self.buffer.base + JIT_TRACE_COMMON_TRACE_ENTRY_OFFSET

@@ -28,6 +28,7 @@ import wasmtime
 from config import (
     FB_CONF_INTERPRETER_YIELD_THRESHOLD,
     FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
+    FB_CONF_JIT_AGING_STEP_UNITS,
     FB_CONF_JIT_CACHE_SIZE,
     JIT_CACHE_ACTIVE_OFFSET_BYTES,
     JIT_CACHE_BANK_CAPACITY_BYTES,
@@ -3642,6 +3643,80 @@ def test_jitr_aging_cursor_wraps_and_bounds_each_step():
         jit.age_step()
         assert jit.update_bitmap.cursor == (start_cursor + step * scan) % size
     assert _sweep_state(jit)[1] == 1, "an empty pass processes no units"
+
+
+def test_jitr_aging_step_processes_at_most_units_bytes_and_resumes_after_them():
+    """TEST-JITR-19: a step processes the first FB_CONF_JIT_AGING_STEP_UNITS non-zero bytes; the rest wait."""
+    units = FB_CONF_JIT_AGING_STEP_UNITS
+    scan = FB_CONF_JIT_AGING_STEP_SCAN_BYTES
+    assert 2 * units + 1 <= scan, "units + 1 dirty bytes, spaced one apart, must fit in one window"
+    engine, module = _aging_engine((48,))
+    jit = engine.jit_runtime
+    size = jit.update_bitmap.unit_count
+    assert size > 2 * scan
+    # Block i lies in update byte i. The dirty bytes are 1, 3, ..., 2 * units + 1: units + 1 of them.
+    dirty_bytes = [2 * index + 1 for index in range(units + 1)]
+    pcs = [_pc(module, byte) for byte in dirty_bytes]
+    for pc, byte in zip(pcs, dirty_bytes, strict=True):
+        assert jit.bitmap.card_of(pc) // 8 == byte
+        _touch_via_yield(engine, pc)
+    assert jit.update_bitmap.cursor == 0
+
+    # The first step stops right after the UNITS-th dirty byte; the (UNITS + 1)-th is left.
+    stop = dirty_bytes[units - 1] + 1
+    jit.age_step()
+    assert _sweep_state(jit) == (1, units, stop, stop)
+    for pc in pcs[:units]:
+        assert jit.bitmap.get_state(pc) == CardState.UNEXECUTED
+    assert jit.bitmap.get_state(pcs[units]) == CardState.EXECUTED
+
+    # The next step starts at the cursor, processes the remaining dirty byte, and scans the window.
+    before = _sweep_state(jit)
+    jit.age_step()
+    assert _sweep_state(jit) == (
+        before[0] + 1,
+        before[1] + 1,
+        before[2] + scan,
+        (stop + scan) % size,
+    )
+    assert jit.bitmap.get_state(pcs[units]) == CardState.UNEXECUTED
+
+
+def _dense_engine(block_count: int):
+    """A one-function module whose blocks are only a few bytes long, so several share an update byte."""
+    engine = RuntimeEngine(jit_runtime=JITRuntimeManager())
+    module = engine.load_wasm(
+        bytes(
+            wasmtime.wat2wasm(
+                f'(module (func (export "f") {"(block i32.const 1 drop) " * block_count}))'
+            )
+        )
+    )
+    return engine, module
+
+
+def test_jitr_aging_byte_with_several_cards_decays_in_one_step():
+    """TEST-JITR-19: every dirty card of one update byte decays in the same step, counted as one unit."""
+    scan = FB_CONF_JIT_AGING_STEP_SCAN_BYTES
+    engine, module = _dense_engine(120)
+    jit = engine.jit_runtime
+    assert jit.update_bitmap.unit_count > scan, "the table must be longer than one window"
+    heads = [b.head_pc for b in instruction_blocks(module)]
+    by_byte: dict[int, list[int]] = {}
+    for pc in heads:
+        by_byte.setdefault(jit.bitmap.card_of(pc) // 8, []).append(pc)
+    byte, shared = next((item for item in by_byte.items() if len(item[1]) >= 2))
+    assert byte < scan, "the shared byte must lie in the first window"
+    assert len({jit.bitmap.card_of(pc) for pc in shared}) == len(shared), "the cards are distinct"
+    for pc in shared:
+        _touch_via_yield(engine, pc)
+    assert jit.update_bitmap.cursor == 0
+
+    before = _sweep_state(jit)
+    jit.age_step()
+    assert _sweep_state(jit) == (before[0] + 1, before[1] + 1, scan, scan)
+    for pc in shared:
+        assert jit.bitmap.get_state(pc) == CardState.UNEXECUTED
 
 
 def test_jitr_aging_scans_region_card_bytes_and_ignores_import_code():

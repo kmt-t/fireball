@@ -182,6 +182,8 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             if module_id is not None:
                 assert module_id == self.module_id
             return
+        # The JIT reads the original bytecode, so native views must not use the expression copy.
+        module.drop_native_code_copies()
         for lease in self._compile_code_leases:
             lease.release()
         if module_id is not None:

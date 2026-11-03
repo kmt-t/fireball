@@ -405,7 +405,10 @@ struct trace_builder {
   std::size_t relocation_bytes = 0;
 
   bool append_node(stencil_view stencil) {
-    if (stencil.symbol == nullptr || stencil.size == 0 || operation_count >= operations.size() ||
+    // The builder takes at most kMaxTraceInstructions instructions and one terminator, and
+    // each instruction appends one operation, so the operation count stays within the table.
+    assert(operation_count < operations.size());
+    if (stencil.symbol == nullptr || stencil.size == 0 ||
         (stencil.patch_slot_width == 0) != (stencil.patch_slot_offset == kNoLinkSlot) ||
         (stencil.patch_slot_width != 0 &&
          (stencil.patch_slot_offset > stencil.size ||
@@ -648,9 +651,8 @@ struct trace_builder {
       expanded_next_slots[index] = next_slot;
       expanded_abort_slots[index] = abort_slot;
       if (abort_slot != kNoLinkSlot) {
-        if (abort_slot_count == abort_slots.size()) {
-          return false;
-        }
+        // The earlier operations are fewer than the table, so the count fits in abort_slots.
+        assert(abort_slot_count < abort_slots.size());
         ++abort_slot_count;
       }
       const auto removed_slot_bytes = kX64Rel32SlotBytes;

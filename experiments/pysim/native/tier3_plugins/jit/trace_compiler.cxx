@@ -842,6 +842,10 @@ struct trace_builder {
   std::array<std::uint8_t, kMaxOperationStencilBytes> stencil_scratch{};
 };
 
+// The loader admits FB_CONF_MAX_VALUE_STACK operand values of at most two words each, so the
+// trace stack model's depth covers every block the loader accepts.
+static_assert(2 * FB_CONF_MAX_VALUE_STACK == kMaxStackDepth);
+
 /**
  * @brief 命令の並びのスタックを、語数と型付きの値の列で表す。
  *
@@ -863,10 +867,10 @@ struct stack_model {
   }
 
   bool push(std::uint8_t width) {
-    if ((width != 1 && width != 2) || value_count == widths.size() ||
-        width > kMaxStackDepth - word_count) {
-      return false;
-    }
+    // The loader bounds the operand values by FB_CONF_MAX_VALUE_STACK, so these hold for every
+    // block that reaches the trace compiler (static_assert below binds the depth).
+    assert((width == 1 || width == 2) && value_count < widths.size() &&
+           width <= kMaxStackDepth - word_count);
     widths[value_count++] = width;
     word_count += width;
     max_words = std::max(max_words, word_count);

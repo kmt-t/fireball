@@ -4694,3 +4694,23 @@ def test_jitr_104_every_loader_opcode_on_the_runtime_api_path_has_a_slot():
     for subopcode in (*range(8), 10, 11):
         slot = ctypes.c_uint8(0)
         assert slot_of(subopcode, 1, ctypes.byref(slot)) == 1, f"0xFC {subopcode} has no slot"
+
+
+# The 64 i64 values of the block fill FB_CONF_MAX_VALUE_STACK values, which is 128 words, the value
+# stack capacity. The call that consumes them ends the block, and 64 instructions fit the trace.
+_VALUE_STACK_BOUNDARY_WAT = (
+    "(module"
+    " (func $sink " + "(param i64) " * 64 + ")"
+    ' (func (export "f") ' + "i64.const 1 " * 64 + "call $sink))"
+)
+
+
+def test_jitr_105_operand_words_at_the_value_stack_capacity_compile():
+    """TEST-JITR-105: a block that reaches the value stack capacity still compiles.
+
+    The loader accepts 64 operand values, at most 128 words. The compiler's depth model holds 128
+    words, so the boundary block compiles and the depth check never refuses it.
+    """
+    module = parse_standalone(wat_to_wasm(_VALUE_STACK_BOUNDARY_WAT))
+    block = max(instruction_blocks(module), key=lambda candidate: candidate.byte_span)
+    assert compile_module_block(TraceCompiler(), module, block) is not None

@@ -842,7 +842,10 @@ struct stack_model {
     max_words = words;
   }
 
-  bool push(std::uint8_t width) {
+  // The stack model takes only the blocks the loader validated, and the compiler receives only
+  // executed blocks (TEST-JITR-106). The loader does not check the types of unreachable code,
+  // so the operand types and the entry words are preconditions here.
+  void push(std::uint8_t width) {
     // The loader bounds the operand values by FB_CONF_MAX_VALUE_STACK, so these hold for every
     // block that reaches the trace compiler (static_assert below binds the depth).
     assert((width == 1 || width == 2) && value_count < widths.size() &&
@@ -850,48 +853,57 @@ struct stack_model {
     widths[value_count++] = width;
     word_count += width;
     max_words = std::max(max_words, word_count);
-    return true;
   }
 
-  /** @brief 先頭の値が幅 width か調べる。空の模型では入口語の不足を契約違反として止める。 */
-  bool top_is(std::uint8_t width) const {
+  /** @brief 先頭の値の幅が width であることを確かめる。空の模型では入口語が足りることを確かめる。
+   */
+  void top_is(std::uint8_t width) const {
     if (value_count == 0) {
       // WASM validation bounds every pop by the block's entry stack, so the loader's entry words
       // cover the operand. A shortfall means the entry words are wrong.
       assert(entry_words >= width);
-      return true;
+      return;
     }
-    return widths[value_count - 1] == width;
+    assert(widths[value_count - 1] == width);
   }
 
-  bool pop(std::uint8_t width) {
+  void pop(std::uint8_t width) {
     if (value_count == 0) {
       // Same contract as top_is: the loader's entry words cover every pop of a valid block.
       assert(entry_words >= width);
       entry_words = static_cast<jit_stack_words_t>(entry_words - width);
       word_count = static_cast<jit_stack_words_t>(word_count - width);
-      return true;
+      return;
     }
-    if (!top_is(width)) {
-      return false;
-    }
+    top_is(width);
     --value_count;
     word_count -= width;
-    return true;
   }
 
-  bool binary(std::uint8_t width) { return pop(width) && pop(width) && push(width); }
-
-  bool unary(std::uint8_t input_width, std::uint8_t output_width) {
-    return pop(input_width) && push(output_width);
+  void binary(std::uint8_t width) {
+    pop(width);
+    pop(width);
+    push(width);
   }
 
-  bool binary_to(std::uint8_t input_width, std::uint8_t output_width) {
-    return pop(input_width) && pop(input_width) && push(output_width);
+  void unary(std::uint8_t input_width, std::uint8_t output_width) {
+    pop(input_width);
+    push(output_width);
+  }
+
+  void binary_to(std::uint8_t input_width, std::uint8_t output_width) {
+    pop(input_width);
+    pop(input_width);
+    push(output_width);
   }
 
   /** @brief 幅 width の select（条件は i32）。幅は命令の注釈が決める。 */
-  bool select(std::uint8_t width) { return pop(1) && pop(width) && pop(width) && push(width); }
+  void select(std::uint8_t width) {
+    pop(1);
+    pop(width);
+    pop(width);
+    push(width);
+  }
 };
 
 stencil_view get_stencil(generated::stencil_range range) { return generated_stencil(range); }
@@ -1118,7 +1130,8 @@ bool emit_constant(trace_builder &builder, stack_model &stack, int op, std::uint
   }
   const auto immediate_width = width == 1 ? std::uint8_t{4} : std::uint8_t{8};
   builder.append_patched(stencil, value, immediate_width);
-  return stack.push(width);
+  stack.push(width);
+  return true;
 }
 
 bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_ip_t source_ip,
@@ -1189,18 +1202,12 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
           width == 1 ? local_memory_operation::store_narrow : local_memory_operation::store_wide;
       if (op == kLocalGet) {
         builder.append_local(local_op, offset, encoding);
-        if (!stack.push(width)) {
-          return false;
-        }
+        stack.push(width);
       } else if (op == kLocalSet) {
-        if (!stack.pop(width)) {
-          return false;
-        }
+        stack.pop(width);
         builder.append_local(local_op, offset, store_encoding);
       } else {
-        if (!stack.top_is(width)) {
-          return false;
-        }
+        stack.top_is(width);
         builder.append_local(local_op, offset, store_encoding);
       }
       ++index;
@@ -1211,9 +1218,7 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       const auto width = static_cast<std::uint8_t>(instruction.operand);
       const auto stencil =
           width == 1 ? get_stencil(asm_generated::drop) : get_stencil(asm_generated::drop_wide);
-      if (!stack.pop(width)) {
-        return false;
-      }
+      stack.pop(width);
       builder.append_linked(stencil);
       ++index;
       continue;
@@ -1222,25 +1227,19 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       const auto width = static_cast<std::uint8_t>(instruction.operand);
       const auto stencil = width == 1 ? get_stencil(asm_generated::select_i32)
                                       : get_stencil(asm_generated::select_i64);
-      if (!stack.select(width)) {
-        return false;
-      }
+      stack.select(width);
       builder.append_linked(stencil);
       ++index;
       continue;
     }
     if (op == kI32Eqz) {
-      if (!stack.top_is(1)) {
-        return false;
-      }
+      stack.top_is(1);
       builder.append_linked(get_stencil(asm_generated::i32_eqz));
       ++index;
       continue;
     }
     if (is_i32_binary(op)) {
-      if (!stack.binary(1)) {
-        return false;
-      }
+      stack.binary(1);
       builder.append_linked(i32_binary_stencil(op));
       ++index;
       continue;
@@ -1249,9 +1248,7 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
     if (wide_stencil.size != 0) {
       const auto width =
           (op >= kI64Add && op <= kI64Mul) || (op >= kF64Add && op <= kF64Div) ? 2 : 1;
-      if (!stack.binary(static_cast<std::uint8_t>(width))) {
-        return false;
-      }
+      stack.binary(static_cast<std::uint8_t>(width));
       builder.append_linked(wide_stencil);
       ++index;
       continue;
@@ -1344,14 +1341,11 @@ bool runtime_api_slot(int op, std::uint8_t &slot) {
   return fb_jit_runtime_api_slot(opcode, fc_prefix ? 1u : 0u, &slot) == 1;
 }
 
-bool pop_values(stack_model &stack, std::uint32_t count, std::uint8_t width) {
+void pop_values(stack_model &stack, std::uint32_t count, std::uint8_t width) {
   while (count != 0) {
-    if (!stack.pop(width)) {
-      return false;
-    }
+    stack.pop(width);
     --count;
   }
-  return true;
 }
 
 bool apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_model &stack) {
@@ -1359,10 +1353,12 @@ bool apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_mod
     return true;
   }
   if (op == 0x23) {
-    return stack.push(global_width);
+    stack.push(global_width);
+    return true;
   }
   if (op == 0x24) {
-    return stack.pop(global_width);
+    stack.pop(global_width);
+    return true;
   }
   if ((op & 0xFF00) == 0xFC00) {
     const auto subopcode = op & 0xFF;
@@ -1370,112 +1366,145 @@ bool apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_mod
       const auto input_width =
           subopcode == 0 || subopcode == 1 || subopcode == 4 || subopcode == 5 ? 1u : 2u;
       const auto output_width = subopcode < 4 ? 1u : 2u;
-      return stack.unary(static_cast<std::uint8_t>(input_width),
-                         static_cast<std::uint8_t>(output_width));
+      stack.unary(static_cast<std::uint8_t>(input_width), static_cast<std::uint8_t>(output_width));
+      return true;
     }
     assert(subopcode == 0x0A || subopcode == 0x0B);
-    return pop_values(stack, 3, 1);
+    pop_values(stack, 3, 1);
+    return true;
   }
 
   if (op >= 0x28 && op <= 0x35) {
     // i64.load, f64.load and the i64 narrow loads push two words.
     const auto result_width = (op == 0x29 || op == 0x2B || (op >= 0x30 && op <= 0x35)) ? 2u : 1u;
-    return stack.unary(1, static_cast<std::uint8_t>(result_width));
+    stack.unary(1, static_cast<std::uint8_t>(result_width));
+    return true;
   }
   if (op >= 0x36 && op <= 0x3E) {
     // i64.store, f64.store and the i64 narrow stores pop two words.
     const auto value_width = (op == 0x37 || op == 0x39 || (op >= 0x3C && op <= 0x3E)) ? 2u : 1u;
-    return stack.pop(static_cast<std::uint8_t>(value_width)) && stack.pop(1);
+    stack.pop(static_cast<std::uint8_t>(value_width));
+    stack.pop(1);
+    return true;
   }
   if (op == 0x3F) {
-    return stack.push(1);
+    stack.push(1);
+    return true;
   }
   if (op == 0x40) {
-    return stack.unary(1, 1);
+    stack.unary(1, 1);
+    return true;
   }
   if (op >= 0x67 && op <= 0x69) {
-    return stack.unary(1, 1);
+    stack.unary(1, 1);
+    return true;
   }
   if (op == 0x77 || op == 0x78) {
     // i32.rotl and i32.rotr have no direct stencil; they pop two i32 and push one.
-    return stack.binary(1);
+    stack.binary(1);
+    return true;
   }
   if (op == 0x50) {
-    return stack.unary(2, 1);
+    stack.unary(2, 1);
+    return true;
   }
   if (op >= 0x51 && op <= 0x5A) {
-    return stack.binary_to(2, 1);
+    stack.binary_to(2, 1);
+    return true;
   }
   if (op >= 0x5B && op <= 0x60) {
-    return stack.binary_to(1, 1);
+    stack.binary_to(1, 1);
+    return true;
   }
   if (op >= 0x61 && op <= 0x66) {
-    return stack.binary_to(2, 1);
+    stack.binary_to(2, 1);
+    return true;
   }
   if (op >= 0x79 && op <= 0x7B) {
-    return stack.unary(2, 2);
+    stack.unary(2, 2);
+    return true;
   }
   if (op >= 0x7C && op <= 0x8A) {
-    return stack.binary_to(2, 2);
+    stack.binary_to(2, 2);
+    return true;
   }
   if (op >= 0x8B && op <= 0x91) {
-    return stack.unary(1, 1);
+    stack.unary(1, 1);
+    return true;
   }
   if (op >= 0x92 && op <= 0x98) {
-    return stack.binary_to(1, 1);
+    stack.binary_to(1, 1);
+    return true;
   }
   if (op >= 0x99 && op <= 0x9F) {
-    return stack.unary(2, 2);
+    stack.unary(2, 2);
+    return true;
   }
   if (op >= 0xA0 && op <= 0xA6) {
-    return stack.binary_to(2, 2);
+    stack.binary_to(2, 2);
+    return true;
   }
   switch (op) {
   case 0xA7:
-    return stack.unary(2, 1);
+    stack.unary(2, 1);
+    return true;
   case 0xA8:
   case 0xA9:
-    return stack.unary(1, 1);
+    stack.unary(1, 1);
+    return true;
   case 0xAA:
   case 0xAB:
-    return stack.unary(2, 1);
+    stack.unary(2, 1);
+    return true;
   case 0xAC:
   case 0xAD:
-    return stack.unary(1, 2);
+    stack.unary(1, 2);
+    return true;
   case 0xAE:
   case 0xAF:
-    return stack.unary(1, 2);
+    stack.unary(1, 2);
+    return true;
   case 0xB0:
   case 0xB1:
-    return stack.unary(2, 2);
+    stack.unary(2, 2);
+    return true;
   case 0xB2:
   case 0xB3:
-    return stack.unary(1, 1);
+    stack.unary(1, 1);
+    return true;
   case 0xB4:
   case 0xB5:
   case 0xB6:
-    return stack.unary(2, 1);
+    stack.unary(2, 1);
+    return true;
   case 0xB7:
   case 0xB8:
-    return stack.unary(1, 2);
+    stack.unary(1, 2);
+    return true;
   case 0xB9:
   case 0xBA:
-    return stack.unary(2, 2);
+    stack.unary(2, 2);
+    return true;
   case 0xBB:
-    return stack.unary(1, 2);
+    stack.unary(1, 2);
+    return true;
   case 0xBC:
   case 0xBE:
-    return stack.unary(1, 1);
+    stack.unary(1, 1);
+    return true;
   case 0xBD:
   case 0xBF:
-    return stack.unary(2, 2);
+    stack.unary(2, 2);
+    return true;
   case 0xC0:
   case 0xC1:
-    return stack.unary(1, 1);
+    stack.unary(1, 1);
+    return true;
   case 0xC2:
   case 0xC3:
   case 0xC4:
-    return stack.unary(2, 2);
+    stack.unary(2, 2);
+    return true;
   default:
     return false;
   }

@@ -435,8 +435,8 @@ struct trace_builder {
   }
 
   bool add_value(std::uint64_t value, std::uint8_t width) {
-    if ((width != 1 && width != 2 && width != 4 && width != 8) ||
-        relocation_bytes > body_capacity || width > body_capacity - relocation_bytes) {
+    assert(width == 1 || width == 2 || width == 4 || width == 8);
+    if (relocation_bytes > body_capacity || width > body_capacity - relocation_bytes) {
       return false;
     }
     assert(relocation_count < relocations.size());
@@ -468,23 +468,18 @@ struct trace_builder {
 #if !defined(FB_CONF_JIT_BLOCK_COUNTERS) || !FB_CONF_JIT_BLOCK_COUNTERS
     static_cast<void>(wasm_opcode);
 #endif
-    if (immediate_count > kMaxRuntimeApiImmediates ||
-        (immediate_count != 0 && (immediates == nullptr || immediate_widths == nullptr))) {
-      return false;
-    }
+    // Every caller passes a constant immediate count of at most two, with constant widths.
+    assert(immediate_count <= kMaxRuntimeApiImmediates &&
+           (immediate_count == 0 || (immediates != nullptr && immediate_widths != nullptr)));
     const auto stencil = generated_stencil(asm_generated::runtime_api);
     std::uint8_t immediate_bytes = 0;
     for (std::uint8_t index = 0; index < immediate_count; ++index) {
       const auto width = immediate_widths[index];
-      if ((width != 1 && width != 2 && width != 4 && width != 8) ||
-          immediate_bytes > UINT8_MAX - width) {
-        return false;
-      }
+      assert((width == 1 || width == 2 || width == 4 || width == 8) &&
+             immediate_bytes <= UINT8_MAX - width);
       immediate_bytes = static_cast<std::uint8_t>(immediate_bytes + width);
     }
-    if (immediate_bytes > UINT8_MAX - sizeof(annotation_offset_t)) {
-      return false;
-    }
+    assert(immediate_bytes <= UINT8_MAX - sizeof(annotation_offset_t));
     immediate_bytes = static_cast<std::uint8_t>(immediate_bytes + sizeof(annotation_offset_t));
     append_node(stencil);
     if (!add_value(slot, 1) || !add_value(immediate_count, 1) || !add_value(immediate_bytes, 1) ||

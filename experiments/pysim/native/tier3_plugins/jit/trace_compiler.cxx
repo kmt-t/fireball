@@ -1302,17 +1302,17 @@ void pop_values(stack_model &stack, std::uint32_t count, std::uint8_t width) {
   }
 }
 
-bool apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_model &stack) {
+void apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_model &stack) {
   if (op == 0x00) {
-    return true;
+    return;
   }
   if (op == 0x23) {
     stack.push(global_width);
-    return true;
+    return;
   }
   if (op == 0x24) {
     stack.pop(global_width);
-    return true;
+    return;
   }
   if ((op & 0xFF00) == 0xFC00) {
     const auto subopcode = op & 0xFF;
@@ -1321,146 +1321,148 @@ bool apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_mod
           subopcode == 0 || subopcode == 1 || subopcode == 4 || subopcode == 5 ? 1u : 2u;
       const auto output_width = subopcode < 4 ? 1u : 2u;
       stack.unary(static_cast<std::uint8_t>(input_width), static_cast<std::uint8_t>(output_width));
-      return true;
+      return;
     }
     assert(subopcode == 0x0A || subopcode == 0x0B);
     pop_values(stack, 3, 1);
-    return true;
+    return;
   }
 
   if (op >= 0x28 && op <= 0x35) {
     // i64.load, f64.load and the i64 narrow loads push two words.
     const auto result_width = (op == 0x29 || op == 0x2B || (op >= 0x30 && op <= 0x35)) ? 2u : 1u;
     stack.unary(1, static_cast<std::uint8_t>(result_width));
-    return true;
+    return;
   }
   if (op >= 0x36 && op <= 0x3E) {
     // i64.store, f64.store and the i64 narrow stores pop two words.
     const auto value_width = (op == 0x37 || op == 0x39 || (op >= 0x3C && op <= 0x3E)) ? 2u : 1u;
     stack.pop(static_cast<std::uint8_t>(value_width));
     stack.pop(1);
-    return true;
+    return;
   }
   if (op == 0x3F) {
     stack.push(1);
-    return true;
+    return;
   }
   if (op == 0x40) {
     stack.unary(1, 1);
-    return true;
+    return;
   }
   if (op >= 0x67 && op <= 0x69) {
     stack.unary(1, 1);
-    return true;
+    return;
   }
   if (op == 0x77 || op == 0x78) {
     // i32.rotl and i32.rotr have no direct stencil; they pop two i32 and push one.
     stack.binary(1);
-    return true;
+    return;
   }
   if (op == 0x50) {
     stack.unary(2, 1);
-    return true;
+    return;
   }
   if (op >= 0x51 && op <= 0x5A) {
     stack.binary_to(2, 1);
-    return true;
+    return;
   }
   if (op >= 0x5B && op <= 0x60) {
     stack.binary_to(1, 1);
-    return true;
+    return;
   }
   if (op >= 0x61 && op <= 0x66) {
     stack.binary_to(2, 1);
-    return true;
+    return;
   }
   if (op >= 0x79 && op <= 0x7B) {
     stack.unary(2, 2);
-    return true;
+    return;
   }
   if (op >= 0x7C && op <= 0x8A) {
     stack.binary_to(2, 2);
-    return true;
+    return;
   }
   if (op >= 0x8B && op <= 0x91) {
     stack.unary(1, 1);
-    return true;
+    return;
   }
   if (op >= 0x92 && op <= 0x98) {
     stack.binary_to(1, 1);
-    return true;
+    return;
   }
   if (op >= 0x99 && op <= 0x9F) {
     stack.unary(2, 2);
-    return true;
+    return;
   }
   if (op >= 0xA0 && op <= 0xA6) {
     stack.binary_to(2, 2);
-    return true;
+    return;
   }
   switch (op) {
   case 0xA7:
     stack.unary(2, 1);
-    return true;
+    return;
   case 0xA8:
   case 0xA9:
     stack.unary(1, 1);
-    return true;
+    return;
   case 0xAA:
   case 0xAB:
     stack.unary(2, 1);
-    return true;
+    return;
   case 0xAC:
   case 0xAD:
     stack.unary(1, 2);
-    return true;
+    return;
   case 0xAE:
   case 0xAF:
     stack.unary(1, 2);
-    return true;
+    return;
   case 0xB0:
   case 0xB1:
     stack.unary(2, 2);
-    return true;
+    return;
   case 0xB2:
   case 0xB3:
     stack.unary(1, 1);
-    return true;
+    return;
   case 0xB4:
   case 0xB5:
   case 0xB6:
     stack.unary(2, 1);
-    return true;
+    return;
   case 0xB7:
   case 0xB8:
     stack.unary(1, 2);
-    return true;
+    return;
   case 0xB9:
   case 0xBA:
     stack.unary(2, 2);
-    return true;
+    return;
   case 0xBB:
     stack.unary(1, 2);
-    return true;
+    return;
   case 0xBC:
   case 0xBE:
     stack.unary(1, 1);
-    return true;
+    return;
   case 0xBD:
   case 0xBF:
     stack.unary(2, 2);
-    return true;
+    return;
   case 0xC0:
   case 0xC1:
     stack.unary(1, 1);
-    return true;
+    return;
   case 0xC2:
   case 0xC3:
   case 0xC4:
     stack.unary(2, 2);
-    return true;
+    return;
   default:
-    return false;
+    // The loader accepts only opcodes that this table covers (TEST-JITR-104).
+    assert(false);
+    return;
   }
 }
 
@@ -1475,9 +1477,7 @@ bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_i
   assert(has_slot);
   // Every caller passes null immediates only when immediate_count is 0.
   assert(immediate_count == 0 || (immediates != nullptr && immediate_widths != nullptr));
-  if (!apply_runtime_api_stack_effect(op, global_width, stack)) {
-    return false;
-  }
+  apply_runtime_api_stack_effect(op, global_width, stack);
   return builder.append_runtime_api(slot, source_ip, immediates, immediate_widths, immediate_count,
                                     interpreter_rel_after);
 }

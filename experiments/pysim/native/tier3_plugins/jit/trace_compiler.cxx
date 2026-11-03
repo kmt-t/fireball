@@ -873,18 +873,21 @@ struct stack_model {
     return true;
   }
 
+  /** @brief 先頭の値が幅 width か調べる。空の模型では入口語の不足を契約違反として止める。 */
   bool top_is(std::uint8_t width) const {
     if (value_count == 0) {
-      return entry_words >= width;
+      // WASM validation bounds every pop by the block's entry stack, so the loader's entry words
+      // cover the operand. A shortfall means the entry words are wrong.
+      assert(entry_words >= width);
+      return true;
     }
     return widths[value_count - 1] == width;
   }
 
   bool pop(std::uint8_t width) {
     if (value_count == 0) {
-      if (entry_words < width) {
-        return false;
-      }
+      // Same contract as top_is: the loader's entry words cover every pop of a valid block.
+      assert(entry_words >= width);
       entry_words = static_cast<jit_stack_words_t>(entry_words - width);
       word_count = static_cast<jit_stack_words_t>(word_count - width);
       return true;

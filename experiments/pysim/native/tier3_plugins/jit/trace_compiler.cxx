@@ -1105,7 +1105,7 @@ stencil_view local_stencil(int operation, std::uint8_t type) {
 
 bool is_i32_binary(int op) { return i32_binary_stencil(op).size != 0; }
 
-bool emit_constant(trace_builder &builder, stack_model &stack, int op, std::uint64_t value) {
+void emit_constant(trace_builder &builder, stack_model &stack, int op, std::uint64_t value) {
   stencil_view stencil{};
   std::uint8_t width = 0;
   switch (op) {
@@ -1126,12 +1126,13 @@ bool emit_constant(trace_builder &builder, stack_model &stack, int op, std::uint
     width = 2;
     break;
   default:
-    return false;
+    // The caller dispatches only the four constant opcodes.
+    assert(false);
+    return;
   }
   const auto immediate_width = width == 1 ? std::uint8_t{4} : std::uint8_t{8};
   builder.append_patched(stencil, value, immediate_width);
   stack.push(width);
-  return true;
 }
 
 bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_ip_t source_ip,
@@ -1181,9 +1182,7 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
             op == kLocalGet || op == kLocalSet || op == kLocalTee) == has_operand);
 
     if (op == kI32Const || op == kI64Const || op == kF32Const || op == kF64Const) {
-      if (!emit_constant(builder, stack, op, instruction.operand)) {
-        return false;
-      }
+      emit_constant(builder, stack, op, instruction.operand);
       ++index;
       continue;
     }

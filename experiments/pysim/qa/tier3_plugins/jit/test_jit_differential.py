@@ -80,7 +80,6 @@ def _tier3(
     trackable-block bitmap to those heads, so every other block stays on the interpreter.
     """
     engine = make_runtime_engine(
-        candidate_threshold=0,
         jit_compiler=TraceCompiler(),
         bump_allocator=bump_allocator,
     )
@@ -304,7 +303,7 @@ def test_jitr_53_loop_entered_after_hot_block_uses_static_branch_metadata():
     expected = _wasmtime_result(wasm, "f", [12])
     assert _tier2_result(wasm, "f", [12]) == expected
 
-    engine = make_runtime_engine(candidate_threshold=0, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     module = engine.load_wasm(wasm)
     first_function_block_pc = parse_standalone(wasm).blocks[0].head_pc
     engine.jit_runtime.trackable.clear()
@@ -403,7 +402,7 @@ def test_jitr_61_terminal_call_preserves_stack_overflow_trap_in_cps():
     outcome = _guest(interpreter_module).call(interpreter_module.export_func_index("main"), [])
     assert not outcome.is_ok
     assert outcome.error is not None and outcome.error.code == TrapCode.OPERAND_STACK_CAPACITY
-    engine = make_runtime_engine(candidate_threshold=0, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     module = engine.load_wasm(wasm)
     outcome = engine.call(_guest(module), module.export_func_index("main"), [])
     assert not outcome.is_ok
@@ -665,9 +664,9 @@ def _assert_blocks_with_opcodes_are_resident(engine: RuntimeEngine, export: str,
     ]
     assert blocks, f"the module must contain blocks with opcodes {sorted(opcodes)}"
     # Blocks outside the loop run once and stay cold, so the hot loop body must provide a trace.
-    assert any(engine.jit_runtime.cache.find_trace(block.head_pc) is not None for block in blocks), (
-        f"no block with opcodes {sorted(opcodes)} has a resident trace"
-    )
+    assert any(
+        engine.jit_runtime.cache.find_trace(block.head_pc) is not None for block in blocks
+    ), f"no block with opcodes {sorted(opcodes)} has a resident trace"
 
 
 # i32.rotl and i32.rotr have no direct stencil: their blocks run through the Runtime API path.
@@ -747,7 +746,9 @@ def test_jitr_99_suite_blocks_within_the_body_budget_compile():
         if not ops or len(ops) > 64:
             continue
         estimate = _BODY_BASE_BYTES + sum(
-            _DIRECT_OPERATION_BYTES if op in _DIRECT_STENCIL_OPCODES else _RUNTIME_API_OPERATION_BYTES
+            _DIRECT_OPERATION_BYTES
+            if op in _DIRECT_STENCIL_OPCODES
+            else _RUNTIME_API_OPERATION_BYTES
             for op in ops
         )
         if estimate > _BODY_CHECK_BYTES:

@@ -447,8 +447,7 @@ def test_i32_const_local_store_preserves_existing_stack():
     ):
         drop = " drop" if instruction == "local.tee" else ""
         module, block, trace = _loader_block(
-            f"(i32.const {sentinel}) (i32.const {value}) ({instruction} 0)"
-            f" loop end{drop}",
+            f"(i32.const {sentinel}) (i32.const {value}) ({instruction} 0) loop end{drop}",
             result="i32",
             locals_decl="(local i32)",
         )

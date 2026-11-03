@@ -84,7 +84,8 @@ def _bound_manager(module: Module, bank_capacity: int) -> JITRuntimeManager:
 def _compile(compiler: TraceCompiler, module: Module, count: int) -> list[JITTrace]:
     """Compile the first `count` instruction blocks of `module` with one compiler."""
     traces = [
-        compile_module_block(compiler, module, block) for block in _instruction_blocks(module)[:count]
+        compile_module_block(compiler, module, block)
+        for block in _instruction_blocks(module)[:count]
     ]
     assert all(trace is not None for trace in traces)
     return traces

@@ -26,6 +26,7 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 import pytest
 import wasmtime
 from config import (
+    FB_CONF_INTERPRETER_YIELD_THRESHOLD,
     FB_CONF_JIT_CACHE_SIZE,
     JIT_CACHE_ACTIVE_OFFSET_BYTES,
     JIT_CACHE_BANK_CAPACITY_BYTES,
@@ -39,6 +40,8 @@ from config import (
     JIT_CACHE_REGION_PAGE_COUNT,
     JIT_CACHE_TOTAL_ENTRY_CAPACITY,
     JIT_CACHE_WARM_OFFSET_BYTES,
+    JIT_COMPILE_QUEUE_CAPACITY,
+    JIT_HISTORY_CAPACITY,
     JIT_TRACE_HEADER_BYTES,
     JIT_X64_CHAIN_TARGET_OFFSET,
 )
@@ -189,8 +192,8 @@ def test_hotspot_and_trackable_bitmaps_share_one_code_region_card_space():
     """Hotspot and candidate state use flat code-region storage across function boundaries."""
     lengths = (3, 3)
     bases = (0, 3)
-    hotspot = HotspotBitmap(card_shift=2, code_lengths=lengths, function_pc_bases=bases)
-    trackable = BlockCardMask(card_shift=2, code_lengths=lengths, function_pc_bases=bases)
+    hotspot = HotspotBitmap(code_lengths=lengths, function_pc_bases=bases)
+    trackable = BlockCardMask(code_lengths=lengths, function_pc_bases=bases)
     first_function_pc = 2
     second_function_pc = 3
 
@@ -222,24 +225,26 @@ def test_jitr_01_card_marking_granularity():
 
 def test_hotspot_02_history_ring_buffered_yield_drain():
     """TEST-HOTSPOT-02 / TEST-JITR-05: Native history keeps the newest heads and consumes each record once."""
+    visits = JIT_HISTORY_CAPACITY + 2
     module = parse_standalone(
-        wat_to_wasm('(module (func (export "f") ' + "(block i32.const 1 drop) " * 10 + "))")
+        wat_to_wasm('(module (func (export "f") ' + "(block i32.const 1 drop) " * visits + "))")
     )
-    manager = JITRuntimeManager(card_shift=0, history_capacity=8)
+    manager = JITRuntimeManager()
     manager.register_module(module)
-    pcs = tuple(b.head_pc for b in instruction_blocks(module))[:10]
-    assert len(pcs) == 10
+    pcs = tuple(b.head_pc for b in instruction_blocks(module))[:visits]
+    assert len(pcs) == visits
     for pc in pcs:
         manager.trackable.mark(pc)
         manager.record_block_head(pc)
     manager.on_interpreter_exit(False)
-    assert manager.exec_counter == 10
-    assert manager.history_overwritten_count == 2
+    overwritten = visits - JIT_HISTORY_CAPACITY
+    assert manager.exec_counter == visits
+    assert manager.history_overwritten_count == overwritten
     assert manager.last_history_analysis_approximate
-    assert all(manager.card_state(pc) == CardState.UNEXECUTED for pc in pcs[:2])
-    assert all(manager.card_state(pc) == CardState.EXECUTED for pc in pcs[2:])
+    assert all(manager.card_state(pc) == CardState.UNEXECUTED for pc in pcs[:overwritten])
+    assert all(manager.card_state(pc) == CardState.EXECUTED for pc in pcs[overwritten:])
     manager.on_interpreter_exit(False)
-    assert all(manager.card_state(pc) == CardState.EXECUTED for pc in pcs[2:])
+    assert all(manager.card_state(pc) == CardState.EXECUTED for pc in pcs[overwritten:])
     assert not manager.has_pending_compilation()
 
 
@@ -248,8 +253,6 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
     compiler = TraceCompiler()
     engine = make_runtime_engine(
         jit_compiler=compiler,
-        min_trace_bytes=1,
-        candidate_threshold=0,
         compile_queue_capacity=4,
     )
     wat = """(module
@@ -279,7 +282,7 @@ def test_hotspot_04_3bank_cache_hits_preserve_residency():
     module = _loader_module(4, body="(block i32.const 7 local.set 0) ")
     traces = _compile_loader_blocks(module, 4)
     t1, t2, t3 = traces[0], traces[1], traces[2]
-    cache = _bound_manager(module, bank_capacity=512).cache
+    cache = _bound_manager(module).cache
     cache.insert(t1)  # In Active
     cache.rotate()  # t1 moved to Warm
     cache.insert(t2)  # t2 in Active
@@ -295,7 +298,10 @@ def test_hotspot_04_3bank_cache_hits_preserve_residency():
     cache.insert(t3)  # t3 remains in Active
     assert cache.find_trace(t1.head_pc) is not None
     for trace, bank_id in ((t1, 0), (t2, 2), (t3, 1)):
-        assert native_abi.RUNTIME_FIND(cache._native.pointer, trace.head_pc, ctypes.byref(location)) == 1
+        assert (
+            native_abi.RUNTIME_FIND(cache._native.pointer, trace.head_pc, ctypes.byref(location))
+            == 1
+        )
         assert location.bank_id == bank_id
     state = (cache.resident_bytes, cache.generation)
     assert cache.lookup(t1.head_pc) is t1
@@ -316,11 +322,12 @@ def test_hotspot_04_3bank_cache_hits_preserve_residency():
         trace.execute(context.context_ptr, instruction_ip, context.sp_ptr)
         assert context.local_stack[0] == 7
 
+
 def test_jitr_cache_lookup_accepts_unsorted_insertions_and_retirement():
     """Sorted native index preserves lookup until its bank is retired."""
     module = _loader_module(5)
     traces = _compile_loader_blocks(module, 5)
-    cache = _bound_manager(module, bank_capacity=2048).cache
+    cache = _bound_manager(module).cache
     # Loader PCs ascend with block order; inserting in this order is an unsorted insertion.
     t_300, t_100, t_500, t_200, t_400 = traces[2], traces[0], traces[4], traces[1], traces[3]
     for trace in (t_300, t_100, t_500, t_200, t_400):
@@ -346,38 +353,40 @@ def test_jitr_cache_lookup_accepts_unsorted_insertions_and_retirement():
 
 
 def test_jitr_bank_entry_limit_preserves_state_and_reuses_existing_slots():
-    """Replacement reuses the existing slot; a third distinct PC rotates a full index."""
-    module = _loader_module(3)
-    traces = _compile_loader_blocks(module, 3)
+    """Replacement reuses the existing slot; a distinct PC beyond the bank's entry limit rotates."""
+    entries = JIT_CACHE_BANK_ENTRY_CAPACITY
+    module = _loader_module(entries + 1)
+    traces = _compile_loader_blocks(module, entries + 1)
     size = traces[0].size_bytes
-    # Two traces fill one bank by entries, so the bank byte capacity is two trace sizes.
-    cache = _bound_manager(module, bank_capacity=2 * size, entry_capacity=2).cache
-    first, second, newcomer = traces
-    inserted = cache.insert(first)
-    assert inserted
-    inserted = cache.insert(second)
-    assert inserted
-    assert cache.entry_capacity == 6
+    # The entry limit binds first: a full set of entries still fits the bank's byte capacity.
+    assert entries * size <= JIT_CACHE_BANK_CAPACITY_BYTES
+    cache = _bound_manager(module).cache
+    resident, newcomer = traces[:entries], traces[entries]
+    for trace in resident:
+        inserted = cache.insert(trace)
+        assert inserted
+    assert cache.rotations == 0 and cache.resident_count == entries
     used = cache.resident_bytes
-    replacement = _compile_loader_blocks(module, 3)[0]
+    first = resident[0]
+    replacement = _compile_loader_blocks(module, entries + 1)[0]
     assert replacement.head_pc == first.head_pc
     inserted = cache.insert(replacement)
     assert inserted
     assert replacement.code_offset == first.code_offset
-    assert cache.resident_bytes == used and cache.resident_count == 2
+    assert cache.resident_bytes == used and cache.resident_count == entries
     inserted = cache.insert(newcomer)
     assert inserted
     assert cache.rotations == 1
-    assert cache.find_trace(first.head_pc) is replacement
-    assert cache.find_trace(second.head_pc) is second
+    expected = {trace.head_pc: trace for trace in resident}
+    expected[first.head_pc] = replacement
+    assert all(cache.find_trace(pc) is trace for pc, trace in expected.items())
     assert cache.find_trace(newcomer.head_pc) is newcomer
-    assert cache.resident_count == 3 and cache.resident_bytes == used + newcomer.size_bytes
+    assert cache.resident_count == entries + 1
+    assert cache.resident_bytes == used + newcomer.size_bytes
     cache.rotate()
-    assert cache.find_trace(first.head_pc) is replacement
-    assert cache.find_trace(second.head_pc) is second
+    assert all(cache.find_trace(pc) is trace for pc, trace in expected.items())
     cache.rotate()
-    assert cache.find_trace(first.head_pc) is None
-    assert cache.find_trace(second.head_pc) is None
+    assert all(cache.find_trace(pc) is None for pc in expected)
     assert cache.find_trace(newcomer.head_pc) is newcomer
     cache.rotate()
     assert cache.find_trace(newcomer.head_pc) is None
@@ -399,12 +408,14 @@ def test_jitr_entry_limit_rotates_before_code_region_is_full():
     assert cache.rotations == 1
     assert cache.find_trace(newcomer.head_pc) is newcomer
     assert all(
-        cache.find_trace(trace.head_pc) is not None for trace in traces[:JIT_CACHE_BANK_ENTRY_CAPACITY]
+        cache.find_trace(trace.head_pc) is not None
+        for trace in traces[:JIT_CACHE_BANK_ENTRY_CAPACITY]
     )
     assert cache.resident_bytes == JIT_CACHE_BANK_ENTRY_CAPACITY * size + newcomer.size_bytes
     cache.rotate()
     assert all(
-        cache.find_trace(trace.head_pc) is not None for trace in traces[:JIT_CACHE_BANK_ENTRY_CAPACITY]
+        cache.find_trace(trace.head_pc) is not None
+        for trace in traces[:JIT_CACHE_BANK_ENTRY_CAPACITY]
     )
     cache.rotate()
     assert all(
@@ -438,7 +449,10 @@ def _loader_module(count: int, body: str = _LOADER_BLOCK_BODY) -> Module:
 def _compile_loader_blocks(module: Module, count: int) -> list[JITTrace]:
     """Compile the first `count` loader blocks of `module`; the blocks share one trace size."""
     compiler = TraceCompiler()
-    traces = [compile_module_block(compiler, module, block) for block in instruction_blocks(module)[:count]]
+    traces = [
+        compile_module_block(compiler, module, block)
+        for block in instruction_blocks(module)[:count]
+    ]
     assert all(trace is not None for trace in traces)
     assert len({trace.size_bytes for trace in traces}) == 1
     return traces
@@ -620,7 +634,7 @@ def test_jitr_oldest_keeps_existing_chain_and_executes_in_place():
     """GOTCHA-JITR-02: an existing chain into an Oldest hit stays linked, and the hit runs in place."""
     module = _loader_module(2, body=_SIDE_EFFECT_BODY)
     t1, t2 = _compile_loader_blocks(module, 2)
-    cache = _bound_manager(module, bank_capacity=512).cache
+    cache = _bound_manager(module).cache
     inserted = cache.insert(t2)
     assert inserted  # t2 -> Active
     cache.rotate()  # t2's bank -> Warm
@@ -642,7 +656,7 @@ def test_jitr_oldest_target_rejects_a_new_chain_link():
     """GOTCHA-JITR-02: a new source does not link into a target that already sits in Oldest."""
     module = _loader_module(2, body=_SIDE_EFFECT_BODY)
     t1, t2 = _compile_loader_blocks(module, 2)
-    cache = _bound_manager(module, bank_capacity=512).cache
+    cache = _bound_manager(module).cache
     inserted = cache.insert(t2)
     assert inserted  # t2 -> Active
     cache.rotate()  # t2's bank -> Warm
@@ -652,7 +666,6 @@ def test_jitr_oldest_target_rejects_a_new_chain_link():
     assert inserted  # the new source t1 must not chain into Oldest
     assert t1.chain_next is None and t1.header.chain_target_addr == 0
     assert cache.find_trace(t1.head_pc) is t1 and t1.chain_next is None
-
 
 
 def test_jitr_chained_successor_trap_stops_at_its_body_after_the_source_ran():
@@ -667,7 +680,7 @@ def test_jitr_chained_successor_trap_stops_at_its_body_after_the_source_ran():
     )
     source_block, successor_block = [b for b in module.blocks if b.byte_span > 0][:2]
     assert source_block.next_pc == successor_block.head_pc
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), candidate_threshold=0)
+    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
     engine.register_module_blocks(module)
     compiler = TraceCompiler()
@@ -702,7 +715,7 @@ def test_jitr_chained_successor_cps_boundary_stops_at_its_block():
             " (block i32.const 7 local.set 0) (block memory.size drop) local.get 0))"
         )
     )
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), candidate_threshold=0)
+    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
     engine.register_module_blocks(module)
     base = module.function_pc_offset(0)
@@ -711,11 +724,14 @@ def test_jitr_chained_successor_cps_boundary_stops_at_its_block():
     code = module.code_for(0)
     memory_size_ip = bytes(code).index(b"\x3f\x00")  # memory.size with its memory index
     boundary_block = next(
-        index for index, block in enumerate(module.blocks)
+        index
+        for index, block in enumerate(module.blocks)
         if block.head_pc <= base + memory_size_ip < block.head_pc + block.byte_span
     )
     source_block = next(
-        index for index, block in enumerate(module.blocks) if block.next_pc == module.blocks[boundary_block].head_pc
+        index
+        for index, block in enumerate(module.blocks)
+        if block.next_pc == module.blocks[boundary_block].head_pc
     )
 
     # Compile both blocks with the loader metadata; inserting the successor first links the chain.
@@ -735,7 +751,10 @@ def test_jitr_chained_successor_cps_boundary_stops_at_its_block():
     interpreter = Interpreter(module)
     call = interpreter.start(0, [])
     result = dispatch_for_test(
-        interpreter, call, manager.native_dispatch_state(), manager.exec_counter,
+        interpreter,
+        call,
+        manager.native_dispatch_state(),
+        manager.exec_counter,
         native_dispatcher=select_native_jit_dispatch_entry(False),
     )
     assert result[0] == NATIVE_DISPATCH_RUNTIME_API_BOUNDARY
@@ -756,9 +775,9 @@ def test_jitr_trace_blob_has_no_entry_or_exit_stencil():
     const_rel = struct.unpack_from("<I", blob, 28)[0]
     assert len(blob) == trace.size_bytes
     # The removed entry began with `push r12` (41 54); the removed exit began with `mov r11, [ctx+rel]`.
-    assert blob[JIT_TRACE_HEADER_BYTES:JIT_TRACE_HEADER_BYTES + 2] != bytes((0x41, 0x54))
+    assert blob[JIT_TRACE_HEADER_BYTES : JIT_TRACE_HEADER_BYTES + 2] != bytes((0x41, 0x54))
     # The boundary metadata is 20 bytes and precedes the constant pool.
-    body = blob[JIT_TRACE_HEADER_BYTES:const_rel - 20]
+    body = blob[JIT_TRACE_HEADER_BYTES : const_rel - 20]
     assert 0xC3 in body, "the body contains the success return"
 
 
@@ -820,7 +839,7 @@ def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
     """TEST-JITR-31..TEST-JITR-35: Successor metadata for resident traces and O(k) unlinking on Oldest purge."""
     module = _loader_module(2)
     t1, t2 = _compile_loader_blocks(module, 2)
-    cache = _bound_manager(module, bank_capacity=512).cache
+    cache = _bound_manager(module).cache
     # t1 falls through to t2
     inserted = cache.insert(t2)  # t2 in Active
     assert inserted
@@ -1083,7 +1102,7 @@ def test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace():
     """
     wat = '(module (func (export "f") i32.const 1 drop i32.const 2 drop return))'
     wasm_bytes = bytes(wasmtime.wat2wasm(wat))
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), card_shift=3)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
     engine.jit_runtime.trackable.mark(pc)
@@ -1100,26 +1119,20 @@ def test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace():
 
 def test_jitr_compile_queue_overflow_compiles_on_the_spot():
     """TEST-JITR-81: When compile_queue fills, all queued traces compile synchronously."""
-    wat = """
-    (module
-      (func (export "f0") i32.const 1 drop i32.const 2 drop return)
-      (func (export "f1") i32.const 1 drop i32.const 2 drop return)
-      (func (export "f2") i32.const 1 drop i32.const 2 drop return)
+    # One candidate more than the queue holds: the last queued block finds the queue full.
+    functions = JIT_COMPILE_QUEUE_CAPACITY + 1
+    body = "i32.const 1 drop i32.const 2 drop return"
+    wat = (
+        "(module "
+        + "".join(f'(func (export "f{index}") {body})' for index in range(functions))
+        + ")"
     )
-    """
     wasm_bytes = bytes(wasmtime.wat2wasm(wat))
-    compiler = TraceCompiler()
-    engine = make_runtime_engine(
-        jit_compiler=compiler,
-        card_shift=3,
-        compile_queue_capacity=3,
-        min_trace_bytes=1,
-        candidate_threshold=0,
-    )
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     blocks = instruction_blocks(mod)
     pcs = [block.head_pc for block in blocks]
-    assert len(pcs) == 3
+    assert len(pcs) == functions
     for pc in pcs:
         engine.jit_runtime.bitmap.touch(pc)
         engine.jit_runtime.bitmap.touch(pc)
@@ -1129,7 +1142,11 @@ def test_jitr_compile_queue_overflow_compiles_on_the_spot():
         engine.jit_runtime.record_block_head(pc)
     engine.jit_runtime.on_yield()
 
-    assert len(engine.jit_runtime.compilation_pcs) == 3
+    # The overflow compiles the full queue at once; the last candidate waits for the idle hook.
+    assert len(engine.jit_runtime.compilation_pcs) == JIT_COMPILE_QUEUE_CAPACITY
+    assert engine.jit_runtime.has_pending_compilation()
+    assert engine.idle_hook() == functions - JIT_COMPILE_QUEUE_CAPACITY
+    assert len(engine.jit_runtime.compilation_pcs) == functions
     assert not engine.jit_runtime.has_pending_compilation()
     for pc in pcs:
         assert engine.jit_runtime.bitmap.get_state(pc) == CardState.COMPILED
@@ -1139,9 +1156,6 @@ def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
     """TEST-JITR-14: failed compilation permanently clears only candidate eligibility."""
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=2,
-        min_trace_bytes=1,
-        candidate_threshold=0,
     )
     # 80 instructions exceed kMaxTraceInstructions (64), a listed failure of the compiler.
     body = " ".join("i32.const 1 drop" for _ in range(40))
@@ -1188,7 +1202,6 @@ def test_jitr_26_sorted_index_folds_high_pc_bits():
     for index, pc in enumerate(pcs):
         assert storage.view().find(fold_mix32(pc)) == index
     assert storage.view().find(fold_mix32(0x00000004)) is None
-
 
 
 def test_jitr_83_uncompiled_block_skips_runtime_cache_lookup():
@@ -1477,8 +1490,6 @@ def test_jitr_native_compiler_scans_queued_traces_without_python_opcode_marshall
     )
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        min_trace_bytes=1,
-        candidate_threshold=0,
     )
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
@@ -1544,8 +1555,6 @@ def test_jitr_clang_wasm_ngrams_embed_i32_immediates_in_trace_code():
     )
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        min_trace_bytes=1,
-        candidate_threshold=0,
     )
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
@@ -1634,8 +1643,6 @@ def test_jitr_local_pair_binary_results_match_reference():
     module = parse_standalone(wat_to_wasm(module_text))
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        min_trace_bytes=1,
-        candidate_threshold=0,
     )
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
@@ -1888,7 +1895,7 @@ def test_jitr_backward_branch_block_byte_span_not_disqualified():
     fn_idx = module.export_func_index("sum_to")
     # Use the production 4-byte card so both deliberately short loop blocks
     # remain eligible.
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), card_shift=2)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     engine.register_module_blocks(module)
     interp = Interpreter(module, yield_threshold=8)
 
@@ -2081,7 +2088,6 @@ def test_jitr_return_terminated_block_jit_result_correct():
     # RETURN-terminated block remains a valid JIT candidate.
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=2,
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
@@ -2105,7 +2111,6 @@ def test_jitr_return_handler_publishes_sentinel_once() -> None:
     fn_idx = module.export_func_index("f")
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=2,
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
@@ -2172,8 +2177,6 @@ def test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack():
     module = parse_standalone(wasm_bytes)
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=2,
-        candidate_threshold=0,
     )
     engine.register_module_blocks(module)
     interp = Interpreter(module, yield_threshold=4)
@@ -2212,8 +2215,6 @@ def test_jitr_defined_calls_continue_in_cps_until_yield():
     module = parse_standalone(wat_to_wasm(wat))
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=2,
-        candidate_threshold=0,
     )
     engine.register_module_blocks(module)
     manager = engine.jit_runtime
@@ -2235,32 +2236,34 @@ def test_jitr_defined_calls_continue_in_cps_until_yield():
 
 def test_jitr_native_history_overwrite_does_not_yield():
     """TEST-JITR-69: overflow keeps recent visits without changing the execution boundary."""
-    wat = """
+    # The loop runs more iterations than the history holds, and fewer backedges than the yield threshold.
+    iterations = JIT_HISTORY_CAPACITY + 2
+    assert iterations < FB_CONF_INTERPRETER_YIELD_THRESHOLD
+    wat = f"""
     (module
       (func $inc (param i32) (result i32)
         local.get 0
         i32.const 1
         i32.add)
-      (func (export "calls") (result i32)
-        i32.const 1
-        call $inc
-        drop
-        i32.const 2
-        call $inc
-        drop
-        i32.const 3
-        call $inc
-        drop
-        i32.const 4
-        call $inc)
+      (func (export "calls") (result i32) (local $i i32) (local $acc i32)
+        loop $again
+          local.get $acc
+          call $inc
+          local.set $acc
+          local.get $i
+          i32.const 1
+          i32.add
+          local.tee $i
+          i32.const {iterations}
+          i32.lt_s
+          br_if $again
+        end
+        local.get $acc)
     )
     """
     module = parse_standalone(wat_to_wasm(wat))
     manager = JITRuntimeManager(
         jit_compiler=TraceCompiler(),
-        history_capacity=2,
-        card_shift=2,
-        candidate_threshold=0,
     )
     engine = RuntimeEngine(jit_runtime=manager)
     engine.register_module_blocks(module)
@@ -2275,11 +2278,12 @@ def test_jitr_native_history_overwrite_does_not_yield():
         boundaries += 1
         assert boundaries < 4
 
-    assert call_state.results == [5]
-    assert manager.exec_counter > manager.history_capacity
-    assert manager.history_overwritten_count == manager.exec_counter - manager.history_capacity
+    assert call_state.results == [iterations]
+    assert manager.exec_counter > JIT_HISTORY_CAPACITY
+    assert manager.history_overwritten_count == manager.exec_counter - JIT_HISTORY_CAPACITY
     assert manager.last_history_analysis_approximate
-    assert not manager.has_pending_compilation()
+    # The recent visits still drive analysis: the loop's blocks reach HOT and queue for compilation.
+    assert manager.has_pending_compilation()
 
 
 @pytest.mark.parametrize("collect_stats", (False, True))
@@ -2306,7 +2310,7 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
         __slots__ = ("block_lookups",)
 
         def __init__(self) -> None:
-            super().__init__(jit_compiler=TraceCompiler(), candidate_threshold=0)
+            super().__init__(jit_compiler=TraceCompiler())
             self.block_lookups = []
 
         def get_block(self, pc: int):
@@ -2561,7 +2565,7 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
             f'(module {imports} (memory 1) (func (export "run") (result i32) {body}))'
         )
     )
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), candidate_threshold=0)
+    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=collect_stats)
     engine.register_module_blocks(module)
     base = module.function_pc_offset(function_index)
@@ -2637,7 +2641,7 @@ def test_jitr_native_step_consumes_pending_head_before_memory_fallback(collect_s
             "memory.size drop (block nop) i32.const 42))"
         )
     )
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), candidate_threshold=0)
+    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=collect_stats)
     engine.register_module_blocks(module)
     base = module.function_pc_offset(0)
@@ -2683,7 +2687,7 @@ def test_jitr_memory_helper_trap_clears_block_continuation():
     module = parse_standalone(
         wasmtime.wat2wasm("(module (memory 1) (func i32.const -1 i32.load drop))")
     )
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), candidate_threshold=0)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
     call = interpreter.start(0, [])
@@ -2830,9 +2834,6 @@ def test_jitr_br_table_uses_native_handler_and_preserves_every_target():
     jit_engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
         bump_allocator=module.allocator,
-        card_shift=0,
-        candidate_threshold=0,
-        min_trace_bytes=1,
     )
     jit_module = jit_engine.load_wasm(wat_to_wasm(wat))
     table_offset = next(
@@ -2888,9 +2889,6 @@ def test_jitr_mixed_typed_stack_uses_runtime_apis_inside_jit_trace():
     )
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=0,
-        candidate_threshold=0,
-        min_trace_bytes=1,
     )
     engine.register_module_blocks(module)
     mixed_block = engine.get_block(module.blocks[0].head_pc)
@@ -2916,6 +2914,8 @@ def test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized():
               (func (result i64) i64.const 70)
               (func (result f64) f64.const 2.5)
               (func (result i32)
+                i32.const 0
+                drop
                 i32.const 11
                 call 0
                 call 1
@@ -2932,9 +2932,6 @@ def test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized():
     )
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=0,
-        candidate_threshold=0,
-        min_trace_bytes=1,
     )
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
@@ -2951,17 +2948,14 @@ def test_jitr_runtime_engine_preserves_typed_top_level_results():
     module = parse_standalone(
         wat_to_wasm(
             """(module
-              (func (result i32) i32.const 7 return)
-              (func (result i64) i64.const 70 return)
-              (func (result f32) f32.const 7.5 return)
-              (func (result f64) f64.const 8.5 return))"""
+              (func (result i32) i32.const 0 drop i32.const 7 return)
+              (func (result i64) i32.const 0 drop i64.const 70 return)
+              (func (result f32) i32.const 0 drop f32.const 7.5 return)
+              (func (result f64) i32.const 0 drop f64.const 8.5 return))"""
         )
     )
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=0,
-        candidate_threshold=0,
-        min_trace_bytes=1,
     )
     engine.register_module_blocks(module)
     interp = Interpreter(module)
@@ -3064,9 +3058,6 @@ def test_jitr_host_import_call_trace_tail_calls_cps_handler_and_resumes_once():
 
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=0,
-        min_trace_bytes=1,
-        candidate_threshold=0,
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
@@ -3130,9 +3121,6 @@ def test_jitr_defined_call_after_import_keeps_call_annotation_and_stack_prefix()
 
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=0,
-        min_trace_bytes=1,
-        candidate_threshold=0,
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
@@ -3205,9 +3193,6 @@ def test_jitr_call_indirect_trace_uses_interpreter_table_checks(
 
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=0,
-        min_trace_bytes=1,
-        candidate_threshold=0,
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
@@ -3261,9 +3246,6 @@ def test_jitr_recursive_direct_call_reuses_cps_frames():
 
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=0,
-        min_trace_bytes=1,
-        candidate_threshold=0,
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
@@ -3310,9 +3292,6 @@ def test_jitr_direct_call_callee_trap_stops_caller_continuation():
 
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=0,
-        min_trace_bytes=1,
-        candidate_threshold=0,
         hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
@@ -3422,9 +3401,6 @@ def test_jitr_api_lowered_operation_can_start_a_jit_trace():
 
     engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=0,
-        candidate_threshold=0,
-        min_trace_bytes=1,
     )
     engine.register_module_blocks(module)
     trace = compile_runtime_block(engine.jit_runtime, block)
@@ -3484,9 +3460,9 @@ def _aging_engine(counts: tuple[int, ...], **engine_kwargs):
     module = engine.load_wasm(_aging_wasm(counts))
     for func in range(len(counts)):
         heads = [b.head_pc for b in instruction_blocks(module) if b.func_index == func]
-        assert all(
-            later - earlier == _AGING_BLOCK_BYTES for earlier, later in pairwise(heads)
-        ), "consecutive blocks of a function must be one 0x20-byte block apart"
+        assert all(later - earlier == _AGING_BLOCK_BYTES for earlier, later in pairwise(heads)), (
+            "consecutive blocks of a function must be one 0x20-byte block apart"
+        )
     return engine, module
 
 
@@ -3913,7 +3889,7 @@ def test_jitr_62_chain_links_stay_valid_across_lookup_and_rotation():
     chained_runs = 0
     for seed in range(40):
         rng = random.Random(seed)
-        cache = _bound_manager(module, bank_capacity=512).cache
+        cache = _bound_manager(module).cache
         for _ in range(90):
             index = rng.randrange(CHAIN_STRESS_TRACES)
             pc = pcs[index]
@@ -4050,9 +4026,7 @@ def test_jitr_trace_execution_retirement_records_zero_and_used_traces():
     records = []
     module = _loader_module(2)
     used, unused = _compile_loader_blocks(module, 2)
-    manager = _bound_manager(
-        module, retire_observer=lambda pc, count: records.append((pc, count))
-    )
+    manager = _bound_manager(module, retire_observer=lambda pc, count: records.append((pc, count)))
     cache = manager.cache
     assert_result_29 = cache.insert(used)
     assert assert_result_29
@@ -4257,6 +4231,7 @@ def test_jitr_26_compiled_block_dispatch_hits_the_direct_cache_reference():
     finally:
         plugin.close()
 
+
 def test_native_product_plugin_close_clears_borrowed_block_references():
     """Closing a product cache releases every reference before the next owner binds."""
     import mmap
@@ -4321,7 +4296,7 @@ def test_jitr_measurements_are_formatted_in_cpp_through_shared_printk():
     module = parse_standalone(
         wat_to_wasm('(module (func (export "f") ' + "(block i32.const 1 drop) " * 10 + "))")
     )
-    manager = JITRuntimeManager(card_shift=0, history_capacity=8)
+    manager = JITRuntimeManager(history_capacity=8)
     manager.register_module(module)
     pcs = tuple(b.head_pc for b in instruction_blocks(module))[:10]
     try:
@@ -4376,7 +4351,7 @@ def test_jitr_br_table_terminal_record_points_at_the_loader_annotation():
     from tier2_runtime.wasm.opcodes import BR_TABLE
 
     module = parse_standalone(wat_to_wasm(BR_TABLE_TERMINAL_WAT))
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), candidate_threshold=0)
+    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
     engine.register_module_blocks(module)
     function_index = module.export_func_index("main")
@@ -4424,7 +4399,7 @@ def test_jitr_br_table_terminal_record_resumes_after_the_loader_annotation():
     from tier2_runtime.wasm.opcodes import BR_TABLE
 
     module = parse_standalone(wat_to_wasm(BR_TABLE_TERMINAL_WAT))
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), candidate_threshold=0)
+    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
     engine.register_module_blocks(module)
     function_index = module.export_func_index("main")
@@ -4492,7 +4467,7 @@ def test_jitr_compiler_cursor_matches_the_loader_annotation_layout(prefix):
         f"{prefix} local.get 0 br_table $a $b $c))) i32.const 1))"
     )
     module = parse_standalone(wat_to_wasm(body))
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), candidate_threshold=0)
+    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
     engine.register_module_blocks(module)
     function_index = module.export_func_index("main")
@@ -4556,7 +4531,9 @@ def test_native_plugin_compiles_global_access_blocks_with_the_module_global_widt
         (i32.wrap_i64 (global.get $h))))"""
     wasm = wat_to_wasm(wat)
     store = wasmtime.Store(wasmtime.Engine())
-    reference = wasmtime.Instance(store, wasmtime.Module(store.engine, wasm), []).exports(store)["f"]
+    reference = wasmtime.Instance(store, wasmtime.Module(store.engine, wasm), []).exports(store)[
+        "f"
+    ]
     module = parse_standalone(wasm)
     backings: list[mmap.mmap] = []
 
@@ -4686,7 +4663,7 @@ def test_jitr_if_else_arms_chain_into_the_join_across_frame_depth():
     then, other, join = traces["then"], traces["else"], traces["join"]
     assert then.header._native.frame_depth == other.header._native.frame_depth == 1
     assert join.header._native.frame_depth == 0
-    cache = _bound_manager(module, bank_capacity=512).cache
+    cache = _bound_manager(module).cache
     inserted = [cache.insert(join), cache.insert(then), cache.insert(other)]
     assert all(inserted)
     assert then.chain_next == join.head_pc and other.chain_next == join.head_pc

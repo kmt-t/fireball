@@ -210,7 +210,7 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     """GOTCHA-JITR-01: idle_hook skips recompilation if trace is already resident in cache."""
     wat = '(module (func (export "f") i32.const 1 drop i32.const 2 drop return))'
     wasm_bytes = wat_to_wasm(wat)
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), card_shift=3)
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
     engine.jit_runtime.trackable.mark(pc)
@@ -234,13 +234,17 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
 def _loader_chain_module(count: int):
     """Parse a module of `count` + 1 identical loader blocks that fall through to each other."""
     return parse_standalone(
-        wat_to_wasm('(module (func (export "f") ' + "(block i32.const 1 drop) " * (count + 1) + "))")
+        wat_to_wasm(
+            '(module (func (export "f") ' + "(block i32.const 1 drop) " * (count + 1) + "))"
+        )
     )
 
 
 def _loader_chain_traces(module, count: int) -> list:
     """Compile the first `count` loader blocks of `module`."""
-    traces = [compile_module_block(TraceCompiler(), module, block) for block in module.blocks[:count]]
+    traces = [
+        compile_module_block(TraceCompiler(), module, block) for block in module.blocks[:count]
+    ]
     assert all(trace is not None for trace in traces)
     return traces
 
@@ -249,13 +253,15 @@ def test_jitr_gotcha_02_oldest_preserves_existing_chain_until_retirement():
     """GOTCHA-JITR-02: Oldest hits preserve existing chains until the target is retired."""
     module = _loader_chain_module(2)
     t1, t2 = _loader_chain_traces(module, 2)
-    manager = JITRuntimeManager(bank_capacity=512)
+    manager = JITRuntimeManager()
     manager.register_module(module)
     cache = manager.cache
     inserted = cache.insert(t2)  # t2 -> Active
     assert inserted
     cache.rotate()  # t2's bank -> Warm
-    inserted = cache.insert(t1)  # t1 in Active records the Warm-resident t2 as its logical successor
+    inserted = cache.insert(
+        t1
+    )  # t1 in Active records the Warm-resident t2 as its logical successor
     assert inserted
     assert t1.chain_next == t2.head_pc
     assert cache.find_trace(t2.head_pc) is t2 and t1.chain_next == t2.head_pc
@@ -269,13 +275,12 @@ def test_jitr_gotcha_02_oldest_preserves_existing_chain_until_retirement():
     assert cache.find_trace(t1.head_pc) is t1 and t1.chain_next is None
     assert t1.header.chain_target_addr == 0
 
+
 def test_jitr_gotcha_03_lifo_reverse_compilation_order():
     """GOTCHA-JITR-03: LIFO compile order records later straight-line successors first."""
     compiler = TraceCompiler()
     engine = make_runtime_engine(
         jit_compiler=compiler,
-        min_trace_bytes=1,
-        candidate_threshold=0,
     )
     wat = """(module
       (func (export "f0") (result i32) i32.const 10 i32.const 20 i32.add)

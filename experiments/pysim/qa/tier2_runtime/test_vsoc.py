@@ -603,8 +603,6 @@ def test_idle_01_jit_batch_compilation_on_idle():
     compiler = TraceCompiler()
     engine = make_runtime_engine(
         jit_compiler=compiler,
-        min_trace_bytes=1,
-        candidate_threshold=0,
     )
     wat = """(module
       (func (export "f0") (result i32) i32.const 10 i32.const 20 i32.add)
@@ -663,10 +661,7 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
     system.scheduler._clock_ns = clock_ns  # QA clock isolates this logger's flush assertions.
     system.runtime_engine = make_runtime_engine(
         jit_compiler=TraceCompiler(),
-        card_shift=2,
         drive_mode=RuntimeDriveMode.COOS,
-        min_trace_bytes=1,
-        candidate_threshold=0,
     )
     module = parse_standalone(
         wat_to_wasm("""(module
@@ -761,7 +756,7 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     wasm_bytes = wat_to_wasm(wat)
     # Keep the preamble and loop heads on separate cards so this test can
     # observe the full UNEXECUTED -> EXECUTED -> HOT transition directly.
-    engine = make_runtime_engine(card_shift=2, jit_compiler=TraceCompiler())
+    engine = make_runtime_engine(jit_compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[1].head_pc
     results = engine.call(make_native_interpreter(mod, yield_threshold=3), 0, [5]).unwrap()
@@ -777,10 +772,7 @@ def test_runtime_yield_services_jit_while_only_guest_task_is_ready(
 ) -> None:
     """A yielding runtime task services queued JIT work without scheduler idleness."""
     engine = make_runtime_engine(
-        card_shift=2,
         jit_compiler=TraceCompiler(),
-        min_trace_bytes=1,
-        candidate_threshold=0,
         drive_mode=RuntimeDriveMode.COOS,
     )
     system = System()

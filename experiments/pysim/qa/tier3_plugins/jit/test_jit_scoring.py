@@ -48,8 +48,8 @@ def test_plugin_scores_basic_block() -> None:
     "code, results, score, candidate",
     (
         (bytes.fromhex("41 01 00 45 1a 0b"), (), 8, False),
-        (bytes.fromhex("41 01 69 0b"), (I32,), 9, True),
-        (bytes.fromhex("41 01 1a 0b"), (), 10, True),
+        (bytes.fromhex("41 80 01 69 0b"), (I32,), 9, True),
+        (bytes.fromhex("41 80 01 1a 0b"), (), 10, True),
         (bytes.fromhex("00 0b"), (), -8, False),
         # i32.rotl and i32.rotr are Runtime API operations with score +5 (const +6, const +6, drop +4).
         (bytes.fromhex("41 01 41 02 77 1a 0b"), (), 21, True),
@@ -72,7 +72,7 @@ def test_plugin_candidate_gate_uses_specification_threshold(
     assert len(executable_blocks) == 1
     block = executable_blocks[0]
     assert block_score(module, block) == score
-    manager = JITRuntimeManager(card_shift=0, min_trace_bytes=1)
+    manager = JITRuntimeManager()
     try:
         assert manager.candidate_threshold == 9
         manager.register_module(module)
@@ -103,12 +103,24 @@ if __name__ == "__main__":
 
 
 _BLOCK_TERMINATING_SAMPLES: tuple[tuple[int, str], ...] = (
-    (0x04, '(module (func (export "f") (param i32) local.get 0 if i32.const 2 drop else i32.const 3 drop end))'),
+    (
+        0x04,
+        '(module (func (export "f") (param i32) local.get 0 if i32.const 2 drop else i32.const 3 drop end))',
+    ),
     (0x0C, '(module (func (export "f") (block i32.const 1 drop br 0 i32.const 2 drop)))'),
-    (0x0D, '(module (func (export "f") (param i32) (block i32.const 1 drop local.get 0 br_if 0 i32.const 2 drop)))'),
-    (0x0E, '(module (func (export "f") (param i32) (block (block local.get 0 br_table 0 1 i32.const 2 drop))))'),
+    (
+        0x0D,
+        '(module (func (export "f") (param i32) (block i32.const 1 drop local.get 0 br_if 0 i32.const 2 drop)))',
+    ),
+    (
+        0x0E,
+        '(module (func (export "f") (param i32) (block (block local.get 0 br_table 0 1 i32.const 2 drop))))',
+    ),
     (0x0F, '(module (func (export "f") (param i32) i32.const 1 drop return i32.const 2 drop))'),
-    (0x11, '(module (type $t (func)) (table 1 funcref) (func (export "f") i32.const 0 call_indirect (type $t) i32.const 2 drop))'),
+    (
+        0x11,
+        '(module (type $t (func)) (table 1 funcref) (func (export "f") i32.const 0 call_indirect (type $t) i32.const 2 drop))',
+    ),
 )
 
 

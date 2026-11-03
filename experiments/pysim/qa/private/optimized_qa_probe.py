@@ -23,7 +23,7 @@ def main() -> None:
     code = memoryview(bytearray((0x41, 3, 0x41, 4, 0x6A, 0x0B)))
     result = _run_step(code, context, stack, locals_stack, 0, stack.capacity, 0)
     registers = _make_register_test_view()
-    bitmap = HotspotBitmap(card_shift=2, code_lengths=(256,), function_pc_bases=(0,))
+    bitmap = HotspotBitmap(code_lengths=(256,), function_pc_bases=(0,))
     # Two straight-line loader blocks: the first falls through to the second.
     module = parse_standalone(
         wasmtime.wat2wasm(
@@ -31,10 +31,12 @@ def main() -> None:
             " (block i32.const 3 drop)))"
         )
     )
-    manager = JITRuntimeManager(bank_capacity=512)
+    manager = JITRuntimeManager()
     manager.register_module(module)
     cache = manager.cache
-    first, second = (compile_module_block(TraceCompiler(), module, block) for block in module.blocks[:2])
+    first, second = (
+        compile_module_block(TraceCompiler(), module, block) for block in module.blocks[:2]
+    )
     first_inserted = cache.insert(first)
     second_inserted = cache.insert(second)
     print(

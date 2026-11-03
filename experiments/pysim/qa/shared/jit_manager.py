@@ -7,28 +7,26 @@ from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from config import (
-    FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
-    FB_CONF_JIT_AGING_STEP_UNITS,
     FB_CONF_JIT_CANDIDATE_THRESHOLD,
-    JIT_CACHE_ACTIVE_OFFSET_BYTES,
-    JIT_CACHE_BANK_CAPACITY_BYTES,
     JIT_CACHE_BANK_ENTRY_CAPACITY,
-    JIT_CACHE_OLDEST_OFFSET_BYTES,
-    JIT_CACHE_WARM_OFFSET_BYTES,
     JIT_CARD_SHIFT,
     JIT_COMPILE_QUEUE_CAPACITY,
     JIT_HISTORY_CAPACITY,
 )
 from qa.private import jit_native_abi as native_abi
-from qa.private.interpreter_native_abi import RUN_DISPATCH_JIT
 from qa.private.jit_native_abi import CacheField
-from qa.shared.jit_scoring import block_score
-from system_containers import MutableBitStorage, StaticVector, fold_mix32
+from system_containers import StaticVector, fold_mix32
+from system_containers import StaticVector as _StaticVector
+from tier2_runtime.abi.native_abi import RUN_DISPATCH_JIT as NATIVE_RUN_DISPATCH_JIT
 from tier2_runtime.abi.native_abi import BufferLease
 from tier2_runtime.interpreter.interpreter import (
+    ExecutionContext,
+    InterpreterBindings,
+    NativeInterpreter,
     NativeModuleExecution,
 )
-from tier2_runtime.wasm.module import BasicBlock, Module
+from tier2_runtime.runtime.python_api import PAGE_SIZE
+from tier2_runtime.wasm.module import BasicBlock, Memory, Module
 from tier3_plugins.jit.jit_manager import JITRuntimeManager as NativeJITRuntimeManager
 
 from .jit_abi import (
@@ -72,16 +70,53 @@ def _module_function_pc_bases(module: Module) -> StaticVector[int]:
     return bases
 
 
+class _NativeBitStorage:
+    """Card state owned by the native runtime, viewed without a copy."""
+
+    __slots__ = ("bits", "buffer", "count")
+
+    def __init__(self, address: int, nbytes: int, count: int, bits: int) -> None:
+        self.buffer = memoryview((ctypes.c_uint8 * nbytes).from_address(address))
+        self.count = count
+        self.bits = bits
+
+
+def _module_execution(module: Module) -> tuple[NativeInterpreter, NativeModuleExecution]:
+    """Build the product module execution that an interpreter builds for `module`.
+
+    The interpreter owns the allocator that holds the view's tables, so the caller keeps it alive.
+    """
+    memory_decl = (
+        module.memory if module.memory is not None else Memory(min_pages=0, max_pages=None)
+    )
+    bindings = InterpreterBindings(
+        memory=bytearray(memory_decl.min_pages * PAGE_SIZE),
+        memory_decl=memory_decl,
+        imported_memory=False,
+        host_functions=_StaticVector.of(
+            tuple(None for _ in module.imports), capacity=len(module.imports)
+        ),
+        globals=_StaticVector(capacity=0),
+        tables=_StaticVector(capacity=0),
+    )
+    interpreter = NativeInterpreter.with_module_allocator(module, bindings)
+    interpreter._prepare_native_execution(
+        ExecutionContext(module, allocator=interpreter.bump_allocator)
+    )
+    execution = interpreter._module_execution
+    assert execution is not None
+    return interpreter, execution
+
+
 class JITRuntimeManager(NativeJITRuntimeManager):
     """QA-only views of cache and card state; the product adapter is opaque."""
 
     __slots__ = (
-        "_block_execution_counts",
-        "_block_inputs",
         "_card_shift",
         "_cards",
         "_code_bytes",
         "_compile_code_leases",
+        "_module_owner",
         "_native",
         "_native_dispatch_cache_key",
         "_native_dispatch_cache_snapshot",
@@ -110,8 +145,8 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         # Every runtime parameter is the product configuration; tests do not override it.
         self.candidate_threshold = FB_CONF_JIT_CANDIDATE_THRESHOLD
         self.compile_queue_capacity = JIT_COMPILE_QUEUE_CAPACITY
-        self.aging_step_units = FB_CONF_JIT_AGING_STEP_UNITS
-        self.aging_scan_bytes = FB_CONF_JIT_AGING_STEP_SCAN_BYTES
+        self.aging_step_units = int(native_abi.AGING_STEP_UNITS())
+        self.aging_scan_bytes = int(native_abi.AGING_STEP_SCAN_BYTES())
         # The QA runtime owns a compiler, as the product runtime does.
         self.jit_compiler: JITCompiler = TraceCompiler()
         self.history_capacity = JIT_HISTORY_CAPACITY
@@ -119,34 +154,33 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         self.min_trace_bytes = 1 << JIT_CARD_SHIFT
         self._card_shift = JIT_CARD_SHIFT
         self._retire_observer = retire_observer
-        self._native = native_abi.NativeRuntimeStorage(
-            JIT_CACHE_BANK_CAPACITY_BYTES,
-            JIT_CACHE_BANK_ENTRY_CAPACITY,
-            (
-                JIT_CACHE_ACTIVE_OFFSET_BYTES,
-                JIT_CACHE_WARM_OFFSET_BYTES,
-                JIT_CACHE_OLDEST_OFFSET_BYTES,
-            ),
-        )
-        self._pointer = self._native.pointer
+        # The product runtime is created when a module is registered; it has no earlier state.
         self.module: Module | None = None
+        self._native: native_abi.NativeRuntimeStorage | None = None
+        self._pointer: int | None = None
+        self._module_owner: NativeInterpreter | None = None
+        self._execution: NativeModuleExecution | None = None
         self._compile_code_leases: StaticVector[BufferLease] = StaticVector(
             capacity=len(code_lengths)
         )
-        self._block_inputs = (native_abi._NativeWasmBlock * 0)()
-        self._block_execution_counts = (ctypes.c_uint32 * 0)()
-        self._bind_buffers(code_lengths, ())
-        self._bind_profile()
-        self.cache = JitRuntimeBoundary.borrow(self._native, retire_observer)
-        self.cache.metadata_provider = self._describe_trace
         self._native_dispatch_cache_snapshot = EMPTY_NATIVE_DISPATCH_SNAPSHOT
         self._native_dispatch_cache_key = None
-        self._bind_test_views(code_lengths, ())
 
-    def _bind_test_views(self, lengths: Sequence[int], bases: Sequence[int]) -> None:
+    def _bind_test_views(self) -> None:
+        """Expose the card arrays that the native runtime owns as QA views, without copies."""
+        assert self.module is not None and self._native is not None
+        views = self._native.card_views()
+        self._cards = (
+            _NativeBitStorage(views.states, views.state_bytes, views.cards, 2),
+            _NativeBitStorage(views.dirty, views.dirty_bytes, views.cards, 1),
+            _NativeBitStorage(views.trackable, views.dirty_bytes, views.cards, 1),
+        )
+        lengths = _module_code_lengths(self.module)
+        bases = _module_function_pc_bases(self.module)
         self.bitmap = HotspotBitmap(self.card_shift, lengths, bases)
         self.trackable = BlockCardMask(self.card_shift, lengths, bases)
         self.update_bitmap = CardUpdateBitmap(self.bitmap.card_count)
+        assert self.bitmap.card_count == views.cards
         self.bitmap.storage = self._cards[0]
         self.update_bitmap.storage = self._cards[1]
         self.trackable.storage = self._cards[2]
@@ -157,94 +191,39 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             self.update_bitmap.storage, self.bitmap.card_count, 1
         )
         self.trackable._bits = _NativeBits(self.trackable.storage, self.trackable.card_count, 1)
-        assert self._native._cursor is not None
-        self.update_bitmap._cursor = self._native._cursor
+        self.update_bitmap._cursor = ctypes.c_uint32.from_address(views.cursor)
 
     def register_module(self, module: Module, module_id: int | None = None) -> None:
-        """Bind loader metadata and initialize all JIT-owned indexes."""
+        """Create the product runtime for `module` and bind its loader metadata."""
 
         if self.module is module:
             if module_id is not None:
                 assert module_id == self.module_id
             return
-        # The JIT reads the original bytecode, so native views must not use the expression copy.
-        module.drop_native_code_copies()
-        for lease in self._compile_code_leases:
-            lease.release()
+        assert self.module is None, "a QA runtime binds one module"
         if module_id is not None:
             assert 0 <= module_id <= 0xFFFF_FFFF
             self.module_id = module_id
+        # The JIT reads the original bytecode, so native views must not use the expression copy.
+        module.drop_native_code_copies()
         if module.block_storage is None:
             module.build_basic_block_index()
         self.module = module
         self._compile_code_leases = StaticVector(capacity=len(module.functions))
         for local_index in range(len(module.functions)):
-            function_index = len(module.imports) + local_index
-            code = module.code_for(function_index)
+            code = module.code_for(len(module.imports) + local_index)
             self._compile_code_leases.append(BufferLease(memoryview(code)))
-            function = module.functions[local_index]
-            assert function.local_layout_cache is not None
-        code_lengths = tuple(
-            len(module.code_for(index)) if index >= len(module.imports) else 0
-            for index in range(len(module.imports) + len(module.functions))
-        )
-        pc_bases = tuple(
-            module.function_pc_offset(index) if index >= len(module.imports) else 0
-            for index in range(len(module.imports) + len(module.functions))
-        )
-        self._bind_buffers(code_lengths, pc_bases)
-        self._block_inputs = (native_abi._NativeWasmBlock * len(module.blocks))()
-        counters_enabled = bool(native_abi.BLOCK_COUNTERS_ENABLED())
-        self._block_execution_counts = (
-            (ctypes.c_uint32 * len(module.blocks))()
-            if counters_enabled
-            else (ctypes.c_uint32 * 0)()
-        )
+            assert module.functions[local_index].local_layout_cache is not None
         module.build_native_global_widths()
-        for index, block in enumerate(module.blocks):
-            function = module.functions[block.func_index - len(module.imports)]
-            assert function.local_layout_cache is not None
-            annotations = function.interpreter_annotation_pool
-            local_index = block.func_index - len(module.imports)
-            code = module.code_for(block.func_index)
-            layout = function.local_layout_cache
-            self._block_inputs[index] = native_abi._NativeWasmBlock(
-                block.head_pc,
-                block.head_pc - module.function_pc_offset(block.func_index),
-                block.byte_span,
-                0xFFFF_FFFF if block.next_pc is None else block.next_pc,
-                0xFFFF_FFFF if block.loops_to is None else block.loops_to,
-                block.frame_depth,
-                block_score(module, block),
-                native_abi._NativeByteView(
-                    self._compile_code_leases[local_index].address, len(code)
-                ),
-                native_abi._NativeLocalLayout(
-                    native_abi._NativeByteView(layout.offsets_address, layout.count * 2),
-                    native_abi._NativeByteView(layout.types_address, layout.count),
-                    layout.count,
-                    layout.total_words,
-                ),
-                (
-                    ctypes.addressof(self._block_execution_counts)
-                    + index * ctypes.sizeof(ctypes.c_uint32)
-                    if counters_enabled
-                    else None
-                ),
-                index,
-                0xFFFF if block.next_block_index is None else block.next_block_index,
-                0xFFFF if block.loops_to_block_index is None else block.loops_to_block_index,
-                native_abi._NativeByteView(
-                    0 if annotations is None else annotations.native_address,
-                    0 if annotations is None else len(annotations),
-                ),
-                block.interpreter_annotation_byte_offset,
-                block.entry_stack_words,
-                native_abi._NativeByteView(module.global_widths_address, len(module.globals)),
-            )
-        self._bind_profile()
-        self._bind_test_views(_module_code_lengths(module), _module_function_pc_bases(module))
+        self._module_owner, self._execution = _module_execution(module)
+        self._native = native_abi.NativeRuntimeStorage(
+            ctypes.addressof(self._execution._module_view), self.module_id
+        )
+        self._pointer = self._native.pointer
+        self.cache = JitRuntimeBoundary.borrow(self._native, self._retire_observer)
+        self.cache.metadata_provider = self._describe_trace
         self._native_dispatch_cache_key = None
+        self._bind_test_views()
 
     def _begin(self) -> None:
         self.cache._begin()
@@ -445,56 +424,6 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         trace._native.frame_depth = block.frame_depth
         trace._native.dispatch_next_pc = 0xFFFF_FFFF if block.next_pc is None else block.next_pc
         trace._native.dispatch_loops_to = 0xFFFF_FFFF if block.loops_to is None else block.loops_to
-        for index, registered in enumerate(self.module.blocks):
-            if registered.head_pc == block.head_pc:
-                trace._native.exec_count = ctypes.cast(
-                    self._block_inputs[index].extension_data,
-                    ctypes.POINTER(ctypes.c_uint32),
-                )
-                break
-
-    def _bind_buffers(self, code_lengths: Sequence[int], pc_bases: Sequence[int]) -> None:
-        lengths = (ctypes.c_uint32 * len(code_lengths))(*code_lengths)
-        bases = (ctypes.c_uint32 * len(pc_bases))(*pc_bases) if pc_bases else None
-        size = ctypes.c_uint64()
-        result = native_abi.REGION_SIZE(lengths, bases, len(lengths), ctypes.byref(size))
-        assert result == 1
-        self._code_bytes = size.value
-        cards = int(native_abi.CARD_COUNT(self._code_bytes, self._card_shift))
-        assert cards >= 0
-        self._cards = (
-            MutableBitStorage(count=cards, bits=2),
-            MutableBitStorage(count=cards, bits=1),
-            MutableBitStorage(count=cards, bits=1),
-        )
-        self._native.bind_cards(
-            self._cards[0].buffer,
-            self._cards[1].buffer,
-            cards,
-            self._card_shift,
-            ctypes.c_uint32(),
-            self.aging_step_units,
-            self.aging_scan_bytes,
-        )
-
-    def _bind_profile(self) -> None:
-        """Retain caller storage and bind it to the native profiling owner."""
-        mask = self._cards[2].buffer
-        mask_view = (ctypes.c_uint8 * len(mask)).from_buffer(mask)
-        self._profile = native_abi.NativeProfile(
-            mask_view,
-            len(mask),
-            self.module_id,
-            self.candidate_threshold,
-            self.min_trace_bytes,
-            self._code_bytes,
-            self.history_capacity,
-            self.compile_queue_capacity,
-            self._block_inputs,
-            len(self._block_inputs),
-        )
-        result = native_abi.RUNTIME_BIND_PROFILE(self._native.pointer, self._profile)
-        assert result == 1
 
     @property
     def card_shift(self) -> int:
@@ -510,7 +439,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         assert provider is not None
         return int(provider)
 
-    native_entry = RUN_DISPATCH_JIT
+    native_entry = NATIVE_RUN_DISPATCH_JIT
 
     def on_yield(self) -> None:
         self._begin()
@@ -532,7 +461,9 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         native_abi.RUNTIME_RESET_COUNTS(self._native.pointer)
 
     def close(self) -> None:
-        self._native.close()
+        if self._native is not None:
+            self._native.close()
+        self._pointer = None
 
 
 __all__ = ("JITCompiler", "JITRuntimeManager")

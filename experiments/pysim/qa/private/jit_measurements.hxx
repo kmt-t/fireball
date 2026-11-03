@@ -25,12 +25,8 @@ struct jit_measurements {
   static constexpr std::size_t chain_reason_count =
       static_cast<std::size_t>(jit_chain_reason::count);
 
-  bool auto_age = true;
   bool owns_memory = true;
-  struct profile_type : jit_profile {
-    const jit_wasm_block *blocks = nullptr;
-    std::uint32_t block_count = 0;
-  };
+  struct profile_type : jit_profile {};
   std::array<std::uint32_t, trace_capacity> compilation_order{};
   std::uint32_t compilation_count = 0;
   std::uint64_t evictions = 0, generation = 0, rotations = 0;
@@ -69,16 +65,6 @@ struct jit_measurements {
   std::uint64_t chain_runtime_unobserved_trace_exits = 0;
   block_index_t pending_runtime_source_block = std::numeric_limits<block_index_t>::max();
 
-  static const jit_wasm_block *fixture_block(const profile_type &profile, std::uint32_t pc) {
-    if (profile.block_count == 0) {
-      return nullptr;
-    }
-    const auto *end = profile.blocks + profile.block_count;
-    const auto *found = std::lower_bound(
-        profile.blocks, end, pc,
-        [](const jit_wasm_block &block, std::uint32_t value) { return block.head_pc < value; });
-    return found != end && found->head_pc == pc ? found : nullptr;
-  }
 
   bool write_measurements(const printk_writer &writer) const {
     return printk_u64(writer, "jit.evictions", evictions) &&
@@ -342,14 +328,11 @@ struct jit_measurements {
     compilation_count = 0;
   }
   template <class Runtime> void reset_trace_counts(Runtime &runtime) {
-    const auto count = runtime.module_view == nullptr ? runtime.hotspots.configuration.block_count
-                                                      : runtime.module_view->block_count;
+    const auto count = runtime.module_view->block_count;
     for (std::uint32_t i = 0; i < count; ++i) {
-      void *extension = runtime.module_view == nullptr
-                            ? runtime.hotspots.configuration.blocks[i].extension_data
-                            : (runtime.module_view->block_execution_counts == nullptr
-                                   ? nullptr
-                                   : runtime.module_view->block_execution_counts + i);
+      void *extension = runtime.module_view->block_execution_counts == nullptr
+                            ? nullptr
+                            : runtime.module_view->block_execution_counts + i;
       if (extension != nullptr) {
         *static_cast<std::uint32_t *>(extension) = 0;
       }

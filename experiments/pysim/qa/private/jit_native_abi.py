@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import ctypes
+import os
 import struct
 import sys
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
 
-from bump_allocator import BumpAllocator
 from tier1_core.native_printk import NativePrintkWriter
 from tier2_runtime.abi.native_abi import JIT_CALL_HANDLER_TABLE
 
-_NATIVE_LIBRARY_PATH = Path(__file__).with_name(
-    "jit_probe.dll" if sys.platform == "win32" else "libjit_probe.so"
+# A benchmark variant names its own build of the probe library in a separate process.
+_NATIVE_LIBRARY_PATH = (
+    Path(os.environ["FB_QA_JIT_PROBE_LIBRARY"])
+    if "FB_QA_JIT_PROBE_LIBRARY" in os.environ
+    else Path(__file__).with_name("jit_probe.dll" if sys.platform == "win32" else "libjit_probe.so")
 )
 _NATIVE_LIBRARY = ctypes.PyDLL(str(_NATIVE_LIBRARY_PATH))
 _COMPILE_MAX_BODY_BYTES = 1536
@@ -198,7 +201,6 @@ class _NativeWasmBlock(ctypes.Structure):
         ("next_pc", ctypes.c_uint32),
         ("loops_to", ctypes.c_uint32),
         ("frame_depth", ctypes.c_uint8),
-        ("jit_score", ctypes.c_int64),
         ("code", _NativeByteView),
         ("locals", _NativeLocalLayout),
         ("extension_data", ctypes.c_void_p),
@@ -214,31 +216,15 @@ class _NativeWasmBlock(ctypes.Structure):
 
 assert _NativeLocalLayout.count.offset == 32
 assert ctypes.sizeof(_NativeLocalLayout) == 40
-assert _NativeWasmBlock.jit_score.offset == 24
-assert _NativeWasmBlock.code.offset == 32
-assert _NativeWasmBlock.locals.offset == 48
-assert _NativeWasmBlock.extension_data.offset == 88
-assert _NativeWasmBlock.block_index.offset == 96
-assert _NativeWasmBlock.interpreter_annotations.offset == 104
-assert _NativeWasmBlock.interpreter_annotation_byte_offset.offset == 120
-assert _NativeWasmBlock.entry_stack_words.offset == 124
-assert _NativeWasmBlock.global_widths.offset == 128
-assert ctypes.sizeof(_NativeWasmBlock) == 144
-
-
-class NativeProfile(ctypes.Structure):
-    _fields_ = (
-        ("trackable", ctypes.POINTER(ctypes.c_uint8)),
-        ("mask_bytes", ctypes.c_uint32),
-        ("module_id", ctypes.c_uint32),
-        ("candidate_threshold", ctypes.c_uint32),
-        ("min_trace_bytes", ctypes.c_uint32),
-        ("code_bytes", ctypes.c_uint64),
-        ("history_capacity", ctypes.c_uint32),
-        ("queue_capacity", ctypes.c_uint32),
-        ("blocks", ctypes.POINTER(_NativeWasmBlock)),
-        ("block_count", ctypes.c_uint32),
-    )
+assert _NativeWasmBlock.code.offset == 24
+assert _NativeWasmBlock.locals.offset == 40
+assert _NativeWasmBlock.extension_data.offset == 80
+assert _NativeWasmBlock.block_index.offset == 88
+assert _NativeWasmBlock.interpreter_annotations.offset == 96
+assert _NativeWasmBlock.interpreter_annotation_byte_offset.offset == 112
+assert _NativeWasmBlock.entry_stack_words.offset == 116
+assert _NativeWasmBlock.global_widths.offset == 120
+assert ctypes.sizeof(_NativeWasmBlock) == 136
 
 
 RUNTIME_SIZE = _NATIVE_LIBRARY.fb_jit_runtime_size
@@ -249,16 +235,21 @@ RUNTIME_ALIGNMENT = _NATIVE_LIBRARY.fb_jit_runtime_alignment
 RUNTIME_ALIGNMENT.argtypes = ()
 RUNTIME_ALIGNMENT.restype = ctypes.c_size_t
 
-RUNTIME_INIT = _NATIVE_LIBRARY.fb_jit_runtime_init
-RUNTIME_INIT.argtypes = (
-    ctypes.POINTER(ctypes.c_uint8),
+PLUGIN_INIT = _NATIVE_LIBRARY.fb_jit_plugin_init
+PLUGIN_INIT.argtypes = (
+    ctypes.c_void_p,
     ctypes.c_size_t,
+    ctypes.c_void_p,
     ctypes.c_uint32,
-    ctypes.c_uint32,
-    ctypes.POINTER(ctypes.c_uint32),
     ctypes.c_void_p,
 )
-RUNTIME_INIT.restype = ctypes.c_void_p
+PLUGIN_INIT.restype = ctypes.c_void_p
+PLUGIN_REQUIRED_BYTES = _NATIVE_LIBRARY.fb_jit_plugin_required_bytes
+PLUGIN_REQUIRED_BYTES.argtypes = (ctypes.c_void_p,)
+PLUGIN_REQUIRED_BYTES.restype = ctypes.c_size_t
+PLUGIN_ALIGNMENT = _NATIVE_LIBRARY.fb_jit_plugin_alignment
+PLUGIN_ALIGNMENT.argtypes = ()
+PLUGIN_ALIGNMENT.restype = ctypes.c_size_t
 
 BLOCK_COUNTERS_ENABLED = _NATIVE_LIBRARY.fb_jit_block_counters_enabled
 BLOCK_COUNTERS_ENABLED.argtypes = ()
@@ -336,33 +327,18 @@ RUNTIME_FLUSH = _NATIVE_LIBRARY.fb_qa_runtime_flush
 RUNTIME_FLUSH.argtypes = (ctypes.c_void_p,)
 RUNTIME_FLUSH.restype = ctypes.c_int
 
-RUNTIME_BIND_CARDS = _NATIVE_LIBRARY.fb_jit_runtime_bind_cards
-RUNTIME_BIND_CARDS.argtypes = (
-    ctypes.c_void_p,
-    ctypes.POINTER(ctypes.c_uint8),
-    ctypes.c_uint32,
-    ctypes.POINTER(ctypes.c_uint8),
-    ctypes.c_uint32,
-    ctypes.c_uint32,
-    ctypes.c_uint32,
-    ctypes.POINTER(ctypes.c_uint32),
-    ctypes.c_uint32,
-    ctypes.c_uint32,
-)
-RUNTIME_BIND_CARDS.restype = ctypes.c_int
+
+AGING_STEP_UNITS = _NATIVE_LIBRARY.fb_qa_aging_step_units
+AGING_STEP_UNITS.argtypes = ()
+AGING_STEP_UNITS.restype = ctypes.c_uint32
+
+AGING_STEP_SCAN_BYTES = _NATIVE_LIBRARY.fb_qa_aging_step_scan_bytes
+AGING_STEP_SCAN_BYTES.argtypes = ()
+AGING_STEP_SCAN_BYTES.restype = ctypes.c_uint32
 
 RUNTIME_AGE = _NATIVE_LIBRARY.fb_jit_runtime_age
 RUNTIME_AGE.argtypes = (ctypes.c_void_p,)
 RUNTIME_AGE.restype = ctypes.c_int
-
-RUNTIME_AUTO_AGE = _NATIVE_LIBRARY.fb_jit_runtime_auto_age
-
-
-RUNTIME_AUTO_AGE.argtypes = (ctypes.c_void_p, ctypes.c_int)
-
-
-RUNTIME_AUTO_AGE.restype = None
-
 
 RUNTIME_SNAPSHOT = _NATIVE_LIBRARY.fb_qa_runtime_snapshot
 
@@ -396,97 +372,6 @@ RUNTIME_YIELD.restype = ctypes.c_int
 RUNTIME_PRINT = _NATIVE_LIBRARY.fb_qa_runtime_print_measurements
 RUNTIME_PRINT.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativePrintkWriter))
 RUNTIME_PRINT.restype = ctypes.c_int
-
-
-class NativeRuntimeStorage:
-    """Fixed, aligned caller storage containing the complete C++ JitRuntime object."""
-
-    __slots__ = (
-        "_allocator",
-        "_arena_offset",
-        "_closed",
-        "_cursor",
-        "_dirty",
-        "_raw",
-        "_states",
-        "_storage",
-        "arena_size",
-        "pointer",
-    )
-
-    def __init__(self, capacity: int, entries: int, offsets: tuple[int, int, int]) -> None:
-        self.pointer = None
-        self._closed = False
-        self.arena_size = int(RUNTIME_SIZE())
-        # Over-allocate by one alignment unit and start the arena at the first aligned address.
-        alignment = int(RUNTIME_ALIGNMENT())
-        assert alignment > 0 and alignment & (alignment - 1) == 0
-        self._raw = (ctypes.c_uint8 * (self.arena_size + alignment))()
-        offset = -ctypes.addressof(self._raw) % alignment
-        self._storage = (ctypes.c_uint8 * self.arena_size).from_buffer(self._raw, offset)
-        assert ctypes.addressof(self._storage) % alignment == 0
-        native_offsets = (ctypes.c_uint32 * 3)(*offsets)
-        self.pointer = RUNTIME_INIT(
-            ctypes.cast(self._storage, ctypes.POINTER(ctypes.c_uint8)),
-            ctypes.sizeof(self._storage),
-            capacity,
-            entries,
-            native_offsets,
-            JIT_CALL_HANDLER_TABLE,
-        )
-        assert self.pointer is not None
-        self._allocator: BumpAllocator | None = None
-        self._arena_offset: int | None = None
-        self._states: ctypes.Array | None = None
-        self._dirty: ctypes.Array | None = None
-        self._cursor: ctypes.c_uint32 | None = None
-
-    def close(self) -> None:
-        if not self._closed and self.pointer is not None:
-            RUNTIME_CLOSE(self.pointer)
-            self._closed = True
-
-    def __del__(self) -> None:
-        self.close()
-
-    @property
-    def arena_offset(self) -> int | None:
-        return self._arena_offset
-
-    def bind_allocator(self, allocator: BumpAllocator) -> None:
-        if self._allocator is allocator:
-            return
-        self._arena_offset = allocator.allocate(self.arena_size, alignment=8)
-        self._allocator = allocator
-
-    def bind_cards(
-        self,
-        states: bytearray,
-        dirty: bytearray,
-        cards: int,
-        shift: int,
-        cursor: ctypes.c_uint32,
-        units: int,
-        scan_bytes: int,
-    ) -> None:
-        assert 0 <= cards <= 0xFFFF_FFFF
-        assert 1 <= units <= 0xFFFF_FFFF and 1 <= scan_bytes <= 0xFFFF_FFFF
-        state_view = (ctypes.c_uint8 * len(states)).from_buffer(states)
-        dirty_view = (ctypes.c_uint8 * len(dirty)).from_buffer(dirty)
-        result = RUNTIME_BIND_CARDS(
-            self.pointer,
-            state_view,
-            len(states),
-            dirty_view,
-            len(dirty),
-            cards,
-            shift,
-            ctypes.byref(cursor),
-            units,
-            scan_bytes,
-        )
-        assert result == 1
-        self._states, self._dirty, self._cursor = state_view, dirty_view, cursor
 
 
 class NativeExecutableMemory(ctypes.Structure):
@@ -689,13 +574,6 @@ BITS.argtypes = (
 BITS.restype = ctypes.c_int
 
 
-RUNTIME_BIND_PROFILE = _NATIVE_LIBRARY.fb_jit_runtime_bind_profile
-RUNTIME_BIND_PROFILE.argtypes = (
-    ctypes.c_void_p,
-    NativeProfile,
-)
-RUNTIME_BIND_PROFILE.restype = ctypes.c_int
-
 RUNTIME_SUPPRESS = _NATIVE_LIBRARY.fb_jit_runtime_suppress
 
 
@@ -846,13 +724,64 @@ def compile_wasm(block: WasmBlock, trace: TraceQaState) -> bytes | None:
     return bytes(output[: header.blob_bytes])
 
 
+class CardViews(ctypes.Structure):
+    """Addresses of the card arrays that a product runtime owns inside its region."""
+
+    _fields_ = (
+        ("states", ctypes.c_size_t),
+        ("dirty", ctypes.c_size_t),
+        ("trackable", ctypes.c_size_t),
+        ("cursor", ctypes.c_size_t),
+        ("cards", ctypes.c_uint32),
+        ("state_bytes", ctypes.c_uint32),
+        ("dirty_bytes", ctypes.c_uint32),
+    )
+
+
+RUNTIME_CARD_VIEWS = _NATIVE_LIBRARY.fb_qa_runtime_card_views
+RUNTIME_CARD_VIEWS.argtypes = (ctypes.c_void_p, ctypes.POINTER(CardViews))
+RUNTIME_CARD_VIEWS.restype = None
+
+
+class NativeRuntimeStorage:
+    """A product runtime built by the plugin initializer in a QA-owned, aligned region."""
+
+    __slots__ = ("_closed", "_region", "pointer")
+
+    def __init__(self, view_address: int, module_id: int) -> None:
+        size = int(PLUGIN_REQUIRED_BYTES(view_address))
+        alignment = int(PLUGIN_ALIGNMENT())
+        assert alignment > 0 and alignment & (alignment - 1) == 0
+        self._region = (ctypes.c_uint8 * (size + alignment))()
+        offset = -ctypes.addressof(self._region) % alignment
+        storage = (ctypes.c_uint8 * size).from_buffer(self._region, offset)
+        self._closed = False
+        provider = PLUGIN_INIT(
+            ctypes.addressof(storage), size, view_address, module_id, JIT_CALL_HANDLER_TABLE
+        )
+        assert provider is not None
+        # The provider's first field is the owning runtime, which the QA probes take.
+        self.pointer = ctypes.c_size_t.from_address(provider).value
+        assert self.pointer != 0
+
+    def card_views(self) -> CardViews:
+        views = CardViews()
+        RUNTIME_CARD_VIEWS(self.pointer, ctypes.byref(views))
+        return views
+
+    def close(self) -> None:
+        if not self._closed:
+            RUNTIME_CLOSE(self.pointer)
+            self._closed = True
+
+
 RUNTIME_CLOSE = _NATIVE_LIBRARY.fb_qa_runtime_close
 RUNTIME_CLOSE.argtypes = (ctypes.c_void_p,)
 RUNTIME_CLOSE.restype = None
 
 
 def marshal_block(block: WasmBlock) -> _NativeWasmBlock:
-    """Convert loader metadata once into the module's borrowed registration table."""
+    """Convert loader block metadata into the compiler input layout."""
     return _NativeWasmBlock(
         block.head_pc,
         block.offset,
@@ -860,7 +789,6 @@ def marshal_block(block: WasmBlock) -> _NativeWasmBlock:
         0xFFFF_FFFF if block.next_pc is None else block.next_pc,
         0xFFFF_FFFF if block.loops_to is None else block.loops_to,
         block.frame_depth,
-        0,
         _NativeByteView(block.code.address, block.code.byte_length),
         _NativeLocalLayout(
             _NativeByteView(block.locals.offsets.address, block.locals.offsets.byte_length),

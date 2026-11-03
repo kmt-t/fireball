@@ -614,6 +614,7 @@ assert ctypes.sizeof(ModuleExecutionViewNative) == 104
 assert ctypes.sizeof(BasicBlock) == 32
 assert BasicBlock.frame_depth.offset == 16
 assert BasicBlock.jit_cache_reference.offset == 17
+assert BasicBlock.entry_stack_words.offset == 18
 assert BasicBlock.byte_span.offset == 20
 assert BasicBlock.interpreter_annotation_byte_offset.offset == 24
 assert BasicBlock._next_block_index.offset == 28

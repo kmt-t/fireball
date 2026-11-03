@@ -2,6 +2,7 @@
 # Builds the standalone native x64 JIT compiler and cache (Linux/WSL).
 # Requires Clang 17+ and matching object inspection utilities at build time.
 set -euo pipefail
+invocation_dir="$(pwd)"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${script_dir}"
 project_root="$(cd "${script_dir}/../../../../.." && pwd)"
@@ -9,14 +10,26 @@ uv_python="${project_root}/.venv/bin/python"
 qa_build=0
 block_counters=0
 release_define=()
+aging_units_override=""
+aging_scan_override=""
+output_override=""
 for option in "$@"; do
     case "${option}" in
         --qa) qa_build=1 ;;
         --block-counters) block_counters=1 ;;
         --release) release_define+=("-DNDEBUG") ;;
+        --aging-units=*) aging_units_override="${option#*=}" ;;
+        --aging-scan-bytes=*) aging_scan_override="${option#*=}" ;;
+        --output=*)
+            output_override="${option#*=}"
+            [[ "${output_override}" == /* ]] || output_override="${invocation_dir}/${output_override}" ;;
         *) echo "Unknown option: ${option}" >&2; exit 2 ;;
     esac
 done
+if [[ -n "${output_override}" || -n "${aging_units_override}" || -n "${aging_scan_override}" ]]; then
+    # Variant libraries are QA measurement builds; the product library is never replaced.
+    [[ "${qa_build}" == "1" && -n "${output_override}" ]] || { echo "variant builds need --qa and --output" >&2; exit 2; }
+fi
 NATIVE_BUILD_DIR="${TMPDIR:-/tmp}/fireball-pysim-native"
 mkdir -p "${NATIVE_BUILD_DIR}"
 stencil_output_dir="${NATIVE_BUILD_DIR}/jit-stencils"
@@ -47,11 +60,23 @@ common_config=$(PYTHONPATH="${project_root}/experiments/pysim/tier1_core" \
     uv run --offline --no-sync --python "${uv_python}" python -c \
     'import config; names=("JIT_CACHE_REGION_BYTES", "JIT_CACHE_COMMON_CODE_BYTES", "JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET", "JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES", "JIT_HISTORY_CAPACITY", "JIT_COMPILE_QUEUE_CAPACITY", "JIT_CARD_SHIFT", "JIT_CACHE_BANK_CAPACITY_BYTES", "JIT_CACHE_ACTIVE_OFFSET_BYTES", "JIT_CACHE_WARM_OFFSET_BYTES", "JIT_CACHE_OLDEST_OFFSET_BYTES", "FB_CONF_JIT_AGING_STEP_UNITS", "FB_CONF_JIT_AGING_STEP_SCAN_BYTES", "FB_CONF_JIT_CANDIDATE_THRESHOLD"); print(" ".join("-D"+(name if name.startswith("FB_CONF_") else "FB_CONF_"+name)+"="+str(getattr(config,name)) for name in names))')
 read -r -a common_definitions <<< "${common_config}"
+for index in "${!common_definitions[@]}"; do
+    case "${common_definitions[index]}" in
+        -DFB_CONF_JIT_AGING_STEP_UNITS=*)
+            [[ -n "${aging_units_override}" ]] && common_definitions[index]="-DFB_CONF_JIT_AGING_STEP_UNITS=${aging_units_override}" ;;
+        -DFB_CONF_JIT_AGING_STEP_SCAN_BYTES=*)
+            [[ -n "${aging_scan_override}" ]] && common_definitions[index]="-DFB_CONF_JIT_AGING_STEP_SCAN_BYTES=${aging_scan_override}" ;;
+    esac
+done
 
 if [[ "${qa_build}" == "1" ]]; then
     runtime_sources+=("${project_root}/experiments/pysim/qa/private/native_jit_probe.cxx")
     measurement_flags=(-include "${project_root}/experiments/pysim/qa/private/jit_measurements.hxx")
     GENERATED_SO="${NATIVE_BUILD_DIR}/libjit_probe.so"
+    if [[ -n "${output_override}" ]]; then
+        GENERATED_SO="${output_override}"
+        mkdir -p "$(dirname "${GENERATED_SO}")"
+    fi
     python_package_dir="${project_root}/experiments/pysim/qa/private"
     visibility_flags=(-fvisibility=default)
     linker_flags+=("-Wl,--version-script=${qa_export_map}")
@@ -104,7 +129,9 @@ clang++ -std=c++23 -O3 -flto=thin -fuse-ld=lld -fomit-frame-pointer -g -Wall -We
     "${native_source_dir}/../../tier2_runtime/interpreter/native_wasm_operations.cxx" \
     "${runtime_sources[@]}" "${native_source_dir}/profiling.cxx" \
     "${linker_flags[@]}" -o "${GENERATED_SO}"
-cp "${GENERATED_SO}" "${python_package_dir}/$(basename "${GENERATED_SO}")"
+if [[ -z "${output_override}" ]]; then
+    cp "${GENERATED_SO}" "${python_package_dir}/$(basename "${GENERATED_SO}")"
+fi
 if [[ "${qa_build}" == "1" ]]; then
     echo "Built QA Tier 3 JIT libjit_probe.so"
 else

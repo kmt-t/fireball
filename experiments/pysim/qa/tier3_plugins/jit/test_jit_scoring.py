@@ -83,10 +83,10 @@ def test_plugin_candidate_gate_uses_specification_threshold(
         native_score = _NATIVE_LIBRARY.fb_qa_block_score
         native_score.argtypes = (ctypes.c_void_p,)
         native_score.restype = ctypes.c_int64
-        block_index = next(
-            index for index, item in enumerate(module.blocks) if item.head_pc == block.head_pc
-        )
-        assert native_score(ctypes.byref(manager._block_inputs[block_index])) == score
+        from qa.private.jit_native_abi import marshal_block
+
+        native_input = marshal_block(manager._block_input(block.head_pc, block))
+        assert native_score(ctypes.byref(native_input)) == score
         assert manager.trackable.is_marked(block.head_pc) == candidate
         assert manager.exec_counter == 0
         head_pc = block.head_pc

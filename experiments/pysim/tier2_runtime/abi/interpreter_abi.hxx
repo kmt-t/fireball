@@ -101,11 +101,10 @@ typedef struct fireball_wasm_table_execution_view_native {
 typedef struct fireball_wasm_block_execution_view_native {
   wasm_pc_t head_pc;
   function_index_t function_index;
-  uint16_t entry_stack_words;
   wasm_pc_t next_pc, loops_to;
   frame_depth_t frame_depth;
   uint8_t jit_cache_reference;
-  uint16_t reserved1;
+  uint16_t entry_stack_words;
   code_offset_t byte_span;
   annotation_offset_t interpreter_annotation_byte_offset;
   block_index_t next_block_index;
@@ -340,6 +339,7 @@ static_assert(sizeof(wasm_table_execution_view_native) == 8);
 static_assert(sizeof(wasm_block_execution_view_native) == 32);
 static_assert(offsetof(wasm_block_execution_view_native, frame_depth) == 16);
 static_assert(offsetof(wasm_block_execution_view_native, jit_cache_reference) == 17);
+static_assert(offsetof(wasm_block_execution_view_native, entry_stack_words) == 18);
 static_assert(offsetof(wasm_block_execution_view_native, byte_span) == 20);
 static_assert(offsetof(wasm_block_execution_view_native, interpreter_annotation_byte_offset) == 24);
 static_assert(offsetof(wasm_block_execution_view_native, next_block_index) == 28);

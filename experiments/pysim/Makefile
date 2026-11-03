@@ -16,11 +16,13 @@ LIB_INTERP := tier2_runtime/interpreter/libnative_interpreter.so
 LIB_INTERP_QA := $(QA_PRIVATE)/libinterpreter_probe.so
 LIB_JIT := tier3_plugins/jit/libtrace_compiler.so
 LIB_JIT_QA := $(QA_PRIVATE)/libjit_probe.so
+# QA probe with FB_CONF_JIT_AGING_STEP_UNITS = 0 (no-aging configuration), loaded by TEST-JITR-100.
+LIB_JIT_QA_NO_AGING := build/no-aging/libjit_probe.so
 
 QA_DEPS := $(wildcard $(QA_PRIVATE)/*.cxx $(QA_PRIVATE)/*.hxx $(QA_PRIVATE)/*.exports)
 
 .PHONY: all native clean-native
-all native: $(LIB_PRINTK) $(LIB_INTERP) $(LIB_INTERP_QA) $(LIB_JIT) $(LIB_JIT_QA)
+all native: $(LIB_PRINTK) $(LIB_INTERP) $(LIB_INTERP_QA) $(LIB_JIT) $(LIB_JIT_QA) $(LIB_JIT_QA_NO_AGING)
 
 $(LIB_PRINTK): $(PRINTK_DEPS)
 	bash $(NATIVE)/tier1_core/printk/build_native.sh
@@ -37,6 +39,10 @@ $(LIB_JIT): $(JIT_DEPS)
 $(LIB_JIT_QA): $(JIT_DEPS) $(QA_DEPS)
 	bash $(NATIVE)/tier3_plugins/jit/build_native.sh --qa
 
+$(LIB_JIT_QA_NO_AGING): $(JIT_DEPS) $(QA_DEPS)
+	mkdir -p $(dir $@)
+	bash $(NATIVE)/tier3_plugins/jit/build_native.sh --qa --aging-units=0 --output=$(abspath $@)
+
 # Force a full rebuild after switching revisions with unusual timestamps.
 clean-native:
-	rm -f $(LIB_PRINTK) $(LIB_INTERP) $(LIB_INTERP_QA) $(LIB_JIT) $(LIB_JIT_QA)
+	rm -f $(LIB_PRINTK) $(LIB_INTERP) $(LIB_INTERP_QA) $(LIB_JIT) $(LIB_JIT_QA) $(LIB_JIT_QA_NO_AGING)

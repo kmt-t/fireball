@@ -651,23 +651,6 @@ class JitRuntimeBoundary:
                 return JITTrace.borrow(entries[index], self._native)
         raise AssertionError("native cache PC has no resident dispatch entry")
 
-    def bind_cards(
-        self, bitmap: HotspotBitmap, update: CardUpdateBitmap, units: int, scan_bytes: int
-    ) -> None:
-        assert bitmap.card_count == update.card_count
-        self._native.bind_cards(
-            bitmap.storage.buffer,
-            update.storage.buffer,
-            bitmap.card_count,
-            bitmap.card_shift,
-            update._cursor,
-            units,
-            scan_bytes,
-        )
-
-    def enable_automatic_aging(self, enabled: bool) -> None:
-        native_abi.RUNTIME_AUTO_AGE(self._native.pointer, int(enabled))
-
     def age_step(self) -> int:
         result = int(native_abi.RUNTIME_AGE(self._native.pointer))
         assert result >= 0

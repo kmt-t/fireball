@@ -127,6 +127,8 @@ template <jit_measurement_policy Measurement> struct jit_runtime final {
   jit_runtime &operator=(const jit_runtime &) = delete;
   ~jit_runtime();
   const jit_wasm_block *make_compiler_block_view(block_index_t index, jit_wasm_block &output) const;
+  /** @brief 先頭PCに対応するブロック索引を返す。対応するブロックがなければ無効索引を返す。 */
+  block_index_t block_index_for_pc(wasm_pc_t pc) const;
   /** @brief QA計測用に製品または参照ランタイムのブロック情報を参照する。 */
   const jit_wasm_block *diagnostic_block_view(block_index_t index, jit_wasm_block &output) const
     requires(!std::is_void_v<Measurement>);

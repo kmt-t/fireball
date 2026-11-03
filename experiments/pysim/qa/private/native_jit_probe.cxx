@@ -15,8 +15,6 @@ using configured_jit_provider_adapter = jit_provider_adapter<jit_measurements>;
 using provider_adapter = fireball::configured_jit_provider_adapter;
 
 using qa_jit_runtime = provider_adapter::runtime_type;
-alignas(std::uintptr_t) static std::array<std::uint8_t, 258 * sizeof(std::uintptr_t)>
-    qa_function_table_storage{};
 static bool qa_runtime_observe([[maybe_unused]] const fb_native_dispatch_call *input,
                                [[maybe_unused]] std::uint32_t pc) {
   return false;
@@ -75,14 +73,6 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_yield(qa_jit_runtime *runtime)
   return 1;
 }
 static_assert(sizeof(fireball::jit_provider_adapter<void>::runtime_type) < sizeof(qa_jit_runtime));
-extern "C" int fb_jit_runtime_bind_cards(fireball::qa_jit_runtime *runtime, std::uint8_t *states,
-                                         std::uint32_t state_bytes, std::uint8_t *dirty,
-                                         std::uint32_t dirty_bytes, std::uint32_t cards,
-                                         std::uint32_t shift, std::uint32_t *cursor,
-                                         std::uint32_t units, std::uint32_t scan_bytes) {
-  return provider_adapter::fb_jit_runtime_bind_cards(
-      runtime, states, state_bytes, dirty, dirty_bytes, cards, shift, cursor, units, scan_bytes);
-}
 
 extern "C" std::int64_t fb_jit_card_index(std::uint64_t bytes, std::uint32_t shift,
                                           std::uint32_t pc) {
@@ -93,11 +83,6 @@ extern "C" std::int64_t fb_jit_card_count(std::uint64_t bytes, std::uint32_t shi
   return fireball::jit_card_count(bytes, shift);
 }
 
-extern "C" FB_PYSIM_ABI_EXPORT int
-fb_jit_runtime_bind_profile(fireball::qa_jit_runtime *runtime,
-                            fireball::jit_measurements::profile_type p) {
-  return provider_adapter::fb_jit_runtime_bind_profile(runtime, p);
-}
 // Snapshot records are QA fixtures, not an interpreter/plugin contract.
 struct fb_native_trace_descriptor {
   std::uint32_t head_pc;
@@ -271,12 +256,37 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_lookup(qa_jit_runtime *runtime
   *output = {static_cast<std::uint8_t>(location.bank_id)};
   return 1;
 }
+// The aging sweep parameters are build-time configuration of the library; QA reads them back.
+// Card state of a product runtime, read back for QA views. The runtime owns these arrays.
+struct qa_card_views {
+  std::uintptr_t states;
+  std::uintptr_t dirty;
+  std::uintptr_t trackable;
+  std::uintptr_t cursor;
+  std::uint32_t cards;
+  std::uint32_t state_bytes;
+  std::uint32_t dirty_bytes;
+};
+extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_runtime_card_views(const qa_jit_runtime *runtime,
+                                                             qa_card_views *output) {
+  const auto &hotspots = runtime->hotspots;
+  *output = {reinterpret_cast<std::uintptr_t>(hotspots.card_states),
+             reinterpret_cast<std::uintptr_t>(hotspots.dirty_cards),
+             reinterpret_cast<std::uintptr_t>(hotspots.configuration.trackable),
+             reinterpret_cast<std::uintptr_t>(hotspots.aging_cursor),
+             hotspots.card_count,
+             (hotspots.card_count + 3) / 4,
+             (hotspots.card_count + 7) / 8};
+}
+extern "C" FB_PYSIM_ABI_EXPORT std::uint32_t fb_qa_aging_step_units() {
+  return FB_CONF_JIT_AGING_STEP_UNITS;
+}
+extern "C" FB_PYSIM_ABI_EXPORT std::uint32_t fb_qa_aging_step_scan_bytes() {
+  return FB_CONF_JIT_AGING_STEP_SCAN_BYTES;
+}
 extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_rotate(qa_jit_runtime *runtime) {
   runtime->rotate_cache_banks();
   return 1;
-}
-extern "C" FB_PYSIM_ABI_EXPORT void fb_jit_runtime_auto_age(qa_jit_runtime *runtime, int enabled) {
-  runtime->measurements.auto_age = enabled != 0;
 }
 extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_suppress(qa_jit_runtime *runtime,
                                                            std::uint32_t pc) {
@@ -499,45 +509,6 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_block_counters_enabled() {
   return FB_CONF_JIT_BLOCK_COUNTERS;
 }
 
-extern "C" FB_PYSIM_ABI_EXPORT qa_jit_runtime *
-fb_jit_runtime_init(std::uint8_t *storage, std::size_t bytes, std::uint32_t bank_bytes,
-                    std::uint32_t entry_capacity, const std::uint32_t *offsets,
-                    const fireball_native_cps_handler *call_handlers) {
-  assert(storage == nullptr ||
-         reinterpret_cast<std::uintptr_t>(storage) % alignof(qa_jit_runtime) == 0);
-  if (storage == nullptr || bytes < sizeof(qa_jit_runtime) || offsets == nullptr ||
-      bank_bytes < fireball::jit_trace_header_bytes || entry_capacity == 0 ||
-      entry_capacity > fireball::jit_cache_bank_entry_capacity) {
-    return nullptr;
-  }
-  auto *cache = ::new (storage) qa_jit_runtime{};
-  cache->provider = {reinterpret_cast<std::uintptr_t>(cache),
-                     nullptr,
-                     0,
-                     0,
-                     {},
-                     provider_adapter::lookup_runtime_trace,
-                     provider_adapter::observe_runtime_block,
-                     provider_adapter::finish_runtime_boundary};
-  if (!fb_jit_memory_init(&cache->cache.code_memory, FB_CONF_JIT_CACHE_REGION_BYTES) ||
-      !fireball::initialize_common_code(
-          &cache->cache.code_memory,
-          fireball::jit_api::initialize_runtime_function_table(qa_function_table_storage.data(),
-                                                               call_handlers)) ||
-      !fb_jit_memory_commit(&cache->cache.code_memory)) {
-    cache->~qa_jit_runtime();
-    return nullptr;
-  }
-  for (std::uint32_t i = 0; i < fireball::jit_cache_bank_count; ++i) {
-    cache->cache.banks[i].capacity_bytes = bank_bytes;
-    cache->cache.banks[i].entry_capacity =
-        entry_capacity < bank_bytes / fireball::jit_trace_header_bytes
-            ? entry_capacity
-            : bank_bytes / fireball::jit_trace_header_bytes;
-    cache->cache.banks[i].region_offset_bytes = offsets[i];
-  }
-  return cache;
-}
 
 extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_region_size(const std::uint32_t *lengths,
                                                       const std::uint32_t *bases,

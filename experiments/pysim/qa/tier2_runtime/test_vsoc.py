@@ -781,6 +781,7 @@ def test_runtime_yield_services_jit_while_only_guest_task_is_ready(
                 local.get $i))"""
         )
     )
+    engine.register_module_blocks(module)
     interpreter = make_native_interpreter(
         module,
         bump_allocator=engine.bump_allocator,

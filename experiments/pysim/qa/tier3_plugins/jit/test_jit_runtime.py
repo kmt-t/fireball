@@ -10,8 +10,11 @@ Traceability: jit_compiler_test_spec.md, jit_runtime_test_spec.md
 """
 
 import ctypes
+import json
 import mmap
+import os
 import struct
+import subprocess
 import sys
 from itertools import pairwise
 from pathlib import Path
@@ -1697,7 +1700,7 @@ def test_runtime_profile_counters_are_disabled_by_default_without_changing_resul
 
 
 def test_jit_basic_block_extension_data_is_null_when_counters_are_not_built():
-    """Unused extension slots stay null; the counter build binds only block-owned slots."""
+    """The module view exposes block counters only in the counter build."""
     from qa.private import jit_native_abi as native_abi
 
     module = parse_standalone(wat_to_wasm('(module (func (export "f") (result i32) i32.const 1))'))
@@ -1705,8 +1708,7 @@ def test_jit_basic_block_extension_data_is_null_when_counters_are_not_built():
     manager.register_module(module)
 
     counters_enabled = bool(native_abi.BLOCK_COUNTERS_ENABLED())
-    assert all(bool(block.extension_data) is counters_enabled for block in manager._block_inputs)
-    assert bool(manager._block_execution_counts) is counters_enabled
+    assert bool(manager._execution._module_view.block_execution_counts) is counters_enabled
 
 
 def test_native_interpreter_with_jit_runtime_matches_interpreter_only_execution():
@@ -3751,7 +3753,9 @@ def test_jitr_62_chain_links_stay_valid_across_lookup_and_rotation():
     chained_runs = 0
     for seed in range(40):
         rng = random.Random(seed)
-        cache = _bound_manager(module).cache
+        # Each seed binds the shared module view; the previous runtime must close first.
+        manager = _bound_manager(module)
+        cache = manager.cache
         for _ in range(90):
             index = rng.randrange(CHAIN_STRESS_TRACES)
             pc = pcs[index]
@@ -3775,6 +3779,7 @@ def test_jitr_62_chain_links_stay_valid_across_lookup_and_rotation():
                 cache.rotate()
             _chain_stress_check_links(cache, module)
         evicted_total += cache.evictions
+        manager.close()
     assert lookup_hits > 0, "sequences never looked up a resident trace"
     assert evicted_total > 0, "sequences never evicted a trace"
     assert chained_runs > 0, "sequences never ran a chained trace"
@@ -4528,3 +4533,59 @@ def test_jitr_if_else_arms_chain_into_the_join_across_frame_depth():
     assert then.chain_next == join.head_pc and other.chain_next == join.head_pc
     assert then.header.chain_target_addr == join.raw_addr
     assert other.header.chain_target_addr == join.raw_addr
+
+
+_NO_AGING_WORKER = """
+import json
+from qa.private import jit_native_abi as native_abi
+from qa.tier3_plugins.jit import test_jit_runtime as t
+
+engine, module = t._aging_engine((48,))
+jit = engine.jit_runtime
+near_pc = t._pc(module, 2)
+t._touch_via_yield(engine, near_pc)
+before = t._sweep_state(jit)
+for _ in range(3):
+    jit.cache.rotate()
+print(json.dumps({
+    "units": native_abi.AGING_STEP_UNITS(),
+    "before": before,
+    "after": t._sweep_state(jit),
+    "state": int(jit.bitmap.get_state(near_pc)),
+}))
+"""
+
+
+def test_jitr_100_zero_units_steps_per_rotation_without_processing_or_scanning() -> None:
+    """TEST-JITR-100: units = 0 is the no-aging configuration; each rotation counts one step.
+
+    The step processes no non-zero byte and scans no byte, so the cursor and every card state
+    stay unchanged even though a dirty bit is set. The probe library, built by `make` with
+    `--aging-units=0`, is loaded in a subprocess because the native library is bound once per
+    process.
+    """
+    library = _PYSIM_DIR / "build" / "no-aging" / "libjit_probe.so"
+    assert library.exists(), "build the no-aging probe with: make -C experiments/pysim"
+    env = {
+        **os.environ,
+        "FB_QA_JIT_PROBE_LIBRARY": str(library),
+        "PYTHONPATH": os.pathsep.join(sys.path),
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", _NO_AGING_WORKER],
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+    )
+    result = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert result["units"] == 0, "the probe library must be the no-aging build"
+    steps, units, scanned, cursor = result["before"]
+    assert (steps, units, scanned, cursor) == (0, 0, 0, 0)
+    steps, units, scanned, cursor = result["after"]
+    assert steps == 3, "each of the three rotations counts as one aging step"
+    assert units == 0, "no non-zero byte is processed when units = 0"
+    assert scanned == 0, "no byte is scanned when units = 0"
+    assert cursor == 0, "the cursor does not move when no byte is scanned"
+    assert result["state"] == CardState.EXECUTED, "a card stays EXECUTED without an aging step"

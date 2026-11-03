@@ -4591,6 +4591,33 @@ def test_jitr_100_zero_units_steps_per_rotation_without_processing_or_scanning()
     assert result["state"] == CardState.EXECUTED, "a card stays EXECUTED without an aging step"
 
 
+_CALL_RESUME_WAT = """(module
+  (func $inc (param i32) (result i32) local.get 0 i32.const 1 i32.add)
+  (func (export "f") (param $n i32) (result i32) (local $i i32) (local $acc i32)
+    (loop $l
+      local.get $acc
+      local.get $i
+      call $inc
+      i32.add
+      local.set $acc
+      local.get $i i32.const 1 i32.add local.tee $i
+      local.get $n i32.lt_s br_if $l)
+    local.get $acc))"""
+
+
+_WRONG_ENTRY_WORKER = """
+from qa.tier3_plugins.jit.test_jit_runtime import (
+    _CALL_RESUME_WAT, Interpreter, make_runtime_engine, parse_standalone, wat_to_wasm)
+
+module = parse_standalone(wat_to_wasm(_CALL_RESUME_WAT))
+for block in module.blocks:
+    block.entry_stack_words = 0
+engine = make_runtime_engine()
+engine.register_module_blocks(module)
+engine.call(Interpreter(module, yield_threshold=8), module.export_func_index("f"), [50])
+"""
+
+
 def test_jitr_101_call_resume_block_compiles_with_its_entry_stack_words():
     """TEST-JITR-101: a call-resume block that pops an operand from before the call compiles.
 
@@ -4599,19 +4626,7 @@ def test_jitr_101_call_resume_block_compiles_with_its_entry_stack_words():
     stack misread as zero, the block is not compiled. Each iteration adds i + 1, so the result is
     n(n + 1) / 2.
     """
-    wat = """(module
-      (func $inc (param i32) (result i32) local.get 0 i32.const 1 i32.add)
-      (func (export "f") (param $n i32) (result i32) (local $i i32) (local $acc i32)
-        (loop $l
-          local.get $acc
-          local.get $i
-          call $inc
-          i32.add
-          local.set $acc
-          local.get $i i32.const 1 i32.add local.tee $i
-          local.get $n i32.lt_s br_if $l)
-        local.get $acc))"""
-    module = parse_standalone(wat_to_wasm(wat))
+    module = parse_standalone(wat_to_wasm(_CALL_RESUME_WAT))
     resume_pcs = [block.head_pc for block in module.blocks if block.entry_stack_words == 2]
     assert len(resume_pcs) == 1, "the call-resume block must hold two entry stack words"
     fn_idx = module.export_func_index("f")
@@ -4624,3 +4639,20 @@ def test_jitr_101_call_resume_block_compiles_with_its_entry_stack_words():
         trace.head_pc for _key, trace in resident_module_traces(engine.jit_runtime.cache, module)
     }
     assert resume_pcs[0] in compiled, "the call-resume block must be compiled"
+
+
+def test_jitr_102_entry_stack_words_below_a_pop_is_a_contract_violation():
+    """TEST-JITR-102: a block whose entry stack holds fewer words than its pops aborts.
+
+    The loader's entry stack words cover every pop of a valid block. A block that pops past them
+    violates the contract, so the compiler asserts instead of returning a silent failure.
+    """
+    completed = subprocess.run(
+        [sys.executable, "-c", _WRONG_ENTRY_WORKER],
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+    )
+    assert completed.returncode != 0, "a pop past the entry stack words must not be accepted"
+    assert "Assertion" in completed.stderr, completed.stderr[-400:]

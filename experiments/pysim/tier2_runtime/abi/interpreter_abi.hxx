@@ -22,10 +22,6 @@
 #error "unsupported pointer width for the Fireball native ABI"
 #endif
 
-#ifndef FB_CONF_JIT_BLOCK_COUNTERS
-#define FB_CONF_JIT_BLOCK_COUNTERS 0
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -187,24 +183,6 @@ using fireball_native_cps_handler = void(FIREBALL_NATIVE_CPS_CALL *)(
 using fireball_native_jit_trace_entry = bool(FIREBALL_NATIVE_CPS_CALL *)(
     fireball_execution_context_native *, const uint8_t *, uint32_t *, const uint8_t *) noexcept;
 
-static inline void
-fb_native_record_block_execution(const fireball_wasm_module_execution_view_native *module,
-                                 block_index_t block_index) {
-#if FB_CONF_JIT_BLOCK_COUNTERS
-  if (module == 0 || module->block_execution_counts == 0) {
-    return;
-  }
-  assert(block_index < module->block_count);
-  uint32_t *count = module->block_execution_counts + block_index;
-  if (*count != UINT32_MAX) {
-    ++*count;
-  }
-#else
-  (void)module;
-  (void)block_index;
-#endif
-}
-
 #include <stddef.h>
 
 namespace fireball::runtime {
@@ -316,7 +294,8 @@ static_assert(offsetof(wasm_function_execution_view_native, local_offsets) == 16
 static_assert(offsetof(wasm_function_execution_view_native, local_types) == 24);
 static_assert(offsetof(wasm_function_execution_view_native, module_view) == 32);
 static_assert(offsetof(wasm_function_execution_view_native, interpreter_annotation_pool) == 40);
-static_assert(offsetof(wasm_function_execution_view_native, interpreter_annotation_byte_count) == 48);
+static_assert(offsetof(wasm_function_execution_view_native, interpreter_annotation_byte_count) ==
+              48);
 static_assert(offsetof(wasm_function_execution_view_native, function_index) == 56);
 static_assert(offsetof(wasm_function_execution_view_native, entry_block_index) == 60);
 static_assert(offsetof(wasm_function_execution_view_native, max_operand_stack_words) == 65);
@@ -326,7 +305,8 @@ static_assert(offsetof(wasm_function_execution_view_native, local_offsets) == 12
 static_assert(offsetof(wasm_function_execution_view_native, local_types) == 16);
 static_assert(offsetof(wasm_function_execution_view_native, module_view) == 20);
 static_assert(offsetof(wasm_function_execution_view_native, interpreter_annotation_pool) == 24);
-static_assert(offsetof(wasm_function_execution_view_native, interpreter_annotation_byte_count) == 28);
+static_assert(offsetof(wasm_function_execution_view_native, interpreter_annotation_byte_count) ==
+              28);
 static_assert(offsetof(wasm_function_execution_view_native, function_index) == 36);
 static_assert(offsetof(wasm_function_execution_view_native, entry_block_index) == 40);
 static_assert(offsetof(wasm_function_execution_view_native, max_operand_stack_words) == 45);

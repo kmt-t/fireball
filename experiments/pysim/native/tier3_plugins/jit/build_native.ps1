@@ -2,7 +2,7 @@
 # (Windows / clang-cl with Clang's assembler).
 # Requires clang-cl and clang++ on PATH and a Visual Studio Build Tools +
 # Windows SDK install (for the MSVC headers/import libs clang-cl targets).
-param([switch]$QA, [switch]$BlockCounters)
+param([switch]$QA)
 
 $ErrorActionPreference = "Stop"
 
@@ -57,7 +57,6 @@ if ($QA) {
     $generatedDll = Join-Path $nativeBuildDir "jit_probe.dll"
     $pythonPackageDir = Join-Path $projectRoot "experiments\pysim\qa\private"
 }
-if ($BlockCounters) { $commonDefines += "/DFB_CONF_JIT_BLOCK_COUNTERS=1" }
 
 $assemblyStencilGenerator = Join-Path $projectRoot "tools\jit_stencil_gen\generate_assembly.py"
 $traceStencilSource = Join-Path $nativeSourceDir "lir\x64\trace.S"

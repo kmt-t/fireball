@@ -1,5 +1,5 @@
 # Build the required Tier 2 native Interpreter (Windows / clang-cl).
-param([switch]$Qa, [switch]$BlockCounters)
+param([switch]$Qa)
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -27,9 +27,7 @@ if ($Qa) {
 }
 
 Write-Host ">>> Compiling native_interpreter.cxx -> native_interpreter.dll" -ForegroundColor Yellow
-if ($BlockCounters) { $counterDefine = "/DFB_CONF_JIT_BLOCK_COUNTERS=1" }
 & clang-cl.exe /TP /std:c++latest /O2 /LD /W4 -flto=thin -fuse-ld=lld -fno-exceptions -fno-rtti `
-    $counterDefine `
     "-I$scriptDir" `
     "-I$vsDir\VC\Tools\MSVC\$msvcVer\include" `
     "-I$sdkRoot\Include\$sdkVer\ucrt" `

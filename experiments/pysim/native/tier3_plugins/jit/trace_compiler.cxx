@@ -29,24 +29,6 @@ using fireball::kMaxTraceOperations;
 #endif
 namespace {
 
-#if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
-fireball::jit_const_pool_diagnostics const_pool_diagnostics{};
-
-std::uint32_t diagnostic_opcode_index(std::uint32_t opcode) {
-  return opcode <= 0xFFu ? opcode : 0x100u + (opcode & 0xFFu);
-}
-
-struct const_pool_diagnostic_scope {
-  fireball::jit_const_pool_diagnostics saved = const_pool_diagnostics;
-  bool committed = false;
-  ~const_pool_diagnostic_scope() {
-    if (!committed) {
-      const_pool_diagnostics = saved;
-    }
-  }
-};
-#endif
-
 constexpr std::size_t kTraceHeaderBytes = FB_CONF_JIT_X64_TRACE_HEADER_BYTES;
 // A local access uses an 8-bit displacement up to this byte offset; beyond it a 32-bit one.
 constexpr std::uint32_t kMaxDisp8LocalBytes = 127;
@@ -452,9 +434,6 @@ struct trace_builder {
     assert(relocation_count < relocations.size());
     relocations[relocation_count++] = {0, 4, relocation_kind::trace_header};
     relocation_bytes += 4;
-#if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
-    const_pool_diagnostics.item_bytes[0] += 4;
-#endif
     return true;
   }
 
@@ -463,11 +442,7 @@ struct trace_builder {
   bool append_runtime_api(
       std::uint8_t slot, code_ip_t source_ip, const std::uint64_t *immediates = nullptr,
       const std::uint8_t *immediate_widths = nullptr, std::uint8_t immediate_count = 0,
-      std::uint32_t wasm_opcode = 0,
       annotation_offset_t interpreter_rel_after = std::numeric_limits<annotation_offset_t>::max()) {
-#if !defined(FB_CONF_JIT_BLOCK_COUNTERS) || !FB_CONF_JIT_BLOCK_COUNTERS
-    static_cast<void>(wasm_opcode);
-#endif
     // Every caller passes a constant immediate count of at most two, with constant widths.
     assert(immediate_count <= kMaxRuntimeApiImmediates &&
            (immediate_count == 0 || (immediates != nullptr && immediate_widths != nullptr)));
@@ -486,48 +461,28 @@ struct trace_builder {
         !add_value(source_ip, sizeof(code_ip_t))) {
       return false;
     }
-#if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
-    const_pool_diagnostics.item_bytes[1] += 2;
-    const_pool_diagnostics.item_bytes[2] += sizeof(code_ip_t);
-    const_pool_diagnostics.item_bytes[5] += 1;
-    ++const_pool_diagnostics.runtime_api_count;
-    ++const_pool_diagnostics.runtime_api_opcodes[diagnostic_opcode_index(wasm_opcode)];
-#endif
     for (std::uint8_t index = 0; index < immediate_count; ++index) {
       if (!add_value(immediates[index], immediate_widths[index])) {
         return false;
       }
-#if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
-      const_pool_diagnostics.item_bytes[3] += immediate_widths[index];
-#endif
     }
     if (!add_value(interpreter_rel_after, sizeof(interpreter_rel_after))) {
       return false;
     }
-#if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
-    const_pool_diagnostics.item_bytes[6] += sizeof(interpreter_rel_after);
-#endif
     return true;
   }
 
   bool append_terminal_runtime_api(std::uint8_t slot, code_ip_t source_ip,
                                    annotation_offset_t annotation_offset, bool has_annotation,
-                                   std::uint32_t wasm_opcode,
                                    annotation_offset_t interpreter_rel_after) {
     const std::uint8_t count = has_annotation ? 1 : 0;
     const std::uint8_t payload_bytes = has_annotation ? sizeof(annotation_offset_t) : 0;
     const std::uint64_t annotation_value = annotation_offset;
     if (!append_runtime_api(slot, source_ip, has_annotation ? &annotation_value : nullptr,
-                            has_annotation ? &payload_bytes : nullptr, count, wasm_opcode,
+                            has_annotation ? &payload_bytes : nullptr, count,
                             interpreter_rel_after)) {
       return false;
     }
-#if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
-    if (has_annotation) {
-      const_pool_diagnostics.item_bytes[3] -= sizeof(annotation_offset_t);
-      const_pool_diagnostics.item_bytes[6] += sizeof(annotation_offset_t);
-    }
-#endif
     return true;
   }
 
@@ -1524,7 +1479,7 @@ bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_i
     return false;
   }
   return builder.append_runtime_api(slot, source_ip, immediates, immediate_widths, immediate_count,
-                                    static_cast<std::uint32_t>(op), interpreter_rel_after);
+                                    interpreter_rel_after);
 }
 
 bool is_trace_terminator_opcode(std::uint8_t opcode) {
@@ -1694,7 +1649,7 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
   }
 
   return builder.append_terminal_runtime_api(
-             slot, source_ip, annotation_offset, annotation_bytes != 0, opcode,
+             slot, source_ip, annotation_offset, annotation_bytes != 0,
              static_cast<annotation_offset_t>(interpreter_rel_after_64))
              ? 1
              : 0;
@@ -1711,9 +1666,6 @@ int fireball::compile_wasm_trace(
     jit_stack_words_t entry_stack_words, const frame_word_offset_t *local_offsets,
     const std::uint8_t *local_types, local_count_t local_count, local_count_t local_slot_count,
     std::uint8_t *output, code_offset_t output_capacity, fireball::jit_compile_result *result) {
-#if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
-  const_pool_diagnostic_scope diagnostic_scope{};
-#endif
   static_cast<void>(has_next_pc);
   static_cast<void>(next_pc);
   static_cast<void>(has_loops_to);
@@ -1974,13 +1926,6 @@ int fireball::compile_wasm_trace(
     if (call_exit || terminal_end_ip != trace_end) {
       result->exit_kind = jit_trace_exit_kind::call_cps;
     }
-#if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
-    const auto has_terminator =
-        trace_end < code_bytes && is_trace_terminator_opcode(code[trace_end]);
-    ++const_pool_diagnostics.trace_count;
-    const_pool_diagnostics.instruction_count += instruction_count + (has_terminator ? 1u : 0u);
-    diagnostic_scope.committed = true;
-#endif
   }
   return status;
 }
@@ -2005,19 +1950,4 @@ std::int64_t fireball::chain_successor(std::uintptr_t code_address, code_offset_
   default:
     return next_pc;
   }
-}
-
-extern "C" void fb_jit_const_pool_diagnostics_reset() {
-#if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
-  const_pool_diagnostics = {};
-#endif
-}
-
-extern "C" void fb_jit_const_pool_diagnostics_read(fireball::jit_const_pool_diagnostics *output) {
-  assert(output != nullptr);
-#if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
-  *output = const_pool_diagnostics;
-#else
-  *output = {};
-#endif
 }

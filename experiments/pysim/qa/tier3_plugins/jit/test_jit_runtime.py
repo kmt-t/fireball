@@ -1702,14 +1702,11 @@ def test_runtime_profile_counters_are_disabled_by_default_without_changing_resul
 
 def test_jit_basic_block_extension_data_is_null_when_counters_are_not_built():
     """The module view exposes block counters only in the counter build."""
-    from qa.private import jit_native_abi as native_abi
-
     module = parse_standalone(wat_to_wasm('(module (func (export "f") (result i32) i32.const 1))'))
     manager = JITRuntimeManager()
     manager.register_module(module)
 
-    counters_enabled = bool(native_abi.BLOCK_COUNTERS_ENABLED())
-    assert bool(manager._execution._module_view.block_execution_counts) is counters_enabled
+    assert bool(manager._execution._module_view.block_execution_counts) is False
 
 
 def test_native_interpreter_with_jit_runtime_matches_interpreter_only_execution():
@@ -2400,7 +2397,6 @@ def test_jit_compile_call_blocks_and_tail_call_cps_handler(
         interpreter_annotations=native_abi.NativeByteView(ctypes.addressof(annotation_storage), 10),
     )
 
-    native_abi.CONST_POOL_DIAGNOSTICS_RESET()
     trace = TraceCompiler.compile_wasm(block)
     assert trace is not None and trace.code_blob is not None
     header = native_abi.NativeTraceHeader.from_buffer_copy(trace.code_blob)
@@ -2409,11 +2405,6 @@ def test_jit_compile_call_blocks_and_tail_call_cps_handler(
     trace_exit = native_abi.NativeTraceExit.from_buffer_copy(trace.code_blob, exit_offset)
     assert trace_exit.body_end_ip == call_ip + (2 if call_opcode == 0x10 else 3)
     assert trace_exit.interpreter_rel_bytes == 10
-
-    if native_abi.BLOCK_COUNTERS_ENABLED():
-        diagnostics = native_abi.NativeConstPoolDiagnostics()
-        native_abi.CONST_POOL_DIAGNOSTICS_READ(ctypes.byref(diagnostics))
-        assert diagnostics.runtime_api_opcodes[call_opcode] == 0
 
 
 @pytest.mark.parametrize("collect_stats", (False, True))
@@ -3876,10 +3867,7 @@ def test_jitr_branch_terminator_returns_through_interpreter_cps():
     assert source.chain_next is None
     assert _qa_trace_counted_call(engine, manager, Interpreter(module), 0, [10]) == [30]
     assert _qa_trace_counted_call(engine, manager, Interpreter(module), 0, [-5]) == [0]
-    if native_abi.BLOCK_COUNTERS_ENABLED():
-        assert source.exec_count == 2
-    else:
-        assert source.exec_count == 0
+    assert source.exec_count == 0
     assert engine.stat_jit_invocations >= 1
     assert engine.stat_native_control_handlers > 0
     assert engine.stat_trace_exits_to_interp > 0

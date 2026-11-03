@@ -256,7 +256,8 @@ inline FIREBALL_CPS_CALL void h_rpn_push_imm(execution_context *context,
 
 // The i32 operators of the expression ISA. Each K uses the functor of the matching wasm handler
 // (native_interpreter.cxx, handler table), so both paths share one definition of the operation.
-template <std::uint32_t K> inline std::uint32_t rpn_i32_binary(std::uint32_t lhs, std::uint32_t rhs) {
+template <std::uint32_t K>
+inline std::uint32_t rpn_i32_binary(std::uint32_t lhs, std::uint32_t rhs) {
   if constexpr (K == 0) {
     return std::plus<>{}(lhs, rhs);
   } else if constexpr (K == 1) {
@@ -373,22 +374,22 @@ inline FIREBALL_CPS_CALL void h_rpn_end(execution_context *context,
   const auto code_length = read_u8(cursor);
   context->local_base[target] = sp[-1];
   const std::uint8_t *after_set = rel + continuation;
-  [[clang::musttail]] return dispatch_next<void, WithJit>(
-      context, instruction_ip + code_length, sp - 1, after_set);
+  [[clang::musttail]] return dispatch_next<void, WithJit>(context, instruction_ip + code_length,
+                                                          sp - 1, after_set);
 }
 
 // The terminal element without a local write. The temporaries are the VM operand stack top, and
 // the VM resumes at the instruction that ends the expression.
 template <bool WithJit>
 inline FIREBALL_CPS_CALL void h_rpn_end_stack(execution_context *context,
-                                              const std::uint8_t *instruction_ip,
-                                              std::uint32_t *sp, const std::uint8_t *rel) {
+                                              const std::uint8_t *instruction_ip, std::uint32_t *sp,
+                                              const std::uint8_t *rel) {
   const std::uint8_t *cursor = rel + 1;
   const auto continuation = static_cast<std::ptrdiff_t>(read_s32(cursor));
   const auto code_length = read_u8(cursor);
   const std::uint8_t *after_stack = rel + continuation;
-  [[clang::musttail]] return dispatch_next<void, WithJit>(
-      context, instruction_ip + code_length, sp, after_stack);
+  [[clang::musttail]] return dispatch_next<void, WithJit>(context, instruction_ip + code_length, sp,
+                                                          after_stack);
 }
 
 // A specialised operator element (RPN_SPECIALISED_FORMS). The left and right operands are read from
@@ -436,8 +437,8 @@ inline FIREBALL_CPS_CALL void h_rpn_spec(execution_context *context,
     const auto continuation = static_cast<std::ptrdiff_t>(read_s32(cursor));
     const auto code_length = read_u8(cursor);
     const std::uint8_t *after_set = tail + continuation;
-    [[clang::musttail]] return dispatch_next<void, WithJit>(
-        context, instruction_ip + code_length, sp - kTemps, after_set);
+    [[clang::musttail]] return dispatch_next<void, WithJit>(context, instruction_ip + code_length,
+                                                            sp - kTemps, after_set);
   } else if constexpr (kTemps == 2) {
     sp[-2] = result;
     rpn_next<WithJit>(context, instruction_ip, sp - 1, cursor);
@@ -453,17 +454,13 @@ inline FIREBALL_CPS_CALL void h_rpn_spec(execution_context *context,
 template <bool WithJit, std::size_t... Ks>
 constexpr void fill_rpn_binop_handlers(std::array<native_opcode_handler, 256> &handlers,
                                        std::index_sequence<Ks...>) {
-  ((handlers[kRpnElemBinopBase + Ks] =
-        &h_rpn_binop<WithJit, static_cast<std::uint32_t>(Ks)>),
-   ...);
+  ((handlers[kRpnElemBinopBase + Ks] = &h_rpn_binop<WithJit, static_cast<std::uint32_t>(Ks)>), ...);
 }
 
 template <bool WithJit, std::size_t... Ks>
 constexpr void fill_rpn_unary_handlers(std::array<native_opcode_handler, 256> &handlers,
                                        std::index_sequence<Ks...>) {
-  ((handlers[kRpnElemUnaryBase + Ks] =
-        &h_rpn_unary<WithJit, static_cast<std::uint32_t>(Ks)>),
-   ...);
+  ((handlers[kRpnElemUnaryBase + Ks] = &h_rpn_unary<WithJit, static_cast<std::uint32_t>(Ks)>), ...);
 }
 
 template <bool WithJit> constexpr auto make_rpn_element_handlers() {
@@ -472,29 +469,45 @@ template <bool WithJit> constexpr auto make_rpn_element_handlers() {
   handlers[kRpnElemPushImm] = &h_rpn_push_imm<WithJit>;
   handlers[kRpnElemEnd] = &h_rpn_end<WithJit>;
   handlers[kRpnElemEndStack] = &h_rpn_end_stack<WithJit>;
-  fill_rpn_binop_handlers<WithJit>(
-      handlers, std::make_index_sequence<kRpnBinopKindCount>{});
-  fill_rpn_unary_handlers<WithJit>(
-      handlers, std::make_index_sequence<kRpnUnaryKindCount>{});
+  fill_rpn_binop_handlers<WithJit>(handlers, std::make_index_sequence<kRpnBinopKindCount>{});
+  fill_rpn_unary_handlers<WithJit>(handlers, std::make_index_sequence<kRpnUnaryKindCount>{});
   // Same order as RPN_SPECIALISED_FORMS: (binary operator, left, right, destination).
-  handlers[kRpnElemSpecBase + 0] = &h_rpn_spec<WithJit, 2, kRpnOperandLocal, kRpnOperandLocal, kRpnDestTemp>;
-  handlers[kRpnElemSpecBase + 1] = &h_rpn_spec<WithJit, 11, kRpnOperandTemp, kRpnOperandImm, kRpnDestTemp>;
-  handlers[kRpnElemSpecBase + 2] = &h_rpn_spec<WithJit, 12, kRpnOperandLocal, kRpnOperandImm, kRpnDestLocal>;
-  handlers[kRpnElemSpecBase + 3] = &h_rpn_spec<WithJit, 1, kRpnOperandLocal, kRpnOperandLocal, kRpnDestLocal>;
-  handlers[kRpnElemSpecBase + 4] = &h_rpn_spec<WithJit, 0, kRpnOperandLocal, kRpnOperandLocal, kRpnDestTemp>;
-  handlers[kRpnElemSpecBase + 5] = &h_rpn_spec<WithJit, 1, kRpnOperandTemp, kRpnOperandLocal, kRpnDestLocal>;
-  handlers[kRpnElemSpecBase + 6] = &h_rpn_spec<WithJit, 19, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
-  handlers[kRpnElemSpecBase + 7] = &h_rpn_spec<WithJit, 17, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
-  handlers[kRpnElemSpecBase + 8] = &h_rpn_spec<WithJit, 20, kRpnOperandLocal, kRpnOperandLocal, kRpnDestTemp>;
-  handlers[kRpnElemSpecBase + 9] = &h_rpn_spec<WithJit, 11, kRpnOperandTemp, kRpnOperandImm, kRpnDestVm>;
-  handlers[kRpnElemSpecBase + 10] = &h_rpn_spec<WithJit, 17, kRpnOperandLocal, kRpnOperandImm, kRpnDestVm>;
-  handlers[kRpnElemSpecBase + 11] = &h_rpn_spec<WithJit, 19, kRpnOperandLocal, kRpnOperandImm, kRpnDestVm>;
-  handlers[kRpnElemSpecBase + 12] = &h_rpn_spec<WithJit, 17, kRpnOperandLocal, kRpnOperandLocal, kRpnDestTemp>;
-  handlers[kRpnElemSpecBase + 13] = &h_rpn_spec<WithJit, 12, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
-  handlers[kRpnElemSpecBase + 14] = &h_rpn_spec<WithJit, 10, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
-  handlers[kRpnElemSpecBase + 15] = &h_rpn_spec<WithJit, 11, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
-  handlers[kRpnElemSpecBase + 16] = &h_rpn_spec<WithJit, 0, kRpnOperandLocal, kRpnOperandImm, kRpnDestLocal>;
-  handlers[kRpnElemSpecBase + 17] = &h_rpn_spec<WithJit, 0, kRpnOperandTemp, kRpnOperandLocal, kRpnDestLocal>;
+  handlers[kRpnElemSpecBase + 0] =
+      &h_rpn_spec<WithJit, 2, kRpnOperandLocal, kRpnOperandLocal, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 1] =
+      &h_rpn_spec<WithJit, 11, kRpnOperandTemp, kRpnOperandImm, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 2] =
+      &h_rpn_spec<WithJit, 12, kRpnOperandLocal, kRpnOperandImm, kRpnDestLocal>;
+  handlers[kRpnElemSpecBase + 3] =
+      &h_rpn_spec<WithJit, 1, kRpnOperandLocal, kRpnOperandLocal, kRpnDestLocal>;
+  handlers[kRpnElemSpecBase + 4] =
+      &h_rpn_spec<WithJit, 0, kRpnOperandLocal, kRpnOperandLocal, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 5] =
+      &h_rpn_spec<WithJit, 1, kRpnOperandTemp, kRpnOperandLocal, kRpnDestLocal>;
+  handlers[kRpnElemSpecBase + 6] =
+      &h_rpn_spec<WithJit, 19, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 7] =
+      &h_rpn_spec<WithJit, 17, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 8] =
+      &h_rpn_spec<WithJit, 20, kRpnOperandLocal, kRpnOperandLocal, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 9] =
+      &h_rpn_spec<WithJit, 11, kRpnOperandTemp, kRpnOperandImm, kRpnDestVm>;
+  handlers[kRpnElemSpecBase + 10] =
+      &h_rpn_spec<WithJit, 17, kRpnOperandLocal, kRpnOperandImm, kRpnDestVm>;
+  handlers[kRpnElemSpecBase + 11] =
+      &h_rpn_spec<WithJit, 19, kRpnOperandLocal, kRpnOperandImm, kRpnDestVm>;
+  handlers[kRpnElemSpecBase + 12] =
+      &h_rpn_spec<WithJit, 17, kRpnOperandLocal, kRpnOperandLocal, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 13] =
+      &h_rpn_spec<WithJit, 12, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 14] =
+      &h_rpn_spec<WithJit, 10, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 15] =
+      &h_rpn_spec<WithJit, 11, kRpnOperandLocal, kRpnOperandImm, kRpnDestTemp>;
+  handlers[kRpnElemSpecBase + 16] =
+      &h_rpn_spec<WithJit, 0, kRpnOperandLocal, kRpnOperandImm, kRpnDestLocal>;
+  handlers[kRpnElemSpecBase + 17] =
+      &h_rpn_spec<WithJit, 0, kRpnOperandTemp, kRpnOperandLocal, kRpnDestLocal>;
   return handlers;
 }
 
@@ -525,7 +538,7 @@ inline FIREBALL_CPS_CALL void h_rpn_expr(execution_context *context,
   ++g_rpn_expression_entries;
 #endif
   assert(context->stack_limit - sp >= static_cast<std::ptrdiff_t>(kRpnMaxDepth));
-  const std::uint8_t *cursor = rel + 4;  // width, offset (u16), slot width precede the ext
+  const std::uint8_t *cursor = rel + 4; // width, offset (u16), slot width precede the ext
   const auto distance = read_u16(cursor);
   [[clang::musttail]] return rpn_next<WithJit>(context, instruction_ip, sp, rel + distance);
 }
@@ -1041,7 +1054,8 @@ execution_extension(const dispatch_input_t<WithExtension> &input) {
   }
 }
 
-template <bool CollectStats, bool WithJit, bool WithExtension, typename ResultType = fb_native_result>
+template <bool CollectStats, bool WithJit, bool WithExtension,
+          typename ResultType = fb_native_result>
 struct native_dispatch_state {
   static_assert(!CollectStats || !std::is_same_v<ResultType, fb_native_result>);
   const fb_native_dispatch_call &input;
@@ -1054,9 +1068,8 @@ struct native_dispatch_state {
 };
 
 template <bool CollectStats, bool WithJit, bool WithExtension, typename ResultType>
-inline void
-prepare_native_dispatch(native_dispatch_state<CollectStats, WithJit, WithExtension,
-                                              ResultType> &state) {
+inline void prepare_native_dispatch(
+    native_dispatch_state<CollectStats, WithJit, WithExtension, ResultType> &state) {
   [[maybe_unused]] const auto &input = state.input;
   auto &context = state.context;
   assert(input.stack != nullptr && input.locals != nullptr);
@@ -1182,11 +1195,11 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Resul
   return trace.body_count;
 }
 
-template <bool CollectStats, bool WithJit, bool WithExtension, typename ResultType = fb_native_result>
-inline void
-record_dispatch_segment_stats(native_dispatch_state<CollectStats, WithJit, WithExtension,
-                                                    ResultType> &state,
-                              std::uint32_t executed_bodies) {
+template <bool CollectStats, bool WithJit, bool WithExtension,
+          typename ResultType = fb_native_result>
+inline void record_dispatch_segment_stats(
+    native_dispatch_state<CollectStats, WithJit, WithExtension, ResultType> &state,
+    std::uint32_t executed_bodies) {
   if constexpr (CollectStats) {
     if (executed_bodies == 0) {
       ++state.metrics.stats.interpreted_block_count;
@@ -1201,10 +1214,11 @@ record_dispatch_segment_stats(native_dispatch_state<CollectStats, WithJit, WithE
   }
 }
 
-template <bool CollectStats, bool WithJit, bool WithExtension, typename Debugger, typename ResultType>
-inline bool handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, WithExtension,
-                                                      ResultType> &state,
-                                std::uint32_t exit_kind) {
+template <bool CollectStats, bool WithJit, bool WithExtension, typename Debugger,
+          typename ResultType>
+inline bool
+handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, WithExtension, ResultType> &state,
+                    std::uint32_t exit_kind) {
   // The exit helper has already written the pending flag, the instruction pointer, and the
   // trap code. Exit kinds and statuses share their values, so the kind is the status.
   auto &context = state.context;
@@ -1241,7 +1255,8 @@ inline bool handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, Wit
   }
 }
 
-template <bool CollectStats, bool WithJit, bool WithExtension, typename Debugger, typename ResultType>
+template <bool CollectStats, bool WithJit, bool WithExtension, typename Debugger,
+          typename ResultType>
 int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, ResultType *result) {
   assert(result != nullptr && input != nullptr);
   const auto &call = base_dispatch_input<WithExtension>(*input);
@@ -1273,8 +1288,8 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
     assert(debug->control->breakpoint_count == 0 || debug->control->breakpoints != nullptr);
   }
   auto &context = *static_cast<execution_context *>(call.context);
-  native_dispatch_state<CollectStats, WithJit, WithExtension, ResultType>
-      state{call, extension, jit_provider, context, kNativeErrorInternal, {}};
+  native_dispatch_state<CollectStats, WithJit, WithExtension, ResultType> state{
+      call, extension, jit_provider, context, kNativeErrorInternal, {}};
   prepare_native_dispatch(state);
   // Boundary overrides are valid only within one Runtime dispatch.
   for (frame_depth_t index = 0; index < context.call_stack->size; ++index) {
@@ -1310,9 +1325,8 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
           const auto card_state =
               (state.jit_provider->card_states[card >> 2] >> ((card & 3u) * 2u)) & 3u;
           if (card_state == 3u) {
-            executed_bodies =
-                execute_jit_trace<CollectStats, WithExtension, ResultType>(
-                    state, frame, block_index, pc, dispatch_rel);
+            executed_bodies = execute_jit_trace<CollectStats, WithExtension, ResultType>(
+                state, frame, block_index, pc, dispatch_rel);
           }
         }
       }
@@ -1332,12 +1346,6 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
         assert(frame.function_view->module_view != nullptr &&
                block_index < frame.function_view->module_view->block_count);
       }
-#if FB_CONF_JIT_BLOCK_COUNTERS
-      if (executed_bodies == 0 && (context.runtime_flags & kPendingBlockHeadFlag) != 0) {
-        assert(block_index != kNoBlockIndex);
-        fb_native_record_block_execution(frame.function_view->module_view, block_index);
-      }
-#endif
       [[maybe_unused]] bool observed_interpreter_body = false;
       if constexpr (WithExtension || WithJit) {
         observed_interpreter_body = executed_bodies == 0 &&
@@ -1377,8 +1385,8 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
       }
     }
     // Every stopped iteration has a WASM execution status in the shared state.
-    if (!handle_runtime_exit<CollectStats, WithJit, WithExtension, Debugger,
-                             ResultType>(state, exit_kind)) {
+    if (!handle_runtime_exit<CollectStats, WithJit, WithExtension, Debugger, ResultType>(
+            state, exit_kind)) {
       break;
     }
   }
@@ -1472,20 +1480,15 @@ int run_native_step_abi(const fb_native_step_call *call, fb_native_result *outpu
 #ifdef FB_INTERPRETER_MEASURED_RESULT
 namespace fireball::interpreter {
 // QA owns the result type. Only the QA build emits these dispatcher variants.
-template int
-run_native_dispatch_abi<false, false, false, void, FB_INTERPRETER_MEASURED_RESULT>(
+template int run_native_dispatch_abi<false, false, false, void, FB_INTERPRETER_MEASURED_RESULT>(
     const fb_native_dispatch_call *, FB_INTERPRETER_MEASURED_RESULT *);
-template int
-run_native_dispatch_abi<false, false, true, void, FB_INTERPRETER_MEASURED_RESULT>(
+template int run_native_dispatch_abi<false, false, true, void, FB_INTERPRETER_MEASURED_RESULT>(
     const fb_native_dispatch_extension_call *, FB_INTERPRETER_MEASURED_RESULT *);
-template int
-run_native_dispatch_abi<true, false, false, void, FB_INTERPRETER_MEASURED_RESULT>(
+template int run_native_dispatch_abi<true, false, false, void, FB_INTERPRETER_MEASURED_RESULT>(
     const fb_native_dispatch_call *, FB_INTERPRETER_MEASURED_RESULT *);
-template int
-run_native_dispatch_abi<true, false, true, void, FB_INTERPRETER_MEASURED_RESULT>(
+template int run_native_dispatch_abi<true, false, true, void, FB_INTERPRETER_MEASURED_RESULT>(
     const fb_native_dispatch_extension_call *, FB_INTERPRETER_MEASURED_RESULT *);
-template int
-run_native_dispatch_abi<true, true, false, void, FB_INTERPRETER_MEASURED_RESULT>(
+template int run_native_dispatch_abi<true, true, false, void, FB_INTERPRETER_MEASURED_RESULT>(
     const fb_native_dispatch_call *, FB_INTERPRETER_MEASURED_RESULT *);
 template int run_native_dispatch_abi<true, true, true, void, FB_INTERPRETER_MEASURED_RESULT>(
     const fb_native_dispatch_extension_call *, FB_INTERPRETER_MEASURED_RESULT *);
@@ -1501,7 +1504,6 @@ extern "C" FB_PYSIM_INTERPRETER_EXPORT int fb_native_run_step(const fb_native_st
   return run_native_step_abi(call, result);
 }
 
-
 extern "C" FB_PYSIM_INTERPRETER_EXPORT int
 fb_native_run_dispatch(const fb_native_dispatch_call *call, fb_native_result *result) {
   return run_native_dispatch_abi<false, false, false>(call, result);
@@ -1511,7 +1513,6 @@ extern "C" FB_PYSIM_INTERPRETER_EXPORT int
 fb_native_run_dispatch_jit(const fb_native_dispatch_call *call, fb_native_result *result) {
   return run_native_dispatch_abi<false, true, false>(call, result);
 }
-
 
 extern "C" FB_PYSIM_INTERPRETER_EXPORT int
 fb_native_run_debug_dispatch(const fb_native_dispatch_call *call, fb_native_result *result) {

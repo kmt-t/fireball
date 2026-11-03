@@ -21,7 +21,7 @@ static bool qa_runtime_observe([[maybe_unused]] const fb_native_dispatch_call *i
 }
 
 static void qa_runtime_trace_executed(const fb_native_dispatch_call *input,
-                                     std::uintptr_t trace_cookie) {
+                                      std::uintptr_t trace_cookie) {
   if (input == nullptr || input->context == nullptr || input->jit_provider == nullptr ||
       input->jit_provider->owner == 0 || trace_cookie == 0) {
     return;
@@ -44,17 +44,15 @@ static void qa_runtime_trace_executed(const fb_native_dispatch_call *input,
   ++runtime.measurements.chain_runtime_unobserved_trace_exits;
 }
 
-extern "C" FB_PYSIM_ABI_EXPORT int
-fb_qa_runtime_dispatch(int (*dispatch)(const fb_native_dispatch_extension_call *,
-                                       fb_native_result *),
-                       const fb_native_dispatch_call *input, fb_native_result *result) {
+extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_dispatch(
+    int (*dispatch)(const fb_native_dispatch_extension_call *, fb_native_result *),
+    const fb_native_dispatch_call *input, fb_native_result *result) {
   if (dispatch == nullptr || input == nullptr || result == nullptr ||
       input->jit_provider == nullptr || input->jit_provider->owner == 0) {
     return 0;
   }
-  const fb_native_execution_extension extension{input->jit_provider->owner,
-                                                 qa_runtime_observe,
-                                                 qa_runtime_trace_executed};
+  const fb_native_execution_extension extension{input->jit_provider->owner, qa_runtime_observe,
+                                                qa_runtime_trace_executed};
   const fb_native_dispatch_extension_call extension_call{*input, &extension};
   return dispatch(&extension_call, result);
 }
@@ -241,9 +239,8 @@ fb_qa_runtime_header(qa_jit_runtime *runtime, std::uint32_t pc) {
   const auto location = runtime->find_cached_trace_by_pc(pc);
   return location.trace_entry == nullptr ? nullptr : runtime->trace_header(*location.trace_entry);
 }
-extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_insert(qa_jit_runtime *runtime,
-                                                         const std::uint8_t *blob,
-                                                         std::uint32_t bytes) {
+extern "C" FB_PYSIM_ABI_EXPORT int
+fb_jit_runtime_insert(qa_jit_runtime *runtime, const std::uint8_t *blob, std::uint32_t bytes) {
   runtime->install_trace(blob, bytes);
   return 1;
 }
@@ -303,8 +300,7 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_record(qa_jit_runtime *runtime
 }
 extern "C" FB_PYSIM_ABI_EXPORT int
 fb_jit_runtime_filtered_lookup(qa_jit_runtime *runtime, std::uint32_t pc, qa_cache_lookup *output) {
-  if (!runtime->is_profiled_pc(pc) ||
-      runtime->card_state(pc >> FB_CONF_JIT_CARD_SHIFT) != 3) {
+  if (!runtime->is_profiled_pc(pc) || runtime->card_state(pc >> FB_CONF_JIT_CARD_SHIFT) != 3) {
     return 0;
   }
   const auto location = runtime->lookup_cached_trace(pc);
@@ -394,8 +390,10 @@ static int qa_lookup_trace(std::uintptr_t owner, [[maybe_unused]] block_index_t 
   const auto *rel = reinterpret_cast<const std::uint8_t *>(
       reinterpret_cast<const std::uint8_t *>(header) + header->const_rel_offset);
   assert(b.common_trace_entry != 0);
-  *output = {b.common_trace_entry,    rel,
-             header->frame_depth,     static_cast<jit_stack_words_t>(start->chain_stack_words),
+  *output = {b.common_trace_entry,
+             rel,
+             header->frame_depth,
+             static_cast<jit_stack_words_t>(start->chain_stack_words),
              static_cast<jit_body_count_t>(start->chain_body_count),
              static_cast<std::uint8_t>(header->exit_kind),
              reinterpret_cast<std::uintptr_t>(start)};
@@ -406,9 +404,7 @@ static int qa_observe_block(std::uintptr_t owner, block_index_t, wasm_pc_t) {
   return owner == 0 ? -1 : 1;
 }
 
-static int qa_finish_boundary(std::uintptr_t owner, std::uint32_t) {
-  return owner == 0 ? 0 : 1;
-}
+static int qa_finish_boundary(std::uintptr_t owner, std::uint32_t) { return owner == 0 ? 0 : 1; }
 
 static qa_dispatch_owner *qa_owner(const fb_native_dispatch_call *input) {
   if (input == nullptr) {
@@ -471,7 +467,7 @@ fb_qa_dispatch(int (*dispatch)(const fb_native_dispatch_extension_call *, fb_nat
   const auto owner_address = reinterpret_cast<std::uintptr_t>(&owner);
   static constexpr std::uint8_t all_compiled_cards[] = {0xFFu, 0xFFu};
   const fb_native_jit_provider provider{
-      owner_address, all_compiled_cards, 8, 29, {}, qa_lookup_trace,
+      owner_address,    all_compiled_cards, 8, 29, {}, qa_lookup_trace,
       qa_observe_block, qa_finish_boundary};
   call.jit_provider = &provider;
   fb_native_execution_extension extension{owner_address, qa_observe, qa_trace_executed};
@@ -504,11 +500,6 @@ extern "C" FB_PYSIM_ABI_EXPORT std::size_t fb_jit_runtime_size() { return sizeof
 extern "C" FB_PYSIM_ABI_EXPORT std::size_t fb_jit_runtime_alignment() {
   return alignof(qa_jit_runtime);
 }
-
-extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_block_counters_enabled() {
-  return FB_CONF_JIT_BLOCK_COUNTERS;
-}
-
 
 extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_region_size(const std::uint32_t *lengths,
                                                       const std::uint32_t *bases,

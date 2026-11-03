@@ -8,7 +8,6 @@ cd "${script_dir}"
 project_root="$(cd "${script_dir}/../../../../.." && pwd)"
 uv_python="${project_root}/.venv/bin/python"
 qa_build=0
-block_counters=0
 release_define=()
 aging_units_override=""
 aging_scan_override=""
@@ -16,7 +15,6 @@ output_override=""
 for option in "$@"; do
     case "${option}" in
         --qa) qa_build=1 ;;
-        --block-counters) block_counters=1 ;;
         --release) release_define+=("-DNDEBUG") ;;
         --aging-units=*) aging_units_override="${option#*=}" ;;
         --aging-scan-bytes=*) aging_scan_override="${option#*=}" ;;
@@ -80,9 +78,6 @@ if [[ "${qa_build}" == "1" ]]; then
     python_package_dir="${project_root}/experiments/pysim/qa/private"
     visibility_flags=(-fvisibility=default)
     linker_flags+=("-Wl,--version-script=${qa_export_map}")
-fi
-if [[ "${block_counters}" == "1" ]]; then
-    common_definitions+=("-DFB_CONF_JIT_BLOCK_COUNTERS=1")
 fi
 
 echo ">>> Assembling x64 JIT trace stencils"

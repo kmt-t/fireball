@@ -116,18 +116,6 @@ class NativeTraceExit(ctypes.Structure):
     )
 
 
-class NativeConstPoolDiagnostics(ctypes.Structure):
-    """Counters enabled only in the QA JIT build for pool layout studies."""
-
-    _fields_ = (
-        ("trace_count", ctypes.c_uint64),
-        ("instruction_count", ctypes.c_uint64),
-        ("runtime_api_count", ctypes.c_uint64),
-        ("runtime_api_opcodes", ctypes.c_uint64 * 512),
-        ("item_bytes", ctypes.c_uint64 * 7),
-    )
-
-
 class CacheLookup(ctypes.Structure):
     """Compact QA result for a cache lookup: the resolved bank."""
 
@@ -251,17 +239,6 @@ PLUGIN_ALIGNMENT = _NATIVE_LIBRARY.fb_jit_plugin_alignment
 PLUGIN_ALIGNMENT.argtypes = ()
 PLUGIN_ALIGNMENT.restype = ctypes.c_size_t
 
-BLOCK_COUNTERS_ENABLED = _NATIVE_LIBRARY.fb_jit_block_counters_enabled
-BLOCK_COUNTERS_ENABLED.argtypes = ()
-BLOCK_COUNTERS_ENABLED.restype = ctypes.c_int
-
-CONST_POOL_DIAGNOSTICS_RESET = _NATIVE_LIBRARY.fb_jit_const_pool_diagnostics_reset
-CONST_POOL_DIAGNOSTICS_RESET.argtypes = ()
-CONST_POOL_DIAGNOSTICS_RESET.restype = None
-CONST_POOL_DIAGNOSTICS_READ = _NATIVE_LIBRARY.fb_jit_const_pool_diagnostics_read
-CONST_POOL_DIAGNOSTICS_READ.argtypes = (ctypes.POINTER(NativeConstPoolDiagnostics),)
-CONST_POOL_DIAGNOSTICS_READ.restype = None
-
 
 RUNTIME_SCALAR = _NATIVE_LIBRARY.fb_jit_runtime_scalar
 
@@ -356,14 +333,6 @@ RUNTIME_RESET_COUNTS.restype = None
 RUNTIME_RESET_CHAIN_MEASUREMENTS = _NATIVE_LIBRARY.fb_jit_runtime_reset_chain_measurements
 RUNTIME_RESET_CHAIN_MEASUREMENTS.argtypes = (ctypes.c_void_p,)
 RUNTIME_RESET_CHAIN_MEASUREMENTS.restype = None
-
-CONTROL_OPCODE_COUNTS_RESET = _NATIVE_LIBRARY.fb_jit_control_opcode_counts_reset
-CONTROL_OPCODE_COUNTS_RESET.argtypes = ()
-CONTROL_OPCODE_COUNTS_RESET.restype = None
-
-CONTROL_OPCODE_COUNTS_READ = _NATIVE_LIBRARY.fb_jit_control_opcode_counts_read
-CONTROL_OPCODE_COUNTS_READ.argtypes = (ctypes.POINTER(ctypes.c_uint64),)
-CONTROL_OPCODE_COUNTS_READ.restype = None
 
 RUNTIME_YIELD = _NATIVE_LIBRARY.fb_jit_runtime_yield
 RUNTIME_YIELD.argtypes = (ctypes.c_void_p,)

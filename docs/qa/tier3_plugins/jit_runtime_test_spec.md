@@ -38,7 +38,7 @@
 | TEST-JITR-16 | エイジングスイープは`EXECUTED`カードだけを`UNEXECUTED`へ戻す | コード領域内に`EXECUTED`が複数枚、`HOT`が1枚、`COMPILED`が1枚のカードがある | dirtyカードを含む表を一周以上スイープする | `EXECUTED`カードだけが`UNEXECUTED`になる。`HOT`と`COMPILED`は変化しない。減衰後に1回touchしたカードは`EXECUTED`であり`HOT`にならない。 | `GOTCHA-JITR-09`, `JIT_CardAgingSweep`, `` |
 | TEST-JITR-17 | カード更新表の包含不変条件 | コード領域内のカードを複数関数からtouchし、touchとスイープを交互に行う | 各操作の後に観測済みカード状態とdirty bitを照合する | dirty bitが0のカードは`EXECUTED`状態ではない。`UNEXECUTED`から`EXECUTED`への遷移時だけ、そのカードのbitが立つ。スイープはbitを立てない | `JIT_CardAgingSweep`, `` |
 | TEST-JITR-18 | エイジングは3面キャッシュのローテーション1回につき1ステップ進む | カード更新表にdirty bitがあり、待ち列が空・処理済み・コンパイル無効のいずれかである | 各状態でidle_hookを実行し、続けて`flush_all`と`rotate`を行う。さらにバンクが満杯になるまでトレースを挿入する。各段階でカーソルを確認する | idle_hookと`flush_all`ではカーソルは進まない。`rotate`の実行で1ステップ進む。バンク満杯による自動ローテーションでも1ステップ進む | `JIT_CardAgingSweep`, `` |
-| TEST-JITR-19 | カードdirty表の巡回、走査上限、有限減衰 | コード領域カード数が9以上で複数バイトにわたりdirty bitが立つ | スイープを1ステップずつ実行する | 1ステップで処理する非ゼロバイト数は設定値以下。0バイトは処理数に数えず読み飛ばす。走査バイト数が上限に達した場合も終了する。カーソルは表末尾から先頭へ戻る。1バイトに複数カードbitが立つ場合はその全カードを同じステップで処理する。全dirtyカードは有限回のローテーション内に減衰する | `JIT_CardAgingSweep`, ``, `` |
+| TEST-JITR-19 | カードdirty表の巡回、走査上限、有限減衰 | コード領域カード数が9以上で複数バイトにわたりdirty bitが立つ | スイープを1ステップずつ実行する | 1ステップで処理する非ゼロバイト数は設定値（`FB_CONF_JIT_AGING_STEP_UNITS`）以下。0バイトは処理数に数えず読み飛ばす。走査バイト数が上限（`FB_CONF_JIT_AGING_STEP_SCAN_BYTES`）に達した場合も終了する。カーソルは表末尾から先頭へ戻る。1バイトに複数カードbitが立つ場合はその全カードを同じステップで処理する。全dirtyカードは有限回のローテーション内に減衰する | `JIT_CardAgingSweep`, ``, `` |
 
 ### JIT拡張ホットスポット履歴
 

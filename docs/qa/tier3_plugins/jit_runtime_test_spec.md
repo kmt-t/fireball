@@ -37,8 +37,8 @@
 | TEST-JITR-15 | eviction／明示的flush後の再計測 | 常駐トレースがevictまたはJIT cache flushされる | そのPCを再実行 | キャッシュ参照はInterpreterへ戻り、カードは`UNEXECUTED`からhotnessを再計測する。候補性は維持される | `TEST-JITR-04`, `{TrackableBlockMask}` |
 | TEST-JITR-16 | エイジングスイープは`EXECUTED`カードだけを`UNEXECUTED`へ戻す | コード領域内に`EXECUTED`が複数枚、`HOT`が1枚、`COMPILED`が1枚のカードがある | dirtyカードを含む表を一周以上スイープする | `EXECUTED`カードだけが`UNEXECUTED`になる。`HOT`と`COMPILED`は変化しない。減衰後に1回touchしたカードは`EXECUTED`であり`HOT`にならない。 | `GOTCHA-JITR-09`, `JIT_CardAgingSweep`, `` |
 | TEST-JITR-17 | カード更新表の包含不変条件 | コード領域内のカードを複数関数からtouchし、touchとスイープを交互に行う | 各操作の後に観測済みカード状態とdirty bitを照合する | dirty bitが0のカードは`EXECUTED`状態ではない。`UNEXECUTED`から`EXECUTED`への遷移時だけ、そのカードのbitが立つ。スイープはbitを立てない | `JIT_CardAgingSweep`, `` |
-| TEST-JITR-18 | エイジングは3面キャッシュのローテーション1回につき1ステップ進む | カード更新表にdirty bitがあり、待ち列が空・処理済み・コンパイル無効のいずれかである | 各状態でidle_hookを実行し、続けて`flush_all`と`rotate`を行う。さらにバンクが満杯になるまでトレースを挿入する。各段階でカーソルを確認する | idle_hookと`flush_all`ではカーソルは進まない。`rotate`の実行で1ステップ進む。バンク満杯による自動ローテーションでも1ステップ進む | `JIT_CardAgingSweep`, `` |
-| TEST-JITR-19 | カードdirty表の巡回、走査上限、有限減衰 | コード領域カード数が9以上で複数バイトにわたりdirty bitが立つ | スイープを1ステップずつ実行する | 1ステップで処理する非ゼロバイト数は設定値（`FB_CONF_JIT_AGING_STEP_UNITS`）以下。0バイトは処理数に数えず読み飛ばす。走査バイト数が上限（`FB_CONF_JIT_AGING_STEP_SCAN_BYTES`）に達した場合も終了する。カーソルは表末尾から先頭へ戻る。1バイトに複数カードbitが立つ場合はその全カードを同じステップで処理する。全dirtyカードは有限回のローテーション内に減衰する | `JIT_CardAgingSweep`, ``, `` |
+| TEST-JITR-18 | エイジングは3面キャッシュのローテーション1回につき1ステップ進む | カード更新表にdirty bitがあり、待ち列が空・処理済み・コンパイル無効のいずれかである | 各状態でidle_hookを実行し、続けて`flush_all`と`rotate`を行う。さらにバンクが満杯になるまでトレースを挿入する。各段階でカーソルを確認する | idle_hookと`flush_all`ではカーソルは進まない。`rotate`の実行で1ステップ進む。バンク満杯による自動ローテーションでも1ステップ進む | `JIT_CardAgingSweep` |
+| TEST-JITR-19 | カードdirty表の巡回、走査上限、有限減衰 | コード領域カード数が9以上で複数バイトにわたりdirty bitが立つ | スイープを1ステップずつ実行する | 1ステップで処理する非ゼロバイト数は設定値（`FB_CONF_JIT_AGING_STEP_UNITS`）以下。0バイトは処理数に数えず読み飛ばす。走査バイト数が上限（`FB_CONF_JIT_AGING_STEP_SCAN_BYTES`）に達した場合も終了する。カーソルは表末尾から先頭へ戻る。1バイトに複数カードbitが立つ場合はその全カードを同じステップで処理する。全dirtyカードは有限回のローテーション内に減衰する | `JIT_CardAgingSweep` |
 
 ### JIT拡張ホットスポット履歴
 
@@ -185,7 +185,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | GOTCHA-JITR-06 | JIT境界の制御状態と二重実行防止 | if内のloop脱出条件ブロックがコンパイル済み | JIT実行後の条件値、stack、frame、再開PCと結果を観測する | 制御命令を実行した経路が条件値とframeを一度だけ更新する。Interpreter復帰後に実行済み命令を再実行しない。結果はInterpreter単独実行と一致する | [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md), `{JIT_RuntimeAPI}`, `GOTCHA-INTP-06` |
 | GOTCHA-JITR-07 | 短小ブロック判定の符号（後方分岐ブロックの誤除外） | ループ本体の末尾が、自分自身の先頭より前へ戻る後方分岐になっている | 短小ブロックの足切り判定を経て実行を反復する | 後方分岐ブロックも足切り判定を通過し、命令数が十分ならコンパイル対象になる。 | [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) |
 | GOTCHA-JITR-08 | return直前のJIT終了とInterpreter復帰 | `return`を含むWASM関数 | トレース実行後の結果をInterpreter単独実行と比較する | JIT traceは`return`命令を生成せず、return処理はInterpreter仕様に従う | [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md)、[`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
-| GOTCHA-JITR-09 | エイジングスイープと常駐状態・待ち列の分離 | カードが`COMPILED`（キャッシュに常駐）、別のカードが`HOT`（コンパイル待ち列に登録済み）、別のカードが`EXECUTED` | 全ブロックを覆うまでエイジングスイープを実行し、常駐トレースをlookup | `COMPILED`のカードは`COMPILED`のままで、lookupは常駐トレースを返す。`HOT`のカードは`HOT`のままで、待ち列の要求と対応する。`EXECUTED`のカードだけが`UNEXECUTED`になる。 | [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) 「エイジングスイープ」, `TEST-JITR-16`, `` |
+| GOTCHA-JITR-09 | エイジングスイープと常駐状態・待ち列の分離 | カードが`COMPILED`（キャッシュに常駐）、別のカードが`HOT`（コンパイル待ち列に登録済み）、別のカードが`EXECUTED` | 全ブロックを覆うまでエイジングスイープを実行し、常駐トレースをlookup | `COMPILED`のカードは`COMPILED`のままで、lookupは常駐トレースを返す。`HOT`のカードは`HOT`のままで、待ち列の要求と対応する。`EXECUTED`のカードだけが`UNEXECUTED`になる。 | [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) 「エイジングスイープ」, `TEST-JITR-16` |
 
 ### QA専用計測構成のトレース実行回数
 

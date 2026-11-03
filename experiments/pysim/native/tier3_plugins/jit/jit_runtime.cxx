@@ -77,9 +77,8 @@ template <jit_measurement_policy Measurement>
 block_index_t jit_runtime<Measurement>::block_index_for_pc(wasm_pc_t pc) const {
   const auto *begin = module_view->blocks;
   const auto *end = begin + module_view->block_count;
-  const auto *found = std::lower_bound(begin, end, pc, [](const auto &block, wasm_pc_t value) {
-    return block.head_pc < value;
-  });
+  const auto *found = std::lower_bound(
+      begin, end, pc, [](const auto &block, wasm_pc_t value) { return block.head_pc < value; });
   if (found == end || found->head_pc != pc) {
     return jit_invalid_block_index;
   }
@@ -579,9 +578,8 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
     return;
   }
   const auto source_trace = lookup_cached_trace(source_block_index, source->head_pc);
-  const auto *source_header = source_trace.trace_entry == nullptr
-                                  ? nullptr
-                                  : trace_header(*source_trace.trace_entry);
+  const auto *source_header =
+      source_trace.trace_entry == nullptr ? nullptr : trace_header(*source_trace.trace_entry);
   jit_chain_reason reason = jit_chain_reason::count;
   if (target_pc == source->head_pc) {
     reason = jit_chain_reason::self_loop;
@@ -917,8 +915,7 @@ jit_trace_location jit_runtime<Measurement>::lookup_cached_trace(block_index_t b
   if constexpr (!std::is_void_v<Measurement>) {
     measurements.lookup_called();
   }
-  assert(block_index < module_view->block_count &&
-         module_view->blocks[block_index].head_pc == pc);
+  assert(block_index < module_view->block_count && module_view->blocks[block_index].head_pc == pc);
   const auto &basic_block = module_view->blocks[block_index];
   if (basic_block.jit_cache_reference == jit_cache_state::no_reference) {
     return {};
@@ -1159,8 +1156,7 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_bind_cards(
     std::uint8_t *dirty, std::uint32_t dirty_bytes, std::uint32_t cards, std::uint32_t *cursor) {
   // Zero units is a valid configuration: the sweep scans nothing and only the cursor is kept.
   static_assert(FB_CONF_JIT_CARD_SHIFT < 32 && FB_CONF_JIT_AGING_STEP_SCAN_BYTES > 0);
-  assert(cursor != nullptr &&
-         state_bytes == (static_cast<std::uint64_t>(cards) + 3) / 4 &&
+  assert(cursor != nullptr && state_bytes == (static_cast<std::uint64_t>(cards) + 3) / 4 &&
          dirty_bytes == (static_cast<std::uint64_t>(cards) + 7) / 8 &&
          (cards == 0 || (states != nullptr && dirty != nullptr)) &&
          (dirty_bytes == 0 ? *cursor == 0 : *cursor < dirty_bytes));
@@ -1182,8 +1178,7 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_bind_profile(
          p.queue_capacity > 0 && p.queue_capacity <= runtime->hotspots.compile_queue_items.size() &&
          p.mask_bytes == runtime->hotspots.dirty_mask_bytes &&
          (runtime->hotspots.card_count == 0 || p.trackable != nullptr) &&
-         jit_card_count(p.code_bytes, FB_CONF_JIT_CARD_SHIFT) ==
-             runtime->hotspots.card_count);
+         jit_card_count(p.code_bytes, FB_CONF_JIT_CARD_SHIFT) == runtime->hotspots.card_count);
   if constexpr (!std::is_void_v<Measurement>) {
   }
   runtime->hotspots.observation_history = {runtime->hotspots.history_records.data(),
@@ -1300,8 +1295,7 @@ std::size_t jit_provider_adapter<Measurement>::workspace_size(
     const fireball_wasm_module_execution_view_native *view) {
   const auto cards = jit_card_count(fireball::module_code_bytes(view), FB_CONF_JIT_CARD_SHIFT);
   assert(cards >= 0);
-  return jit_api::runtime_function_table_bytes() + (cards + 3) / 4 +
-         2 * ((cards + 7) / 8);
+  return jit_api::runtime_function_table_bytes() + (cards + 3) / 4 + 2 * ((cards + 7) / 8);
 }
 
 template <jit_measurement_policy Measurement>
@@ -1349,8 +1343,7 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
   fireball::borrow_executable_region(&runtime->cache.code_memory, region + data_region_size(view),
                                      FB_CONF_JIT_CACHE_REGION_BYTES);
   auto *workspace = region + sizeof(runtime_type);
-  const auto *function_table =
-      jit_api::initialize_runtime_function_table(workspace, call_handlers);
+  const auto *function_table = jit_api::initialize_runtime_function_table(workspace, call_handlers);
   fireball::initialize_common_code(&runtime->cache.code_memory, function_table);
   fb_jit_memory_commit(&runtime->cache.code_memory);
   constexpr code_offset_t offsets[] = {FB_CONF_JIT_CACHE_ACTIVE_OFFSET_BYTES,
@@ -1433,8 +1426,7 @@ fb_jit_plugin_required_bytes(const fireball_wasm_module_execution_view_native *v
 
 extern "C" const fb_native_jit_provider *
 fb_jit_plugin_init(std::uint8_t *region, std::size_t bytes,
-                   const fireball_wasm_module_execution_view_native *view,
-                   std::uint32_t module_id,
+                   const fireball_wasm_module_execution_view_native *view, std::uint32_t module_id,
                    const fireball_native_cps_handler *call_handlers) {
   auto *runtime =
       provider_adapter::fb_jit_plugin_init(region, bytes, view, module_id, call_handlers);

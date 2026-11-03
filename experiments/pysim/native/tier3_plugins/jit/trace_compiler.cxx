@@ -9,12 +9,12 @@
 #include <limits>
 #include <utility>
 
+#include "../../tier2_runtime/interpreter/annotation_read.hxx"
 #include "common_code_abi.hxx"
 #include "jit_internal.hxx"
 #include "jit_runtime_apis.hxx"
 #include "stencils_x64.hxx"
 #include "trace_compiler_abi.hxx"
-#include "../../tier2_runtime/interpreter/annotation_read.hxx"
 
 using namespace fireball::pysim::jit;
 using fireball::kMaxBodyBytes;
@@ -372,10 +372,10 @@ void encode_local_memory_instruction(local_memory_operation operation, std::uint
   encoded[0] = rex;
   encoded[1] = opcode;
   if (slot_width == 4) {
-    encoded[2] = 0x43;  // [r11 + disp8]
+    encoded[2] = 0x43; // [r11 + disp8]
     encoded[3] = static_cast<std::uint8_t>(byte_offset);
   } else {
-    encoded[2] = 0x83;  // [r11 + disp32]
+    encoded[2] = 0x83; // [r11 + disp32]
     for (std::size_t index = 0; index < 4; ++index) {
       encoded[3 + index] = static_cast<std::uint8_t>(byte_offset >> (8 * index));
     }
@@ -426,7 +426,8 @@ struct trace_builder {
                     local_memory_operation operation, std::uint64_t patch_value = 0,
                     std::uint8_t patch_width = 0) {
     std::array<std::uint8_t, kMaxLocalInstructionBytes> encoded{};
-    encode_local_memory_instruction(operation, byte_offset, stencil.instruction_slot_width, encoded);
+    encode_local_memory_instruction(operation, byte_offset, stencil.instruction_slot_width,
+                                    encoded);
     if (stencil.patch_slot_width != patch_width || !append_node(stencil)) {
       return false;
     }
@@ -461,12 +462,11 @@ struct trace_builder {
 
   bool begin_trace() { return add_trace_header_reference(); }
 
-  bool append_runtime_api(std::uint8_t slot, code_ip_t source_ip,
-                          const std::uint64_t *immediates = nullptr,
-                          const std::uint8_t *immediate_widths = nullptr,
-                          std::uint8_t immediate_count = 0, std::uint32_t wasm_opcode = 0,
-                          annotation_offset_t interpreter_rel_after =
-                              std::numeric_limits<annotation_offset_t>::max()) {
+  bool append_runtime_api(
+      std::uint8_t slot, code_ip_t source_ip, const std::uint64_t *immediates = nullptr,
+      const std::uint8_t *immediate_widths = nullptr, std::uint8_t immediate_count = 0,
+      std::uint32_t wasm_opcode = 0,
+      annotation_offset_t interpreter_rel_after = std::numeric_limits<annotation_offset_t>::max()) {
 #if !defined(FB_CONF_JIT_BLOCK_COUNTERS) || !FB_CONF_JIT_BLOCK_COUNTERS
     static_cast<void>(wasm_opcode);
 #endif
@@ -1200,8 +1200,8 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       std::uint8_t type = 0;
       local_layout_entry(local_offsets, local_types, local_count, local_slot_count,
                          static_cast<int>(instruction.operand), offset, width, type);
-      const auto local_op = offset > kMaxDisp8LocalBytes ? local_stencil_disp32(op, type)
-                                                         : local_stencil(op, type);
+      const auto local_op =
+          offset > kMaxDisp8LocalBytes ? local_stencil_disp32(op, type) : local_stencil(op, type);
       const auto encoding =
           width == 1 ? local_memory_operation::load_narrow : local_memory_operation::load_wide;
       const auto store_encoding =
@@ -1388,8 +1388,7 @@ bool apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_mod
 
   if (op >= 0x28 && op <= 0x35) {
     // i64.load, f64.load and the i64 narrow loads push two words.
-    const auto result_width =
-        (op == 0x29 || op == 0x2B || (op >= 0x30 && op <= 0x35)) ? 2u : 1u;
+    const auto result_width = (op == 0x29 || op == 0x2B || (op >= 0x30 && op <= 0x35)) ? 2u : 1u;
     return stack.unary(1, static_cast<std::uint8_t>(result_width));
   }
   if (op >= 0x36 && op <= 0x3E) {
@@ -1523,11 +1522,12 @@ bool is_trace_terminator_opcode(std::uint8_t opcode) {
   }
 }
 
-// Reads one field of the Interpreter annotation pool and advances the cursor past it. The readers are
-// the Interpreter's own (annotation_read.hxx), so the cursor follows the handler's rel exactly.
+// Reads one field of the Interpreter annotation pool and advances the cursor past it. The readers
+// are the Interpreter's own (annotation_read.hxx), so the cursor follows the handler's rel exactly.
 template <typename T>
 bool take_annotation_field(const std::uint8_t *&cursor, const std::uint8_t *limit, T &value) {
-  if (cursor == nullptr || limit == nullptr || static_cast<std::size_t>(limit - cursor) < sizeof(T)) {
+  if (cursor == nullptr || limit == nullptr ||
+      static_cast<std::size_t>(limit - cursor) < sizeof(T)) {
     return false;
   }
   value = fireball::wasm_runtime::read_fixed<T>(cursor);
@@ -1593,11 +1593,10 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
       return 0;
     }
     terminal_end_ip = cursor;
-    interpreter_rel_bytes = static_cast<annotation_offset_t>(annotation_after_64 -
-                                                               interpreter_annotation_byte_offset);
-    return builder.append_cps_call(
-               handler_slot, source_ip - trace_start_ip,
-               static_cast<annotation_offset_t>(annotation_offset_64))
+    interpreter_rel_bytes =
+        static_cast<annotation_offset_t>(annotation_after_64 - interpreter_annotation_byte_offset);
+    return builder.append_cps_call(handler_slot, source_ip - trace_start_ip,
+                                   static_cast<annotation_offset_t>(annotation_offset_64))
                ? 1
                : 0;
   }
@@ -1628,9 +1627,9 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
     if (interpreter_annotations == nullptr) {
       return -1;
     }
-    const std::uint8_t *target_start = interpreter_annotations +
-                                       static_cast<std::size_t>(interpreter_annotation_byte_offset) +
-                                       interpreter_rel_bytes;
+    const std::uint8_t *target_start =
+        interpreter_annotations + static_cast<std::size_t>(interpreter_annotation_byte_offset) +
+        interpreter_rel_bytes;
     const std::uint8_t *target_cursor = target_start;
     const std::uint8_t *target_limit = interpreter_annotations + interpreter_annotation_byte_count;
     std::uint16_t annotated_count = 0;
@@ -1673,10 +1672,9 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
     return -1;
   }
 
-  return builder.append_terminal_runtime_api(slot, source_ip, annotation_offset,
-                                             annotation_bytes != 0, opcode,
-                                             static_cast<annotation_offset_t>(
-                                                 interpreter_rel_after_64))
+  return builder.append_terminal_runtime_api(
+             slot, source_ip, annotation_offset, annotation_bytes != 0, opcode,
+             static_cast<annotation_offset_t>(interpreter_rel_after_64))
              ? 1
              : 0;
 }
@@ -1690,9 +1688,8 @@ int fireball::compile_wasm_trace(
     annotation_offset_t interpreter_annotation_byte_count,
     annotation_offset_t interpreter_annotation_byte_offset, const jit_byte_view &global_widths,
     jit_stack_words_t entry_stack_words, const frame_word_offset_t *local_offsets,
-    const std::uint8_t *local_types,
-    local_count_t local_count, local_count_t local_slot_count, std::uint8_t *output,
-    code_offset_t output_capacity, fireball::jit_compile_result *result) {
+    const std::uint8_t *local_types, local_count_t local_count, local_count_t local_slot_count,
+    std::uint8_t *output, code_offset_t output_capacity, fireball::jit_compile_result *result) {
 #if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
   const_pool_diagnostic_scope diagnostic_scope{};
 #endif
@@ -1726,7 +1723,8 @@ int fireball::compile_wasm_trace(
     annotation_limit = interpreter_annotations + interpreter_annotation_byte_count;
   }
   const auto sync_annotation_rel = [&]() {
-    interpreter_rel_bytes = static_cast<annotation_offset_t>(annotation_cursor - annotation_block_start);
+    interpreter_rel_bytes =
+        static_cast<annotation_offset_t>(annotation_cursor - annotation_block_start);
   };
   code_ip_t cursor = code_offset;
   const code_ip_t end = code_offset + byte_span;
@@ -1941,8 +1939,8 @@ int fireball::compile_wasm_trace(
   code_ip_t terminal_end_ip = trace_end;
   const auto terminator_status = append_trace_terminator_runtime_api(
       builder, code, code_bytes, trace_end, code_offset, interpreter_annotations,
-      interpreter_annotation_byte_count, interpreter_annotation_byte_offset,
-      interpreter_rel_bytes, terminal_end_ip);
+      interpreter_annotation_byte_count, interpreter_annotation_byte_offset, interpreter_rel_bytes,
+      terminal_end_ip);
   if (terminator_status != 1) {
     return terminator_status;
   }
@@ -1956,7 +1954,8 @@ int fireball::compile_wasm_trace(
       result->exit_kind = jit_trace_exit_kind::call_cps;
     }
 #if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
-    const auto has_terminator = trace_end < code_bytes && is_trace_terminator_opcode(code[trace_end]);
+    const auto has_terminator =
+        trace_end < code_bytes && is_trace_terminator_opcode(code[trace_end]);
     ++const_pool_diagnostics.trace_count;
     const_pool_diagnostics.instruction_count += instruction_count + (has_terminator ? 1u : 0u);
     diagnostic_scope.committed = true;

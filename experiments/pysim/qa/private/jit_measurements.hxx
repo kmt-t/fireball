@@ -48,6 +48,17 @@ struct jit_measurements {
   // 20, 50 and 100: 0, 1, 2-4, 5-9, 10-19, 20-49, 50-99, 100 or more.
   static constexpr std::size_t eviction_bucket_count = 8;
   std::array<std::uint64_t, eviction_bucket_count> eviction_buckets{};
+  // Admission samples at each compile decision of a candidate with history. The use count is the
+  // entries of its last install, saturated at 31. The stage comes from the evictions in the last
+  // eight rotations: f = window / 8, with f >= 6, 2 <= f < 6 and f < 2 as stages 0, 1 and 2.
+  static constexpr std::size_t admission_stage_count = 3;
+  static constexpr std::size_t admission_rank_buckets = 129; // width 64, the last is the overflow
+  static constexpr std::size_t admission_use_levels = 32;
+  static constexpr std::size_t rotation_window_slots = 9;
+  std::array<std::uint64_t, rotation_window_slots> evictions_at_rotation{};
+  std::array<std::uint8_t, per_block_capacity> last_lifetime{};
+  std::array<std::uint64_t, admission_stage_count * admission_rank_buckets> admission_rank_hist{};
+  std::array<std::uint64_t, admission_stage_count * admission_use_levels> admission_use_hist{};
   std::uint64_t lookup_calls = 0;
   std::uint64_t execution_count = 0, history_overwritten = 0, last_overwritten = 0;
   std::uint64_t history_dropped = 0;
@@ -65,7 +76,6 @@ struct jit_measurements {
   std::uint64_t chain_runtime_unobserved_trace_exits = 0;
   block_index_t pending_runtime_source_block = std::numeric_limits<block_index_t>::max();
 
-
   bool write_measurements(const printk_writer &writer) const {
     return printk_u64(writer, "jit.evictions", evictions) &&
            printk_u64(writer, "jit.generation", generation) &&
@@ -79,9 +89,8 @@ struct jit_measurements {
            printk_u64(writer, "jit.installs", installs) &&
            printk_u64(writer, "jit.distinct_installs", distinct_installs) &&
            printk_u64(writer, "jit.installed_bytes_total", installed_bytes_total) &&
-           write_eviction_buckets(writer) &&
-           write_block_installs(writer) &&
-           printk_u64(writer, "jit.execution_count", execution_count) &&
+           write_eviction_buckets(writer) && write_block_installs(writer) &&
+           write_admission(writer) && printk_u64(writer, "jit.execution_count", execution_count) &&
            printk_u64(writer, "jit.history_overwritten", history_overwritten) &&
            printk_u64(writer, "jit.last_overwritten", last_overwritten) &&
            printk_u64(writer, "jit.trackable_generation", trackable_generation) &&
@@ -207,17 +216,18 @@ struct jit_measurements {
     assert(index < per_block_capacity);
     ++evictions;
     const auto entries = install_entries[index];
-    const auto bucket = entries == 0   ? 0u
-                        : entries == 1 ? 1u
-                        : entries < 5  ? 2u
-                        : entries < 10 ? 3u
-                        : entries < 20 ? 4u
-                        : entries < 50 ? 5u
+    const auto bucket = entries == 0    ? 0u
+                        : entries == 1  ? 1u
+                        : entries < 5   ? 2u
+                        : entries < 10  ? 3u
+                        : entries < 20  ? 4u
+                        : entries < 50  ? 5u
                         : entries < 100 ? 6u
                                         : 7u;
     ++eviction_buckets[bucket];
     ++block_evictions[index];
     block_evicted_entries[index] += entries;
+    last_lifetime[index] = static_cast<std::uint8_t>(std::min<std::uint64_t>(entries, 31));
     install_entries[index] = 0;
   }
   void trace_entered(block_index_t index) {
@@ -227,8 +237,8 @@ struct jit_measurements {
   }
   bool write_eviction_buckets(const printk_writer &writer) const {
     constexpr std::array<std::string_view, eviction_bucket_count> names{
-        "jit.evicted.entries_0", "jit.evicted.entries_1", "jit.evicted.entries_2_4",
-        "jit.evicted.entries_5_9", "jit.evicted.entries_10_19", "jit.evicted.entries_20_49",
+        "jit.evicted.entries_0",     "jit.evicted.entries_1",     "jit.evicted.entries_2_4",
+        "jit.evicted.entries_5_9",   "jit.evicted.entries_10_19", "jit.evicted.entries_20_49",
         "jit.evicted.entries_50_99", "jit.evicted.entries_100_up"};
     for (std::size_t bucket = 0; bucket < eviction_bucket_count; ++bucket) {
       std::array<char, 48> label{};
@@ -305,7 +315,78 @@ struct jit_measurements {
     aging_units += units;
     aging_scanned += scanned;
   }
-  void cache_rotated() { ++rotations; }
+  void cache_rotated() {
+    ++rotations;
+    evictions_at_rotation[rotations % rotation_window_slots] = evictions;
+  }
+
+  // Records one compile decision of a candidate with history: its use count, rank and stage.
+  void admission_sample(block_index_t index, std::int64_t score) {
+    assert(index < per_block_capacity && score >= 0);
+    if (block_evictions[index] == 0) {
+      return;
+    }
+    const auto uses = static_cast<std::size_t>(last_lifetime[index]);
+    const std::uint64_t window_start =
+        rotations >= 8 ? evictions_at_rotation[(rotations - 8) % rotation_window_slots] : 0;
+    const std::uint64_t window = evictions - window_start;
+    const std::size_t stage = window >= 48 ? 0 : (window >= 16 ? 1 : 2);
+    const auto rank = static_cast<std::uint64_t>(uses) * static_cast<std::uint64_t>(score);
+    const auto bucket =
+        static_cast<std::size_t>(std::min<std::uint64_t>(rank / 64, admission_rank_buckets - 1));
+    ++admission_rank_hist[stage * admission_rank_buckets + bucket];
+    ++admission_use_hist[stage * admission_use_levels + uses];
+  }
+
+  bool write_admission(const printk_writer &writer) const {
+    const auto write_key = [&writer](std::size_t stage, std::string_view kind, std::size_t number,
+                                     std::uint64_t value) {
+      std::array<char, 48> label{};
+      std::size_t offset = 0;
+      const auto append = [&label, &offset](std::string_view text) {
+        for (const auto character : text) {
+          assert(offset + 1 < label.size());
+          label[offset++] = character;
+        }
+      };
+      const auto append_number = [&append](std::size_t text_number) {
+        std::array<char, 8> digits{};
+        std::size_t digit_count = 0;
+        do {
+          digits[digit_count++] = static_cast<char>('0' + text_number % 10);
+          text_number /= 10;
+        } while (text_number != 0);
+        while (digit_count != 0) {
+          append(std::string_view(&digits[--digit_count], 1));
+        }
+      };
+      // Only occupied buckets are written, so the output stays within the shared print buffer.
+      if (value == 0) {
+        return true;
+      }
+      append("jit.adm.s");
+      append_number(stage);
+      append(kind);
+      append_number(number);
+      label[offset] = '\0';
+      return printk_u64(writer, label.data(), value);
+    };
+    for (std::size_t stage = 0; stage < admission_stage_count; ++stage) {
+      for (std::size_t bucket = 0; bucket < admission_rank_buckets; ++bucket) {
+        if (!write_key(stage, ".r", bucket,
+                       admission_rank_hist[stage * admission_rank_buckets + bucket])) {
+          return false;
+        }
+      }
+      for (std::size_t uses = 0; uses < admission_use_levels; ++uses) {
+        if (!write_key(stage, ".u", uses,
+                       admission_use_hist[stage * admission_use_levels + uses])) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
   void visits_recorded(std::uint64_t total) { execution_count += total; }
   void history_record_overwritten() {
     assert(history_dropped != std::numeric_limits<std::uint64_t>::max());

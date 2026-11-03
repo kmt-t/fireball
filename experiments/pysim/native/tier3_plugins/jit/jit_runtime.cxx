@@ -222,6 +222,11 @@ int jit_runtime<Measurement>::compile_queued_candidates() {
       mark_trace_card_compiled(pc);
       continue;
     }
+    if constexpr (!std::is_void_v<Measurement>) {
+      jit_wasm_block score_storage{};
+      const auto *score_view = make_compiler_block_view(block_index, score_storage);
+      measurements.admission_sample(block_index, fireball::score_block(*score_view));
+    }
     int status = 0;
     if constexpr (std::is_void_v<Measurement>) {
       status = compile_one_candidate(block_index, pc);

@@ -4656,3 +4656,41 @@ def test_jitr_102_entry_stack_words_below_a_pop_is_a_contract_violation():
     )
     assert completed.returncode != 0, "a pop past the entry stack words must not be accepted"
     assert "Assertion" in completed.stderr, completed.stderr[-400:]
+
+
+# Opcodes the trace compiler lowers before the runtime API path, or that end a block. Branches,
+# calls and the 0xFC prefix are never inside a block's byte span; nop, structural boundaries,
+# constants and local accesses are handled by their own stencil or annotation paths.
+_NO_RUNTIME_API_SLOT_OPCODES = frozenset(
+    {0x01, 0x02, 0x03, 0x04, 0x05, 0x0B, 0x0C, 0x0D, 0x10, 0x11, 0x20, 0x21, 0x22, 0x41, 0x42, 0x43,
+     0x44, 0xFC}
+)
+
+
+def test_jitr_104_every_loader_opcode_on_the_runtime_api_path_has_a_slot():
+    """TEST-JITR-104: every loader-accepted opcode that reaches the runtime API path has a slot.
+
+    The probe library exports the slot table. The loader accepts single-byte opcodes up to 0xC4
+    and the 0xFC subopcodes 0–7, 10 and 11. Each accepted opcode outside the stencil and
+    terminator paths must map to a runtime API slot, so the trace compiler never fails on one.
+    """
+    from tier2_runtime.wasm import reader as wasm_reader
+
+    library = ctypes.CDLL(str(_PYSIM_DIR / "build" / "no-aging" / "libjit_probe.so"))
+    slot_of = library.fb_jit_runtime_api_slot
+    slot_of.restype = ctypes.c_int
+    slot_of.argtypes = [ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint8)]
+    accepted = [
+        op
+        for op, handler in enumerate(wasm_reader._STACK_ANALYSIS_DISPATCH)
+        if handler is not None
+    ]
+    assert accepted, "the loader must accept at least one opcode"
+    for op in accepted:
+        if op in _NO_RUNTIME_API_SLOT_OPCODES:
+            continue
+        slot = ctypes.c_uint8(0)
+        assert slot_of(op, 0, ctypes.byref(slot)) == 1, f"opcode {op:#x} has no runtime API slot"
+    for subopcode in (*range(8), 10, 11):
+        slot = ctypes.c_uint8(0)
+        assert slot_of(subopcode, 1, ctypes.byref(slot)) == 1, f"0xFC {subopcode} has no slot"

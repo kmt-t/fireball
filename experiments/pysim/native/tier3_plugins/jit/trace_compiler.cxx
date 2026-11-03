@@ -1495,8 +1495,11 @@ bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_i
                       std::uint8_t immediate_count, annotation_offset_t interpreter_rel_after,
                       std::uint8_t global_width) {
   std::uint8_t slot = 0;
-  if ((immediate_count != 0 && (immediates == nullptr || immediate_widths == nullptr)) ||
-      !runtime_api_slot(op, slot)) {
+  // Every opcode that reaches this path has a slot (TEST-JITR-104). A missing one is a broken table.
+  const auto has_slot = runtime_api_slot(op, slot);
+  assert(has_slot);
+  static_cast<void>(has_slot);
+  if (immediate_count != 0 && (immediates == nullptr || immediate_widths == nullptr)) {
     return false;
   }
   if (!apply_runtime_api_stack_effect(op, global_width, stack)) {

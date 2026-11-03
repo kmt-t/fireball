@@ -200,37 +200,34 @@ std::size_t widened_branch_size(const std::uint8_t *stencil_code,
 
 using branch_prefix_table = std::array<std::size_t, kMaxOperationStencilBytes / 2 + 1>;
 
-bool build_branch_prefix(const stencil_view &stencil, const std::uint8_t *stencil_code,
+// Builds the widened-size prefix of a stencil's branch fixups. The stencil table is generated:
+// its branches are ordered, do not overlap, and are rel8 or rel32 jumps of known sizes. Each
+// branch takes at least two bytes, so a stencil of at most kMaxOperationStencilBytes has at
+// most kMaxOperationStencilBytes / 2 branches.
+void build_branch_prefix(const stencil_view &stencil, const std::uint8_t *stencil_code,
                          branch_prefix_table &prefix) {
-  if (!stencil.branch_range_valid() || stencil.branch_count + 1 > prefix.size()) {
-    return false;
-  }
+  assert(stencil.branch_range_valid() && stencil.branch_count + 1 <= prefix.size());
   prefix[0] = 0;
   std::size_t previous_end = 0;
   for (std::size_t index = 0; index < stencil.branch_count; ++index) {
     const auto branch = stencil.branch_fixup(index);
-    if (branch.instruction_offset < previous_end || branch.instruction_offset > stencil.size ||
-        branch.instruction_size > stencil.size - branch.instruction_offset) {
-      return false;
-    }
+    assert(branch.instruction_offset >= previous_end && branch.instruction_offset <= stencil.size &&
+           branch.instruction_size <= stencil.size - branch.instruction_offset);
     const auto expanded_size = widened_branch_size(stencil_code, branch);
-    if (expanded_size == 0 || expanded_size < branch.instruction_size ||
-        prefix[index] >
-            std::numeric_limits<std::size_t>::max() - (expanded_size - branch.instruction_size)) {
-      return false;
-    }
+    assert(expanded_size != 0 && expanded_size >= branch.instruction_size);
+    assert(prefix[index] <=
+           std::numeric_limits<std::size_t>::max() - (expanded_size - branch.instruction_size));
     previous_end = branch.instruction_offset + branch.instruction_size;
     prefix[index + 1] = prefix[index] + expanded_size - branch.instruction_size;
   }
-  return true;
 }
 
-bool map_stencil_offset(std::size_t stencil_offset, const stencil_view &stencil,
-                        const branch_prefix_table &prefix, std::size_t &mapped_offset) {
-  if (stencil_offset > stencil.size || !stencil.branch_range_valid() ||
-      stencil.branch_count + 1 > prefix.size()) {
-    return false;
-  }
+// Maps an offset of the stencil to its place in the widened operation. The offset is a stencil
+// table entry, and build_branch_prefix has checked the branch table.
+std::size_t map_stencil_offset(std::size_t stencil_offset, const stencil_view &stencil,
+                               const branch_prefix_table &prefix) {
+  assert(stencil_offset <= stencil.size && stencil.branch_range_valid() &&
+         stencil.branch_count + 1 <= prefix.size());
   std::size_t first = 0;
   std::size_t last = stencil.branch_count;
   while (first < last) {
@@ -242,11 +239,8 @@ bool map_stencil_offset(std::size_t stencil_offset, const stencil_view &stencil,
       last = middle;
     }
   }
-  if (stencil_offset > std::numeric_limits<std::size_t>::max() - prefix[first]) {
-    return false;
-  }
-  mapped_offset = stencil_offset + prefix[first];
-  return true;
+  assert(stencil_offset <= std::numeric_limits<std::size_t>::max() - prefix[first]);
+  return stencil_offset + prefix[first];
 }
 
 // Maps a stencil offset past the removed next slot to its place in the linked operation. The
@@ -264,9 +258,12 @@ std::size_t map_linked_offset(std::size_t stencil_offset, std::size_t next_slot_
   return stencil_offset + downstream_size - kX64Rel32SlotBytes;
 }
 
+// Every displacement lies inside the body, whose size is at most kMaxBodyBytes, so it fits rel32.
+static_assert(kMaxBodyBytes <= std::numeric_limits<std::int32_t>::max() / 2);
+
 // Returns whether the rel32 field at displacement_offset can reach next_offset. The field is
 // the 4 bytes that end at displacement_offset + 4, and the displacement is relative to that end.
-bool rel32_fits(std::size_t displacement_offset, std::size_t next_offset) {
+[[maybe_unused]] bool rel32_fits(std::size_t displacement_offset, std::size_t next_offset) {
   constexpr auto max_offset = static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max());
   if (next_offset > max_offset || displacement_offset > max_offset - 4) {
     return false;
@@ -295,18 +292,15 @@ void write_rel32(std::uint8_t *code, std::size_t code_size, std::size_t displace
 bool expand_stencil_branches(const stencil_view &stencil, const std::uint8_t *stencil_code,
                              std::uint8_t *expanded_code, std::size_t expanded_capacity,
                              std::size_t &expanded_size) {
-  if (!stencil.branch_range_valid()) {
-    return false;
-  }
+  assert(stencil.branch_range_valid());
   std::size_t source_cursor = 0;
   std::size_t output_cursor = 0;
   for (std::size_t index = 0; index < stencil.branch_count; ++index) {
     const auto branch = stencil.branch_fixup(index);
-    if (branch.instruction_offset < source_cursor || branch.instruction_offset > stencil.size ||
-        branch.instruction_size > stencil.size - branch.instruction_offset ||
-        branch.target_offset >= stencil.size) {
-      return false;
-    }
+    assert(branch.instruction_offset >= source_cursor &&
+           branch.instruction_offset <= stencil.size &&
+           branch.instruction_size <= stencil.size - branch.instruction_offset &&
+           branch.target_offset < stencil.size);
     const auto gap = branch.instruction_offset - source_cursor;
     if (gap > expanded_capacity - output_cursor) {
       return false;
@@ -314,7 +308,8 @@ bool expand_stencil_branches(const stencil_view &stencil, const std::uint8_t *st
     std::copy_n(stencil_code + source_cursor, gap, expanded_code + output_cursor);
     output_cursor += gap;
     const auto widened_size = widened_branch_size(stencil_code, branch);
-    if (widened_size == 0 || widened_size > expanded_capacity - output_cursor) {
+    assert(widened_size != 0);
+    if (widened_size > expanded_capacity - output_cursor) {
       return false;
     }
     const auto opcode = stencil_code[branch.instruction_offset];
@@ -332,8 +327,8 @@ bool expand_stencil_branches(const stencil_view &stencil, const std::uint8_t *st
     source_cursor = branch.instruction_offset + branch.instruction_size;
     output_cursor += widened_size;
   }
-  if (source_cursor > stencil.size ||
-      stencil.size - source_cursor > expanded_capacity - output_cursor) {
+  assert(source_cursor <= stencil.size);
+  if (stencil.size - source_cursor > expanded_capacity - output_cursor) {
     return false;
   }
   std::copy_n(stencil_code + source_cursor, stencil.size - source_cursor,
@@ -589,17 +584,16 @@ struct trace_builder {
              kX64Rel32SlotBytes <= stencil.size - stencil.next_slot_offset &&
              stencil.image_start != nullptr);
       const auto *stencil_code = stencil.image_start + stencil.code_offset;
-      if (stencil_code[stencil.next_slot_offset] != 0xe9 ||
-          !build_branch_prefix(stencil, stencil_code, branch_prefix) ||
-          !expand_stencil_branches(stencil, stencil_code, stencil_scratch.data(),
+      assert(stencil_code[stencil.next_slot_offset] == 0xe9);
+      build_branch_prefix(stencil, stencil_code, branch_prefix);
+      if (!expand_stencil_branches(stencil, stencil_code, stencil_scratch.data(),
                                    stencil_scratch.size(), operation_size)) {
         return false;
       }
       if (stencil.patch_slot_width != 0) {
-        std::size_t patch_offset = 0;
-        [[maybe_unused]] const auto patch_mapped =
-            map_stencil_offset(stencil.patch_slot_offset, stencil, branch_prefix, patch_offset);
-        assert(patch_mapped && patch_offset <= operation_size &&
+        const auto patch_offset =
+            map_stencil_offset(stencil.patch_slot_offset, stencil, branch_prefix);
+        assert(patch_offset <= operation_size &&
                stencil.patch_slot_width <= operation_size - patch_offset);
         const auto patch_value = patch_values[index];
         for (std::uint8_t byte = 0; byte < stencil.patch_slot_width; ++byte) {
@@ -608,10 +602,9 @@ struct trace_builder {
         }
       }
       if (stencil.instruction_slot_width != 0) {
-        std::size_t instruction_offset = 0;
-        [[maybe_unused]] const auto instruction_mapped = map_stencil_offset(
-            stencil.instruction_slot_offset, stencil, branch_prefix, instruction_offset);
-        assert(instruction_mapped && instruction_offset <= operation_size &&
+        const auto instruction_offset =
+            map_stencil_offset(stencil.instruction_slot_offset, stencil, branch_prefix);
+        assert(instruction_offset <= operation_size &&
                stencil.instruction_slot_width <= operation_size - instruction_offset);
         std::copy_n(local_instructions[index].data(), stencil.instruction_slot_width,
                     stencil_scratch.data() + instruction_offset);
@@ -626,20 +619,18 @@ struct trace_builder {
       }
       const auto *stencil_code = stencil.image_start + stencil.code_offset;
       std::size_t operation_size = 0;
-      std::size_t next_slot = 0;
-      std::size_t abort_slot = kNoLinkSlot;
-      if (!expand_operation(index, operation_size) ||
-          !map_stencil_offset(stencil.next_slot_offset, stencil, branch_prefix, next_slot) ||
-          next_slot > operation_size || kX64Rel32SlotBytes > operation_size - next_slot) {
+      if (!expand_operation(index, operation_size)) {
         return false;
       }
-      if (stencil.abort_slot_offset != kNoLinkSlot &&
-          (stencil.abort_slot_offset > stencil.size ||
-           kX64Rel32SlotBytes > stencil.size - stencil.abort_slot_offset ||
-           stencil_code[stencil.abort_slot_offset] != 0xe9 ||
-           !map_stencil_offset(stencil.abort_slot_offset, stencil, branch_prefix, abort_slot) ||
-           abort_slot > operation_size || kX64Rel32SlotBytes > operation_size - abort_slot)) {
-        return false;
+      const auto next_slot = map_stencil_offset(stencil.next_slot_offset, stencil, branch_prefix);
+      assert(next_slot <= operation_size && kX64Rel32SlotBytes <= operation_size - next_slot);
+      std::size_t abort_slot = kNoLinkSlot;
+      if (stencil.abort_slot_offset != kNoLinkSlot) {
+        assert(stencil.abort_slot_offset <= stencil.size &&
+               kX64Rel32SlotBytes <= stencil.size - stencil.abort_slot_offset &&
+               stencil_code[stencil.abort_slot_offset] == 0xe9);
+        abort_slot = map_stencil_offset(stencil.abort_slot_offset, stencil, branch_prefix);
+        assert(abort_slot <= operation_size && kX64Rel32SlotBytes <= operation_size - abort_slot);
       }
       expanded_sizes[index] = operation_size;
       expanded_next_slots[index] = next_slot;
@@ -725,37 +716,26 @@ struct trace_builder {
     for (std::size_t index = 0; index < operation_count; ++index) {
       const auto &stencil = operations[index];
       const auto *stencil_code = stencil.image_start + stencil.code_offset;
-      if (!build_branch_prefix(stencil, stencil_code, branch_prefix)) {
-        return false;
-      }
+      build_branch_prefix(stencil, stencil_code, branch_prefix);
       const auto next_slot = expanded_next_slots[index];
       const auto downstream_size = downstream_sizes[index];
       for (std::size_t branch_index = 0; branch_index < stencil.branch_count; ++branch_index) {
         const auto branch = stencil.branch_fixup(branch_index);
-        std::size_t source_offset = 0;
-        std::size_t target_offset = 0;
-        std::size_t linked_source = 0;
-        std::size_t linked_target = 0;
-        if (!map_stencil_offset(branch.instruction_offset, stencil, branch_prefix, source_offset) ||
-            !map_stencil_offset(branch.target_offset, stencil, branch_prefix, target_offset)) {
-          return false;
-        }
-        linked_source = map_linked_offset(source_offset, next_slot, downstream_size);
-        linked_target = map_linked_offset(target_offset, next_slot, downstream_size);
+        const auto source_offset =
+            map_stencil_offset(branch.instruction_offset, stencil, branch_prefix);
+        const auto target_offset = map_stencil_offset(branch.target_offset, stencil, branch_prefix);
+        const auto linked_source = map_linked_offset(source_offset, next_slot, downstream_size);
+        const auto linked_target = map_linked_offset(target_offset, next_slot, downstream_size);
         const auto instruction_size = widened_branch_size(stencil_code, branch);
         const auto opcode = stencil_code[branch.instruction_offset];
         const auto displacement_offset =
             branch.instruction_size == 2 ? (opcode == 0xeb ? 1u : 2u) : (opcode == 0xe9 ? 1u : 2u);
         const auto source = operation_starts[index] + linked_source;
         const auto target = operation_starts[index] + linked_target;
-        if (source > sequence_size || instruction_size > sequence_size - source ||
-            displacement_offset + sizeof(std::int32_t) > instruction_size) {
-          return false;
-        }
+        // The branch lies inside its linked operation, and the operations lie inside the sequence.
+        assert(source <= sequence_size && instruction_size <= sequence_size - source &&
+               displacement_offset + sizeof(std::int32_t) <= instruction_size);
         const auto field = source + displacement_offset;
-        if (!rel32_fits(field, target)) {
-          return false;
-        }
         write_rel32(trace_body, sequence_size, field, target);
       }
       if (expanded_abort_slots[index] != kNoLinkSlot) {
@@ -790,9 +770,6 @@ struct trace_builder {
         assert(slot_offset <= total_body_size &&
                kX64Rel32SlotBytes <= total_body_size - slot_offset);
         assert(body[slot_offset] == 0xe9);
-        if (!rel32_fits(slot_offset + 1, abort_target)) {
-          return false;
-        }
         write_rel32(body, total_body_size, slot_offset + 1, abort_target);
       }
     }

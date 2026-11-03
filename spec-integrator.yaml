@@ -70,7 +70,7 @@ verification_matrix:
     expected:
       component_specs: 26
       concept_files: 15
-      formal_models: 23
+      formal_models: 24
       test_specs: 25
   pysim:
     document: "experiments/pysim/qa/verification_matrix.md"

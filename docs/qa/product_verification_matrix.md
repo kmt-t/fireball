@@ -40,7 +40,7 @@
 | Tier 2 Runtime | `runtime_observability` | N/A（契約文書が責務と境界を定義） | N/A（内部実行イベント未統合） | `runtime_observability_test_spec.md` | contract_only |
 | Tier 3 Plugins | `guest_profiler` | N/A（契約文書が責務と境界を定義） | `guest_profiler_model.py` | `guest_profiler_test_spec.md` | required |
 | Tier 3 Plugins | `jit_compiler` | N/A (x64 implementation is covered directly; ARMv8-M is TBD) | `jit_cache_model.py` | `jit_compiler_test_spec.md`, `wasm_instruction_set_test_spec.md` | required |
-| Tier 3 Plugins | `jit_runtime` | N/A (x64 runtime tests cover the confirmed path; ARMv8-M is TBD) | `jit_cache_model.py`, `jit_hotspot_model.py`, `jit_trace_execution_model.py`（QA計測契約） | `jit_runtime_test_spec.md` | required |
+| Tier 3 Plugins | `jit_runtime` | N/A (x64 runtime tests cover the confirmed path; ARMv8-M is TBD) | `jit_cache_model.py`, `jit_hotspot_model.py`, `jit_trace_execution_model.py`（QA計測契約）、`jit_admission_model.py` | `jit_runtime_test_spec.md` | required |
 | Tier 3 Platform | `libfireball` | N/A（ゲスト側ABI契約を定義する） | N/A（raw Core Wasm ABIを実guestで検査） | `libfireball_test_spec.md` | contract_only |
 | Tier 3 Platform | `platform_driver` | `platform_driver_concept.py` | `interrupt_boundary_model.py` | `platform_driver_test_spec.md` | required |
 
@@ -122,6 +122,7 @@
 | formal | [jit_hotspot_model.py](docs/components/tier3_plugins/formal/jit_hotspot_model.py) |
 | formal | [jit_trace_execution_model.py](docs/components/tier3_plugins/formal/jit_trace_execution_model.py) |
 | formal | [jit_loop_chain_model.py](docs/components/tier3_plugins/formal/jit_loop_chain_model.py) |
+| formal | [jit_admission_model.py](docs/components/tier3_plugins/formal/jit_admission_model.py) |
 | formal | [interrupt_boundary_model.py](docs/components/tier3_platform/formal/interrupt_boundary_model.py) |
 | test spec | [os_coos_test_spec.md](docs/qa/tier1_core/os_coos_test_spec.md) |
 | test spec | [os_scheduler_test_spec.md](docs/qa/tier1_core/os_scheduler_test_spec.md) |

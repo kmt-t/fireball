@@ -4,6 +4,7 @@
      formal: formal/jit_cache_model.py
      formal: formal/jit_loop_chain_model.py
      formal: formal/jit_hotspot_model.py
+     formal: formal/jit_admission_model.py
      benchmark_spec: benchmarks/jit_runtime_bench_spec.md
      benchmark: ../../../experiments/pysim/benchmarks/jit/bench_jit.py
      benchmark_record: ../../../experiments/pysim/benchmarks/BENCHMARK_REPORT.md
@@ -398,11 +399,22 @@ QA専用の実行回数・退役記録の計測契約、抽象モデル、およ
 - **結論**: 協調境界でも処理する。idle hookは固定容量LIFO待ち列の全候補を処理して空にする。待ち列が満杯になった場合は、その場で全候補を処理する。
 - **理由と影響**: 待ち列に入った候補を次の実行境界へ持ち越さない。固定容量は一度に処理する候補数を制限するが、コンパイル時間や実時間応答を保証しない。
 
-### 8.2 キャッシュ代謝とスラッシング防止の未決事項
+### 8.2 コンパイル採否とキャッシュ代謝
 <!-- traceability: {Challenge_JITCacheEfficiency} {ADR_SafeQueuingOnHotMiss} -->
 
-- **ステータス**: 3面ローテーションとOldestのその場実行は採用。スラッシング防止方策は未決である。
-- **現行の暫定方策**: evictionでカードを`UNEXECUTED`へ戻す。再度hot判定を得たPCをコンパイル候補とする。この動作だけでスラッシングを防げるとは判定しない。
-- **判断材料**: QA専用の計測構成でtraceごとの実行回数、破棄時の実行回数、未使用のままevictされたtraceを記録する。採取契約は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)に従う。
-- **未決事項**: 未使用evictionだけを対象にするか、実行回数が少なくコンパイル費用を回収できないtraceも対象にするかを決める。再コンパイルの抑止条件、適用範囲、および再許可する回復条件を測定結果から決める。
+- **ステータス**: 3面ローテーションとOldestのその場実行は採用。コンパイル採否の (i) から (iii) は採用。(iv) の閾値は未決である。
+- **採否記録**: 各 BasicBlock は 1 B の採否記録を持つ。記録は JIT 拡張が `block_count` 個分の領域として保持する。上位 3 bit はストライク、下位 5 bit は計数である。
+- **計数の用途**: 下位 5 bit は時期ごとに次の値を表す。
+  - 設置時: 0 に戻し、以後は設置中の入口回数を数える。
+  - 入口時: lookup が根の trace を返したとき、31 で飽和する加算を行う。chain で後続に入った trace は lookup を通らないため、数えない。
+  - 破棄時: 値はその設置の寿命（入口回数）である。ストライクの更新に使う。
+  - 採否時: 値は直前の寿命である。採否が済むまで値は変わらない。
+- **ストライク**: 履歴のない block の値は 5 とする。破棄時、寿命が K 未満ならストライクを 1 増やし、ストライクは S で止める。寿命が K 以上ならストライクを 0 に戻す。K は 10 とする。履歴なしからの最初の破棄は、ストライク 0 から数える。
+- **段階**: 直前に終わった 8 回転の区切りで破棄された trace の数 w を用いる。f = w ÷ 8 とする。f ≥ 6 のとき S = 2、2 ≤ f < 6 のとき S = 3、f < 2 のとき S = 4 とする。
+- **採否**: 待ち列から取り出した候補ごとに、次の順で判定する。
+  1. 点数（score_block）が候補しきい値 `S_threshold` に届かない場合は却下する。
+  2. 履歴なし（ストライク 5）の場合はコンパイルする。
+  3. ストライクが S 以上の場合は却下する。
+  4. TODO(未決): 順位 r = 直前の寿命 × 点数 が段階の閾値 T_f 以上ならコンパイルし、未満なら却下する。T_f の値は測定の後に決める。(iv) が決まるまでは、手順 3 を通った候補をコンパイルする。
+- **却下**: 却下された候補は、トラッカブルマスクを解除する。解除は、コンパイル失敗と同じ経路で行う。却下された block は、再び候補にならない。回復の条件は未決である。
 - **責務境界**: 記録の追加はコンパイル抑止やキャッシュ方策の採用を意味しない。Guest Profilerの変更は要求しない。

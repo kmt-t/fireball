@@ -478,6 +478,26 @@ def test_load_parameter_capacity_rejects_one_more_than_configured_limit() -> Non
     )
 
 
+def test_load_operand_value_count_rejects_one_more_than_configured_limit() -> None:
+    """A block that holds FB_CONF_MAX_VALUE_STACK + 1 operand values is invalid WASM.
+
+    The rejection is InvalidWasm, not an internal assertion: the value count comes from the guest.
+    """
+    pushes = " ".join("i32.const 0" for _ in range(FB_CONF_MAX_VALUE_STACK + 1))
+    drops = " ".join("drop" for _ in range(FB_CONF_MAX_VALUE_STACK + 1))
+    _assert_parse_rejected_without_mutation(
+        wat_to_wasm(f'(module (func (export "f") {pushes} {drops}))'),
+        "operand value count",
+    )
+
+
+def test_load_operand_value_count_accepts_the_configured_limit() -> None:
+    pushes = " ".join("i32.const 0" for _ in range(FB_CONF_MAX_VALUE_STACK))
+    drops = " ".join("drop" for _ in range(FB_CONF_MAX_VALUE_STACK))
+    module = parse_standalone(wat_to_wasm(f'(module (func (export "f") {pushes} {drops}))'))
+    assert module.export_func_index("f") == 0
+
+
 def test_load_31_more_than_64_exports_are_retained() -> None:
     names = [f"export_{index:03}" for index in range(65)]
     module = parse_standalone(memoryview(_build_test_wasm_binary(export_names=names)))

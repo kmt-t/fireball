@@ -709,6 +709,10 @@ class _StackTypeAnalysisState:
         return actual_type
 
     def push(self, value_type: int) -> None:
+        require_wasm(
+            len(self.values) < FB_CONF_MAX_VALUE_STACK,
+            "WASM operand value count exceeds configured maximum",
+        )
         self.values.append(value_type)
         self.stack_words += 2 if value_type == I64 or value_type == F64 else 1
         self.max_stack_words = max(self.max_stack_words, self.stack_words)

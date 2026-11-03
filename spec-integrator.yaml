@@ -540,19 +540,19 @@ source_verification:
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/wasm/reader.py
         function: _analyze_control
-        line: 741
+        line: 745
         ccn: 27
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/wasm/reader.py
         function: _memory_alignment_exponent
-        line: 910
+        line: 914
         ccn: 23
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/wasm/reader.py
         function: _analyze_conversion
-        line: 1138
+        line: 1142
         ccn: 23
         plan_req: REQ-042
       - group: python_pysim

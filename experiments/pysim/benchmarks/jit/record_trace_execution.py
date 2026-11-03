@@ -18,7 +18,6 @@ configure_import_paths(_BENCH_DIR.parent, _BENCH_DIR)
 from bench_jit_aging import build_workload_wat
 from bump_allocator import BumpAllocator
 from qa.shared.jit_manager import JITRuntimeManager
-from qa.shared.x64_jit import TraceCompiler
 from runtime_driver import run_runtime_call
 from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
 from tier2_runtime.runtime.engine import RuntimeEngine
@@ -50,7 +49,7 @@ def record_usage(output: Path, hot_functions: int, cold_functions: int, iteratio
         # No replacement or flush in this workload: every retirement is a real eviction.
         records.append(TraceExecutionRecord(pc, count, True))
 
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler(), retire_observer=on_retire)
+    manager = JITRuntimeManager(retire_observer=on_retire)
     engine = RuntimeEngine.with_allocator(allocator)
     engine.register_module_blocks(module)
     interpreter = NativeInterpreter(
@@ -102,7 +101,6 @@ def record_usage(output: Path, hot_functions: int, cold_functions: int, iteratio
                     ).read_bytes()
                 ).hexdigest(),
                 "runtime_stats_enabled": False,
-                "hotspot_profiling_enabled": manager.hotspot_profiling_enabled,
                 "evicted_traces": len(evicted),
                 "zero_execution_evictions": zero_evicted,
                 "resident_traces": len(records) - len(evicted),

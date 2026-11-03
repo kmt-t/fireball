@@ -19,6 +19,7 @@
 using namespace fireball::pysim::jit;
 using fireball::kMaxBodyBytes;
 using fireball::kMaxRelocationConstants;
+using fireball::kMaxRuntimeApiImmediates;
 using fireball::kMaxStackDepth;
 using fireball::kMaxTraceInstructions;
 using fireball::kMaxTraceOperations;
@@ -440,20 +441,20 @@ struct trace_builder {
 
   bool add_value(std::uint64_t value, std::uint8_t width) {
     if ((width != 1 && width != 2 && width != 4 && width != 8) ||
-        relocation_count == relocations.size() || relocation_bytes > body_capacity ||
-        width > body_capacity - relocation_bytes) {
+        relocation_bytes > body_capacity || width > body_capacity - relocation_bytes) {
       return false;
     }
+    assert(relocation_count < relocations.size());
     relocations[relocation_count++] = {value, width, relocation_kind::value};
     relocation_bytes += width;
     return true;
   }
 
   bool add_trace_header_reference() {
-    if (relocation_count == relocations.size() || relocation_bytes > body_capacity ||
-        4 > body_capacity - relocation_bytes) {
+    if (relocation_bytes > body_capacity || 4 > body_capacity - relocation_bytes) {
       return false;
     }
+    assert(relocation_count < relocations.size());
     relocations[relocation_count++] = {0, 4, relocation_kind::trace_header};
     relocation_bytes += 4;
 #if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
@@ -472,7 +473,7 @@ struct trace_builder {
 #if !defined(FB_CONF_JIT_BLOCK_COUNTERS) || !FB_CONF_JIT_BLOCK_COUNTERS
     static_cast<void>(wasm_opcode);
 #endif
-    if (immediate_count > 3 ||
+    if (immediate_count > kMaxRuntimeApiImmediates ||
         (immediate_count != 0 && (immediates == nullptr || immediate_widths == nullptr))) {
       return false;
     }

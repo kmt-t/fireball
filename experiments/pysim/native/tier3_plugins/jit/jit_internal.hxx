@@ -8,7 +8,14 @@ namespace fireball {
 inline constexpr std::uint32_t kMaxTraceInstructions = 64;
 inline constexpr std::uint32_t kMaxTraceOperations = kMaxTraceInstructions + 1;
 inline constexpr std::uint32_t kMaxStackDepth = FIREBALL_NATIVE_VALUE_STACK_CAPACITY;
-inline constexpr std::uint32_t kMaxRelocationConstants = 8 * kMaxTraceInstructions + 1;
+// A runtime API operation writes four fixed relocations (slot, immediate count, immediate bytes,
+// source IP), one per immediate, and the interpreter resume offset. A CPS call writes five.
+inline constexpr std::uint32_t kMaxRuntimeApiImmediates = 3;
+inline constexpr std::uint32_t kMaxRelocationsPerOperation = 4 + kMaxRuntimeApiImmediates + 1;
+static_assert(kMaxRelocationsPerOperation >= 5);
+// One trace header reference, then at most one operation per table entry.
+inline constexpr std::uint32_t kMaxRelocationConstants =
+    1 + kMaxTraceOperations * kMaxRelocationsPerOperation;
 inline constexpr std::uint32_t kMaxBodyBytes = 1536;
 inline constexpr std::uint32_t kTraceBoundaryMetadataBytes = sizeof(jit_trace_boundary_metadata);
 inline constexpr code_ip_t kNoTraceExitIp = UINT32_MAX;
@@ -21,7 +28,6 @@ struct jit_compile_result {
   code_ip_t body_end_ip = kNoTraceExitIp;
   jit_trace_exit_kind exit_kind = jit_trace_exit_kind::normal;
 };
-
 
 int compile_wasm_trace(const std::uint8_t *code, code_offset_t code_bytes,
                        code_offset_t code_offset, code_offset_t byte_span,

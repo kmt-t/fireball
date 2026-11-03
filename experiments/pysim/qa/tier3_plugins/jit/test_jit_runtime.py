@@ -4589,3 +4589,38 @@ def test_jitr_100_zero_units_steps_per_rotation_without_processing_or_scanning()
     assert scanned == 0, "no byte is scanned when units = 0"
     assert cursor == 0, "the cursor does not move when no byte is scanned"
     assert result["state"] == CardState.EXECUTED, "a card stays EXECUTED without an aging step"
+
+
+def test_jitr_101_call_resume_block_compiles_with_its_entry_stack_words():
+    """TEST-JITR-101: a call-resume block that pops an operand from before the call compiles.
+
+    The loop body keeps `acc` on the operand stack across `call $inc`. The resume block starts with
+    `acc` and the result, so its entry stack holds two words and it pops both. With the entry
+    stack misread as zero, the block is not compiled. Each iteration adds i + 1, so the result is
+    n(n + 1) / 2.
+    """
+    wat = """(module
+      (func $inc (param i32) (result i32) local.get 0 i32.const 1 i32.add)
+      (func (export "f") (param $n i32) (result i32) (local $i i32) (local $acc i32)
+        (loop $l
+          local.get $acc
+          local.get $i
+          call $inc
+          i32.add
+          local.set $acc
+          local.get $i i32.const 1 i32.add local.tee $i
+          local.get $n i32.lt_s br_if $l)
+        local.get $acc))"""
+    module = parse_standalone(wat_to_wasm(wat))
+    resume_pcs = [block.head_pc for block in module.blocks if block.entry_stack_words == 2]
+    assert len(resume_pcs) == 1, "the call-resume block must hold two entry stack words"
+    fn_idx = module.export_func_index("f")
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    interp = Interpreter(module, yield_threshold=8)
+    assert engine.call(interp, fn_idx, [50]).unwrap() == [50 * 51 // 2]
+    assert engine.stat_jit_invocations > 0, "the loop must run natively"
+    compiled = {
+        trace.head_pc for _key, trace in resident_module_traces(engine.jit_runtime.cache, module)
+    }
+    assert resume_pcs[0] in compiled, "the call-resume block must be compiled"

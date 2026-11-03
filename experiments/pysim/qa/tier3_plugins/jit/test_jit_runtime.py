@@ -5056,3 +5056,43 @@ def test_jitr_111_a_block_at_its_stage_limit_is_rejected_by_its_next_decision():
     assert manager.bitmap.get_state(block.head_pc) != CardState.COMPILED
     assert not manager.is_trackable(block.head_pc)
     assert _strikes(_admission_record(manager, index)) == 4
+
+
+@pytest.mark.parametrize(
+    ("body", "compiled"),
+    (
+        # Rule (i): a block of nops and a branch scores below the candidate threshold.
+        ("(block (nop) (nop) (br 0))", False),
+        # The control scores above the threshold and compiles under the same harness.
+        ("(block (i32.const 1) (drop) (br 0))", True),
+    ),
+)
+def test_jitr_112_a_candidate_below_the_score_threshold_is_rejected_before_compilation(
+    body, compiled
+):
+    """TEST-JITR-112: rule (i) rejects an observed block whose score is below the threshold.
+
+    Every card is marked, so the block is observed and reaches its decision. A rejected block
+    keeps its card HOT, loses its trackable bit, and never gets a trace.
+    """
+    wat = f'(module (func (export "f") (result i32) {body} (i32.const 1)))'
+    engine = make_runtime_engine()
+    module = engine.load_wasm(bytes(wasmtime.wat2wasm(wat)))
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    base = module.function_pc_offset(0)
+    for pc in range(base, base + len(module.code_for(0))):
+        manager.trackable.mark(pc)
+    function_index = module.export_func_index("f")
+    for _ in range(5):
+        assert list(engine.call(Interpreter(module), function_index, []).unwrap()) == [1]
+    engine.idle_hook()
+    block = instruction_blocks(module)[0]
+    if compiled:
+        assert manager.bitmap.get_state(block.head_pc) == CardState.COMPILED
+        assert block.head_pc in manager.compilation_pcs
+    else:
+        assert manager.bitmap.get_state(block.head_pc) == CardState.HOT
+        assert not manager.is_trackable(block.head_pc)
+        assert manager.cache.find_trace(block.head_pc) is None
+

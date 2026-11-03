@@ -184,11 +184,6 @@ jit_runtime<Measurement>::patch_transaction::~patch_transaction() {
 
 template <jit_measurement_policy Measurement>
 int jit_runtime<Measurement>::compile_one_candidate(block_index_t block_index, wasm_pc_t pc) {
-  if constexpr (!std::is_void_v<Measurement>) {
-    if (hotspots.configuration.compiler_enabled == 0) {
-      return 0;
-    }
-  }
   jit_wasm_block input_storage{};
   const jit_wasm_block *input = nullptr;
   if constexpr (std::is_void_v<Measurement>) {
@@ -1239,11 +1234,11 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_bind_profile(
   assert(p.history_capacity > 0 && p.history_capacity <= runtime->hotspots.history_records.size() &&
          p.queue_capacity > 0 && p.queue_capacity <= runtime->hotspots.compile_queue_items.size() &&
          p.mask_bytes == runtime->hotspots.dirty_mask_bytes &&
-         (runtime->hotspots.card_count == 0 || p.trackable != nullptr) && p.enabled <= 1 &&
+         (runtime->hotspots.card_count == 0 || p.trackable != nullptr) &&
          jit_card_count(p.code_bytes, runtime->hotspots.card_shift) ==
              runtime->hotspots.card_count);
   if constexpr (!std::is_void_v<Measurement>) {
-    assert(p.compiler_enabled <= 1 && (p.block_count == 0 || p.blocks != nullptr));
+    assert(p.block_count == 0 || p.blocks != nullptr);
     assert(p.block_count == 0 ||
            std::adjacent_find(p.blocks, p.blocks + p.block_count,
                               [](const jit_wasm_block &left, const jit_wasm_block &right) {
@@ -1361,7 +1356,7 @@ int jit_provider_adapter<Measurement>::observe_runtime_block(std::uintptr_t owne
   if constexpr (!std::is_void_v<Measurement>) {
     runtime.record_runtime_transition(block_index, pc);
   }
-  if (runtime.hotspots.configuration.enabled == 0 || !runtime.is_profiled_pc(pc)) {
+  if (!runtime.is_profiled_pc(pc)) {
     return 0;
   }
   runtime.record_block_visit(block_index, pc);
@@ -1457,7 +1452,6 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
   static_cast<jit_profile &>(profile) = {mask,
                                          mask_bytes,
                                          module_id,
-                                         1,
                                          FB_CONF_JIT_CANDIDATE_THRESHOLD,
                                          1u << FB_CONF_JIT_CARD_SHIFT,
                                          code_bytes,

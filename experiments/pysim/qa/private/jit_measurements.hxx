@@ -28,7 +28,6 @@ struct jit_measurements {
   bool auto_age = true;
   bool owns_memory = true;
   struct profile_type : jit_profile {
-    std::uint32_t compiler_enabled = 1;
     const jit_wasm_block *blocks = nullptr;
     std::uint32_t block_count = 0;
   };

@@ -110,9 +110,7 @@ def test_scenario_hybrid_jit():
     module.init_memory_data(wasi_t3.guest_memory, ())
     trace_compiler = TraceCompiler()
     runtime_engine = RuntimeEngine(
-        jit_runtime=JITRuntimeManager(
-            jit_compiler=trace_compiler,
-        ),
+        jit_runtime=JITRuntimeManager(),
     )
     runtime_engine.register_module_blocks(module)
     interp_t3 = NativeInterpreter.with_module_allocator(

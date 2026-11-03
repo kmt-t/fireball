@@ -80,7 +80,6 @@ def _tier3(
     trackable-block bitmap to those heads, so every other block stays on the interpreter.
     """
     engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
         bump_allocator=bump_allocator,
     )
     module = engine.load_wasm(wasm)
@@ -303,7 +302,7 @@ def test_jitr_53_loop_entered_after_hot_block_uses_static_branch_metadata():
     expected = _wasmtime_result(wasm, "f", [12])
     assert _tier2_result(wasm, "f", [12]) == expected
 
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     module = engine.load_wasm(wasm)
     first_function_block_pc = parse_standalone(wasm).blocks[0].head_pc
     engine.jit_runtime.trackable.clear()
@@ -402,7 +401,7 @@ def test_jitr_61_terminal_call_preserves_stack_overflow_trap_in_cps():
     outcome = _guest(interpreter_module).call(interpreter_module.export_func_index("main"), [])
     assert not outcome.is_ok
     assert outcome.error is not None and outcome.error.code == TrapCode.OPERAND_STACK_CAPACITY
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     module = engine.load_wasm(wasm)
     outcome = engine.call(_guest(module), module.export_func_index("main"), [])
     assert not outcome.is_ok

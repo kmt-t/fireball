@@ -17,7 +17,6 @@ from qa.shared.fixtures.uvwasi_reference import UvwasiReferenceContext
 from qa.shared.helpers import make_native_interpreter
 from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
 from qa.shared.runtime_support import compile_runtime_block, make_runtime_engine
-from qa.shared.x64_jit import TraceCompiler
 from scheduler import ChannelAction, TaskState, WaitDir
 from system import System
 from system_containers import ReadOnlyFlatMapView, StaticVector
@@ -306,7 +305,7 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
         engine = RuntimeEngine(drive_mode=drive_mode, collect_runtime_stats=True)
         assert engine.jit_runtime is None
     else:
-        engine = make_runtime_engine(jit_compiler=TraceCompiler(), drive_mode=drive_mode)
+        engine = make_runtime_engine(drive_mode=drive_mode)
         assert engine.jit_runtime is not None
         assert engine.jit_runtime.jit_compiler is not None
     if engine.jit_runtime is not None:

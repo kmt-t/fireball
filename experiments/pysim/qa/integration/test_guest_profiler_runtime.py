@@ -11,7 +11,6 @@ import wasmtime
 from qa.shared.helpers import make_native_interpreter
 from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
 from qa.shared.runtime_support import compile_runtime_block, make_runtime_engine
-from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.interpreter.interpreter import (
     InterpreterCall,
     NativeInterpreter,
@@ -104,11 +103,7 @@ def _run_guest_history(
     dictionary = LogDictionary()
     log_engine = Logger(wire, dictionary, min_level=LogLevel.DEBUG)
     profiler = GuestProfiler(log_engine)
-    engine = (
-        make_runtime_engine(jit_compiler=TraceCompiler())
-        if jit_enabled
-        else RuntimeEngine(collect_runtime_stats=True)
-    )
+    engine = make_runtime_engine() if jit_enabled else RuntimeEngine(collect_runtime_stats=True)
     if engine.jit_runtime is not None:
         resources.callback(engine.jit_runtime.cache._native.close)
     module = engine.load_wasm(bytes(wasmtime.wat2wasm(_GUEST_WAT)))

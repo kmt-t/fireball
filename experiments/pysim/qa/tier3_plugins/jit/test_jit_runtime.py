@@ -53,7 +53,6 @@ from qa.shared.helpers import wat_to_wasm
 from qa.shared.jit_abi import (
     NativeBlockVisitHistory,
     NativeDispatchSnapshot,
-    NativeTraceDispatchEntry,
     make_qa_jit_dispatch_entry,
 )
 from qa.shared.jit_cache import (
@@ -252,10 +251,7 @@ def test_hotspot_02_history_ring_buffered_yield_drain():
 
 def test_hotspot_03_lifo_compile_queue_batch_drain():
     """TEST-HOTSPOT-03 / TEST-JITR-12 / TEST-JITR-80: Drain all queued HOT traces in LIFO order."""
-    compiler = TraceCompiler()
-    engine = make_runtime_engine(
-        jit_compiler=compiler,
-    )
+    engine = make_runtime_engine()
     wat = """(module
       (func (export "f0") (result i32) i32.const 10 i32.const 20 i32.add)
       (func (export "f1") (result i32) i32.const 30 i32.const 40 i32.add)
@@ -681,7 +677,7 @@ def test_jitr_chained_successor_trap_stops_at_its_body_after_the_source_ran():
     )
     source_block, successor_block = [b for b in module.blocks if b.byte_span > 0][:2]
     assert source_block.next_pc == successor_block.head_pc
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
+    manager = JITRuntimeManager()
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
     engine.register_module_blocks(module)
     compiler = TraceCompiler()
@@ -716,7 +712,7 @@ def test_jitr_chained_successor_cps_boundary_stops_at_its_block():
             " (block i32.const 7 local.set 0) (block memory.size drop) local.get 0))"
         )
     )
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
+    manager = JITRuntimeManager()
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
     engine.register_module_blocks(module)
     base = module.function_pc_offset(0)
@@ -809,7 +805,7 @@ def test_jitr_native_trace_lookup_uses_resident_snapshot():
         return
     module = parse_standalone(wasm_bytes)
     fn_idx = module.export_func_index("sum_to")
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     interp = Interpreter(module, yield_threshold=8)
 
@@ -947,7 +943,7 @@ def test_jitr_trace_exit_reuses_loader_successor_block_index_and_pc() -> None:
         )
     )
     function_index = module.export_func_index("sum")
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     source = next(
         block
@@ -1103,7 +1099,7 @@ def test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace():
     """
     wat = '(module (func (export "f") i32.const 1 drop i32.const 2 drop return))'
     wasm_bytes = bytes(wasmtime.wat2wasm(wat))
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
     engine.jit_runtime.trackable.mark(pc)
@@ -1129,7 +1125,7 @@ def test_jitr_compile_queue_overflow_compiles_on_the_spot():
         + ")"
     )
     wasm_bytes = bytes(wasmtime.wat2wasm(wat))
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     mod = engine.load_wasm(wasm_bytes)
     blocks = instruction_blocks(mod)
     pcs = [block.head_pc for block in blocks]
@@ -1155,9 +1151,7 @@ def test_jitr_compile_queue_overflow_compiles_on_the_spot():
 
 def test_jitr_compile_failure_unmarks_candidate_without_faking_compiled():
     """TEST-JITR-14: failed compilation permanently clears only candidate eligibility."""
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-    )
+    engine = make_runtime_engine()
     # 80 instructions exceed kMaxTraceInstructions (64), a listed failure of the compiler.
     body = " ".join("i32.const 1 drop" for _ in range(40))
     module = parse_standalone(wat_to_wasm(f"(module (func (result i32) {body} i32.const 11))"))
@@ -1211,7 +1205,7 @@ def test_jitr_83_uncompiled_block_skips_runtime_cache_lookup():
     module = parse_standalone(
         wat_to_wasm('(module (func (export "add") (result i32) i32.const 20 i32.const 22 i32.add))')
     )
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     manager = engine.jit_runtime
     assert manager.is_trackable(module.blocks[0].head_pc)
@@ -1294,7 +1288,7 @@ def test_jitr_br_if_loop_exit_jit_result_correct():
         return
     module = parse_standalone(wasm_bytes)
     fn_idx = module.export_func_index("sum_to")
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     interp = Interpreter(module, yield_threshold=8)
 
@@ -1336,7 +1330,7 @@ def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
     """
     module = parse_standalone(wat_to_wasm(wat))
     function_index = module.export_func_index("sum")
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     loop_block = next(
         block
@@ -1379,119 +1373,13 @@ def test_jitr_loop_backedge_stays_in_cpp_until_coos_yield():
     assert "jit.chain_runtime_unclassified=0" in lines
 
 
-def test_jitr_native_dispatch_snapshot_is_cached_per_hotspot_configuration():
-    """Each JIT Runtime keeps the snapshot shape selected during composition."""
-    module = parse_standalone(
-        wat_to_wasm(
-            """(module
-              (func (export "sum") (param i32) (result i32)
-                (local i32)
-                (loop $loop
-                  local.get 1
-                  local.get 0
-                  i32.add
-                  local.set 1
-                  local.get 0
-                  i32.const 1
-                  i32.sub
-                  local.tee 0
-                  br_if $loop
-                )
-                local.get 1))"""
-        )
-    )
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), collect_runtime_stats=False)
-    engine.register_module_blocks(module)
-    function_index = module.export_func_index("sum")
-    manager = engine.jit_runtime
-    loop_block = next(
-        block
-        for block in module.blocks
-        if block.loops_to == block.head_pc and block.func_index == function_index
-    )
-
-    initial_snapshot = manager.native_dispatch_state()
-    cached_snapshot = manager.native_dispatch_state()
-    assert cached_snapshot is initial_snapshot
-    assert cached_snapshot.entries is initial_snapshot.entries
-    assert cached_snapshot.trackable_mask is initial_snapshot.trackable_mask
-    assert initial_snapshot.entry_count == 0
-    assert initial_snapshot.trackable_card_count == manager.trackable.card_count
-    assert ctypes.addressof(initial_snapshot.trackable_mask) == ctypes.addressof(
-        (ctypes.c_uint8 * len(manager.trackable.storage.buffer)).from_buffer(
-            manager.trackable.storage.buffer
-        )
-    )
-    block_count = len(module.blocks)
-    assert len(initial_snapshot.entries) == min(block_count, manager.cache.entry_capacity)
-    assert len(initial_snapshot.trackable_mask) == len(manager.trackable.storage.buffer)
-    assert initial_snapshot.arena_size == (
-        len(initial_snapshot.entries) * ctypes.sizeof(NativeTraceDispatchEntry)
-        + manager.history_capacity * ctypes.sizeof(ctypes.c_uint32)
-    )
-    arena_used = engine.bump_allocator.offset
-    trace = compile_runtime_block(manager, loop_block)
-    assert trace is not None
-    assert_result_16 = manager.cache.insert(trace)
-    assert assert_result_16
-    compiled_snapshot = manager.native_dispatch_state()
-    assert compiled_snapshot.entry_count == 1
-    assert compiled_snapshot is not initial_snapshot
-    assert compiled_snapshot.trackable_card_count == initial_snapshot.trackable_card_count
-    assert compiled_snapshot.entries[0].head_pc == loop_block.head_pc
-    assert compiled_snapshot.entries[0].entry_address == trace.raw_addr
-    assert engine.bump_allocator.offset == arena_used
-    manager.unmark_trackable(loop_block.head_pc)
-    excluded_snapshot = manager.native_dispatch_state()
-    assert excluded_snapshot.trackable_card_count == initial_snapshot.trackable_card_count
-    card = loop_block.head_pc >> excluded_snapshot.trackable_shift
-    assert not (excluded_snapshot.trackable_mask[card >> 3] & (1 << (card & 7)))
-    assert excluded_snapshot.arena_offset == initial_snapshot.arena_offset
-    assert engine.bump_allocator.offset == arena_used
-    manager.flush_all()
-    flushed_snapshot = manager.native_dispatch_state()
-    assert flushed_snapshot.entry_count == 0
-    assert flushed_snapshot.arena_offset == initial_snapshot.arena_offset
-    assert engine.bump_allocator.offset == arena_used
-
-    steady_engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-        collect_runtime_stats=False,
-        hotspot_profiling_enabled=False,
-    )
-    steady_engine.register_module_blocks(module)
-    steady_manager = steady_engine.jit_runtime
-    steady_trace = compile_runtime_block(steady_manager, loop_block)
-    assert steady_trace is not None
-    assert_result_17 = steady_manager.cache.insert(steady_trace)
-    assert assert_result_17
-    steady_snapshot = steady_manager.native_dispatch_state()
-    assert steady_snapshot.entry_count == 1
-    assert steady_snapshot.entries[0].head_pc == compiled_snapshot.entries[0].head_pc
-    assert steady_snapshot.trackable_card_count == 0
-    assert len(steady_snapshot.trackable_mask) == 0
-    assert steady_manager.lookup(loop_block.head_pc) is steady_trace
-    assert not steady_manager.record_block_head(loop_block.head_pc)
-    assert not steady_manager.record_native_block_visits(steady_snapshot.block_history, 0)
-    steady_manager.cache.rotate()
-    steady_manager.cache.rotate()
-    oldest_snapshot = steady_manager.native_dispatch_state()
-    assert oldest_snapshot.entry_count == 1
-    address = steady_trace.raw_addr
-    assert list(steady_engine.call(Interpreter(module), function_index, [5]).unwrap()) == [15]
-    assert steady_trace.raw_addr == address
-    assert steady_manager.native_dispatch_state() is oldest_snapshot
-
-
 def test_jitr_native_compiler_scans_queued_traces_without_python_opcode_marshalling():
     """The Tier 3 extension passes original WASM bytes to the C++ compiler once per trace."""
 
     module = parse_standalone(
         wat_to_wasm('(module (func (export "add") (result i32) i32.const 19 i32.const 23 i32.add))')
     )
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
 
@@ -1554,9 +1442,7 @@ def test_jitr_clang_wasm_ngrams_embed_i32_immediates_in_trace_code():
                 i32.and))"""
         )
     )
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
     manager = engine.jit_runtime
@@ -1642,9 +1528,7 @@ def test_jitr_local_pair_binary_results_match_reference():
         + ")"
     )
     module = parse_standalone(wat_to_wasm(module_text))
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
     manager = engine.jit_runtime
@@ -1710,7 +1594,7 @@ def test_jitr_cross_frame_loop_branch_returns_through_interpreter_cps():
         )
     )
     function_index = module.export_func_index("count_down")
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     branch_block = next(
         block
@@ -1817,7 +1701,7 @@ def test_jit_basic_block_extension_data_is_null_when_counters_are_not_built():
     from qa.private import jit_native_abi as native_abi
 
     module = parse_standalone(wat_to_wasm('(module (func (export "f") (result i32) i32.const 1))'))
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
+    manager = JITRuntimeManager()
     manager.register_module(module)
 
     counters_enabled = bool(native_abi.BLOCK_COUNTERS_ENABLED())
@@ -1846,7 +1730,7 @@ def test_native_interpreter_with_jit_runtime_matches_interpreter_only_execution(
     module = parse_standalone(wat_to_wasm(wat))
     function_index = module.export_func_index("sum_to")
     expected = Interpreter(module).call(function_index, [50]).unwrap()
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     native_interpreter = NativeInterpreter(
         module,
@@ -1896,7 +1780,7 @@ def test_jitr_backward_branch_block_byte_span_not_disqualified():
     fn_idx = module.export_func_index("sum_to")
     # Use the production 4-byte card so both deliberately short loop blocks
     # remain eligible.
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     interp = Interpreter(module, yield_threshold=8)
 
@@ -1915,7 +1799,7 @@ def _install_single_control_trace(
 ) -> int:
     """対象traceだけを配置し、native実行件数を対象PCの実行証拠にする。"""
     manager = engine.jit_runtime
-    assert manager is not None and not manager.hotspot_profiling_enabled
+    assert manager is not None
     candidates = []
     for block in module.blocks:
         function_index = block.func_index
@@ -1930,6 +1814,10 @@ def _install_single_control_trace(
             candidates.append(block)
     assert len(candidates) == 1, "fixture must identify one required control block"
     block = candidates[0]
+    # Only the target may become a compile candidate: the other heads keep their profile but never compile.
+    for other in module.blocks:
+        if other.byte_span > 0 and other.head_pc != block.head_pc:
+            manager.trackable.unmark(other.head_pc)
     trace = compile_runtime_block(manager, block)
     assert trace is not None
     assert_result_19 = manager.cache.insert(trace)
@@ -1981,7 +1869,7 @@ def test_jitr_if_then_skipped_when_condition_false_after_jit():
         return
     module = parse_standalone(wasm_bytes)
     fn_idx = module.export_func_index("abs_sum")
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), hotspot_profiling_enabled=False)
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     target_pc = _install_single_control_trace(engine, module, IF)
     interp = Interpreter(module, yield_threshold=4)
@@ -2035,7 +1923,7 @@ def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
         return
     module = parse_standalone(wasm_bytes)
     fn_idx = module.export_func_index("nested")
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), hotspot_profiling_enabled=False)
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     target_pc = _install_single_control_trace(
         engine, module, BR_IF, bytes.fromhex("20 02 41 03 4e")
@@ -2087,10 +1975,7 @@ def test_jitr_return_terminated_block_jit_result_correct():
     fn_idx = module.export_func_index("f")
     # The tail is intentionally compact; use the smaller test card so its
     # RETURN-terminated block remains a valid JIT candidate.
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-        hotspot_profiling_enabled=False,
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     target_pc = _install_single_control_trace(engine, module, RETURN)
     interp = Interpreter(module, yield_threshold=2)
@@ -2110,10 +1995,7 @@ def test_jitr_return_handler_publishes_sentinel_once() -> None:
         )
     )
     fn_idx = module.export_func_index("f")
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-        hotspot_profiling_enabled=False,
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     target_pc = _install_single_control_trace(engine, module, RETURN)
     interp = Interpreter(module, yield_threshold=2)
@@ -2176,9 +2058,7 @@ def test_jitr_nested_wasm_call_keeps_callee_result_on_shared_operand_stack():
         )
         return
     module = parse_standalone(wasm_bytes)
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     interp = Interpreter(module, yield_threshold=4)
 
@@ -2214,9 +2094,7 @@ def test_jitr_defined_calls_continue_in_cps_until_yield():
     )
     """
     module = parse_standalone(wat_to_wasm(wat))
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     manager = engine.jit_runtime
     assert manager is not None
@@ -2263,9 +2141,7 @@ def test_jitr_native_history_overwrite_does_not_yield():
     )
     """
     module = parse_standalone(wat_to_wasm(wat))
-    manager = JITRuntimeManager(
-        jit_compiler=TraceCompiler(),
-    )
+    manager = JITRuntimeManager()
     engine = RuntimeEngine(jit_runtime=manager)
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
@@ -2311,7 +2187,7 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
         __slots__ = ("block_lookups",)
 
         def __init__(self) -> None:
-            super().__init__(jit_compiler=TraceCompiler())
+            super().__init__()
             self.block_lookups = []
 
         def get_block(self, pc: int):
@@ -2566,7 +2442,7 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
             f'(module {imports} (memory 1) (func (export "run") (result i32) {body}))'
         )
     )
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
+    manager = JITRuntimeManager()
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=collect_stats)
     engine.register_module_blocks(module)
     base = module.function_pc_offset(function_index)
@@ -2642,7 +2518,7 @@ def test_jitr_native_step_consumes_pending_head_before_memory_fallback(collect_s
             "memory.size drop (block nop) i32.const 42))"
         )
     )
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
+    manager = JITRuntimeManager()
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=collect_stats)
     engine.register_module_blocks(module)
     base = module.function_pc_offset(0)
@@ -2688,7 +2564,7 @@ def test_jitr_memory_helper_trap_clears_block_continuation():
     module = parse_standalone(
         wasmtime.wat2wasm("(module (memory 1) (func i32.const -1 i32.load drop))")
     )
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
     call = interpreter.start(0, [])
@@ -2789,7 +2665,7 @@ def test_jitr_if_else_loop_matches_interpreter_after_jit_compilation():
     function_index = module.export_func_index("alternating_sum")
     interpreter_engine = make_runtime_engine(bump_allocator=module.allocator)
     interpreter_engine.register_module_blocks(module)
-    jit_engine = make_runtime_engine(jit_compiler=TraceCompiler(), bump_allocator=module.allocator)
+    jit_engine = make_runtime_engine(bump_allocator=module.allocator)
     jit_module = jit_engine.load_wasm(wat_to_wasm(wat))
     interpreter = Interpreter(module)
     jit_interpreter = Interpreter(jit_module, yield_threshold=4)
@@ -2833,7 +2709,6 @@ def test_jitr_br_table_uses_native_handler_and_preserves_every_target():
     interpreter_engine = make_runtime_engine(bump_allocator=module.allocator)
     interpreter_engine.register_module_blocks(module)
     jit_engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
         bump_allocator=module.allocator,
     )
     jit_module = jit_engine.load_wasm(wat_to_wasm(wat))
@@ -2888,9 +2763,7 @@ def test_jitr_mixed_typed_stack_uses_runtime_apis_inside_jit_trace():
                 return))"""
         )
     )
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     mixed_block = engine.get_block(module.blocks[0].head_pc)
     assert mixed_block is not None
@@ -2931,9 +2804,7 @@ def test_jitr_mixed_typed_callee_returns_keep_the_shared_stack_synchronized():
                 return))"""
         )
     )
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     interpreter = Interpreter(module)
     actual = [list(engine.call(interpreter, 4, []).unwrap()) for _ in range(6)]
@@ -2955,9 +2826,7 @@ def test_jitr_runtime_engine_preserves_typed_top_level_results():
               (func (result f64) i32.const 0 drop f64.const 8.5 return))"""
         )
     )
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     interp = Interpreter(module)
 
@@ -3057,10 +2926,7 @@ def test_jitr_host_import_call_trace_tail_calls_cps_handler_and_resumes_once():
     while not reference_state.finished:
         reference_state = reference.step_native(reference_state)
 
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-        hotspot_profiling_enabled=False,
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     call_block, call_ip = _find_call_block(module, 1, 0x10, b"\x10\x00")
     source_trace, trace_exit = _install_call_traces(engine, module, call_block)
@@ -3120,10 +2986,7 @@ def test_jitr_defined_call_after_import_keeps_call_annotation_and_stack_prefix()
     while not reference_state.finished:
         reference_state = reference.step_native(reference_state)
 
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-        hotspot_profiling_enabled=False,
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     call_block, call_ip = _find_call_block(module, caller, 0x10, b"\x10\x01")
     source_trace, trace_exit = _install_call_traces(engine, module, call_block)
@@ -3192,10 +3055,7 @@ def test_jitr_call_indirect_trace_uses_interpreter_table_checks(
     while not reference_state.finished:
         reference_state = reference.step_native(reference_state)
 
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-        hotspot_profiling_enabled=False,
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     call_block, call_ip = _find_call_block(module, caller, 0x11, b"\x11\x00\x00")
     source_trace, trace_exit = _install_call_traces(engine, module, call_block)
@@ -3245,10 +3105,7 @@ def test_jitr_recursive_direct_call_reuses_cps_frames():
     while not reference_state.finished:
         reference_state = reference.step_native(reference_state)
 
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-        hotspot_profiling_enabled=False,
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     code = bytes(module.code_for(function_index))
     function_pc = module.function_pc_offset(function_index)
@@ -3291,10 +3148,7 @@ def test_jitr_direct_call_callee_trap_stops_caller_continuation():
     while not reference_state.finished:
         reference_state = reference.step_native(reference_state)
 
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-        hotspot_profiling_enabled=False,
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     call_block, call_ip = _find_call_block(module, function_index, 0x10, b"\x10\x00")
     source_trace, trace_exit = _install_call_traces(engine, module, call_block)
@@ -3400,9 +3254,7 @@ def test_jitr_api_lowered_operation_can_start_a_jit_trace():
     assert code[-1] == 0x0B
     assert block.byte_span == len(code) - 1
 
-    engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
-    )
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     trace = compile_runtime_block(engine.jit_runtime, block)
     assert trace is not None
@@ -3416,7 +3268,7 @@ def test_jitr_api_lowered_operation_can_start_a_jit_trace():
 def test_jitr_trace_header_resolves_loader_block_by_index():
     """TEST-JITR-88: runtime traces retain direct access to Loader metadata."""
     module = parse_standalone(wat_to_wasm("(module (func (result i32) i32.const 1))"))
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     block = module.blocks[0]
     trace = compile_runtime_block(engine.jit_runtime, block)
@@ -3943,9 +3795,7 @@ def test_jitr_trace_execution_counts_loop_bodies_and_oldest_hits(collect_stats, 
     retired = []
     engine = make_runtime_engine(
         retire_observer=lambda pc, count: retired.append((pc, count)),
-        jit_compiler=TraceCompiler(),
         collect_runtime_stats=collect_stats,
-        hotspot_profiling_enabled=collect_hotspots,
     )
     engine.register_module_blocks(module)
     manager = engine.jit_runtime
@@ -4006,9 +3856,7 @@ def test_jitr_branch_terminator_returns_through_interpreter_cps():
         local.get 0 i32.const 2 i32.mul local.set 0 local.get 0 return))""")
     )
     engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
         collect_runtime_stats=True,
-        hotspot_profiling_enabled=False,
     )
     engine.register_module_blocks(module)
     manager = engine.jit_runtime
@@ -4075,7 +3923,7 @@ def test_jitr_trace_execution_count_excludes_invalid_static_depth():
         wat_to_wasm("""(module (func (export "f") (result i32)
         i32.const 2 i32.const 3 i32.add))""")
     )
-    engine = make_runtime_engine(jit_compiler=TraceCompiler(), hotspot_profiling_enabled=False)
+    engine = make_runtime_engine()
     engine.register_module_blocks(module)
     manager = engine.jit_runtime
     block = module.blocks[0]
@@ -4362,7 +4210,7 @@ def test_jitr_br_table_terminal_record_points_at_the_loader_annotation():
     from tier2_runtime.wasm.opcodes import BR_TABLE
 
     module = parse_standalone(wat_to_wasm(BR_TABLE_TERMINAL_WAT))
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
+    manager = JITRuntimeManager()
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
     engine.register_module_blocks(module)
     function_index = module.export_func_index("main")
@@ -4410,7 +4258,7 @@ def test_jitr_br_table_terminal_record_resumes_after_the_loader_annotation():
     from tier2_runtime.wasm.opcodes import BR_TABLE
 
     module = parse_standalone(wat_to_wasm(BR_TABLE_TERMINAL_WAT))
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
+    manager = JITRuntimeManager()
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
     engine.register_module_blocks(module)
     function_index = module.export_func_index("main")
@@ -4478,7 +4326,7 @@ def test_jitr_compiler_cursor_matches_the_loader_annotation_layout(prefix):
         f"{prefix} local.get 0 br_table $a $b $c))) i32.const 1))"
     )
     module = parse_standalone(wat_to_wasm(body))
-    manager = JITRuntimeManager(jit_compiler=TraceCompiler())
+    manager = JITRuntimeManager()
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
     engine.register_module_blocks(module)
     function_index = module.export_func_index("main")

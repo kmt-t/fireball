@@ -37,7 +37,6 @@ from qa.shared.runtime_support import (
     instruction_blocks,
     make_runtime_engine,
 )
-from qa.shared.x64_jit import TraceCompiler
 from scheduler import ChannelAction, TaskState
 from system import (
     System,
@@ -600,10 +599,7 @@ def test_coop_01_wasm_coroutine_yields_on_loop_threshold(threshold: int):
 
 def test_idle_01_jit_batch_compilation_on_idle():
     """TEST-IDLE-01: Compile queue is drained and compiled in LIFO order when scheduler fires idle_hook."""
-    compiler = TraceCompiler()
-    engine = make_runtime_engine(
-        jit_compiler=compiler,
-    )
+    engine = make_runtime_engine()
     wat = """(module
       (func (export "f0") (result i32) i32.const 10 i32.const 20 i32.add)
       (func (export "f1") (result i32) i32.const 30 i32.const 40 i32.add)
@@ -660,7 +656,6 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
 
     system.scheduler._clock_ns = clock_ns  # QA clock isolates this logger's flush assertions.
     system.runtime_engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
         drive_mode=RuntimeDriveMode.COOS,
     )
     module = parse_standalone(
@@ -756,7 +751,7 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     wasm_bytes = wat_to_wasm(wat)
     # Keep the preamble and loop heads on separate cards so this test can
     # observe the full UNEXECUTED -> EXECUTED -> HOT transition directly.
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[1].head_pc
     results = engine.call(make_native_interpreter(mod, yield_threshold=3), 0, [5]).unwrap()
@@ -772,7 +767,6 @@ def test_runtime_yield_services_jit_while_only_guest_task_is_ready(
 ) -> None:
     """A yielding runtime task services queued JIT work without scheduler idleness."""
     engine = make_runtime_engine(
-        jit_compiler=TraceCompiler(),
         drive_mode=RuntimeDriveMode.COOS,
     )
     system = System()
@@ -852,7 +846,7 @@ def test_tier_03_branch_transitions_use_interpreter_cps():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     mod = engine.load_wasm(wasm_bytes)
     block_a, block_b = instruction_blocks(mod)[:2]
     # Compile B first, then A. The branch terminator returns through Interpreter CPS.

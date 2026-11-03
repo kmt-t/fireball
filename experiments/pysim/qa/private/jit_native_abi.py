@@ -231,13 +231,11 @@ class NativeProfile(ctypes.Structure):
         ("trackable", ctypes.POINTER(ctypes.c_uint8)),
         ("mask_bytes", ctypes.c_uint32),
         ("module_id", ctypes.c_uint32),
-        ("enabled", ctypes.c_uint32),
         ("candidate_threshold", ctypes.c_uint32),
         ("min_trace_bytes", ctypes.c_uint32),
         ("code_bytes", ctypes.c_uint64),
         ("history_capacity", ctypes.c_uint32),
         ("queue_capacity", ctypes.c_uint32),
-        ("compiler_enabled", ctypes.c_uint32),
         ("blocks", ctypes.POINTER(_NativeWasmBlock)),
         ("block_count", ctypes.c_uint32),
     )

@@ -285,9 +285,6 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_suppress(qa_jit_runtime *runti
 }
 extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_record(qa_jit_runtime *runtime,
                                                          std::uint32_t pc) {
-  if (runtime->hotspots.configuration.enabled == 0) {
-    return 1;
-  }
   if (!runtime->is_profiled_pc(pc)) {
     return 1;
   }
@@ -296,9 +293,8 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_record(qa_jit_runtime *runtime
 }
 extern "C" FB_PYSIM_ABI_EXPORT int
 fb_jit_runtime_filtered_lookup(qa_jit_runtime *runtime, std::uint32_t pc, qa_cache_lookup *output) {
-  if (runtime->hotspots.configuration.enabled != 0 &&
-      (!runtime->is_profiled_pc(pc) ||
-       runtime->card_state(pc >> runtime->hotspots.card_shift) != 3)) {
+  if (!runtime->is_profiled_pc(pc) ||
+      runtime->card_state(pc >> runtime->hotspots.card_shift) != 3) {
     return 0;
   }
   const auto location = runtime->lookup_cached_trace(pc);
@@ -317,8 +313,7 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_visits(qa_jit_runtime *runtime,
                                                         const std::uint32_t *pcs,
                                                         std::uint32_t capacity,
                                                         std::uint64_t total) {
-  if (runtime->hotspots.configuration.enabled == 0) {
-    assert(total == 0);
+  if (total == 0) {
     return 1;
   }
   const auto retained = total < capacity ? total : capacity;

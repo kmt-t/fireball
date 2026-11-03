@@ -257,7 +257,7 @@ def test_branch_traces_return_through_interpreter_cps():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     mod = engine.load_wasm(wasm_bytes)
     block_a, block_b = instruction_blocks(mod)[:2]
     # Compile trace B first, then A. A branch terminator still leaves JIT unchained.
@@ -296,7 +296,7 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = next(block.head_pc for block in instruction_blocks(mod) if block.loops_to is not None)
     results = engine.call(Interpreter(mod, yield_threshold=3), 0, [5]).unwrap()
@@ -330,7 +330,7 @@ def test_jit_chaining_uses_loader_resolved_successors():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     mod = engine.load_wasm(wasm_bytes)
     block_a, block_b = instruction_blocks(mod)[:2]
 
@@ -351,7 +351,7 @@ def test_jit_chaining_uses_loader_resolved_successors():
     assert engine.stat_jit_invocations >= 2
 
     # 2. Forward chaining test:
-    engine2 = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine2 = make_runtime_engine()
     mod2 = engine2.load_wasm(wasm_bytes)
     block_a2, block_b2 = instruction_blocks(mod2)[:2]
 

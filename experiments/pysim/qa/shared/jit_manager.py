@@ -44,6 +44,7 @@ from .jit_cache import (
     JitRuntimeBoundary,
     JITTrace,
 )
+from .x64_jit import TraceCompiler
 
 
 class JITCompiler(Protocol):
@@ -81,7 +82,6 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         "_cards",
         "_code_bytes",
         "_compile_code_leases",
-        "_hotspot_profiling_enabled",
         "_native",
         "_native_dispatch_cache_key",
         "_native_dispatch_cache_snapshot",
@@ -102,9 +102,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
 
     def __init__(
         self,
-        jit_compiler: JITCompiler | None = None,
         code_lengths: Sequence[int] = (),
-        hotspot_profiling_enabled: bool = True,
         module_id: int = 0,
         retire_observer: Callable[[int, int], None] | None = None,
     ):
@@ -114,8 +112,8 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         self.compile_queue_capacity = JIT_COMPILE_QUEUE_CAPACITY
         self.aging_step_units = FB_CONF_JIT_AGING_STEP_UNITS
         self.aging_scan_bytes = FB_CONF_JIT_AGING_STEP_SCAN_BYTES
-        self.jit_compiler = jit_compiler
-        self._hotspot_profiling_enabled = hotspot_profiling_enabled
+        # The QA runtime owns a compiler, as the product runtime does.
+        self.jit_compiler: JITCompiler = TraceCompiler()
         self.history_capacity = JIT_HISTORY_CAPACITY
         self.module_id = module_id
         self.min_trace_bytes = 1 << JIT_CARD_SHIFT
@@ -334,11 +332,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
     def native_dispatch_state(self) -> NativeDispatchSnapshot:
         """Return module-wide ctypes tables consumed by native nested calls."""
 
-        cache_key = (
-            self.cache.generation,
-            self._trackable_generation,
-            self.hotspot_profiling_enabled,
-        )
+        cache_key = (self.cache.generation, self._trackable_generation)
         if cache_key == self._native_dispatch_cache_key:
             return self._native_dispatch_cache_snapshot
 
@@ -348,12 +342,8 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         entries = (NativeTraceDispatchEntry * trace_capacity)()
         entry_count = self.cache.build_snapshot(entries)
         mask_buffer = self.trackable.storage.buffer
-        trackable_mask = (
-            (ctypes.c_uint8 * len(mask_buffer)).from_buffer(mask_buffer)
-            if self.hotspot_profiling_enabled
-            else (ctypes.c_uint8 * 0)()
-        )
-        trackable_card_count = self.trackable.card_count if self.hotspot_profiling_enabled else 0
+        trackable_mask = (ctypes.c_uint8 * len(mask_buffer)).from_buffer(mask_buffer)
+        trackable_card_count = self.trackable.card_count
         block_history = (ctypes.c_uint32 * self.history_capacity)()
         self._native_dispatch_cache_snapshot.release_workspace()
         self._native_dispatch_cache_snapshot = NativeDispatchSnapshot(
@@ -495,22 +485,16 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             mask_view,
             len(mask),
             self.module_id,
-            int(self.hotspot_profiling_enabled),
             self.candidate_threshold,
             self.min_trace_bytes,
             self._code_bytes,
             self.history_capacity,
             self.compile_queue_capacity,
-            int(self.jit_compiler is not None),
             self._block_inputs,
             len(self._block_inputs),
         )
         result = native_abi.RUNTIME_BIND_PROFILE(self._native.pointer, self._profile)
         assert result == 1
-
-    @property
-    def hotspot_profiling_enabled(self) -> bool:
-        return self._hotspot_profiling_enabled
 
     @property
     def card_shift(self) -> int:

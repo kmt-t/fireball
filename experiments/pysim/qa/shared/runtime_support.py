@@ -7,7 +7,7 @@ from collections.abc import Callable, Sequence
 from bump_allocator import BumpAllocator
 from qa.private import jit_native_abi as native_abi
 from qa.shared.jit_cache import JitRuntimeBoundary, JITTrace
-from qa.shared.jit_manager import JITCompiler, JITRuntimeManager
+from qa.shared.jit_manager import JITRuntimeManager
 from qa.shared.runtime_stats import RuntimeStatsEngine
 from qa.shared.x64_jit import TraceCompiler
 from system_containers import (
@@ -22,37 +22,19 @@ from tier2_runtime.wasm.module import (
 
 
 def make_runtime_engine(
-    jit_compiler: JITCompiler | None = None,
     debug: bool = False,
     code_lengths: Sequence[int] = (),
     drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS,
     collect_runtime_stats: bool = True,
-    hotspot_profiling_enabled: bool = True,
     retire_observer: Callable[[int, int], None] | None = None,
     bump_allocator: BumpAllocator | None = None,
 ) -> RuntimeStatsEngine:
-    """Compose a Tier 3 runtime engine with the Tier 3 JIT manager for tests.
+    """Compose a Tier 3 runtime engine with the product JIT runtime for tests.
 
-    The JIT manager always runs with the product configuration; only the presence of a
-    compiler, the code lengths and the observers select a manager.
+    Tests that need no JIT extension compose RuntimeStatsEngine directly.
     """
 
-    if (
-        jit_compiler is None
-        and not code_lengths
-        and drive_mode == RuntimeDriveMode.SYNCHRONOUS
-        and hotspot_profiling_enabled
-        and retire_observer is None
-    ):
-        return RuntimeStatsEngine(
-            debug=debug, collect_runtime_stats=collect_runtime_stats, bump_allocator=bump_allocator
-        )
-    manager = JITRuntimeManager(
-        jit_compiler=jit_compiler,
-        code_lengths=code_lengths,
-        hotspot_profiling_enabled=hotspot_profiling_enabled,
-        retire_observer=retire_observer,
-    )
+    manager = JITRuntimeManager(code_lengths=code_lengths, retire_observer=retire_observer)
     return RuntimeStatsEngine(
         jit_runtime=manager,
         debug=debug,

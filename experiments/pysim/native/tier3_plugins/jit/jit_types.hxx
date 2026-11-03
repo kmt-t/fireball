@@ -90,7 +90,7 @@ static_assert(sizeof(jit_trace_header) == 32);
 
 struct jit_profile {
   std::uint8_t *trackable;
-  std::uint32_t mask_bytes, module_id, enabled, candidate_threshold, min_trace_bytes;
+  std::uint32_t mask_bytes, module_id, candidate_threshold, min_trace_bytes;
   std::uint64_t code_bytes;
   std::uint32_t history_capacity, queue_capacity;
 };

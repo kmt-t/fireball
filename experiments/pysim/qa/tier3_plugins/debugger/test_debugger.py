@@ -639,13 +639,12 @@ def test_dbg_13_debugger_disables_native_plugin_execution_without_rejecting_atta
     """Attaching a debugger keeps execution available while bypassing JIT traces."""
     from qa.shared.helpers import make_native_interpreter
     from qa.shared.jit_manager import JITRuntimeManager
-    from qa.shared.x64_jit import TraceCompiler
     from tier2_runtime.abi import native_abi
     from tier3_plugins.debugger.debugger import DebuggerManager
 
     module = RuntimeEngineDebugDriver().load_wasm(wat_to_wasm("(module (func))"))
     interpreter = make_native_interpreter(module)
-    plugin = JITRuntimeManager(jit_compiler=TraceCompiler())
+    plugin = JITRuntimeManager()
     plugin.register_module(module)
     try:
         interpreter.attach_execution_plugin(plugin)

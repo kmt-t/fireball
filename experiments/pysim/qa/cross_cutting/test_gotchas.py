@@ -210,7 +210,7 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     """GOTCHA-JITR-01: idle_hook skips recompilation if trace is already resident in cache."""
     wat = '(module (func (export "f") i32.const 1 drop i32.const 2 drop return))'
     wasm_bytes = wat_to_wasm(wat)
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
     engine.jit_runtime.trackable.mark(pc)
@@ -278,10 +278,7 @@ def test_jitr_gotcha_02_oldest_preserves_existing_chain_until_retirement():
 
 def test_jitr_gotcha_03_lifo_reverse_compilation_order():
     """GOTCHA-JITR-03: LIFO compile order records later straight-line successors first."""
-    compiler = TraceCompiler()
-    engine = make_runtime_engine(
-        jit_compiler=compiler,
-    )
+    engine = make_runtime_engine()
     wat = """(module
       (func (export "f0") (result i32) i32.const 10 i32.const 20 i32.add)
       (func (export "f1") (result i32) i32.const 30 i32.const 40 i32.add)
@@ -333,7 +330,7 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     )
     """
     wasm_bytes = wat_to_wasm(wat)
-    engine = make_runtime_engine(jit_compiler=TraceCompiler())
+    engine = make_runtime_engine()
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = next(block.head_pc for block in instruction_blocks(mod) if block.loops_to is not None)
     results = engine.call(make_native_interpreter(mod, yield_threshold=3), 0, [5]).unwrap()
@@ -679,14 +676,13 @@ def test_dbg_gotcha_01_debugger_bypasses_native_execution_plugin():
     """GOTCHA-DBG-01: debugger attachment selects interpreter-only execution."""
     from qa.shared.helpers import make_native_interpreter, wat_to_wasm
     from qa.shared.jit_manager import JITRuntimeManager
-    from qa.shared.x64_jit import TraceCompiler
     from tier2_runtime.abi import native_abi
     from tier2_runtime.wasm.reader import parse_standalone
     from tier3_plugins.debugger.debugger import DebuggerManager
 
     module = parse_standalone(wat_to_wasm("(module (func))"))
     interpreter = make_native_interpreter(module)
-    plugin = JITRuntimeManager(jit_compiler=TraceCompiler())
+    plugin = JITRuntimeManager()
     plugin.register_module(module)
     try:
         interpreter.attach_execution_plugin(plugin)

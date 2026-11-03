@@ -99,10 +99,8 @@ template <class Profile> struct jit_hotspot_state {
   std::uint8_t *card_states = nullptr;
   std::uint8_t *dirty_cards = nullptr;
   card_index_t card_count = 0;
-  std::uint8_t card_shift = 0;
   std::uint32_t dirty_mask_bytes = 0;
   std::uint32_t *aging_cursor = nullptr;
-  std::uint32_t aging_step_units = 1, aging_scan_bytes = 1;
   std::uint32_t aging_cursor_storage = 0;
   std::array<jit_history_record, FB_CONF_JIT_HISTORY_CAPACITY> history_records{};
   std::array<wasm_pc_t, FB_CONF_JIT_COMPILE_QUEUE_CAPACITY> compile_queue_items{};
@@ -249,9 +247,7 @@ template <jit_measurement_policy Measurement> struct jit_provider_adapter {
   static int fb_jit_runtime_bind_cards(runtime_type *runtime, std::uint8_t *states,
                                        [[maybe_unused]] std::uint32_t state_bytes,
                                        std::uint8_t *dirty, std::uint32_t dirty_bytes,
-                                       std::uint32_t cards, std::uint32_t shift,
-                                       std::uint32_t *cursor, std::uint32_t units,
-                                       std::uint32_t scan_bytes);
+                                       std::uint32_t cards, std::uint32_t *cursor);
   /** @brief 候補設定を検証し、ブロック単位で候補マスクを構築する。 */
   static int fb_jit_runtime_bind_profile(runtime_type *runtime,
                                          typename runtime_type::profile_type p);

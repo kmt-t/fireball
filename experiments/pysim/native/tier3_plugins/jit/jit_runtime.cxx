@@ -142,16 +142,16 @@ jit_runtime<Measurement>::block_metadata_for_trace(const jit_trace_header &trace
 
 template <jit_measurement_policy Measurement>
 bool jit_runtime<Measurement>::is_profiled_pc(wasm_pc_t pc) {
-  assert(hotspots.card_shift < 32 && pc < hotspots.configuration.code_bytes);
-  const auto card = pc >> hotspots.card_shift;
+  assert(FB_CONF_JIT_CARD_SHIFT < 32 && pc < hotspots.configuration.code_bytes);
+  const auto card = pc >> FB_CONF_JIT_CARD_SHIFT;
   assert(card < hotspots.card_count && hotspots.configuration.trackable != nullptr);
   return (hotspots.configuration.trackable[card / 8] & (1u << (card % 8))) != 0;
 }
 
 template <jit_measurement_policy Measurement>
 void jit_runtime<Measurement>::exclude_compile_candidate(wasm_pc_t pc) {
-  assert(hotspots.card_shift < 32 && pc < hotspots.configuration.code_bytes);
-  const auto card = pc >> hotspots.card_shift;
+  assert(FB_CONF_JIT_CARD_SHIFT < 32 && pc < hotspots.configuration.code_bytes);
+  const auto card = pc >> FB_CONF_JIT_CARD_SHIFT;
   assert(card < hotspots.card_count && hotspots.configuration.trackable != nullptr);
   hotspots.configuration.trackable[card / 8] &= static_cast<std::uint8_t>(~(1u << (card % 8)));
   if constexpr (!std::is_void_v<Measurement>) {
@@ -220,7 +220,7 @@ int jit_runtime<Measurement>::compile_queued_candidates() {
     block_index = static_cast<block_index_t>(item);
     pc = module_view->blocks[block_index].head_pc;
     assert(pc < hotspots.configuration.code_bytes);
-    if (card_state(static_cast<std::uint32_t>(pc) >> hotspots.card_shift) == 3) {
+    if (card_state(static_cast<std::uint32_t>(pc) >> FB_CONF_JIT_CARD_SHIFT) == 3) {
       continue;
     }
     if (lookup_cached_trace(block_index, pc).trace_entry != nullptr) {
@@ -297,7 +297,7 @@ void jit_runtime<Measurement>::analyze_observation_history(bool yielded) {
     const auto value = h.records[h.head];
     h.head = h.head + 1 == h.capacity ? 0 : h.head + 1;
     --h.count;
-    const auto card = value.head_pc >> hotspots.card_shift;
+    const auto card = value.head_pc >> FB_CONF_JIT_CARD_SHIFT;
     auto state = card_state(card);
     if (state < 2) {
       ++state;
@@ -734,8 +734,8 @@ void jit_runtime<Measurement>::mark_trace_card_compiled(wasm_pc_t pc) {
       return;
     }
   }
-  assert(hotspots.card_states != nullptr && (pc >> hotspots.card_shift) < hotspots.card_count);
-  set_card_state(pc >> hotspots.card_shift, 3);
+  assert(hotspots.card_states != nullptr && (pc >> FB_CONF_JIT_CARD_SHIFT) < hotspots.card_count);
+  set_card_state(pc >> FB_CONF_JIT_CARD_SHIFT, 3);
 }
 
 template <jit_measurement_policy Measurement> int jit_runtime<Measurement>::age_hotspot_cards() {
@@ -757,10 +757,10 @@ template <jit_measurement_policy Measurement> int jit_runtime<Measurement>::deca
   assert(hotspots.aging_cursor != nullptr && *hotspots.aging_cursor < hotspots.dirty_mask_bytes);
   std::uint32_t units = 0, scanned = 0;
   int decayed = 0;
-  const auto limit = hotspots.aging_scan_bytes < hotspots.dirty_mask_bytes
-                         ? hotspots.aging_scan_bytes
+  const auto limit = FB_CONF_JIT_AGING_STEP_SCAN_BYTES < hotspots.dirty_mask_bytes
+                         ? FB_CONF_JIT_AGING_STEP_SCAN_BYTES
                          : hotspots.dirty_mask_bytes;
-  while (units < hotspots.aging_step_units && scanned < limit) {
+  while (units < FB_CONF_JIT_AGING_STEP_UNITS && scanned < limit) {
     const auto bits = hotspots.dirty_cards[*hotspots.aging_cursor];
     if (bits != 0) {
       for (std::uint32_t bit = 0; bit < 8; ++bit) {
@@ -805,8 +805,8 @@ void jit_runtime<Measurement>::retire_cache_bank(std::uint32_t id) {
         }
       }
       assert(hotspots.card_states != nullptr &&
-             (value.head_pc >> hotspots.card_shift) < hotspots.card_count);
-      set_card_state(value.head_pc >> hotspots.card_shift, 0);
+             (value.head_pc >> FB_CONF_JIT_CARD_SHIFT) < hotspots.card_count);
+      set_card_state(value.head_pc >> FB_CONF_JIT_CARD_SHIFT, 0);
     }
     b.entries[i] = jit_cache_entry{};
   }
@@ -1162,10 +1162,10 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_flush(runtime_type *runtim
 template <jit_measurement_policy Measurement>
 int jit_provider_adapter<Measurement>::fb_jit_runtime_bind_cards(
     runtime_type *runtime, std::uint8_t *states, [[maybe_unused]] std::uint32_t state_bytes,
-    std::uint8_t *dirty, std::uint32_t dirty_bytes, std::uint32_t cards, std::uint32_t shift,
-    std::uint32_t *cursor, std::uint32_t units, std::uint32_t scan_bytes) {
+    std::uint8_t *dirty, std::uint32_t dirty_bytes, std::uint32_t cards, std::uint32_t *cursor) {
   // Zero units is a valid configuration: the sweep scans nothing and only the cursor is kept.
-  assert(shift < 32 && scan_bytes > 0 && cursor != nullptr &&
+  static_assert(FB_CONF_JIT_CARD_SHIFT < 32 && FB_CONF_JIT_AGING_STEP_SCAN_BYTES > 0);
+  assert(cursor != nullptr &&
          state_bytes == (static_cast<std::uint64_t>(cards) + 3) / 4 &&
          dirty_bytes == (static_cast<std::uint64_t>(cards) + 7) / 8 &&
          (cards == 0 || (states != nullptr && dirty != nullptr)) &&
@@ -1173,14 +1173,11 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_bind_cards(
   runtime->hotspots.card_states = states;
   runtime->hotspots.dirty_cards = dirty;
   runtime->hotspots.card_count = cards;
-  runtime->hotspots.card_shift = shift;
   runtime->hotspots.dirty_mask_bytes = dirty_bytes;
   runtime->hotspots.aging_cursor = cursor;
-  runtime->hotspots.aging_step_units = units;
-  runtime->hotspots.aging_scan_bytes = scan_bytes;
   runtime->provider.card_states = states;
   runtime->provider.card_count = cards;
-  runtime->provider.card_shift = shift;
+  runtime->provider.card_shift = FB_CONF_JIT_CARD_SHIFT;
   return 1;
 }
 
@@ -1191,7 +1188,7 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_bind_profile(
          p.queue_capacity > 0 && p.queue_capacity <= runtime->hotspots.compile_queue_items.size() &&
          p.mask_bytes == runtime->hotspots.dirty_mask_bytes &&
          (runtime->hotspots.card_count == 0 || p.trackable != nullptr) &&
-         jit_card_count(p.code_bytes, runtime->hotspots.card_shift) ==
+         jit_card_count(p.code_bytes, FB_CONF_JIT_CARD_SHIFT) ==
              runtime->hotspots.card_count);
   if constexpr (!std::is_void_v<Measurement>) {
   }
@@ -1210,7 +1207,7 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_bind_profile(
     const auto *input = runtime->make_compiler_block_view(i, storage);
     assert(input != nullptr);
     const auto &block = *input;
-    const auto card = jit_card_index(p.code_bytes, runtime->hotspots.card_shift, block.head_pc);
+    const auto card = jit_card_index(p.code_bytes, FB_CONF_JIT_CARD_SHIFT, block.head_pc);
     assert(card >= 0 && static_cast<std::uint64_t>(card) < runtime->hotspots.card_count);
     const auto score = fireball::score_block(block);
     if (block.byte_span != 0 && block.byte_span >= p.min_trace_bytes &&
@@ -1253,8 +1250,8 @@ int jit_provider_adapter<Measurement>::lookup_runtime_trace(std::uintptr_t owner
   if constexpr (!std::is_void_v<Measurement>) {
     runtime.record_runtime_transition(block_index, pc);
   }
-  assert(runtime.hotspots.card_states != nullptr && runtime.hotspots.card_shift < 32);
-  [[maybe_unused]] const auto card = pc >> runtime.hotspots.card_shift;
+  assert(runtime.hotspots.card_states != nullptr && FB_CONF_JIT_CARD_SHIFT < 32);
+  [[maybe_unused]] const auto card = pc >> FB_CONF_JIT_CARD_SHIFT;
   assert(card < runtime.hotspots.card_count);
   assert(runtime.card_state(card) == 3);
   const auto start_location = runtime.lookup_cached_trace(block_index, pc);
@@ -1392,8 +1389,7 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
                                          FB_CONF_JIT_HISTORY_CAPACITY,
                                          FB_CONF_JIT_COMPILE_QUEUE_CAPACITY};
   fb_jit_runtime_bind_cards(runtime, card_workspace, state_bytes, dirty, mask_bytes, cards,
-                            FB_CONF_JIT_CARD_SHIFT, &runtime->hotspots.aging_cursor_storage,
-                            FB_CONF_JIT_AGING_STEP_UNITS, FB_CONF_JIT_AGING_STEP_SCAN_BYTES);
+                            &runtime->hotspots.aging_cursor_storage);
   fb_jit_runtime_bind_profile(runtime, profile);
   return runtime;
 }

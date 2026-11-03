@@ -304,7 +304,7 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_record(qa_jit_runtime *runtime
 extern "C" FB_PYSIM_ABI_EXPORT int
 fb_jit_runtime_filtered_lookup(qa_jit_runtime *runtime, std::uint32_t pc, qa_cache_lookup *output) {
   if (!runtime->is_profiled_pc(pc) ||
-      runtime->card_state(pc >> runtime->hotspots.card_shift) != 3) {
+      runtime->card_state(pc >> FB_CONF_JIT_CARD_SHIFT) != 3) {
     return 0;
   }
   const auto location = runtime->lookup_cached_trace(pc);

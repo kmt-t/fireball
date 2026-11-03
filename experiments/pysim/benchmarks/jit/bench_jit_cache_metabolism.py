@@ -27,7 +27,6 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 import wasmtime
 from bump_allocator import BumpAllocator
 from config import (
-    JIT_CACHE_BANK_CAPACITY_BYTES,
     JIT_CACHE_BANK_COUNT,
     JIT_CACHE_BANK_ENTRY_CAPACITY,
 )
@@ -71,12 +70,12 @@ def _parse_wat(wat: str) -> Module:
     return parse(memoryview(wasm), BumpAllocator(capacity=HOST_LOADER_ARENA_BYTES))
 
 
-def _bound_manager(module: Module, bank_capacity: int) -> JITRuntimeManager:
+def _bound_manager(module: Module) -> JITRuntimeManager:
     """Return a runtime whose cache binds the loader metadata of `module`.
 
     The caller keeps the manager alive: its cache borrows the manager's native storage.
     """
-    manager = JITRuntimeManager(bank_capacity=bank_capacity)
+    manager = JITRuntimeManager()
     manager.register_module(module)
     return manager
 
@@ -94,10 +93,6 @@ def _compile(compiler: TraceCompiler, module: Module, count: int) -> list[JITTra
 class JITCacheMetabolismBenchmark:
     """Corner-case and metabolism benchmarks for the 3-bank JIT code cache."""
 
-    def __init__(self, bank_capacity: int = JIT_CACHE_BANK_CAPACITY_BYTES):
-        assert bank_capacity == JIT_CACHE_BANK_CAPACITY_BYTES, "the benchmark uses the product bank"
-        self.bank_capacity = bank_capacity
-
     def run_all(self) -> dict[str, float | int | bool]:
         results: dict[str, float | int | bool] = {}
         compiler = TraceCompiler()
@@ -106,7 +101,7 @@ class JITCacheMetabolismBenchmark:
         # 1. BENCHMARK-METAB-01: Warm and Oldest hits preserve code residency ({JIT_OldestExecuteOnly}).
         # ----------------------------------------------------------------------
         module = _loader_module(3)
-        manager = _bound_manager(module, self.bank_capacity)
+        manager = _bound_manager(module)
         cache = manager.cache
         t_oldest, t_warm, t_active = _compile(compiler, module, 3)
 
@@ -146,7 +141,7 @@ class JITCacheMetabolismBenchmark:
             ("large_ws_100", 100),
         ]:
             module = _loader_module(n_traces)
-            manager = _bound_manager(module, self.bank_capacity)
+            manager = _bound_manager(module)
             cache_bench = manager.cache
             traces = _compile(compiler, module, n_traces)
             by_pc = {trace.head_pc: trace for trace in traces}
@@ -195,7 +190,7 @@ class JITCacheMetabolismBenchmark:
         resident_capacity = JIT_CACHE_BANK_COUNT * JIT_CACHE_BANK_ENTRY_CAPACITY
         assert churn_block_count > resident_capacity
         module = _loader_module(churn_block_count)
-        manager = _bound_manager(module, self.bank_capacity)
+        manager = _bound_manager(module)
         cache_churn = manager.cache
         churn = _compile(compiler, module, churn_block_count)
         t0 = time.perf_counter()
@@ -234,7 +229,7 @@ class JITCacheMetabolismBenchmark:
         then_block, else_block, join_block = blocks[1], blocks[2], blocks[3]
         assert then_block.next_pc == join_block.head_pc
         assert else_block.next_pc == join_block.head_pc
-        manager = _bound_manager(if_module, self.bank_capacity)
+        manager = _bound_manager(if_module)
         cache_chain = manager.cache
         trace_b = compile_module_block(compiler, if_module, join_block)
         trace_a = compile_module_block(compiler, if_module, then_block)
@@ -269,7 +264,7 @@ class JITCacheMetabolismBenchmark:
         own_traces = []
         for _ in range(module_count):
             module = _loader_module(blocks_per_module)
-            manager = _bound_manager(module, self.bank_capacity)
+            manager = _bound_manager(module)
             traces = _compile(compiler, module, blocks_per_module)
             for trace in traces:
                 inserted = manager.cache.insert(trace)

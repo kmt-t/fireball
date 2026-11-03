@@ -266,24 +266,32 @@ bool map_linked_offset(std::size_t stencil_offset, std::size_t next_slot_offset,
   return true;
 }
 
-bool write_rel32(std::uint8_t *code, std::size_t code_size, std::size_t displacement_offset,
-                 std::size_t next_offset) {
-  if (next_offset > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()) ||
-      displacement_offset > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()) ||
-      displacement_offset > code_size || sizeof(std::int32_t) > code_size - displacement_offset) {
+// Returns whether the rel32 field at displacement_offset can reach next_offset. The field is
+// the 4 bytes that end at displacement_offset + 4, and the displacement is relative to that end.
+bool rel32_fits(std::size_t displacement_offset, std::size_t next_offset) {
+  constexpr auto max_offset = static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max());
+  if (next_offset > max_offset || displacement_offset > max_offset - 4) {
     return false;
   }
   const auto displacement =
       static_cast<std::int64_t>(next_offset) - static_cast<std::int64_t>(displacement_offset + 4);
-  if (displacement < std::numeric_limits<std::int32_t>::min() ||
-      displacement > std::numeric_limits<std::int32_t>::max()) {
-    return false;
-  }
+  return displacement >= std::numeric_limits<std::int32_t>::min() &&
+         displacement <= std::numeric_limits<std::int32_t>::max();
+}
+
+// Writes the rel32 displacement of the field at displacement_offset. The caller has
+// checked rel32_fits() and that the field lies inside code_size.
+void write_rel32(std::uint8_t *code, std::size_t code_size, std::size_t displacement_offset,
+                 std::size_t next_offset) {
+  assert(displacement_offset <= code_size &&
+         sizeof(std::int32_t) <= code_size - displacement_offset);
+  assert(rel32_fits(displacement_offset, next_offset));
+  const auto displacement =
+      static_cast<std::int64_t>(next_offset) - static_cast<std::int64_t>(displacement_offset + 4);
   const auto encoded = static_cast<std::uint32_t>(static_cast<std::int32_t>(displacement));
   for (std::size_t byte = 0; byte < sizeof(encoded); ++byte) {
     code[displacement_offset + byte] = static_cast<std::uint8_t>(encoded >> (byte * 8));
   }
-  return true;
 }
 
 bool expand_stencil_branches(const stencil_view &stencil, const std::uint8_t *stencil_code,
@@ -745,10 +753,14 @@ struct trace_builder {
         const auto source = operation_starts[index] + linked_source;
         const auto target = operation_starts[index] + linked_target;
         if (source > sequence_size || instruction_size > sequence_size - source ||
-            displacement_offset + sizeof(std::int32_t) > instruction_size ||
-            !write_rel32(trace_body, sequence_size, source + displacement_offset, target)) {
+            displacement_offset + sizeof(std::int32_t) > instruction_size) {
           return false;
         }
+        const auto field = source + displacement_offset;
+        if (!rel32_fits(field, target)) {
+          return false;
+        }
+        write_rel32(trace_body, sequence_size, field, target);
       }
       if (expanded_abort_slots[index] != kNoLinkSlot) {
         std::size_t linked_abort_slot = 0;
@@ -782,10 +794,10 @@ struct trace_builder {
         }
         const auto slot_offset = abort_slots[index];
         if (slot_offset > total_body_size || kX64Rel32SlotBytes > total_body_size - slot_offset ||
-            body[slot_offset] != 0xe9 ||
-            !write_rel32(body, total_body_size, slot_offset + 1, abort_target)) {
+            body[slot_offset] != 0xe9 || !rel32_fits(slot_offset + 1, abort_target)) {
           return false;
         }
+        write_rel32(body, total_body_size, slot_offset + 1, abort_target);
       }
     }
 

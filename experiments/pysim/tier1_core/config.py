@@ -17,6 +17,8 @@ FB_CONF_RETRY_MAX_ATTEMPTS: int = 3
 # processed, or after this many bytes (zero bytes included) are scanned.
 FB_CONF_JIT_AGING_STEP_UNITS: int = 2
 FB_CONF_JIT_AGING_STEP_SCAN_BYTES: int = 8
+# Candidate score threshold S_threshold of the JIT candidate bitmap ({JIT_CandidateBitmap} in jit_runtime.md).
+FB_CONF_JIT_CANDIDATE_THRESHOLD: int = 9
 
 # Fixed capacities and physical cache dimensions used by the simulator.
 FB_CONF_MAX_TYPES: int = 256

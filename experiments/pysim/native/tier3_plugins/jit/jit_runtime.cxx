@@ -1530,7 +1530,7 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
                                          mask_bytes,
                                          module_id,
                                          1,
-                                         9,
+                                         FB_CONF_JIT_CANDIDATE_THRESHOLD,
                                          1u << FB_CONF_JIT_CARD_SHIFT,
                                          code_bytes,
                                          FB_CONF_JIT_HISTORY_CAPACITY,

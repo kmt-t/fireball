@@ -554,9 +554,8 @@ struct trace_builder {
   }
 
   bool finish(fireball::jit_compile_result &result) {
-    if (body == nullptr) {
-      return false;
-    }
+    // The caller passes the body scratch of the trace (compile_wasm_trace asserts it is set).
+    assert(body != nullptr);
 
     // The shared entry in the common area runs the body, so the body starts at the header.
     const auto success_stencil = generated_stencil(generated::trace_return_success);
@@ -578,12 +577,12 @@ struct trace_builder {
 
     const auto expand_operation = [&](std::size_t index, std::size_t &operation_size) {
       const auto &stencil = operations[index];
-      if (stencil.symbol == nullptr || stencil.size == 0 || stencil.size > stencil_scratch.size() ||
-          stencil.next_slot_offset == kNoLinkSlot || stencil.next_slot_offset > stencil.size ||
-          kX64Rel32SlotBytes > stencil.size - stencil.next_slot_offset ||
-          stencil.image_start == nullptr) {
-        return false;
-      }
+      // The stencil table is generated at build time, so each entry satisfies these bounds.
+      assert(stencil.symbol != nullptr && stencil.size != 0 &&
+             stencil.size <= stencil_scratch.size() && stencil.next_slot_offset != kNoLinkSlot &&
+             stencil.next_slot_offset <= stencil.size &&
+             kX64Rel32SlotBytes <= stencil.size - stencil.next_slot_offset &&
+             stencil.image_start != nullptr);
       const auto *stencil_code = stencil.image_start + stencil.code_offset;
       if (stencil_code[stencil.next_slot_offset] != 0xe9 ||
           !build_branch_prefix(stencil, stencil_code, branch_prefix) ||

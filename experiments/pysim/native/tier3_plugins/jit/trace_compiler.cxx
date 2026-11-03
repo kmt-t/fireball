@@ -404,47 +404,41 @@ struct trace_builder {
   std::size_t relocation_count = 0;
   std::size_t relocation_bytes = 0;
 
-  bool append_node(stencil_view stencil) {
-    // The builder takes at most kMaxTraceInstructions instructions and one terminator, and
-    // each instruction appends one operation, so the operation count stays within the table.
+  // Appends the stencil as the next operation. The stencil table fixes its slot layout, and the
+  // builder takes at most kMaxTraceInstructions instructions and one terminator, so the table
+  // is not full here.
+  void append_node(stencil_view stencil) {
     assert(operation_count < operations.size());
-    if (stencil.symbol == nullptr || stencil.size == 0 ||
-        (stencil.patch_slot_width == 0) != (stencil.patch_slot_offset == kNoLinkSlot) ||
-        (stencil.patch_slot_width != 0 &&
-         (stencil.patch_slot_offset > stencil.size ||
-          stencil.patch_slot_width > stencil.size - stencil.patch_slot_offset)) ||
-        (stencil.instruction_slot_width == 0) != (stencil.instruction_slot_offset == kNoLinkSlot) ||
-        (stencil.instruction_slot_width != 0 &&
-         ((stencil.instruction_slot_width != 4 && stencil.instruction_slot_width != 7) ||
-          stencil.instruction_slot_offset > stencil.size ||
-          stencil.instruction_slot_width > stencil.size - stencil.instruction_slot_offset))) {
-      return false;
-    }
+    assert(stencil.symbol != nullptr && stencil.size != 0);
+    assert((stencil.patch_slot_width == 0) == (stencil.patch_slot_offset == kNoLinkSlot));
+    assert(stencil.patch_slot_width == 0 ||
+           (stencil.patch_slot_offset <= stencil.size &&
+            stencil.patch_slot_width <= stencil.size - stencil.patch_slot_offset));
+    assert((stencil.instruction_slot_width == 0) ==
+           (stencil.instruction_slot_offset == kNoLinkSlot));
+    assert(stencil.instruction_slot_width == 0 ||
+           ((stencil.instruction_slot_width == 4 || stencil.instruction_slot_width == 7) &&
+            stencil.instruction_slot_offset <= stencil.size &&
+            stencil.instruction_slot_width <= stencil.size - stencil.instruction_slot_offset));
     operations[operation_count++] = stencil;
-    return true;
   }
 
-  bool append_patched(stencil_view stencil, std::uint64_t value, std::uint8_t width) {
-    if (stencil.instruction_slot_width != 0 || stencil.patch_slot_width != width ||
-        !append_node(stencil)) {
-      return false;
-    }
+  void append_patched(stencil_view stencil, std::uint64_t value, std::uint8_t width) {
+    assert(stencil.instruction_slot_width == 0 && stencil.patch_slot_width == width);
+    append_node(stencil);
     patch_values[operation_count - 1] = value;
-    return true;
   }
 
-  bool append_local(stencil_view stencil, std::uint32_t byte_offset,
+  void append_local(stencil_view stencil, std::uint32_t byte_offset,
                     local_memory_operation operation, std::uint64_t patch_value = 0,
                     std::uint8_t patch_width = 0) {
     std::array<std::uint8_t, kMaxLocalInstructionBytes> encoded{};
     encode_local_memory_instruction(operation, byte_offset, stencil.instruction_slot_width,
                                     encoded);
-    if (stencil.patch_slot_width != patch_width || !append_node(stencil)) {
-      return false;
-    }
+    assert(stencil.patch_slot_width == patch_width);
+    append_node(stencil);
     local_instructions[operation_count - 1] = encoded;
     patch_values[operation_count - 1] = patch_value;
-    return true;
   }
 
   bool add_value(std::uint64_t value, std::uint8_t width) {
@@ -499,8 +493,9 @@ struct trace_builder {
       return false;
     }
     immediate_bytes = static_cast<std::uint8_t>(immediate_bytes + sizeof(annotation_offset_t));
-    if (!append_node(stencil) || !add_value(slot, 1) || !add_value(immediate_count, 1) ||
-        !add_value(immediate_bytes, 1) || !add_value(source_ip, sizeof(code_ip_t))) {
+    append_node(stencil);
+    if (!add_value(slot, 1) || !add_value(immediate_count, 1) || !add_value(immediate_bytes, 1) ||
+        !add_value(source_ip, sizeof(code_ip_t))) {
       return false;
     }
 #if defined(FB_CONF_JIT_BLOCK_COUNTERS) && FB_CONF_JIT_BLOCK_COUNTERS
@@ -551,17 +546,15 @@ struct trace_builder {
   bool append_cps_call(std::uint8_t slot, code_ip_t source_delta,
                        annotation_offset_t annotation_offset) {
     const auto stencil = generated_stencil(asm_generated::cps_call);
-    return append_node(stencil) && add_value(slot, 1) && add_value(0, 1) && add_value(4, 1) &&
+    append_node(stencil);
+    return add_value(slot, 1) && add_value(0, 1) && add_value(4, 1) &&
            add_value(source_delta, sizeof(source_delta)) &&
            add_value(annotation_offset, sizeof(annotation_offset));
   }
 
-  bool append_linked(stencil_view stencil) {
-    if (stencil.patch_slot_width != 0 || stencil.instruction_slot_width != 0 ||
-        !append_node(stencil)) {
-      return false;
-    }
-    return true;
+  void append_linked(stencil_view stencil) {
+    assert(stencil.patch_slot_width == 0 && stencil.instruction_slot_width == 0);
+    append_node(stencil);
   }
 
   bool finish(fireball::jit_compile_result &result) {
@@ -1154,7 +1147,8 @@ bool emit_constant(trace_builder &builder, stack_model &stack, int op, std::uint
     return false;
   }
   const auto immediate_width = width == 1 ? std::uint8_t{4} : std::uint8_t{8};
-  return builder.append_patched(stencil, value, immediate_width) && stack.push(width);
+  builder.append_patched(stencil, value, immediate_width);
+  return stack.push(width);
 }
 
 bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_ip_t source_ip,
@@ -1224,15 +1218,20 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       const auto store_encoding =
           width == 1 ? local_memory_operation::store_narrow : local_memory_operation::store_wide;
       if (op == kLocalGet) {
-        if (!builder.append_local(local_op, offset, encoding) || !stack.push(width)) {
+        builder.append_local(local_op, offset, encoding);
+        if (!stack.push(width)) {
           return false;
         }
       } else if (op == kLocalSet) {
-        if (!stack.pop(width) || !builder.append_local(local_op, offset, store_encoding)) {
+        if (!stack.pop(width)) {
           return false;
         }
-      } else if (!stack.top_is(width) || !builder.append_local(local_op, offset, store_encoding)) {
-        return false;
+        builder.append_local(local_op, offset, store_encoding);
+      } else {
+        if (!stack.top_is(width)) {
+          return false;
+        }
+        builder.append_local(local_op, offset, store_encoding);
       }
       ++index;
       continue;
@@ -1242,9 +1241,10 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       const auto width = static_cast<std::uint8_t>(instruction.operand);
       const auto stencil =
           width == 1 ? get_stencil(asm_generated::drop) : get_stencil(asm_generated::drop_wide);
-      if (!stack.pop(width) || !builder.append_linked(stencil)) {
+      if (!stack.pop(width)) {
         return false;
       }
+      builder.append_linked(stencil);
       ++index;
       continue;
     }
@@ -1252,23 +1252,26 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       const auto width = static_cast<std::uint8_t>(instruction.operand);
       const auto stencil = width == 1 ? get_stencil(asm_generated::select_i32)
                                       : get_stencil(asm_generated::select_i64);
-      if (!stack.select(width) || !builder.append_linked(stencil)) {
+      if (!stack.select(width)) {
         return false;
       }
+      builder.append_linked(stencil);
       ++index;
       continue;
     }
     if (op == kI32Eqz) {
-      if (!stack.top_is(1) || !builder.append_linked(get_stencil(asm_generated::i32_eqz))) {
+      if (!stack.top_is(1)) {
         return false;
       }
+      builder.append_linked(get_stencil(asm_generated::i32_eqz));
       ++index;
       continue;
     }
     if (is_i32_binary(op)) {
-      if (!stack.binary(1) || !builder.append_linked(i32_binary_stencil(op))) {
+      if (!stack.binary(1)) {
         return false;
       }
+      builder.append_linked(i32_binary_stencil(op));
       ++index;
       continue;
     }
@@ -1276,9 +1279,10 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
     if (wide_stencil.size != 0) {
       const auto width =
           (op >= kI64Add && op <= kI64Mul) || (op >= kF64Add && op <= kF64Div) ? 2 : 1;
-      if (!stack.binary(static_cast<std::uint8_t>(width)) || !builder.append_linked(wide_stencil)) {
+      if (!stack.binary(static_cast<std::uint8_t>(width))) {
         return false;
       }
+      builder.append_linked(wide_stencil);
       ++index;
       continue;
     }

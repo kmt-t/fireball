@@ -768,10 +768,11 @@ struct trace_builder {
                                linked_abort_slot)) {
           return false;
         }
+        // The abort slot is a suffix byte of this operation, which the copies above place
+        // inside the sequence.
         const auto absolute_slot = operation_starts[index] + linked_abort_slot;
-        if (absolute_slot > body_capacity || kX64Rel32SlotBytes > body_capacity - absolute_slot) {
-          return false;
-        }
+        assert(absolute_slot <= sequence_size &&
+               kX64Rel32SlotBytes <= sequence_size - absolute_slot);
         abort_slots[index] = absolute_slot;
       }
     }
@@ -793,8 +794,10 @@ struct trace_builder {
           continue;
         }
         const auto slot_offset = abort_slots[index];
-        if (slot_offset > total_body_size || kX64Rel32SlotBytes > total_body_size - slot_offset ||
-            body[slot_offset] != 0xe9 || !rel32_fits(slot_offset + 1, abort_target)) {
+        assert(slot_offset <= total_body_size &&
+               kX64Rel32SlotBytes <= total_body_size - slot_offset);
+        assert(body[slot_offset] == 0xe9);
+        if (!rel32_fits(slot_offset + 1, abort_target)) {
           return false;
         }
         write_rel32(body, total_body_size, slot_offset + 1, abort_target);

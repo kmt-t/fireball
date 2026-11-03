@@ -75,7 +75,6 @@ template <jit_measurement_policy Measurement> jit_runtime<Measurement>::~jit_run
 
 template <jit_measurement_policy Measurement>
 block_index_t jit_runtime<Measurement>::block_index_for_pc(wasm_pc_t pc) const {
-  assert(module_view != nullptr);
   const auto *begin = module_view->blocks;
   const auto *end = begin + module_view->block_count;
   const auto *found = std::lower_bound(begin, end, pc, [](const auto &block, wasm_pc_t value) {
@@ -91,7 +90,7 @@ template <jit_measurement_policy Measurement>
 const jit_wasm_block *
 jit_runtime<Measurement>::make_compiler_block_view(block_index_t index,
                                                    jit_wasm_block &output) const {
-  assert(module_view != nullptr && index < module_view->block_count);
+  assert(index < module_view->block_count);
   const auto &b = module_view->blocks[index];
   assert(b.function_index < module_view->function_count);
   const auto &f = module_view->functions[b.function_index];
@@ -126,7 +125,6 @@ const jit_wasm_block *jit_runtime<Measurement>::diagnostic_block_view(block_inde
                                                                       jit_wasm_block &output) const
   requires(!std::is_void_v<Measurement>)
 {
-  assert(module_view != nullptr);
   return make_compiler_block_view(index, output);
 }
 
@@ -134,7 +132,6 @@ template <jit_measurement_policy Measurement>
 const jit_wasm_block *
 jit_runtime<Measurement>::block_metadata_for_trace(const jit_trace_header &trace,
                                                    jit_wasm_block &output) const {
-  assert(module_view != nullptr);
   const auto *metadata = make_compiler_block_view(trace.block_index, output);
   assert(metadata->head_pc == trace.head_pc);
   return metadata;
@@ -183,7 +180,6 @@ jit_runtime<Measurement>::patch_transaction::~patch_transaction() {
 template <jit_measurement_policy Measurement>
 int jit_runtime<Measurement>::compile_one_candidate(block_index_t block_index, wasm_pc_t pc) {
   jit_wasm_block input_storage{};
-  assert(module_view != nullptr);
   assert(block_index < module_view->block_count);
   assert(module_view->blocks[block_index].head_pc == pc);
   const jit_wasm_block *input = make_compiler_block_view(block_index, input_storage);
@@ -216,7 +212,7 @@ int jit_runtime<Measurement>::compile_queued_candidates() {
     assert(item >= 0);
     block_index_t block_index = jit_invalid_block_index;
     wasm_pc_t pc = static_cast<wasm_pc_t>(item);
-    assert(module_view != nullptr && item >= 0 && item < module_view->block_count);
+    assert(item >= 0 && item < module_view->block_count);
     block_index = static_cast<block_index_t>(item);
     pc = module_view->blocks[block_index].head_pc;
     assert(pc < hotspots.configuration.code_bytes);
@@ -249,10 +245,10 @@ void jit_runtime<Measurement>::record_block_visit(block_index_t block_index, was
          hotspots.observation_history.count <= hotspots.observation_history.capacity);
   assert(pc < hotspots.configuration.code_bytes);
   if constexpr (std::is_void_v<Measurement>) {
-    assert(module_view != nullptr && block_index < module_view->block_count &&
+    assert(block_index < module_view->block_count &&
            module_view->blocks[block_index].head_pc == pc);
   } else {
-    assert(module_view != nullptr && block_index < module_view->block_count &&
+    assert(block_index < module_view->block_count &&
            module_view->blocks[block_index].head_pc == pc);
   }
   // Configuration owns the ring invariants; the callback receives an observed
@@ -322,7 +318,6 @@ void jit_runtime<Measurement>::analyze_observation_history(bool yielded) {
 
 template <jit_measurement_policy Measurement>
 void jit_runtime<Measurement>::invalidate_block_cache_references() {
-  assert(module_view != nullptr);
   for (std::uint32_t i = 0; i < cache.pc_index_count; ++i) {
     const auto reference = cache.pc_index[i];
     const auto value = cache_entry_at_reference(reference);
@@ -374,7 +369,6 @@ void jit_runtime<Measurement>::rebuild_cache_indices() {
               const auto right_pc = cache_entry_at_reference(right).head_pc;
               return left_pc != right_pc ? left_pc < right_pc : left < right;
             });
-  assert(module_view != nullptr);
   for (std::uint32_t i = 0; i < cache.pc_index_count; ++i) {
     const auto reference = cache.pc_index[i];
     const auto value = cache_entry_at_reference(reference);
@@ -923,7 +917,7 @@ jit_trace_location jit_runtime<Measurement>::lookup_cached_trace(block_index_t b
   if constexpr (!std::is_void_v<Measurement>) {
     measurements.lookup_called();
   }
-  assert(module_view != nullptr && block_index < module_view->block_count &&
+  assert(block_index < module_view->block_count &&
          module_view->blocks[block_index].head_pc == pc);
   const auto &basic_block = module_view->blocks[block_index];
   if (basic_block.jit_cache_reference == jit_cache_state::no_reference) {
@@ -1200,7 +1194,6 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_bind_profile(
   if (p.mask_bytes != 0) {
     std::memset(p.trackable, 0, p.mask_bytes);
   }
-  assert(runtime->module_view != nullptr);
   const auto block_count = runtime->module_view->block_count;
   for (std::uint32_t i = 0; i < block_count; ++i) {
     fireball::jit_wasm_block storage{};
@@ -1327,7 +1320,6 @@ std::size_t jit_provider_adapter<Measurement>::fb_jit_plugin_alignment() {
 template <jit_measurement_policy Measurement>
 std::size_t jit_provider_adapter<Measurement>::fb_jit_plugin_required_bytes(
     const fireball_wasm_module_execution_view_native *view) {
-  assert(view != nullptr);
   const auto alignment = fb_jit_plugin_alignment();
   return data_region_size(view) +
          ((FB_CONF_JIT_CACHE_REGION_BYTES + alignment - 1) & ~(alignment - 1));

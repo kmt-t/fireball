@@ -45,6 +45,7 @@ from config import (
     JIT_CACHE_REGION_PAGE_COUNT,
     JIT_CACHE_TOTAL_ENTRY_CAPACITY,
     JIT_CACHE_WARM_OFFSET_BYTES,
+    JIT_CARD_SHIFT,
     JIT_COMPILE_QUEUE_CAPACITY,
     JIT_HISTORY_CAPACITY,
     JIT_TRACE_HEADER_BYTES,
@@ -4714,3 +4715,48 @@ def test_jitr_105_operand_words_at_the_value_stack_capacity_compile():
     module = parse_standalone(wat_to_wasm(_VALUE_STACK_BOUNDARY_WAT))
     block = max(instruction_blocks(module), key=lambda candidate: candidate.byte_span)
     assert compile_module_block(TraceCompiler(), module, block) is not None
+
+
+_DEAD_BLOCK_SHARING_CARD_WAT = """
+(module
+  (func (export "f") (result i32)
+    (block $exit
+      (br $exit)
+      (drop (i32.const 1))
+      (br $exit))
+    (i32.const 5)
+    (i32.const 6)
+    (i32.add)
+    (return)))
+"""
+
+
+def test_jitr_106_dead_block_sharing_a_hot_card_is_never_queued_or_compiled():
+    """TEST-JITR-106: the compiler receives only executed blocks, even when a dead block shares the card.
+
+    The dead block after the first branch is never executed, so no observation records it.
+    The live block after the block exit shares its card. The card becomes HOT and COMPILED
+    through the live block alone, and the dead block never enters the compile queue.
+    """
+    engine = make_runtime_engine()
+    module = engine.load_wasm(bytes(wasmtime.wat2wasm(_DEAD_BLOCK_SHARING_CARD_WAT)))
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    dead_block = module.blocks[2]
+    live_block = module.blocks[3]
+    # Precondition: the dead head and the live head share one card, and the dead block is short.
+    assert dead_block.head_pc >> JIT_CARD_SHIFT == live_block.head_pc >> JIT_CARD_SHIFT
+    assert dead_block.byte_span == 0
+
+    function_index = module.export_func_index("f")
+    for _ in range(3):
+        assert list(engine.call(Interpreter(module), function_index, []).unwrap()) == [11]
+    engine.idle_hook()
+
+    assert manager.card_state(live_block.head_pc) == CardState.COMPILED
+    assert manager.card_state(dead_block.head_pc) == CardState.COMPILED
+    assert manager.compilation_pcs == (live_block.head_pc,)
+    assert not manager.has_pending_compilation()
+    residents = [pc for pc, _trace in resident_module_traces(manager.cache, module)]
+    assert residents == [live_block.head_pc]
+    assert manager.cache.find_trace(dead_block.head_pc) is None

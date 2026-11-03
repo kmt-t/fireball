@@ -249,6 +249,8 @@ trace単位コード生成はx64実装に限って定義する。ARMv8-M向けLI
 | 命令数の上限 | trace に含める命令が `kMaxTraceInstructions`（64）を超える | 命令列の走査用の作業域の大きさ | `jit_internal.hxx` の `kMaxTraceInstructions` | 確定 |
 | 本体の byte 上限 | trace の本体と末尾定数 pool の合計が `FB_CONF_JIT_MAX_BODY_BYTES`（1536）を超える | 出力領域の大きさ | {JIT_AssemblyStencilCodegen}（`requirement_list.md:40`）、`system_config.md:97` | 確定 |
 
+コンパイラが受け取るのは実行された block だけである。ローダーは到達不能のコードの型と積み値を確かめない。到達不能の block は観測されないため、待ち列に入らず、トレースの入力にもならない（TEST-JITR-106）。
+
 - 命令が 0 件の block は失敗ではない。trace を作らない正常な結果とする。
 
 ## 4. 動的モデル

@@ -592,11 +592,10 @@ struct trace_builder {
       }
       if (stencil.patch_slot_width != 0) {
         std::size_t patch_offset = 0;
-        if (!map_stencil_offset(stencil.patch_slot_offset, stencil, branch_prefix, patch_offset) ||
-            patch_offset > operation_size ||
-            stencil.patch_slot_width > operation_size - patch_offset) {
-          return false;
-        }
+        [[maybe_unused]] const auto patch_mapped =
+            map_stencil_offset(stencil.patch_slot_offset, stencil, branch_prefix, patch_offset);
+        assert(patch_mapped && patch_offset <= operation_size &&
+               stencil.patch_slot_width <= operation_size - patch_offset);
         const auto patch_value = patch_values[index];
         for (std::uint8_t byte = 0; byte < stencil.patch_slot_width; ++byte) {
           stencil_scratch[patch_offset + byte] =
@@ -605,12 +604,10 @@ struct trace_builder {
       }
       if (stencil.instruction_slot_width != 0) {
         std::size_t instruction_offset = 0;
-        if (!map_stencil_offset(stencil.instruction_slot_offset, stencil, branch_prefix,
-                                instruction_offset) ||
-            instruction_offset > operation_size ||
-            stencil.instruction_slot_width > operation_size - instruction_offset) {
-          return false;
-        }
+        [[maybe_unused]] const auto instruction_mapped = map_stencil_offset(
+            stencil.instruction_slot_offset, stencil, branch_prefix, instruction_offset);
+        assert(instruction_mapped && instruction_offset <= operation_size &&
+               stencil.instruction_slot_width <= operation_size - instruction_offset);
         std::copy_n(local_instructions[index].data(), stencil.instruction_slot_width,
                     stencil_scratch.data() + instruction_offset);
       }

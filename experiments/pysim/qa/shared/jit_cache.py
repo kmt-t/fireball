@@ -21,7 +21,6 @@ from qa.private import jit_native_abi as native_abi
 from qa.private.jit_native_abi import CacheField
 from system_containers import (
     MutableBitStorage,
-    StaticVector,
 )
 from tier2_runtime.wasm.module import IntegerSequence
 
@@ -602,7 +601,7 @@ class JitRuntimeBoundary:
     ) -> JitRuntimeBoundary:
         boundary = cls.__new__(cls)
         boundary._native = owner
-        boundary._references = None
+        boundary._references = {}
         boundary._busy = False
         boundary._retire_observer = retire_observer
         boundary.metadata_provider = None
@@ -621,56 +620,36 @@ class JitRuntimeBoundary:
     def _check(self) -> None:
         if self._retire_observer is not None:
             current = native_abi.resident_records(self._native.pointer)
-            for token, pc, _, count in self._before:
-                if not any(
-                    now_token == token and now_pc == pc for now_token, now_pc, _, _ in current
-                ):
+            for pc, _, count in self._before:
+                if not any(now_pc == pc for now_pc, _, _ in current):
                     self._retire_observer(pc, count)
         self._busy = False
-        if self._references is not None:
-            for index, trace in enumerate(self._references):
-                if trace is not None and not native_abi.RUNTIME_HAS_TOKEN(
-                    self._native.pointer, index + 1
-                ):
-                    self._references[index] = None
+        for pc in tuple(self._references):
+            if not self._resident(pc):
+                del self._references[pc]
 
-    def _reference(self, token: int, pc: int) -> JITTrace | None:
-        if token == 0:
-            entries = (
-                NativeTraceDispatchEntry * (JIT_CACHE_BANK_COUNT * JIT_CACHE_BANK_ENTRY_CAPACITY)
-            )()
-            count = int(
-                native_abi.RUNTIME_SNAPSHOT(
-                    self._native.pointer, ctypes.cast(entries, ctypes.c_void_p), len(entries)
-                )
-            )
-            assert 0 <= count <= len(entries)
-            for index in range(count):
-                if entries[index].head_pc == pc:
-                    return JITTrace.borrow(entries[index], self._native)
-            raise AssertionError("native cache PC has no resident dispatch entry")
-        assert self._references is not None
-        assert 0 < token <= len(self._references)
-        trace = self._references[token - 1]
-        assert trace is not None, "native descriptor outlived its owning trace wrapper"
-        return trace
+    def _resident(self, pc: int) -> bool:
+        location = native_abi.CacheLookup()
+        return native_abi.RUNTIME_FIND(self._native.pointer, pc, ctypes.byref(location)) == 1
 
-    def _keep(self, trace: JITTrace) -> tuple[int, bool]:
-        if self._references is None:
-            self._references = StaticVector(
-                capacity=JIT_CACHE_BANK_COUNT * JIT_CACHE_BANK_ENTRY_CAPACITY + 1
+    def _reference(self, pc: int) -> JITTrace | None:
+        """Return the trace object installed for `pc`, or a borrowed view of a native-compiled trace."""
+        trace = self._references.get(pc)
+        if trace is not None:
+            return trace
+        entries = (
+            NativeTraceDispatchEntry * (JIT_CACHE_BANK_COUNT * JIT_CACHE_BANK_ENTRY_CAPACITY)
+        )()
+        count = int(
+            native_abi.RUNTIME_SNAPSHOT(
+                self._native.pointer, ctypes.cast(entries, ctypes.c_void_p), len(entries)
             )
-            for _ in range(self._references.capacity):
-                self._references.append(None)
-        empty = -1
-        for index in range(len(self._references)):
-            if self._references[index] is trace:
-                return index + 1, False
-            if self._references[index] is None and empty < 0:
-                empty = index
-        assert empty >= 0, "fixed trace lifetime registry is full"
-        self._references[empty] = trace
-        return empty + 1, True
+        )
+        assert 0 <= count <= len(entries)
+        for index in range(count):
+            if entries[index].head_pc == pc:
+                return JITTrace.borrow(entries[index], self._native)
+        raise AssertionError("native cache PC has no resident dispatch entry")
 
     def bind_cards(
         self, bitmap: HotspotBitmap, update: CardUpdateBitmap, units: int, scan_bytes: int
@@ -733,7 +712,7 @@ class JitRuntimeBoundary:
     def find_trace(self, head_pc: int) -> JITTrace | None:
         location = native_abi.CacheLookup()
         found = native_abi.RUNTIME_FIND(self._native.pointer, head_pc, ctypes.byref(location))
-        return None if found == 0 else self._reference(location.token, head_pc)
+        return None if found == 0 else self._reference(head_pc)
 
     def insert(self, trace: JITTrace) -> bool:
         if self.metadata_provider is not None:
@@ -750,24 +729,21 @@ class JitRuntimeBoundary:
             trace.code_blob = bytes(blob)
             trace.bind_code()
         self._begin()
-        token, added = self._keep(trace)
-        assert self._references is not None
         assert trace.code_blob is not None
         blob = (ctypes.c_uint8 * len(trace.code_blob)).from_buffer_copy(trace.code_blob)
-        result = native_abi.RUNTIME_INSERT(self._native.pointer, blob, len(blob), token)
-        if not result and added and not native_abi.RUNTIME_HAS_TOKEN(self._native.pointer, token):
-            self._references[token - 1] = None
+        result = native_abi.RUNTIME_INSERT(self._native.pointer, blob, len(blob))
+        assert result == 1
+        self._references[trace.head_pc] = trace
         self._check()
-        if result == 1 and trace.code_blob is not None:
-            trace._native_owner = self._native
-        return result == 1
+        trace._native_owner = self._native
+        return True
 
     def lookup(self, head_pc: int) -> JITTrace | None:
         self._begin()
         location = native_abi.CacheLookup()
         found = native_abi.RUNTIME_LOOKUP(self._native.pointer, head_pc, ctypes.byref(location))
         self._check()
-        return None if found == 0 else self._reference(location.token, head_pc)
+        return None if found == 0 else self._reference(head_pc)
 
     def rotate(self) -> None:
         self._begin()

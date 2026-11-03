@@ -240,7 +240,6 @@ extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_jit_runtime_scalar(const qa_jit_
   }
 }
 struct qa_cache_lookup {
-  std::uint16_t token;
   std::uint8_t bank_id;
 };
 extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_find(qa_jit_runtime *runtime, std::uint32_t pc,
@@ -249,7 +248,7 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_find(qa_jit_runtime *runtime, 
   if (location.trace_entry == nullptr) {
     return 0;
   }
-  *output = {location.trace_entry->cache_token, static_cast<std::uint8_t>(location.bank_id)};
+  *output = {static_cast<std::uint8_t>(location.bank_id)};
   return 1;
 }
 extern "C" FB_PYSIM_ABI_EXPORT const fireball::jit_trace_header *
@@ -257,24 +256,11 @@ fb_qa_runtime_header(qa_jit_runtime *runtime, std::uint32_t pc) {
   const auto location = runtime->find_cached_trace_by_pc(pc);
   return location.trace_entry == nullptr ? nullptr : runtime->trace_header(*location.trace_entry);
 }
-extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_has_token(const qa_jit_runtime *runtime,
-                                                            std::uint16_t token) {
-  for (const auto &bank : runtime->cache.banks) {
-    for (std::uint32_t i = 0; i < bank.entry_count; ++i) {
-      if (bank.entries[i].resident() && bank.entries[i].cache_token == token) {
-        return 1;
-      }
-    }
-  }
-  return 0;
-}
 extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_insert(qa_jit_runtime *runtime,
                                                          const std::uint8_t *blob,
-                                                         std::uint32_t bytes, std::uint16_t token) {
-  if (blob == nullptr || bytes == 0) {
-    return 0;
-  }
-  return runtime->insert_trace_fixture(blob, bytes, token);
+                                                         std::uint32_t bytes) {
+  runtime->install_trace(blob, bytes);
+  return 1;
 }
 extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_lookup(qa_jit_runtime *runtime, std::uint32_t pc,
                                                          qa_cache_lookup *output) {
@@ -282,7 +268,7 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_lookup(qa_jit_runtime *runtime
   if (location.trace_entry == nullptr) {
     return 0;
   }
-  *output = {location.trace_entry->cache_token, static_cast<std::uint8_t>(location.bank_id)};
+  *output = {static_cast<std::uint8_t>(location.bank_id)};
   return 1;
 }
 extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_rotate(qa_jit_runtime *runtime) {
@@ -319,7 +305,7 @@ fb_jit_runtime_filtered_lookup(qa_jit_runtime *runtime, std::uint32_t pc, qa_cac
   if (location.trace_entry == nullptr) {
     return 0;
   }
-  *output = {location.trace_entry->cache_token, static_cast<std::uint8_t>(location.bank_id)};
+  *output = {static_cast<std::uint8_t>(location.bank_id)};
   return 1;
 }
 extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_snapshot(qa_jit_runtime *runtime,
@@ -643,7 +629,6 @@ extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_qa_owned_pc(const qa_jit_runtime
   return runtime->measurements.compilation_order[slot];
 }
 struct qa_resident_record {
-  std::uint16_t token;
   std::uint8_t bank_id;
   std::uint8_t reserved;
   std::uint32_t pc;
@@ -667,8 +652,7 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_resident_record(const qa_jit_runtime *r
       if (index-- == 0) {
         const auto *trace = runtime->trace_header(resident_entry);
         const auto entries = runtime->measurements.install_entries[trace->block_index];
-        *output = {resident_entry.cache_token, bank_id, 0, resident_entry.head_pc,
-                   static_cast<std::uint32_t>(entries)};
+        *output = {bank_id, 0, resident_entry.head_pc, static_cast<std::uint32_t>(entries)};
         return 1;
       }
     }

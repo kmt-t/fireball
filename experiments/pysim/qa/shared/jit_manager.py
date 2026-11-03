@@ -446,7 +446,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             self.cache._native.pointer, pc, ctypes.byref(location)
         )
         self.cache._check()
-        return None if found == 0 else self.cache._reference(location.token, pc)
+        return None if found == 0 else self.cache._reference(pc)
 
     def unmark_trackable(self, pc: int) -> None:
         """Remove a permanently unsupported block from the candidate mask."""

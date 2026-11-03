@@ -482,7 +482,7 @@ def test_jitr_three_banks_hold_72_entries_and_retire_one_generation():
     (
         ("invalid_pc", "is_profiled_pc"),
         ("invalid_chain", "chain_target_header"),
-        ("duplicate_pc", "insert_trace_fixture"),
+        ("duplicate_pc", "install_trace"),
         ("write_after_commit", "fb_jit_memory_write"),
     ),
 )

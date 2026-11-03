@@ -31,7 +31,7 @@ jit_cache_entry *jit_cache_bank::find_entry_by_pc(wasm_pc_t pc) {
 }
 
 bool jit_cache_bank::allocate(std::uint8_t *region, wasm_pc_t pc, code_offset_t size,
-                              std::uint16_t token, code_offset_t &code_offset) {
+                              code_offset_t &code_offset) {
   const auto index = lower_bound(pc);
   const auto existing = index < entry_count && entries[index].head_pc == pc;
   const auto previous = existing && entries[index].resident() ? &entries[index] : nullptr;
@@ -60,7 +60,7 @@ bool jit_cache_bank::allocate(std::uint8_t *region, wasm_pc_t pc, code_offset_t 
     }
     ++entry_count;
   }
-  entries[index] = {pc, code_offset, token};
+  entries[index] = {pc, code_offset};
   resident_bytes = resident_bytes + size - old_size;
   return true;
 }
@@ -221,62 +221,7 @@ int jit_runtime<Measurement>::compile_one_candidate(block_index_t block_index, w
   const auto blob_bytes = scratch_header->blob_bytes;
   assert(blob_bytes >= jit_trace_header_bytes && blob_bytes <= jit_compile_scratch_bytes);
 
-  auto &active_bank = cache.banks[cache.active_bank_id];
-  assert(active_bank.entry_capacity != 0);
-  if (active_bank.entry_count == active_bank.entry_capacity ||
-      active_bank.capacity_bytes - active_bank.write_offset_bytes < blob_bytes) {
-    rotate_cache_banks();
-  }
-  auto &target_bank = cache.banks[cache.active_bank_id];
-  assert(target_bank.capacity_bytes - target_bank.write_offset_bytes >= blob_bytes);
-
-  patch_transaction compile_patch(this);
-
-  const auto offset = target_bank.region_offset_bytes + target_bank.write_offset_bytes;
-  auto *output = reinterpret_cast<std::uint8_t *>(cache.code_memory.base) + offset;
-  std::memcpy(output, scratch_output, blob_bytes);
-
-  auto *header = reinterpret_cast<jit_trace_header *>(output);
-  header->common_code_relative =
-      static_cast<std::int32_t>(FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET) -
-      static_cast<std::int32_t>(offset);
-  code_offset_t installed_offset = jit_invalid_code_offset;
-  invalidate_block_cache_references();
-  [[maybe_unused]] const auto allocated =
-      target_bank.allocate(reinterpret_cast<std::uint8_t *>(cache.code_memory.base), pc,
-                           header->blob_bytes, 0, installed_offset);
-  assert(allocated && installed_offset == offset);
-  rebuild_cache_indices();
-
-  jit_cache_entry compiled{pc, offset, 0};
-  link_resident_successor(compiled);
-  for (auto reference = cache.inbound_chain_heads[chain_bucket_for_pc(compiled.head_pc)];
-       reference != jit_cache_state::no_reference;
-       reference = cache.inbound_chain_next[reference]) {
-    const auto source = cache_entry_at_reference(reference);
-    if (trace_successor_pc(source) == compiled.head_pc) {
-      if constexpr (!std::is_void_v<Measurement>) {
-        record_chain_construction(source);
-      }
-      if (bank_of_reference(reference) != cache.oldest_bank_id &&
-          (trace_successor_block_index(source) == jit_invalid_block_index ||
-           trace_successor_block_index(source) == trace_header(compiled)->block_index) &&
-          can_chain_to(source, compiled)) {
-        set_chain_target(source, &compiled);
-      }
-    }
-  }
-  mark_trace_card_compiled(compiled.head_pc);
-  if constexpr (!std::is_void_v<Measurement>) {
-    measurements.trace_inserted(compiled.head_pc);
-    measurements.trace_installed(trace_header(compiled)->block_index,
-                                       trace_header(compiled)->blob_bytes);
-  }
-  if constexpr (!std::is_void_v<Measurement>) {
-    measurements.cache_changed();
-  }
-  refresh_chain_requirements();
-  compile_patch.close();
+  install_trace(scratch_output, blob_bytes);
   return 1;
 }
 
@@ -962,32 +907,7 @@ template <jit_measurement_policy Measurement> void jit_runtime<Measurement>::rot
 }
 
 template <jit_measurement_policy Measurement>
-void jit_runtime<Measurement>::copy_trace_into_cache(jit_cache_entry value,
-                                                     const std::uint8_t *blob,
-                                                     std::uint32_t bytes) {
-  std::uintptr_t ignored_entry = 0;
-  auto block_index = jit_invalid_block_index;
-  if (module_view != nullptr) {
-    const auto *source = reinterpret_cast<const jit_trace_header *>(blob);
-    block_index = source->block_index;
-    assert(block_index < module_view->block_count);
-    assert(module_view->blocks[block_index].head_pc == value.head_pc);
-  } else if constexpr (!std::is_void_v<Measurement>) {
-    if (hotspots.configuration.block_count != 0) {
-      const auto *fixture = Measurement::fixture_block(hotspots.configuration, value.head_pc);
-      assert(fixture != nullptr);
-      block_index = fixture->block_index;
-    }
-  }
-  fb_jit_common_install(&cache.code_memory, value.code_offset, blob, bytes, block_index,
-                        &ignored_entry);
-}
-
-template <jit_measurement_policy Measurement>
-bool jit_runtime<Measurement>::insert_trace_fixture(const std::uint8_t *blob, std::uint32_t bytes,
-                                                    std::uint16_t cache_token)
-  requires(!std::is_void_v<Measurement>)
-{
+void jit_runtime<Measurement>::install_trace(const std::uint8_t *blob, std::uint32_t bytes) {
   assert(blob != nullptr && bytes >= jit_trace_header_bytes &&
          bytes <= FB_CONF_JIT_CACHE_BANK_CAPACITY_BYTES);
   const auto *input_header = reinterpret_cast<const jit_trace_header *>(blob);
@@ -995,47 +915,55 @@ bool jit_runtime<Measurement>::insert_trace_fixture(const std::uint8_t *blob, st
   assert(input_header->blob_bytes == bytes && pc != jit_invalid_pc &&
          cache.banks[cache.warm_bank_id].find_entry_by_pc(pc) == nullptr &&
          cache.banks[cache.oldest_bank_id].find_entry_by_pc(pc) == nullptr);
+  const auto block_index = input_header->block_index;
+
+  patch_transaction transaction(this);
   auto &current = cache.banks[cache.active_bank_id];
   code_offset_t offset = jit_invalid_code_offset;
   invalidate_block_cache_references();
   if (!current.allocate(reinterpret_cast<std::uint8_t *>(cache.code_memory.base), pc, bytes,
-                        cache_token, offset)) {
+                        offset)) {
     rebuild_cache_indices();
     rotate_cache_banks();
     invalidate_block_cache_references();
-    if (!cache.banks[cache.active_bank_id].allocate(
-            reinterpret_cast<std::uint8_t *>(cache.code_memory.base), pc, bytes, cache_token,
-            offset)) {
-      rebuild_cache_indices();
-      return false;
-    }
+    [[maybe_unused]] const auto allocated = cache.banks[cache.active_bank_id].allocate(
+        reinterpret_cast<std::uint8_t *>(cache.code_memory.base), pc, bytes, offset);
+    assert(allocated);
   }
-  jit_cache_entry value{pc, offset, cache_token};
-  copy_trace_into_cache(value, blob, bytes);
+  auto *output = reinterpret_cast<std::uint8_t *>(cache.code_memory.base) + offset;
+  std::memcpy(output, blob, bytes);
+  auto *header = reinterpret_cast<jit_trace_header *>(output);
+  header->common_code_relative =
+      static_cast<std::int32_t>(FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_OFFSET) -
+      static_cast<std::int32_t>(offset);
   rebuild_cache_indices();
-  link_resident_successor(value);
-  for (auto reference = cache.inbound_chain_heads[chain_bucket_for_pc(value.head_pc)];
+
+  jit_cache_entry installed{pc, offset};
+  link_resident_successor(installed);
+  for (auto reference = cache.inbound_chain_heads[chain_bucket_for_pc(installed.head_pc)];
        reference != jit_cache_state::no_reference;
        reference = cache.inbound_chain_next[reference]) {
     const auto source = cache_entry_at_reference(reference);
-    if (trace_successor_pc(source) == value.head_pc) {
+    if (trace_successor_pc(source) == installed.head_pc) {
       if constexpr (!std::is_void_v<Measurement>) {
         record_chain_construction(source);
       }
-      if (bank_of_reference(reference) != cache.oldest_bank_id && can_chain_to(source, value)) {
-        set_chain_target(source, &value);
+      if (bank_of_reference(reference) != cache.oldest_bank_id &&
+          (trace_successor_block_index(source) == jit_invalid_block_index ||
+           trace_successor_block_index(source) == block_index) &&
+          can_chain_to(source, installed)) {
+        set_chain_target(source, &installed);
       }
     }
   }
   mark_trace_card_compiled(pc);
   if constexpr (!std::is_void_v<Measurement>) {
     measurements.trace_inserted(pc);
-  }
-  if constexpr (!std::is_void_v<Measurement>) {
+    measurements.trace_installed(block_index, bytes);
     measurements.cache_changed();
   }
   refresh_chain_requirements();
-  return true;
+  transaction.close();
 }
 
 template <jit_measurement_policy Measurement>

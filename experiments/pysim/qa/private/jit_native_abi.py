@@ -126,12 +126,9 @@ class NativeConstPoolDiagnostics(ctypes.Structure):
 
 
 class CacheLookup(ctypes.Structure):
-    """Compact QA result for a cache lookup, including the resolved bank."""
+    """Compact QA result for a cache lookup: the resolved bank."""
 
-    _fields_ = (
-        ("token", ctypes.c_uint16),
-        ("bank_id", ctypes.c_uint8),
-    )
+    _fields_ = (("bank_id", ctypes.c_uint8),)
 
 
 assert NativeTraceHeader.common_code_relative.offset == 8
@@ -303,15 +300,6 @@ RUNTIME_HEADER.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
 RUNTIME_HEADER.restype = ctypes.c_void_p
 
 
-RUNTIME_HAS_TOKEN = _NATIVE_LIBRARY.fb_jit_runtime_has_token
-
-
-RUNTIME_HAS_TOKEN.argtypes = (ctypes.c_void_p, ctypes.c_uint16)
-
-
-RUNTIME_HAS_TOKEN.restype = ctypes.c_int
-
-
 RUNTIME_INSERT = _NATIVE_LIBRARY.fb_jit_runtime_insert
 
 
@@ -319,7 +307,6 @@ RUNTIME_INSERT.argtypes = (
     ctypes.c_void_p,
     ctypes.POINTER(ctypes.c_uint8),
     ctypes.c_uint32,
-    ctypes.c_uint16,
 )
 
 
@@ -913,7 +900,6 @@ OWNED_PC.restype = ctypes.c_uint64
 
 class ResidentRecord(ctypes.Structure):
     _fields_ = (
-        ("token", ctypes.c_uint16),
         ("bank_id", ctypes.c_uint8),
         ("reserved", ctypes.c_uint8),
         ("pc", ctypes.c_uint32),
@@ -926,11 +912,12 @@ RESIDENT_RECORD.argtypes = (ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(Res
 RESIDENT_RECORD.restype = ctypes.c_int
 
 
-def resident_records(pointer: int) -> tuple[tuple[int, int, int, int], ...]:
-    records: list[tuple[int, int, int, int]] = []
+def resident_records(pointer: int) -> tuple[tuple[int, int, int], ...]:
+    """Return (head_pc, bank_id, execution count) of every resident trace."""
+    records: list[tuple[int, int, int]] = []
     record = ResidentRecord()
     while RESIDENT_RECORD(pointer, len(records), ctypes.byref(record)):
-        records.append((record.token, record.pc, record.bank_id, record.count))
+        records.append((record.pc, record.bank_id, record.count))
     return tuple(records)
 
 

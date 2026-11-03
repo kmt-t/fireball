@@ -37,15 +37,14 @@ static_assert(kMaxTraceInstructions <= std::numeric_limits<jit_body_count_t>::ma
 static_assert(jit_cache_total_entry_capacity <= std::numeric_limits<std::uint8_t>::max());
 static_assert(jit_compile_scratch_bytes <= FB_CONF_JIT_CACHE_BANK_CAPACITY_BYTES);
 
-/** @brief 一つの常駐トレースを識別する12バイトのキャッシュ要素。 */
+/** @brief 一つの常駐トレースを識別する8バイトのキャッシュ要素。 */
 struct jit_cache_entry {
   wasm_pc_t head_pc = jit_invalid_pc;
   code_offset_t code_offset = jit_invalid_code_offset;
-  std::uint16_t cache_token = 0;
   /** @brief コード領域を持つ常駐要素かを返す。 */
   bool resident() const { return code_offset != jit_invalid_code_offset; }
 };
-static_assert(sizeof(jit_cache_entry) == 12);
+static_assert(sizeof(jit_cache_entry) == 8);
 /** @brief キャッシュ要素と物理バンクの非所有参照。 */
 struct jit_trace_location {
   jit_cache_entry *trace_entry = nullptr;
@@ -65,8 +64,7 @@ struct jit_cache_bank {
   /** @brief 完全一致する常駐要素を返し、不在ならnullptrを返す。 */
   jit_cache_entry *find_entry_by_pc(wasm_pc_t pc);
   /** @brief 固定容量内にトレースを割り当てる。容量不足はfalseを返す。 */
-  bool allocate(std::uint8_t *region, wasm_pc_t pc, code_offset_t size, std::uint16_t token,
-                code_offset_t &code_offset);
+  bool allocate(std::uint8_t *region, wasm_pc_t pc, code_offset_t size, code_offset_t &code_offset);
 };
 
 /** @brief 計測を持たない製品構成の空の方策。 */
@@ -223,12 +221,9 @@ public:
   void unlink_retiring_bank(std::uint32_t id);
   /** @brief Oldestを破棄し、3世代の役割を一段進める。 */
   void rotate_cache_banks();
-  /** @brief コンパイル済みコードをコピーし、配置依存の参照を解決する。 */
-  void copy_trace_into_cache(jit_cache_entry value, const std::uint8_t *blob, std::uint32_t bytes);
-  /** @brief QA用コードをActiveへ配置する。容量不足なら一度ローテーションする。 */
-  bool insert_trace_fixture(const std::uint8_t *blob, std::uint32_t bytes,
-                            std::uint16_t cache_token)
-    requires(!std::is_void_v<Measurement>);
+  /** @brief コンパイル済みトレースをActiveへ設置し、連結と索引を更新する。
+   *  Activeに入らないときは一度ローテーションし、それでも入らなければ契約違反として停止する。 */
+  void install_trace(const std::uint8_t *blob, std::uint32_t bytes);
   /** @brief 全世代の常駐トレースを移動せずに検索する。 */
   jit_trace_location lookup_cached_trace(block_index_t block_index, wasm_pc_t pc);
   /** @brief 全世代の常駐トレースを移動せずに検索する。 */

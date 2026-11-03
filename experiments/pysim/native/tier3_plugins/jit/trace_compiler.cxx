@@ -248,22 +248,19 @@ bool map_stencil_offset(std::size_t stencil_offset, const stencil_view &stencil,
   return true;
 }
 
-bool map_linked_offset(std::size_t stencil_offset, std::size_t next_slot_offset,
-                       std::size_t downstream_size, std::size_t &mapped_offset) {
+// Maps a stencil offset past the removed next slot to its place in the linked operation. The
+// caller guarantees that the offset is not inside the next slot and that the downstream holds
+// at least one rel32 slot (the success stencil ends with a store and a return).
+std::size_t map_linked_offset(std::size_t stencil_offset, std::size_t next_slot_offset,
+                              std::size_t downstream_size) {
   if (stencil_offset <= next_slot_offset) {
-    mapped_offset = stencil_offset;
-    return true;
+    return stencil_offset;
   }
-  if (stencil_offset < next_slot_offset + kX64Rel32SlotBytes) {
-    return false;
-  }
-  if (downstream_size < kX64Rel32SlotBytes ||
-      stencil_offset >
-          std::numeric_limits<std::size_t>::max() - (downstream_size - kX64Rel32SlotBytes)) {
-    return false;
-  }
-  mapped_offset = stencil_offset + downstream_size - kX64Rel32SlotBytes;
-  return true;
+  assert(stencil_offset >= next_slot_offset + kX64Rel32SlotBytes);
+  assert(downstream_size >= kX64Rel32SlotBytes);
+  assert(stencil_offset <=
+         std::numeric_limits<std::size_t>::max() - (downstream_size - kX64Rel32SlotBytes));
+  return stencil_offset + downstream_size - kX64Rel32SlotBytes;
 }
 
 // Returns whether the rel32 field at displacement_offset can reach next_offset. The field is
@@ -563,6 +560,9 @@ struct trace_builder {
 
     // The shared entry in the common area runs the body, so the body starts at the header.
     const auto success_stencil = generated_stencil(generated::trace_return_success);
+    // The success stencil stores the stack pointer and returns, so every downstream holds at
+    // least one rel32 slot length.
+    assert(success_stencil.size >= kX64Rel32SlotBytes);
     const auto abort_stencil = generated_stencil(generated::trace_return_abort);
     branch_prefix_table branch_prefix{};
     const auto sequence_capacity = body_capacity;
@@ -736,11 +736,11 @@ struct trace_builder {
         std::size_t linked_source = 0;
         std::size_t linked_target = 0;
         if (!map_stencil_offset(branch.instruction_offset, stencil, branch_prefix, source_offset) ||
-            !map_stencil_offset(branch.target_offset, stencil, branch_prefix, target_offset) ||
-            !map_linked_offset(source_offset, next_slot, downstream_size, linked_source) ||
-            !map_linked_offset(target_offset, next_slot, downstream_size, linked_target)) {
+            !map_stencil_offset(branch.target_offset, stencil, branch_prefix, target_offset)) {
           return false;
         }
+        linked_source = map_linked_offset(source_offset, next_slot, downstream_size);
+        linked_target = map_linked_offset(target_offset, next_slot, downstream_size);
         const auto instruction_size = widened_branch_size(stencil_code, branch);
         const auto opcode = stencil_code[branch.instruction_offset];
         const auto displacement_offset =
@@ -758,11 +758,8 @@ struct trace_builder {
         write_rel32(trace_body, sequence_size, field, target);
       }
       if (expanded_abort_slots[index] != kNoLinkSlot) {
-        std::size_t linked_abort_slot = 0;
-        if (!map_linked_offset(expanded_abort_slots[index], next_slot, downstream_size,
-                               linked_abort_slot)) {
-          return false;
-        }
+        const auto linked_abort_slot =
+            map_linked_offset(expanded_abort_slots[index], next_slot, downstream_size);
         // The abort slot is a suffix byte of this operation, which the copies above place
         // inside the sequence.
         const auto absolute_slot = operation_starts[index] + linked_abort_slot;

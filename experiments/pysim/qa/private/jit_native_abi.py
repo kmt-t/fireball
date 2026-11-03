@@ -707,6 +707,14 @@ class CardViews(ctypes.Structure):
     )
 
 
+ADMISSION_RECORD = _NATIVE_LIBRARY.fb_qa_admission_record
+ADMISSION_RECORD.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+ADMISSION_RECORD.restype = ctypes.c_int
+ADMISSION_WINDOW = _NATIVE_LIBRARY.fb_qa_admission_window
+ADMISSION_WINDOW.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32))
+ADMISSION_WINDOW.restype = None
+
+
 RUNTIME_CARD_VIEWS = _NATIVE_LIBRARY.fb_qa_runtime_card_views
 RUNTIME_CARD_VIEWS.argtypes = (ctypes.c_void_p, ctypes.POINTER(CardViews))
 RUNTIME_CARD_VIEWS.restype = None

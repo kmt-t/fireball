@@ -178,6 +178,9 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-105 | operand値の上限に達するblockのコンパイル | 64個のi64定数を積み、呼出しで消費するblockがあり、その語数は値スタック容量に等しい | blockをコンパイルする | traceが得られる。深さの検査はこの境界で拒否しない | `jit_compiler.md`「1トレースは」の共有stack深さ |
 | TEST-JITR-106 | 到達不能blockは同じcardが HOT でも待ち列に入らない | `unreachable` 相当の `br` の後ろに短い到達不能blockがあり、実行されるblockと同じcardを共有する | 実行を3回行い、idle hookを呼ぶ | 実行されたblockだけがコンパイルされ、到達不能blockのtraceは存在しない | `jit_compiler.md`「コンパイラが受け取るのは実行された block だけである」 |
 | TEST-JITR-107 | 受理されるopcodeの1命令blockのコンパイルと実行 | Loaderの受理集合（dispatch表）から、制御・構造・call命令を除いたopcodeを1つずつ、その命令を含む関数にする | 実行を3回行い、idle hookでコンパイルし、同じ引数で再実行する | blockがコンパイル済みで、trace の実行結果が interpreter と一致する | `jit_compiler.md`「コンパイラが受け取るのは実行された block だけである」 |
+| TEST-JITR-108 | 採否記録の初期値と根の入口の計数 | 設置後の block を、根の lookup で4回実行する | 計数が、4回の lookup の分だけ増える。ストライクは履歴なし（5）のまま | 計数は根の入口と同じ数え方で、1 lookup に 1 を加える | `jit_runtime.md`「採否記録」 |
+| TEST-JITR-109 | 破棄時のストライク更新 | 寿命が K 未満の trace を破棄し、次に K 以上の寿命の trace を破棄する | 1回目はストライク 1 で寿命を保つ。2回目はストライク 0 に戻る | 破棄時の寿命でストライクを更新し、寿命は次の設置まで残る | `jit_runtime.md`「ストライク」 |
+| TEST-JITR-110 | 8 回転の区切りの破棄数 | 区切りの先頭から、常駐 trace 1 件を含めて 8 回転する | 8 回転目に、直前の区切りの破棄数が 1 になり、現在の区切りは 0 に戻る | 段階は直前に終わった区切りの破棄数で決まる | `jit_runtime.md`「段階」 |
 
 ### 実装上の注意点に対応する検証
 <!-- traceability: {GOTCHA-INTP-06} {GOTCHA-JITR-01} {GOTCHA-JITR-02} {GOTCHA-JITR-03} {GOTCHA-JITR-05} {GOTCHA-JITR-06} {GOTCHA-JITR-07} {GOTCHA-JITR-08} {GOTCHA-JITR-09} -->

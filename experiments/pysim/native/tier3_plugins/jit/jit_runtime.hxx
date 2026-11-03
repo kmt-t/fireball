@@ -94,9 +94,37 @@ struct jit_cache_state {
   executable_memory code_memory{};
 };
 
+// The admission record of a block is one byte: strikes in the upper three bits and the lifetime
+// count in the lower five bits. jit_runtime.md 8.2 defines the uses of the count by time.
+inline constexpr std::uint8_t kAdmissionLifetimeMax = 31;
+inline constexpr std::uint8_t kAdmissionStrikeShift = 5;
+inline constexpr std::uint8_t kAdmissionLifetimeMask = 0x1F;
+// Strike value of a block without history (the initial value of its record).
+inline constexpr std::uint8_t kAdmissionNoHistory = 5;
+// A trace whose lifetime is below this count takes a strike at its eviction.
+inline constexpr std::uint8_t kAdmissionShortLifetime = 10;
+// Evictions are counted over groups of this many rotations.
+inline constexpr std::uint8_t kAdmissionRotationGroup = 8;
+
+/** @brief 8 回転ごとの破棄数の区切り。直前に終わった区切りの破棄数が段階を決める。 */
+struct jit_admission_window {
+  std::uint8_t rotations = 0;
+  std::uint16_t evictions = 0;
+  std::uint16_t previous_evictions = 0;
+};
+
+/** @brief 段階のストライク上限 S。f = 破棄数 ÷ 8 が 6 以上なら 2、2 以上 6 未満なら 3、2 未満なら
+ * 4。 */
+constexpr std::uint8_t admission_stage_limit(std::uint32_t previous_evictions) {
+  return previous_evictions >= 48 ? 2 : (previous_evictions >= 16 ? 3 : 4);
+}
+
 /** @brief 借用カード領域と、所有する履歴・候補キューを保持する。 */
 template <class Profile> struct jit_hotspot_state {
   std::uint8_t *card_states = nullptr;
+  // One admission record per block, borrowed from the plugin region with the card workspace.
+  std::uint8_t *admission_records = nullptr;
+  jit_admission_window admission_window{};
   std::uint8_t *dirty_cards = nullptr;
   card_index_t card_count = 0;
   std::uint32_t dirty_mask_bytes = 0;
@@ -205,6 +233,14 @@ public:
   void set_chain_target(jit_cache_entry source, const jit_cache_entry *target);
   /** @brief Active/Warmの後続へ連結する。Oldestへは既存の連結だけを維持する。 */
   void link_resident_successor(jit_cache_entry source);
+  /** @brief 根の入口を1回数える。計数は5 bitで飽和する。 */
+  void count_root_entry(block_index_t block_index);
+  /** @brief 設置の時点で、block の計数を0に戻す。 */
+  void record_install(block_index_t block_index);
+  /** @brief 破棄の時点で、寿命からストライクを更新し、破棄数を数える。 */
+  void record_eviction(block_index_t block_index);
+  /** @brief 回転の時点で、8 回転の区切りを進める。 */
+  void advance_admission_window();
   /** @brief カードの2ビット状態を読み出す。 */
   std::uint32_t card_state(std::uint32_t card) const;
   /** @brief カードの2ビット状態を更新する。 */

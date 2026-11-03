@@ -4923,3 +4923,116 @@ def test_jitr_107_every_loader_accepted_opcode_compiles_and_matches_the_interpre
     invocations = engine.stat_jit_invocations
     assert list(engine.call(Interpreter(module), function_index, arguments).unwrap()) == expected
     assert engine.stat_jit_invocations > invocations, f"{opcode_name} ran outside the trace"
+
+
+_ADMISSION_WAT = (
+    '(module (func (export "f") (param i32) (result i32)'
+    " local.get 0 i32.const 1 i32.add i32.const 2 i32.mul i32.const 3 i32.sub))"
+)
+_ADMISSION_NO_HISTORY = 0xA0
+
+
+def _admission_engine():
+    """Load the admission module and return (engine, module, manager, block index, block)."""
+    engine = make_runtime_engine()
+    module = engine.load_wasm(bytes(wasmtime.wat2wasm(_ADMISSION_WAT)))
+    engine.register_module_blocks(module)
+    block = max(instruction_blocks(module), key=lambda candidate: candidate.byte_span)
+    index = next(i for i, candidate in enumerate(module.blocks) if candidate.head_pc == block.head_pc)
+    return engine, module, engine.jit_runtime, index, block
+
+
+def _admission_record(manager, index: int) -> int:
+    return native_abi.ADMISSION_RECORD(manager._native.pointer, index)
+
+
+def _strikes(record: int) -> int:
+    return record >> 5
+
+
+def _lifetime(record: int) -> int:
+    return record & 0x1F
+
+
+def _call_admission(engine, module, count: int) -> None:
+    function_index = module.export_func_index("f")
+    for _ in range(count):
+        # (5 + 1) * 2 - 3
+        assert list(engine.call(Interpreter(module), function_index, [5]).unwrap()) == [9]
+
+
+def test_jitr_108_root_entries_count_once_per_lookup_and_no_history_is_the_initial_record():
+    """TEST-JITR-108: the record starts without history, and each root lookup counts one entry.
+
+    The lifetime count is the entries since the current install. It rises by one per root
+    lookup, and the record keeps the no-history strike until the first eviction.
+    """
+    engine, module, manager, index, block = _admission_engine()
+    assert _admission_record(manager, index) == _ADMISSION_NO_HISTORY
+    _call_admission(engine, module, 3)
+    engine.idle_hook()
+    assert manager.bitmap.get_state(block.head_pc) == CardState.COMPILED
+    before = _lifetime(_admission_record(manager, index))
+    _call_admission(engine, module, 4)
+    assert _lifetime(_admission_record(manager, index)) == before + 4
+    assert _strikes(_admission_record(manager, index)) == 5
+
+
+def _make_resident(engine, module, manager, block) -> None:
+    for _ in range(8):
+        if manager.bitmap.get_state(block.head_pc) == CardState.COMPILED:
+            return
+        _call_admission(engine, module, 1)
+        engine.idle_hook()
+    assert manager.bitmap.get_state(block.head_pc) == CardState.COMPILED
+
+
+def _admission_window(manager) -> tuple[int, int, int]:
+    output = (ctypes.c_uint32 * 3)()
+    native_abi.ADMISSION_WINDOW(manager._native.pointer, output)
+    return output[0], output[1], output[2]
+
+
+def test_jitr_109_eviction_takes_a_strike_below_the_short_lifetime_and_resets_above_it():
+    """TEST-JITR-109: a short lifetime takes a strike, and a lifetime of K or more resets it.
+
+    The lifetime at eviction is kept in the record until the next install. The strike rises from
+    the no-history value to 1 at the first short eviction, and falls to 0 after a long one.
+    """
+    engine, module, manager, index, block = _admission_engine()
+    _make_resident(engine, module, manager, block)
+    _call_admission(engine, module, 2)
+    short_lifetime = _lifetime(_admission_record(manager, index))
+    assert 0 < short_lifetime < 10
+    for _ in range(3):
+        manager.cache.rotate()
+    assert manager.bitmap.get_state(block.head_pc) == CardState.UNEXECUTED
+    record = _admission_record(manager, index)
+    assert _strikes(record) == 1
+    assert _lifetime(record) == short_lifetime
+
+    _make_resident(engine, module, manager, block)
+    _call_admission(engine, module, 12)
+    assert _lifetime(_admission_record(manager, index)) >= 10
+    for _ in range(3):
+        manager.cache.rotate()
+    assert _strikes(_admission_record(manager, index)) == 0
+
+
+def test_jitr_110_the_eviction_window_closes_after_eight_rotations():
+    """TEST-JITR-110: the window counts the evictions of one group of eight rotations.
+
+    The group closes at the eighth rotation. Its evictions become the previous group, and the
+    current group starts from zero. One resident trace evicted in the group gives a previous
+    count of one.
+    """
+    engine, module, manager, index, block = _admission_engine()
+    while _admission_window(manager)[2] != 0:
+        manager.cache.rotate()
+    _make_resident(engine, module, manager, block)
+    for _ in range(8):
+        manager.cache.rotate()
+    evictions, previous, rotations = _admission_window(manager)
+    assert rotations == 0
+    assert evictions == 0
+    assert previous == 1

@@ -222,11 +222,28 @@ int jit_runtime<Measurement>::compile_queued_candidates() {
       mark_trace_card_compiled(pc);
       continue;
     }
+    jit_wasm_block admission_storage{};
+    const auto *admission_view = make_compiler_block_view(block_index, admission_storage);
     if constexpr (!std::is_void_v<Measurement>) {
-      jit_wasm_block score_storage{};
-      const auto *score_view = make_compiler_block_view(block_index, score_storage);
-      measurements.admission_sample(block_index, fireball::score_block(*score_view));
+      measurements.admission_sample(block_index, fireball::score_block(*admission_view));
     }
+    // Rule (i): a candidate whose score is below the candidate threshold is rejected.
+    if (fireball::score_block(*admission_view) <
+        static_cast<std::int64_t>(hotspots.configuration.candidate_threshold)) {
+      exclude_compile_candidate(pc);
+      continue;
+    }
+    // Rule (iii): a block whose strikes reach its stage limit is rejected. Rule (ii): a block
+    // without history (no-history strike) is compiled.
+    const auto strikes =
+        static_cast<std::uint8_t>(hotspots.admission_records[block_index] >> kAdmissionStrikeShift);
+    if (strikes != kAdmissionNoHistory &&
+        strikes >= admission_stage_limit(hotspots.admission_window.previous_evictions)) {
+      exclude_compile_candidate(pc);
+      continue;
+    }
+    // TODO(未決): rule (iv), the rank threshold T_f in jit_runtime.md 8.2, is undecided. Until it
+    // is decided, a candidate that passes rules (i) and (iii) compiles.
     int status = 0;
     if constexpr (std::is_void_v<Measurement>) {
       status = compile_one_candidate(block_index, pc);

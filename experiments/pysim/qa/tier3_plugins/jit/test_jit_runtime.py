@@ -5036,3 +5036,23 @@ def test_jitr_110_the_eviction_window_closes_after_eight_rotations():
     assert rotations == 0
     assert evictions == 0
     assert previous == 1
+
+
+def test_jitr_111_a_block_at_its_stage_limit_is_rejected_by_its_next_decision():
+    """TEST-JITR-111: a block whose strikes reach the stage limit is rejected, and never compiles.
+
+    Four short evictions take the strikes to 4, which is the limit of the first stage. The next
+    decision rejects the block: its card is no longer a candidate, and no trace is installed.
+    """
+    engine, module, manager, index, block = _admission_engine()
+    for _ in range(4):
+        _make_resident(engine, module, manager, block)
+        _call_admission(engine, module, 1)
+        for _ in range(3):
+            manager.cache.rotate()
+    assert _strikes(_admission_record(manager, index)) == 4
+    _call_admission(engine, module, 8)
+    engine.idle_hook()
+    assert manager.bitmap.get_state(block.head_pc) != CardState.COMPILED
+    assert not manager.is_trackable(block.head_pc)
+    assert _strikes(_admission_record(manager, index)) == 4

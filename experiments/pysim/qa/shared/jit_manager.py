@@ -9,18 +9,20 @@ from typing import Protocol
 from config import (
     FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
     FB_CONF_JIT_AGING_STEP_UNITS,
+    FB_CONF_JIT_CANDIDATE_THRESHOLD,
     JIT_CACHE_ACTIVE_OFFSET_BYTES,
     JIT_CACHE_BANK_CAPACITY_BYTES,
     JIT_CACHE_BANK_ENTRY_CAPACITY,
     JIT_CACHE_OLDEST_OFFSET_BYTES,
     JIT_CACHE_WARM_OFFSET_BYTES,
     JIT_CARD_SHIFT,
-    JIT_X64_TRACE_HEADER_BYTES,
+    JIT_COMPILE_QUEUE_CAPACITY,
+    JIT_HISTORY_CAPACITY,
 )
 from qa.private import jit_native_abi as native_abi
 from qa.private.interpreter_native_abi import RUN_DISPATCH_JIT
 from qa.private.jit_native_abi import CacheField
-from qa.shared.jit_scoring import JIT_CANDIDATE_THRESHOLD, block_score
+from qa.shared.jit_scoring import block_score
 from system_containers import MutableBitStorage, StaticVector, fold_mix32
 from tier2_runtime.abi.native_abi import BufferLease
 from tier2_runtime.interpreter.interpreter import (
@@ -101,42 +103,27 @@ class JITRuntimeManager(NativeJITRuntimeManager):
     def __init__(
         self,
         jit_compiler: JITCompiler | None = None,
-        card_shift: int = JIT_CARD_SHIFT,
         code_lengths: Sequence[int] = (),
-        min_trace_bytes: int | None = None,
-        candidate_threshold: int = JIT_CANDIDATE_THRESHOLD,
-        compile_queue_capacity: int = 4,
-        aging_step_units: int = FB_CONF_JIT_AGING_STEP_UNITS,
-        aging_scan_bytes: int = FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
         hotspot_profiling_enabled: bool = True,
-        history_capacity: int = 32,
         module_id: int = 0,
         retire_observer: Callable[[int, int], None] | None = None,
-        bank_capacity: int = JIT_CACHE_BANK_CAPACITY_BYTES,
-        entry_capacity: int = JIT_CACHE_BANK_ENTRY_CAPACITY,
     ):
-        assert JIT_X64_TRACE_HEADER_BYTES <= bank_capacity <= JIT_CACHE_BANK_CAPACITY_BYTES
-        assert 0 < entry_capacity <= JIT_CACHE_BANK_ENTRY_CAPACITY
-        assert 0 <= candidate_threshold <= 0xFFFF_FFFF
-        assert compile_queue_capacity >= 1
-        assert aging_step_units >= 1 and aging_scan_bytes >= 1
-        assert history_capacity >= 1
         assert 0 <= module_id <= 0xFFFF_FFFF
-        self.candidate_threshold = candidate_threshold
-        self.compile_queue_capacity = compile_queue_capacity
-        self.aging_step_units = aging_step_units
-        self.aging_scan_bytes = aging_scan_bytes
+        # Every runtime parameter is the product configuration; tests do not override it.
+        self.candidate_threshold = FB_CONF_JIT_CANDIDATE_THRESHOLD
+        self.compile_queue_capacity = JIT_COMPILE_QUEUE_CAPACITY
+        self.aging_step_units = FB_CONF_JIT_AGING_STEP_UNITS
+        self.aging_scan_bytes = FB_CONF_JIT_AGING_STEP_SCAN_BYTES
         self.jit_compiler = jit_compiler
         self._hotspot_profiling_enabled = hotspot_profiling_enabled
-        self.history_capacity = history_capacity
+        self.history_capacity = JIT_HISTORY_CAPACITY
         self.module_id = module_id
-        self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
-        assert 0 <= self.min_trace_bytes <= 0xFFFF_FFFF
-        self._card_shift = card_shift
+        self.min_trace_bytes = 1 << JIT_CARD_SHIFT
+        self._card_shift = JIT_CARD_SHIFT
         self._retire_observer = retire_observer
         self._native = native_abi.NativeRuntimeStorage(
-            bank_capacity,
-            entry_capacity,
+            JIT_CACHE_BANK_CAPACITY_BYTES,
+            JIT_CACHE_BANK_ENTRY_CAPACITY,
             (
                 JIT_CACHE_ACTIVE_OFFSET_BYTES,
                 JIT_CACHE_WARM_OFFSET_BYTES,

@@ -255,7 +255,6 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
     compiler = TraceCompiler()
     engine = make_runtime_engine(
         jit_compiler=compiler,
-        compile_queue_capacity=4,
     )
     wat = """(module
       (func (export "f0") (result i32) i32.const 10 i32.const 20 i32.add)
@@ -529,7 +528,7 @@ from qa.tier3_plugins.jit.test_jit_runtime import (
 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 if sys.argv[1] == 'invalid_pc':
     module = _loader_module(1)
-    manager = _bound_manager(module, card_shift=4)
+    manager = _bound_manager(module)
     outside_pc = module.function_pc_offset(0) + len(module.code_for(0))
     native_abi.RUNTIME_RECORD(manager._native.pointer, outside_pc)
 elif sys.argv[1] == 'invalid_chain':
@@ -1079,7 +1078,7 @@ def test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing():
     )
     """
     wasm_bytes = bytes(wasmtime.wat2wasm(wat))
-    engine = make_runtime_engine(min_trace_bytes=4)
+    engine = RuntimeEngine(jit_runtime=JITRuntimeManager())
     assert engine.jit_runtime.min_trace_bytes == 4
     mod = engine.load_wasm(wasm_bytes)
     h0 = mod.blocks[0].head_pc
@@ -2715,7 +2714,7 @@ def test_jitr_empty_yield_skips_python_control_work():
         __slots__ = ("idle_calls", "lookup_calls", "record_calls", "snapshot_calls")
 
         def __init__(self) -> None:
-            super().__init__(candidate_threshold=1_000_000)
+            super().__init__()
             self.idle_calls = 0
             self.lookup_calls = 0
             self.record_calls = 0

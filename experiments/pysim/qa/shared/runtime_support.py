@@ -5,15 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from bump_allocator import BumpAllocator
-from config import (
-    FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
-    FB_CONF_JIT_AGING_STEP_UNITS,
-    JIT_CARD_SHIFT,
-)
 from qa.private import jit_native_abi as native_abi
 from qa.shared.jit_cache import JitRuntimeBoundary, JITTrace
 from qa.shared.jit_manager import JITCompiler, JITRuntimeManager
-from qa.shared.jit_scoring import JIT_CANDIDATE_THRESHOLD
 from qa.shared.runtime_stats import RuntimeStatsEngine
 from qa.shared.x64_jit import TraceCompiler
 from system_containers import (
@@ -30,30 +24,22 @@ from tier2_runtime.wasm.module import (
 def make_runtime_engine(
     jit_compiler: JITCompiler | None = None,
     debug: bool = False,
-    card_shift: int = JIT_CARD_SHIFT,
     code_lengths: Sequence[int] = (),
-    min_trace_bytes: int | None = None,
-    candidate_threshold: int = JIT_CANDIDATE_THRESHOLD,
-    compile_queue_capacity: int = 4,
-    aging_step_units: int = FB_CONF_JIT_AGING_STEP_UNITS,
-    aging_scan_bytes: int = FB_CONF_JIT_AGING_STEP_SCAN_BYTES,
     drive_mode: RuntimeDriveMode = RuntimeDriveMode.SYNCHRONOUS,
     collect_runtime_stats: bool = True,
     hotspot_profiling_enabled: bool = True,
     retire_observer: Callable[[int, int], None] | None = None,
     bump_allocator: BumpAllocator | None = None,
 ) -> RuntimeStatsEngine:
-    """Compose a Tier 3 runtime engine with the Tier 3 JIT manager for tests."""
+    """Compose a Tier 3 runtime engine with the Tier 3 JIT manager for tests.
+
+    The JIT manager always runs with the product configuration; only the presence of a
+    compiler, the code lengths and the observers select a manager.
+    """
 
     if (
         jit_compiler is None
         and not code_lengths
-        and card_shift == JIT_CARD_SHIFT
-        and min_trace_bytes is None
-        and candidate_threshold == JIT_CANDIDATE_THRESHOLD
-        and compile_queue_capacity == 4
-        and aging_step_units == FB_CONF_JIT_AGING_STEP_UNITS
-        and aging_scan_bytes == FB_CONF_JIT_AGING_STEP_SCAN_BYTES
         and drive_mode == RuntimeDriveMode.SYNCHRONOUS
         and hotspot_profiling_enabled
         and retire_observer is None
@@ -63,13 +49,7 @@ def make_runtime_engine(
         )
     manager = JITRuntimeManager(
         jit_compiler=jit_compiler,
-        card_shift=card_shift,
         code_lengths=code_lengths,
-        min_trace_bytes=min_trace_bytes,
-        candidate_threshold=candidate_threshold,
-        compile_queue_capacity=compile_queue_capacity,
-        aging_step_units=aging_step_units,
-        aging_scan_bytes=aging_scan_bytes,
         hotspot_profiling_enabled=hotspot_profiling_enabled,
         retire_observer=retire_observer,
     )

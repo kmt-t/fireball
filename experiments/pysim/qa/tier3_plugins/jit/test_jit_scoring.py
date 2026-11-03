@@ -8,10 +8,10 @@ import pytest
 
 _PYSIM_DIR = Path(__file__).resolve().parents[2]
 
+from config import FB_CONF_JIT_CANDIDATE_THRESHOLD
 from qa.shared.helpers import parse_single_function_module
 from qa.shared.jit_manager import JITRuntimeManager
 from qa.shared.jit_scoring import (
-    JIT_CANDIDATE_THRESHOLD,
     OPCODE_BENEFIT_TABLE,
     OPCODE_TABLE_BYTES,
     OpcodeBenefitTable,
@@ -41,7 +41,7 @@ def test_plugin_scores_basic_block() -> None:
     assert OPCODE_BENEFIT_TABLE.score(I32_ADD) == 7
     assert len(module.blocks) == 1
     assert block_score(module, module.blocks[0]) == 19
-    assert JIT_CANDIDATE_THRESHOLD == 9  # jit_runtime.mdの規定値から独立に比較する。
+    assert FB_CONF_JIT_CANDIDATE_THRESHOLD == 9  # jit_runtime.mdの規定値から独立に比較する。
 
 
 @pytest.mark.parametrize(

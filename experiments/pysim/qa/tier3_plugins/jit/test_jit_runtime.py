@@ -2235,7 +2235,7 @@ def test_jitr_defined_calls_continue_in_cps_until_yield():
 
 
 def test_jitr_native_history_overwrite_does_not_yield():
-    """TEST-JITR-69: overflow keeps recent visits without changing the execution boundary."""
+    """TEST-HOTSPOT-05: overflow keeps recent visits without changing the execution boundary."""
     # The loop runs more iterations than the history holds, and fewer backedges than the yield threshold.
     iterations = JIT_HISTORY_CAPACITY + 2
     assert iterations < FB_CONF_INTERPRETER_YIELD_THRESHOLD
@@ -3780,7 +3780,8 @@ def test_gotcha_jitr_09_aging_never_drops_compiled_or_hot():
     assert engine.jit_runtime.bitmap.get_state(pc_exec) == CardState.UNEXECUTED
 
 
-CHAIN_STRESS_TRACES = 14
+# More traces than one bank holds, so inserts alone force capacity rotations.
+CHAIN_STRESS_TRACES = JIT_CACHE_BANK_ENTRY_CAPACITY + 2
 
 
 def _chain_stress_module():

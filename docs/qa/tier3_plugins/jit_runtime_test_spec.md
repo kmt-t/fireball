@@ -17,7 +17,7 @@
 | TEST-JITR-02 | 状態遷移: UNEXECUTED→EXECUTED→HOT | 新規カード | 1回touch、2回目touch | 1回目でEXECUTED、2回目でHOT | jit_runtime.md (Card Marking) |
 | TEST-JITR-03 | COMPILED後のtouchは状態を変えない | カードがCOMPILED | touch | 状態はCOMPILEDのまま | |
 | TEST-JITR-04 | 評価(Eviction)でUNEXECUTEDへ戻る（EXECUTEDではない） | カードがCOMPILED、対応トレースがキャッシュから追い出される | `mark_evicted` | 状態がUNEXECUTEDに戻る。 | `` |
-| TEST-JITR-05 | 履歴リング上書きとyield時の一度限りの分析 | 履歴容量8のJITランタイムに10個の判定点（追跡可能なblock head）がある | 10件を判定点で記録してyieldを2回実行する | 上書き件数は2となり分析は近似扱いとなる。古い2件のカードは`UNEXECUTED`へ戻り、残り8件は`EXECUTED`となる。2回目のyieldで状態を再度消費しない | `test_jit_runtime.py::test_hotspot_02_history_ring_buffered_yield_drain` |
+| TEST-JITR-05 | 履歴リング上書きとyield時の一度限りの分析 | 履歴容量Nの JITランタイムに N+K 個（K=2）の判定点（追跡可能なblock head）がある | N+K 件を判定点で記録してyieldを2回実行する | 上書き件数はKとなり分析は近似扱いとなる。古いK件のカードは`UNEXECUTED`へ戻り、残りN件は`EXECUTED`となる。2回目のyieldで状態を再度消費しない | `test_jit_runtime.py::test_hotspot_02_history_ring_buffered_yield_drain` |
 | TEST-JITR-06 | 最小トレース長未満のブロックは共有カードを更新しない | 同一コード領域カード内に2つの短いベーシックブロック（推定コンパイル後サイズがカード幅未満） | 両方のPCを繰り返し実行 | 候補外PCは共有カード状態を更新せず、コンパイル待ち列にも追加されない。カード領域の共有有無にかかわらずカード状態は `UNEXECUTED` のままである。 | `jit_runtime.md`「最小トレース長フィルタ」、 `` |
 | TEST-JITR-07 | `COMPILED`カードの重複要求をC++ Runtimeが破棄する | トレースがキャッシュに常駐し、同PCのカードが`COMPILED`で、同PCが待ち列にも積まれている | idle_hookを実行 | C++ Runtimeはコンパイルせず要求を破棄し、カード状態と常駐トレースを保つ。 | `jit_runtime.md`「コンパイル待ち列」、 `` |
 | TEST-JITR-08 | JITエントリテーブル（バンクのトレース一覧）は常にhead_pcでソートされ、削除は削除フラグ（トンビストーン）で行う | 複数のトレースをPC順不同で挿入し、1件削除後に同じPCを再挿入 | 挿入・削除・再挿入後にトレース一覧と該当PCの取得結果を確認 | 一覧は常にhead_pc昇順。削除直後は取得結果がNone。再挿入は既存tombstone枠を再利用し、取得結果は新しいトレースそのものになる。 | jit_runtime.md「JITエントリ表」, [`jit_runtime.cxx`](experiments/pysim/native/tier3_plugins/jit/jit_runtime.cxx),|
@@ -149,7 +149,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-59 | assembly stencilから生成したカーネルスイートの3実行系差分 | `suite.wasm`の16カーネル（呼び出し、`br_table`、f64、i64、サブワードメモリを含む） | 各カーネルの結果を3実行系で比較する | 全結果が一致し、JIT traceはassembly stencilと必要なRuntime APIを使って実行される | `{JIT_AssemblyStencilCodegen}`, `{ThreadedInterpreter}` |
 | TEST-JITR-60 | 広幅ローカルを含む異なるレイアウトの混在実行 | i32だけの関数とi64ローカルを含む関数が、同一のホットループから交互に呼ばれる | 3実行系の結果を比較し、両関数のトレースが存在することを確認する | 結果が一致し、2つの関数のトレースが同時に実行される。各関数はロード時のオフセット・サイズ表に従う | `{ContextPointerRegister}`, TraceBoundaryInvariant |
 | TEST-JITR-61 | terminal call trace実行時のオペランドスタックoverflow | JIT適格callerがterminal `call`を持つ。callee `pad`は62個のi64値（124ワード）を保留した状態で18段のi32関数`work`を呼び、容量128ワードを超える | Tier 2とJIT有効のエンジンで実行し、caller traceの実行とtrap codeを比較する | callerのterminal call traceが実行される。共有stackの容量超過はInterpreterの`OPERAND_STACK_CAPACITY`として検出され、JIT callerとInterpreter単独のtrap codeは一致し、範囲外stack書込みを行わない。callとoverflowの意味論は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)およびTEST-INTP-80に従う | TraceBoundaryInvariant、[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、TEST-INTP-80 |
-| TEST-JITR-62 | 参照・ローテーション後のチェイン整合 | 14本の連鎖トレースと、容量の小さい3面キャッシュ。乱数で、挿入・参照・ローテーションを繰り返す（40シード、各90手） | 各手の後にリンクを検査し、参照したトレースをネイティブ実行する | すべてのチェインポインタが、常駐トレースの有効な入口を指す。論理的な後続PCと機械語ヘッダのターゲットが一致する。同一トレースが複数の面に常駐しない。各リンク先は生成入力のindexとstrideから導いた直後のtraceである。Native実行の副作用と最終PCが生成入力から導いた期待値に一致する。trace entryは`bool`を返す。通常完了時は未接続chain targetに到達した終端dispatcherが`ip`を設定して復帰する。Interpreter dispatcherがmetadataから実行状態を確定する | `{JIT_MultiBuffer_Cache}`, `GOTCHA-JITR-02` |
+| TEST-JITR-62 | 参照・ローテーション後のチェイン整合 | 1面のentry上限を超える本数の連鎖トレースと、3面キャッシュ（本数は entry 上限 + 2）。乱数で、挿入・参照・ローテーションを繰り返す（40シード、各90手） | 各手の後にリンクを検査し、参照したトレースをネイティブ実行する | すべてのチェインポインタが、常駐トレースの有効な入口を指す。論理的な後続PCと機械語ヘッダのターゲットが一致する。同一トレースが複数の面に常駐しない。各リンク先は生成入力のindexとstrideから導いた直後のtraceである。Native実行の副作用と最終PCが生成入力から導いた期待値に一致する。trace entryは`bool`を返す。通常完了時は未接続chain targetに到達した終端dispatcherが`ip`を設定して復帰する。Interpreter dispatcherがmetadataから実行状態を確定する | `{JIT_MultiBuffer_Cache}`, `GOTCHA-JITR-02` |
 | TEST-JITR-63 | LOOP後方辺回数とyield境界 | Interpreterに有限のyieldしきい値を設定し、自己後方辺へ戻る`br_if`を持つJIT候補を用意する | Interpreter CPS経路で分岐条件、共有カウンタ、trace実行数、yield statusを観測する | 条件不成立では取得辺数を増やさない。成立した辺を判定点で一度だけ数えて履歴に記録し、traceを終了して次の反復をInterpreter CPS経由で処理する。しきい値到達時はC++ dispatcherからyieldする。RuntimeEngineはカウンタとしきい値を変更しない | `{JIT_BackedgeYield}`、pysim `` |
 | TEST-JITR-64 | Interpreter warm-upからJIT実行へ移行 | 未コンパイルの数値ループを実行し、idle時に対象トレースをコンパイルする | QAの`RuntimeStatsEngine`でJIT拡張接続済みInterpreterを駆動し、返値・実行統計・キャッシュ常駐を確認する | 結果は15で、Interpreter warm-up後にLOOP traceが常駐する。各反復の`br_if`はInterpreter CPS handlerで処理し、後方辺のしきい値到達時はC++ dispatcherからRuntimeEngineへyieldを返す | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」 |
 | TEST-JITR-65 | QA snapshotの常駐状態への追従 | 未コンパイル候補blockと常駐traceを持つQA専用JITハーネス | trace挿入前後のQA snapshotとnative実行を確認する | QA snapshotは常駐状態の変更を反映する。製品実行はJIT拡張の本体実行入口を使い、snapshotを供給しない。候補マスクのQA観測は既存ストレージを借用する | QA専用fixtureの検査、pysim `` |
@@ -209,7 +209,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-JITR-80 | idle hookで候補待ち列の全件を処理する | 固定キューに複数のコンパイル可能な候補がある | 協調境界でidle hookを呼ぶ | 待ち列の全候補をLIFO順にコンパイルし、待ち列を空にする | `jit_runtime.md`「コンパイル時期と待ち列処理」 |
-| TEST-JITR-81 | キュー満杯時に全候補を同期処理する | 固定キューが容量に達する | 満杯契機の候補処理を実行する | 失敗・スキップを含めて全候補を処理し、待ち列を空にする | `jit_runtime.md`「コンパイル時期と待ち列処理」 |
+| TEST-JITR-81 | キュー満杯時に待ち列を同期処理する | 固定キューが容量に達し、その後さらに候補が1件到着する | 満杯契機の候補処理を実行し、続けて idle hook を実行する | 満杯時の待ち列の候補（容量分）は失敗・スキップを含めて同期処理され、待ち列を空にする。以後の候補は待ち列に残り、次の idle hook で処理する | `jit_runtime.md`「コンパイル時期と待ち列処理」 |
 
 ## 3. テスト検証実績と網羅状況
 

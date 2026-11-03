@@ -1460,7 +1460,7 @@ void apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_mod
     stack.unary(2, 2);
     return;
   default:
-    // The loader accepts only opcodes that this table covers (TEST-JITR-104).
+    // The loader accepts only opcodes that this table covers (TEST-JITR-107).
     assert(false);
     return;
   }

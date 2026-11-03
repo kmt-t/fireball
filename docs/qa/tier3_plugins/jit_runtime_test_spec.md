@@ -177,6 +177,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-104 | loaderが受理するopcodeのruntime API slot | loaderが受理する単一byte opcodeと0xFCの subopcode 0–7、10、11 | 公開されたslot表で、stencilと終端の経路を除く各opcodeの slot を引く | 全opcodeにslotがある。欠けると trace compiler は assert で停止する | `jit_compiler.md`「コンパイル失敗の要因」 |
 | TEST-JITR-105 | operand値の上限に達するblockのコンパイル | 64個のi64定数を積み、呼出しで消費するblockがあり、その語数は値スタック容量に等しい | blockをコンパイルする | traceが得られる。深さの検査はこの境界で拒否しない | `jit_compiler.md`「1トレースは」の共有stack深さ |
 | TEST-JITR-106 | 到達不能blockは同じcardが HOT でも待ち列に入らない | `unreachable` 相当の `br` の後ろに短い到達不能blockがあり、実行されるblockと同じcardを共有する | 実行を3回行い、idle hookを呼ぶ | 実行されたblockだけがコンパイルされ、到達不能blockのtraceは存在しない | `jit_compiler.md`「コンパイラが受け取るのは実行された block だけである」 |
+| TEST-JITR-107 | 受理されるopcodeの1命令blockのコンパイルと実行 | Loaderの受理集合（dispatch表）から、制御・構造・call命令を除いたopcodeを1つずつ、その命令を含む関数にする | 実行を3回行い、idle hookでコンパイルし、同じ引数で再実行する | blockがコンパイル済みで、trace の実行結果が interpreter と一致する | `jit_compiler.md`「コンパイラが受け取るのは実行された block だけである」 |
 
 ### 実装上の注意点に対応する検証
 <!-- traceability: {GOTCHA-INTP-06} {GOTCHA-JITR-01} {GOTCHA-JITR-02} {GOTCHA-JITR-03} {GOTCHA-JITR-05} {GOTCHA-JITR-06} {GOTCHA-JITR-07} {GOTCHA-JITR-08} {GOTCHA-JITR-09} -->

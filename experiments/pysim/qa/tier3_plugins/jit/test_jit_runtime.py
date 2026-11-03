@@ -16,7 +16,7 @@ import os
 import struct
 import subprocess
 import sys
-from itertools import pairwise
+from itertools import pairwise, product
 from pathlib import Path
 
 # Setup paths
@@ -4651,8 +4651,26 @@ def test_jitr_102_entry_stack_words_below_a_pop_is_a_contract_violation():
 # calls and the 0xFC prefix are never inside a block's byte span; nop, structural boundaries,
 # constants and local accesses are handled by their own stencil or annotation paths.
 _NO_RUNTIME_API_SLOT_OPCODES = frozenset(
-    {0x01, 0x02, 0x03, 0x04, 0x05, 0x0B, 0x0C, 0x0D, 0x10, 0x11, 0x20, 0x21, 0x22, 0x41, 0x42, 0x43,
-     0x44, 0xFC}
+    {
+        0x01,
+        0x02,
+        0x03,
+        0x04,
+        0x05,
+        0x0B,
+        0x0C,
+        0x0D,
+        0x10,
+        0x11,
+        0x20,
+        0x21,
+        0x22,
+        0x41,
+        0x42,
+        0x43,
+        0x44,
+        0xFC,
+    }
 )
 
 
@@ -4670,9 +4688,7 @@ def test_jitr_104_every_loader_opcode_on_the_runtime_api_path_has_a_slot():
     slot_of.restype = ctypes.c_int
     slot_of.argtypes = [ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint8)]
     accepted = [
-        op
-        for op, handler in enumerate(wasm_reader._STACK_ANALYSIS_DISPATCH)
-        if handler is not None
+        op for op, handler in enumerate(wasm_reader._STACK_ANALYSIS_DISPATCH) if handler is not None
     ]
     assert accepted, "the loader must accept at least one opcode"
     for op in accepted:
@@ -4748,3 +4764,162 @@ def test_jitr_106_dead_block_sharing_a_hot_card_is_never_queued_or_compiled():
     residents = [pc for pc, _trace in resident_module_traces(manager.cache, module)]
     assert residents == [live_block.head_pc]
     assert manager.cache.find_trace(dead_block.head_pc) is None
+
+
+# Opcodes that never sit inside a block's byte span. The control and structure opcodes end a
+# block or open one, and the call opcodes exit through the CPS path. The span excludes them.
+_OUTSIDE_BLOCK_SPAN_OPCODES = frozenset(
+    {0x00, 0x02, 0x03, 0x04, 0x05, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11}
+)
+
+# Opcodes whose immediate fixes the operand, written as the full instruction text. The generic
+# shape cannot place the index or the constant, so each entry gives its operands and result.
+_IMMEDIATE_OPCODE_TEMPLATES = {
+    "local.get": (("i32",), "", "i32", "local.get 0"),
+    "local.set": (("i32",), "local.get 0 ", None, "local.set 0"),
+    "local.tee": (("i32",), "local.get 0 ", "i32", "local.tee 0"),
+    "global.get": ((), "", "i32", "global.get 0"),
+    "global.set": (("i32",), "local.get 0 ", None, "global.set 0"),
+    "i32.const": ((), "", "i32", "i32.const 7"),
+    "i64.const": ((), "", "i64", "i64.const 7"),
+    "f32.const": ((), "", "f32", "f32.const 3.0"),
+    "f64.const": ((), "", "f64", "f64.const 3.0"),
+}
+_VALUE_TYPES = ("i32", "i64", "f32", "f64")
+_ARGUMENT_VALUES = {"i32": "7", "i64": "7", "f32": "3.0", "f64": "3.0"}
+# Each opcode repeats K times, so the block carries enough score to reach the admission threshold.
+_REPETITIONS = 4
+
+
+def _mnemonic(name: str) -> str:
+    """Return the WAT mnemonic of an opcode constant name such as I32_LOAD8_S or FC_MEMORY_FILL."""
+    text = name[3:] if name.startswith("FC_") else name
+    text = text.lower()
+    for prefix in ("i32", "i64", "f32", "f64", "memory", "local", "global"):
+        if text.startswith(prefix + "_"):
+            return prefix + "." + text[len(prefix) + 1 :]
+    return text
+
+
+def _accepted_opcode_names() -> list[tuple[str, str]]:
+    """Return (name, WAT mnemonic) for each loader-accepted opcode outside the span exclusions.
+
+    The list comes from the loader's dispatch table and the opcode constants, not from a hand
+    list. The 0xFC subopcodes are the FC_ constants that the loader parses, checked by the test.
+    """
+    from tier2_runtime.wasm import opcodes as wasm_opcodes
+    from tier2_runtime.wasm import reader as wasm_reader
+
+    single: dict[int, str] = {}
+    for name in dir(wasm_opcodes):
+        value = getattr(wasm_opcodes, name)
+        if (
+            name.isupper()
+            and isinstance(value, int)
+            and not name.startswith(("RPN_", "FC_", "BLOCKTYPE_"))
+        ):
+            single.setdefault(value, name)
+    selected: list[tuple[str, str]] = []
+    for opcode in range(256):
+        if wasm_reader._STACK_ANALYSIS_DISPATCH[opcode] is None:
+            continue
+        if opcode in _OUTSIDE_BLOCK_SPAN_OPCODES or opcode == wasm_opcodes.FC_PREFIX:
+            continue
+        selected.append((single[opcode], _mnemonic(single[opcode])))
+    for name in dir(wasm_opcodes):
+        if name.startswith("FC_") and name != "FC_PREFIX":
+            selected.append((name, _mnemonic(name)))
+    return selected
+
+
+def _validates(text: str) -> bool:
+    """Return whether the WAT module passes the reference validator (wasmtime compiles it)."""
+    try:
+        wasmtime.Module(wasmtime.Engine(), wasmtime.wat2wasm(text))
+    except wasmtime.WasmtimeError:
+        return False
+    return True
+
+
+def _opcode_module(mnemonic: str) -> tuple[str, tuple[str, ...]]:
+    """Return a WAT module whose exported function executes the opcode, and its parameter types.
+
+    The function repeats the instruction _REPETITIONS times so that its block reaches the
+    admission threshold, then returns the value of one final execution. The signature comes from
+    the first combination that the WAT validator accepts. Immediate opcodes use their template.
+    """
+    if mnemonic in _IMMEDIATE_OPCODE_TEMPLATES:
+        params, pushes, result, instruction = _IMMEDIATE_OPCODE_TEMPLATES[mnemonic]
+    else:
+        found = None
+        for count in range(4):
+            for candidate in product(_VALUE_TYPES, repeat=count):
+                for result_type in (None, *_VALUE_TYPES):
+                    pushes = "".join(f"local.get {index} " for index in range(count))
+                    text = _wat_function(candidate, result_type, pushes, mnemonic, 1)
+                    if not _validates(text):
+                        continue
+                    found = (candidate, result_type)
+                    break
+                if found is not None:
+                    break
+            if found is not None:
+                break
+        assert found is not None, f"no signature validates for {mnemonic}"
+        params, result = found[0], found[1]
+        pushes = "".join(f"local.get {index} " for index in range(len(params)))
+        instruction = mnemonic
+    return _wat_function(params, result, pushes, instruction, _REPETITIONS), params
+
+
+def _wat_function(params, result, pushes, instruction, repetitions) -> str:
+    """Return a module whose body repeats the instruction, dropping each non-final value."""
+    parameter_text = "".join(f" (param {value})" for value in params)
+    result_text = f" (result {result})" if result else ""
+    if result is None:
+        body = " ".join([f"{pushes}{instruction}"] * repetitions)
+    else:
+        body = " ".join([f"{pushes}{instruction} drop"] * (repetitions - 1))
+        body = f"{body} {pushes}{instruction}".strip()
+    return (
+        "(module (memory 1) (global (mut i32) (i32.const 0))"
+        f' (func (export "f"){parameter_text}{result_text} {body}))'
+    )
+
+
+@pytest.mark.parametrize(
+    ("opcode_name", "mnemonic"), _accepted_opcode_names(), ids=lambda value: str(value)
+)
+def test_jitr_107_every_loader_accepted_opcode_compiles_and_matches_the_interpreter(
+    opcode_name, mnemonic
+):
+    """TEST-JITR-107: every loader-accepted opcode in a block compiles and runs as the interpreter.
+
+    The opcode set is the loader's dispatch table minus the span exclusions (control, structure
+    and call opcodes, which end or leave a block) and the 0xFC prefix itself. Each function
+    repeats its instruction, is run until its block is hot, is compiled by the idle hook, and
+    then returns the same values as the plain interpreter.
+    """
+    wat, params = _opcode_module(mnemonic)
+    module_bytes = bytes(wasmtime.wat2wasm(wat))
+    engine = make_runtime_engine()
+    module = engine.load_wasm(module_bytes)
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    function_index = module.export_func_index("f")
+    arguments = [
+        int(_ARGUMENT_VALUES[value]) if value in ("i32", "i64") else float(_ARGUMENT_VALUES[value])
+        for value in params
+    ]
+    expected = list(Interpreter(module).call(function_index, arguments).unwrap())
+
+    block = max(instruction_blocks(module), key=lambda candidate: candidate.byte_span)
+    for _ in range(3):
+        assert (
+            list(engine.call(Interpreter(module), function_index, arguments).unwrap()) == expected
+        )
+    engine.idle_hook()
+    assert block.head_pc in manager.compilation_pcs, f"{opcode_name} block was not compiled"
+    invocations = engine.stat_jit_invocations
+    assert list(engine.call(Interpreter(module), function_index, arguments).unwrap()) == expected
+    assert engine.stat_jit_invocations > invocations, f"{opcode_name} ran outside the trace"

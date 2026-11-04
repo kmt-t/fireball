@@ -1364,11 +1364,12 @@ int jit_provider_adapter<Measurement>::observe_runtime_block(std::uintptr_t owne
                                                              wasm_pc_t pc) {
   assert(owner != 0);
   auto &runtime = *reinterpret_cast<runtime_type *>(owner);
+  const auto trackable = runtime.is_profiled_pc(pc);
   if constexpr (!std::is_void_v<Measurement>) {
     runtime.record_runtime_transition(block_index, pc);
-    runtime.measurements.interpreter_block_entered();
+    runtime.measurements.interpreter_block_entered(trackable);
   }
-  if (!runtime.is_profiled_pc(pc)) {
+  if (!trackable) {
     return 0;
   }
   runtime.record_block_visit(block_index, pc);

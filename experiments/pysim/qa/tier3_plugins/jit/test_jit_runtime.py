@@ -4025,6 +4025,58 @@ def test_jitr_117_trace_exit_flags_an_interpreter_terminator(
 
 
 
+def _interpreter_block_counts(manager) -> dict[str, int]:
+    """Read the observed-head counters through the shared printk dump (TEST-JITR-118)."""
+    from qa.private.jit_native_abi import RUNTIME_PRINT
+    from tier2_runtime.observability.logger import LogDictionary
+    from tier3_platform.drivers.printk import PrintkBuffer, PrintkSink
+
+    capture = PrintkBuffer(capacity=1 << 16)
+    sink = PrintkSink(capture, LogDictionary().decode_record)
+    assert RUNTIME_PRINT(manager._native.pointer, ctypes.byref(sink._raw_writer)) == 1
+    counts = {}
+    for line in capture.drain_output().decode().splitlines():
+        key, sep, raw = line.partition("=")
+        if sep and key.startswith("jit.interpreter_block_"):
+            counts[key] = int(raw)
+    return counts
+
+
+@pytest.mark.parametrize("trackable_all", (True, False))
+def test_jitr_118_observed_heads_split_into_trackable_and_untracked(trackable_all):
+    """TEST-JITR-118: each interpreted block head is counted once as trackable or untracked.
+
+    The two counts add up to the interpreted-head count. With every card trackable, no head is
+    untracked; with no card trackable, no head is trackable.
+    """
+    blocks = "(block i32.const 1 drop) " * 6
+    module = parse_standalone(
+        wat_to_wasm(f'(module (func (export "f") (result i32) {blocks}i32.const 7))')
+    )
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    # The mask starts with every card trackable, so the other case unmarks each head's card.
+    for block in instruction_blocks(module):
+        if trackable_all:
+            manager.trackable.mark(block.head_pc)
+        else:
+            manager.trackable.unmark(block.head_pc)
+    interpreter = Interpreter(module)
+    assert list(engine.call(interpreter, module.export_func_index("f"), []).unwrap()) == [7]
+    counts = _interpreter_block_counts(manager)
+    entries = counts["jit.interpreter_block_entries"]
+    trackable = counts["jit.interpreter_block_trackable"]
+    untracked = counts["jit.interpreter_block_untracked"]
+    assert entries > 0
+    assert trackable + untracked == entries
+    if trackable_all:
+        assert trackable == entries and untracked == 0
+    else:
+        assert trackable == 0 and untracked == entries
+
+
+
 if __name__ == "__main__":
     test_hotspot_01_2bit_card_marking_state_transitions()
     test_jitr_01_card_marking_granularity()

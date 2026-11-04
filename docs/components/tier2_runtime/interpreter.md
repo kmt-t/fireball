@@ -360,7 +360,7 @@ END_STACK は、VM の値スタックのポインタを変えない。一時値�
   - Python参照経路は `Interpreter.call()` でPythonハンドラを駆動する。
   - C++インタープリタ経路は `NativeInterpreter.call()` でC++ハンドラを駆動する。
   - C++インタープリタ＋JIT経路は、拡張を接続した `NativeInterpreter.call()` から同じC++ dispatcherを実行する。
-  - RuntimeEngineはSystemから要求されたscheduler境界までInterpreterを進める。C++ Interpreter dispatcherは共有実行状態を渡して任意のネイティブ実行拡張へtrace lookupを依頼する。JIT拡張はcard-stateとBasicBlockの常駐参照からentry情報を返す。Interpreter dispatcherがentryを呼び出し、trace bodyを実行する。InterpreterはJITキャッシュ状態や操作APIを所有しない。
+  - RuntimeEngineはSystemから要求されたscheduler境界までInterpreterを進める。C++ Interpreter dispatcherは共有実行状態を渡して任意のネイティブ実行拡張へtrace lookupを依頼する。JIT拡張はcard-stateとBasicBlockの常駐参照から常駐traceのヘッダを返す（戻り値の正本は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)）。Interpreter dispatcherがentryを呼び出し、trace bodyを実行する。InterpreterはJITキャッシュ状態や操作APIを所有しない。
 - **関数復帰の番兵**:
   - JITは `return` 命令や専用RETURN sentinelを生成しない。
   - JITトレースは `return` 直前で終了して共有状態を同期する。

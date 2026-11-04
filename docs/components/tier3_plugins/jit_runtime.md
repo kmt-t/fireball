@@ -307,7 +307,7 @@ stateDiagram-v2
 
 trace chainは、直線後続の常駐traceへ共通chain dispatcherからtail-jumpする経路である。分岐命令はtraceに含めず、C++ Interpreter CPS handlerが処理する。共通chain dispatcherはopcodeを判定せず、直線chainのtargetへの転送だけを担う。未接続targetは0で表す。C++ handler後にdispatcherが次traceを検索・起動する遷移はmachine-code chainではない。
 
-常駐トレースの選択、chain接続はTier 3 JIT拡張が所有する。Interpreterは共有実行状態とroot traceのentry情報を受け取り、trace entryを実行する。chain dispatcherはtarget traceへ移る前に`rel`をtargetの定数領域先頭へ設定する。call命令の意味論は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、terminal call stencilのhandler接続は[`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)と[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)を正本とする。通常の未接続chainで終端dispatcherへ到達したときはmetadata pointerを一時的に`context.rel`へ渡し、`body_end_ip`を`context.ip`へ設定して`true`で戻る。C++ dispatcherはそのmetadataからstackとInterpreter `rel`を確定する。未実行の終端分岐命令をInterpreterへ渡した場合は、対応handlerで処理して実行を再開する。JITで処理済みの制御命令は再実行しない。trace entryの`false`はtrap/CPS exitを示す。JIT拡張はlookup時にchainを走査せず、終端情報をtrace descriptorへ組み立てない。
+常駐トレースの選択、chain接続はTier 3 JIT拡張が所有する。Interpreterは共有実行状態とroot traceの戻り値（ヘッダ）を受け取り、trace entryを実行する。戻り値の正本は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)である。chain dispatcherはtarget traceへ移る前に`rel`をtargetの定数領域先頭へ設定する。call命令の意味論は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、terminal call stencilのhandler接続は[`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)と[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)を正本とする。通常の未接続chainで終端dispatcherへ到達したときはmetadata pointerを一時的に`context.rel`へ渡し、`body_end_ip`を`context.ip`へ設定して`true`で戻る。C++ dispatcherはそのmetadataからstackとInterpreter `rel`を確定する。未実行の終端分岐命令をInterpreterへ渡した場合は、対応handlerで処理して実行を再開する。JITで処理済みの制御命令は再実行しない。trace entryの`false`はtrap/CPS exitを示す。JIT拡張はlookup時にchainを走査せず、終端情報をtrace descriptorへ組み立てない。
 
 Interpreterは制御処理で確定した次ブロックのPCを保持する。通常命令を実行したブロックの観測を実行拡張へ通知する。候補性の判定、固定長履歴への記録、カード更新、コンパイル要求はJIT拡張内部で行う。Runtime Event Sinkはこの履歴を受け取らない。JIT無効構成は履歴、候補状態、コンパイラ、実行可能領域を持たない。デバッガ付き実行ではRuntimeがJIT拡張を迂回し、通常のInterpreter dispatcherを使う。
 
@@ -357,7 +357,7 @@ flowchart TD
 #### Interpreter拡張境界
 | 項目 | 内容 |
 | :--- | :--- |
-| 呼出 | Interpreterは判定点（ジャンプ、呼出しの入口、後方辺、関数復帰）でカード状態が`COMPILED`のとき、JIT拡張のtrace lookupを呼び、root entry、root `rel`、root frame depth、chain全体の必要stack量とtrace body数を受け取る。trace関数は`bool`を返す。`true`の場合は終端dispatcherだけがmetadata pointerを一時的に`context.rel`へ渡し、`body_end_ip`を`context.ip`へ設定する。Interpreter dispatcherはmetadataからstackとInterpreter `rel`を更新し、未実行の終端命令の処理後に次BasicBlockを解決する。`false`ならtrap/CPS exitを処理する。`if`、`br`、`br_if`はJIT traceに含まれず、分岐のCPS handlerが一度実行する。実行時制御フレームは作らない。 |
+| 呼出 | Interpreterは判定点（ジャンプ、呼出しの入口、後方辺、関数復帰）でカード状態が`COMPILED`のとき、JIT拡張のtrace lookupを呼び、root traceの戻り値を受け取る。戻り値の正本は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)のprovider接続契約の段落であり、ここには写さない。trace関数は`bool`を返す。`true`の場合は終端dispatcherだけがmetadata pointerを一時的に`context.rel`へ渡し、`body_end_ip`を`context.ip`へ設定する。Interpreter dispatcherはmetadataからstackとInterpreter `rel`を更新し、未実行の終端命令の処理後に次BasicBlockを解決する。`false`ならtrap/CPS exitを処理する。`if`、`br`、`br_if`はJIT traceに含まれず、分岐のCPS handlerが一度実行する。実行時制御フレームは作らない。 |
 | 内部処理 | 候補選択、trace lookup、履歴分析、キャッシュ更新、コンパイル要求はTier 3拡張内部に閉じる。個別のC++ Runtime操作APIを追加しない。 |
 | 拡張なし構成 | JIT拡張を結線しないInterpreter構成では、Interpreter dispatcherがCPS handlerを実行する。 |
 | 不変条件 | Tier 2 Runtimeはカード表、履歴リング、キュー、キャッシュ実装を参照しない。 |

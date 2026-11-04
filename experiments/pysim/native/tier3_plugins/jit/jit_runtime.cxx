@@ -237,17 +237,31 @@ int jit_runtime<Measurement>::compile_queued_candidates() {
     // without history (no-history strike) is compiled.
     const auto strikes =
         static_cast<std::uint8_t>(hotspots.admission_records[block_index] >> kAdmissionStrikeShift);
-    if (strikes != kAdmissionNoHistory &&
-        strikes >= admission_stage_limit(hotspots.admission_window.previous_evictions)) {
-      // The stage rejection is marked in the strikes until a relaxed stage restores it.
+    // A stage rejection is marked in the strikes, so a relaxed stage restores it
+    // (jit_runtime.md 8.2).
+    const auto reject_at_stage = [this, block_index, pc]() {
       auto &record = hotspots.admission_records[block_index];
       record = static_cast<std::uint8_t>((kAdmissionStageRejected << kAdmissionStrikeShift) |
                                          (record & kAdmissionLifetimeMask));
       exclude_compile_candidate(pc);
+    };
+    const auto stage = admission_stage_of(hotspots.admission_window.previous_evictions);
+    if (strikes != kAdmissionNoHistory && strikes >= admission_stage_limit(stage)) {
+      reject_at_stage();
       continue;
     }
-    // TODO(未決): rule (iv), the rank threshold T_f in jit_runtime.md 8.2, is undecided. Until it
-    // is decided, a candidate that passes rules (i) and (iii) compiles.
+    // Rule (iv): a block with history whose rank, the last lifetime times the score, is below the
+    // rank threshold of its stage is rejected as a stage rejection. Threshold 0 rejects nothing.
+    if (strikes != kAdmissionNoHistory) {
+      const auto lifetime = static_cast<std::uint64_t>(hotspots.admission_records[block_index] &
+                                                       kAdmissionLifetimeMask);
+      const auto rank =
+          lifetime * static_cast<std::uint64_t>(fireball::score_block(*admission_view));
+      if (rank < hotspots.admission_rank_threshold[static_cast<std::size_t>(stage)]) {
+        reject_at_stage();
+        continue;
+      }
+    }
     int status = 0;
     if constexpr (std::is_void_v<Measurement>) {
       status = compile_one_candidate(block_index, pc);
@@ -829,7 +843,8 @@ void jit_runtime<Measurement>::record_eviction(block_index_t block_index) {
   const auto lifetime = static_cast<std::uint8_t>(record & kAdmissionLifetimeMask);
   const auto strikes = static_cast<std::uint8_t>(record >> kAdmissionStrikeShift);
   const auto previous = strikes == kAdmissionNoHistory ? std::uint8_t{0} : strikes;
-  const auto limit = admission_stage_limit(hotspots.admission_window.previous_evictions);
+  const auto limit =
+      admission_stage_limit(admission_stage_of(hotspots.admission_window.previous_evictions));
   // A strike stops at the stage limit and never decreases when the stage tightens.
   const auto raised = static_cast<std::uint8_t>(std::min<std::uint8_t>(previous + 1, limit));
   const auto next = lifetime < kAdmissionShortLifetime ? std::max(raised, previous) : 0;
@@ -843,11 +858,12 @@ void jit_runtime<Measurement>::advance_admission_window() {
   auto &window = hotspots.admission_window;
   ++window.rotations;
   if (window.rotations == kAdmissionRotationGroup) {
-    const auto previous_limit = admission_stage_limit(window.previous_evictions);
+    const auto previous_limit =
+        admission_stage_limit(admission_stage_of(window.previous_evictions));
     window.previous_evictions = window.evictions;
     window.evictions = 0;
     window.rotations = 0;
-    if (admission_stage_limit(window.previous_evictions) > previous_limit) {
+    if (admission_stage_limit(admission_stage_of(window.previous_evictions)) > previous_limit) {
       restore_stage_rejections();
     }
   }
@@ -1464,6 +1480,9 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
   auto *admission_records = card_workspace + card_workspace_size;
   std::memset(admission_records, kAdmissionNoHistory << kAdmissionStrikeShift, view->block_count);
   runtime->hotspots.admission_records = admission_records;
+  runtime->hotspots.admission_rank_threshold = {FB_CONF_JIT_ADMISSION_RANK_STRICT,
+                                                FB_CONF_JIT_ADMISSION_RANK_MIDDLE,
+                                                FB_CONF_JIT_ADMISSION_RANK_RELAXED};
   auto *dirty = card_workspace + state_bytes;
   auto *mask = dirty + mask_bytes;
   typename runtime_type::profile_type profile{};

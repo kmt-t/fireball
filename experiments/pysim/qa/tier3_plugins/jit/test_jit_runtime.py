@@ -5272,3 +5272,37 @@ def test_jitr_103_block_without_instructions_is_a_contract_violation():
     )
     assert completed.returncode != 0, completed.stdout + completed.stderr[-400:]
     assert "Assertion" in completed.stderr, completed.stderr[-400:]
+
+
+_RELAXED_STAGE_INDEX = 2
+# A test input that no rank reaches; the configured rank thresholds are undecided and 0.
+_RANK_REJECTING_THRESHOLD = 2**31
+
+
+@pytest.mark.parametrize(
+    ("threshold", "compiled"), ((0, True), (_RANK_REJECTING_THRESHOLD, False))
+)
+def test_jitr_115_the_rank_rule_rejects_a_block_with_history_below_its_stage_threshold(
+    threshold, compiled
+):
+    """TEST-JITR-115: rule (iv) rejects a block with history whose rank is below the threshold.
+
+    The block has one short eviction, so its strikes are 1 and the stage is relaxed. With the
+    threshold at 0 (the configured value) it compiles. With a threshold no rank reaches, the
+    rejection is marked as a stage rejection, so a relaxed stage can restore it later.
+    """
+    engine, module, manager, index, block = _admission_engine()
+    _make_resident(engine, module, manager, block)
+    _call_admission(engine, module, 2)
+    for _ in range(3):
+        manager.cache.rotate()
+    assert _strikes(_admission_record(manager, index)) == 1
+    native_abi.ADMISSION_RANK_THRESHOLD(manager._native.pointer, _RELAXED_STAGE_INDEX, threshold)
+    _call_admission(engine, module, 5)
+    engine.idle_hook()
+    if compiled:
+        assert manager.bitmap.get_state(block.head_pc) == CardState.COMPILED
+    else:
+        assert _strikes(_admission_record(manager, index)) == 6
+        assert not manager.is_trackable(block.head_pc)
+        assert manager.bitmap.get_state(block.head_pc) != CardState.COMPILED

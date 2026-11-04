@@ -19,6 +19,22 @@ FB_CONF_JIT_AGING_STEP_UNITS: int = 2
 FB_CONF_JIT_AGING_STEP_SCAN_BYTES: int = 8
 # Candidate score threshold S_threshold of the JIT candidate bitmap ({JIT_CandidateBitmap} in jit_runtime.md).
 FB_CONF_JIT_CANDIDATE_THRESHOLD: int = 9
+# Compile admission (jit_runtime.md 8.2). Strikes stop at the stage limit; a short lifetime is below
+# the short-lifetime count; evictions are counted over groups of rotations.
+FB_CONF_JIT_ADMISSION_SHORT_LIFETIME: int = 10
+FB_CONF_JIT_ADMISSION_ROTATION_GROUP: int = 8
+# Stage limits S by the eviction rate f = evictions per group / rotation group: strict, middle, relaxed.
+FB_CONF_JIT_ADMISSION_LIMIT_STRICT: int = 2
+FB_CONF_JIT_ADMISSION_LIMIT_MIDDLE: int = 3
+FB_CONF_JIT_ADMISSION_LIMIT_RELAXED: int = 4
+# f at or above the strict rate selects the strict stage; f at or above the middle rate selects the
+# middle stage; below it, the relaxed stage.
+FB_CONF_JIT_ADMISSION_RATE_STRICT: int = 6
+FB_CONF_JIT_ADMISSION_RATE_MIDDLE: int = 2
+# Rank thresholds T_f (rank = last lifetime times candidate score). Undecided: 0 rejects nothing.
+FB_CONF_JIT_ADMISSION_RANK_STRICT: int = 0
+FB_CONF_JIT_ADMISSION_RANK_MIDDLE: int = 0
+FB_CONF_JIT_ADMISSION_RANK_RELAXED: int = 0
 
 # Fixed capacities and physical cache dimensions used by the simulator.
 FB_CONF_MAX_TYPES: int = 256

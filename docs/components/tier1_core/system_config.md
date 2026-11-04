@@ -101,6 +101,16 @@ ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式�
 | `FB_CONF_INTERPRETER_YIELD_THRESHOLD` | Interpreterが協調yieldするまでに取得するLOOP後方分岐数。C++ Interpreter単独とHybrid JITに適用する。100 MHz STM32 Cortex-M33で約300 µs（30,000サイクル / 約469サイクル/後方分岐）を狙う初期値であり、実機・実ワークロードで校正する | `64` | |
 | `FB_CONF_JIT_AGING_STEP_UNITS` | 3面キャッシュのローテーション1回ごとに処理する関数更新表の非ゼロバイト数（1バイト = 8関数）。0は aging を行わない構成を表す。 | `2` | |
 | `FB_CONF_JIT_AGING_STEP_SCAN_BYTES` | 3面キャッシュのローテーション1回ごとに走査する関数更新表のバイト数の上限（値が0のバイトも数える） | `8` | |
+| `FB_CONF_JIT_ADMISSION_SHORT_LIFETIME` | 設置後の入口回数（寿命）がこの値未満で破棄された trace は、ストライクを 1 増やす（採否の K） | `10` | 破棄の寿命の分布の測定による 10 回境界（測定記録はリポジトリ外） |
+| `FB_CONF_JIT_ADMISSION_ROTATION_GROUP` | 破棄数を数える回転の区切り（回転数） | `8` | 直近 8 回転の破棄頻度 f の定義（handoff の 3） |
+| `FB_CONF_JIT_ADMISSION_LIMIT_STRICT` | f ≥ `RATE_STRICT` の段階のストライク上限 S（見逃す回数） | `2` | 段階の表（handoff の 3） |
+| `FB_CONF_JIT_ADMISSION_LIMIT_MIDDLE` | `RATE_MIDDLE` ≤ f < `RATE_STRICT` の段階の S | `3` | 段階の表（handoff の 3） |
+| `FB_CONF_JIT_ADMISSION_LIMIT_RELAXED` | f < `RATE_MIDDLE` の段階の S | `4` | 段階の表（handoff の 3） |
+| `FB_CONF_JIT_ADMISSION_RATE_STRICT` | 厳しい段階の境界 f（破棄数 ÷ 区切り） | `6` | 段階の表（handoff の 3） |
+| `FB_CONF_JIT_ADMISSION_RATE_MIDDLE` | 中間の段階の境界 f | `2` | 段階の表（handoff の 3） |
+| `FB_CONF_JIT_ADMISSION_RANK_STRICT` | 厳しい段階の順位の閾値 T_f（直前の寿命 × 点数）。0 は順位による却下を行わない | `0`（未決） | 未決。測定の曲線を見て決める（測定記録はリポジトリ外） |
+| `FB_CONF_JIT_ADMISSION_RANK_MIDDLE` | 中間の段階の順位の閾値 T_f | `0`（未決） | 未決。同上 |
+| `FB_CONF_JIT_ADMISSION_RANK_RELAXED` | 緩い段階の順位の閾値 T_f | `0` | f < 2 の緩い段階は 0 とする（承認） |
 
 | `FB_CONF_GUEST_RAM_BASE` | ゲストRAMの開始アドレス（64KB境界配置） | `0x00000000` | |
 | `FB_CONF_GUEST_RAM_SIZE` | vMMIO Stage 1アドレス窓の境界判定サイズ。WASMリニアメモリのページ数とは別の設定である | 対象構成で定義 | |

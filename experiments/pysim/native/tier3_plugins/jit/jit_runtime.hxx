@@ -94,19 +94,44 @@ struct jit_cache_state {
   executable_memory code_memory{};
 };
 
-// The admission record of a block is one byte: strikes in the upper three bits and the lifetime
-// count in the lower five bits. jit_runtime.md 8.2 defines the uses of the count by time.
-inline constexpr std::uint8_t kAdmissionLifetimeMax = 31;
+// The admission record of a block is one byte: the upper three bits hold the strike value and the
+// lower five bits hold the lifetime count. jit_runtime.md 8.2 defines the uses of the count by
+// time.
 inline constexpr std::uint8_t kAdmissionStrikeShift = 5;
-inline constexpr std::uint8_t kAdmissionLifetimeMask = 0x1F;
-// Strike value of a block without history (the initial value of its record).
+inline constexpr std::uint8_t kAdmissionLifetimeMask = (1u << kAdmissionStrikeShift) - 1u;
+inline constexpr std::uint8_t kAdmissionLifetimeMax = kAdmissionLifetimeMask;
+// Strike values above the strikes are the markers of the record (jit_runtime.md 8.2).
 inline constexpr std::uint8_t kAdmissionNoHistory = 5;
-// A trace whose lifetime is below this count takes a strike at its eviction.
-inline constexpr std::uint8_t kAdmissionShortLifetime = 10;
-// Strike value of a block rejected at its stage limit; a relaxed stage restores it to zero.
 inline constexpr std::uint8_t kAdmissionStageRejected = 6;
-// Evictions are counted over groups of this many rotations.
-inline constexpr std::uint8_t kAdmissionRotationGroup = 8;
+inline constexpr std::uint8_t kAdmissionShortLifetime = FB_CONF_JIT_ADMISSION_SHORT_LIFETIME;
+inline constexpr std::uint8_t kAdmissionRotationGroup = FB_CONF_JIT_ADMISSION_ROTATION_GROUP;
+// The record holds the strikes, the no-history value and the stage-rejection value in three bits.
+static_assert(FB_CONF_JIT_ADMISSION_LIMIT_RELAXED < kAdmissionNoHistory);
+static_assert(kAdmissionStageRejected < (1u << (8u - kAdmissionStrikeShift)));
+static_assert(kAdmissionLifetimeMax == 31u);
+
+/** @brief 段階。直前に終わった区切りの破棄数 w から、f = w ÷ 区切り を求めて決まる。 */
+enum class admission_stage : std::uint8_t { strict, middle, relaxed };
+constexpr admission_stage admission_stage_of(std::uint32_t previous_evictions) {
+  const auto rate = previous_evictions / kAdmissionRotationGroup;
+  if (rate >= FB_CONF_JIT_ADMISSION_RATE_STRICT) {
+    return admission_stage::strict;
+  }
+  return rate >= FB_CONF_JIT_ADMISSION_RATE_MIDDLE ? admission_stage::middle
+                                                   : admission_stage::relaxed;
+}
+/** @brief 段階のストライク上限 S。 */
+constexpr std::uint8_t admission_stage_limit(admission_stage stage) {
+  switch (stage) {
+  case admission_stage::strict:
+    return FB_CONF_JIT_ADMISSION_LIMIT_STRICT;
+  case admission_stage::middle:
+    return FB_CONF_JIT_ADMISSION_LIMIT_MIDDLE;
+  case admission_stage::relaxed:
+    return FB_CONF_JIT_ADMISSION_LIMIT_RELAXED;
+  }
+  return FB_CONF_JIT_ADMISSION_LIMIT_RELAXED;
+}
 
 /** @brief 8 回転ごとの破棄数の区切り。直前に終わった区切りの破棄数が段階を決める。 */
 struct jit_admission_window {
@@ -115,18 +140,14 @@ struct jit_admission_window {
   std::uint16_t previous_evictions = 0;
 };
 
-/** @brief 段階のストライク上限 S。f = 破棄数 ÷ 8 が 6 以上なら 2、2 以上 6 未満なら 3、2 未満なら
- * 4。 */
-constexpr std::uint8_t admission_stage_limit(std::uint32_t previous_evictions) {
-  return previous_evictions >= 48 ? 2 : (previous_evictions >= 16 ? 3 : 4);
-}
-
 /** @brief 借用カード領域と、所有する履歴・候補キューを保持する。 */
 template <class Profile> struct jit_hotspot_state {
   std::uint8_t *card_states = nullptr;
   // One admission record per block, borrowed from the plugin region with the card workspace.
   std::uint8_t *admission_records = nullptr;
   jit_admission_window admission_window{};
+  // Rank thresholds T_f by stage, indexed by admission_stage.
+  std::array<std::uint32_t, 3> admission_rank_threshold{};
   std::uint8_t *dirty_cards = nullptr;
   card_index_t card_count = 0;
   std::uint32_t dirty_mask_bytes = 0;

@@ -2349,9 +2349,9 @@ def test_jit_structural_delimiters_are_loader_metadata_and_emit_no_operations():
         elif not should_be_in_body:
             assert block_at_delimiter is None or block_at_delimiter.byte_span == 0
 
-    # Each loader block is compiled from its own metadata. A block holding only delimiters has no
-    # operation, so its trace does not exist; every other block must compile.
-    delimiter_only_blocks = 0
+    # Every block with an instruction compiles from its own metadata. A block holding only
+    # delimiters scores zero, so rule (i) of the admission rejects it before the compiler.
+    delimiter_heads = []
     for block in function_blocks:
         if block.byte_span == 0:
             continue
@@ -2361,13 +2361,26 @@ def test_jit_structural_delimiters_are_loader_metadata_and_emit_no_operations():
             for instruction in instructions
             if block_offset <= instruction.offset < block_offset + block.byte_span
         ]
-        trace = compile_module_block(TraceCompiler(), module, block)
         if block_opcodes and all(opcode in delimiter_opcodes for opcode in block_opcodes):
-            delimiter_only_blocks += 1
-            assert trace is None
-        else:
-            assert trace is not None and trace.code_blob is not None
-    assert delimiter_only_blocks == 2
+            delimiter_heads.append(block.head_pc)
+            continue
+        trace = compile_module_block(TraceCompiler(), module, block)
+        assert trace is not None and trace.code_blob is not None
+    assert len(delimiter_heads) == 2
+
+    # The engine path: every card is observed, and no delimiter-only block gets a trace.
+    engine = make_runtime_engine()
+    engine_module = engine.load_wasm(bytes(wasmtime.wat2wasm(wat)))
+    engine.register_module_blocks(engine_module)
+    manager = engine.jit_runtime
+    for pc in range(function.code_pc_offset, function.code_pc_offset + len(code)):
+        manager.trackable.mark(pc)
+    interpreter = Interpreter(engine_module)
+    for _ in range(5):
+        engine.call(interpreter, engine_module.export_func_index("delimiters"), [1]).unwrap()
+    engine.idle_hook()
+    for head in delimiter_heads:
+        assert manager.cache.find_trace(head) is None
 
 
 @pytest.mark.parametrize(
@@ -5231,3 +5244,31 @@ def test_jitr_114_a_score_rejection_is_not_restored_when_the_stage_relaxes():
     assert not manager.is_trackable(low_block.head_pc)
     assert _strikes(_admission_record(manager, low_index)) == 5
     assert manager.bitmap.get_state(low_block.head_pc) != CardState.COMPILED
+
+
+_STRUCTURAL_BLOCK_WORKER = """
+from qa.tier3_plugins.jit.test_jit_runtime import (
+    TraceCompiler, compile_module_block, instruction_blocks, parse_standalone, wat_to_wasm)
+
+module = parse_standalone(wat_to_wasm('(module (func (export "f") (block)))'))
+block = instruction_blocks(module)[0]
+assert block.byte_span > 0
+print("compiled" if compile_module_block(TraceCompiler(), module, block) else "rejected")
+"""
+
+
+def test_jitr_103_block_without_instructions_is_a_contract_violation():
+    """TEST-JITR-103: a block that holds no instruction and no call exit aborts the compiler.
+
+    Its score is zero, so rule (i) of the admission rejects it before it reaches the compiler.
+    The compiler asserts instead of returning a silent failure.
+    """
+    completed = subprocess.run(
+        [sys.executable, "-c", _STRUCTURAL_BLOCK_WORKER],
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+    )
+    assert completed.returncode != 0, completed.stdout + completed.stderr[-400:]
+    assert "Assertion" in completed.stderr, completed.stderr[-400:]

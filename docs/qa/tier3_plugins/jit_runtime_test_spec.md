@@ -174,6 +174,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-100 | 処理数0（aging を行わない構成）のエイジング | 処理数0の構成でQA probeライブラリを作り、非ゼロバイトを持つdirty表がある | ローテーションを3回実行する | 各ローテーションは1ステップと数える。処理する非ゼロバイトと走査バイトは0である。カーソルは動かず、カード状態は`EXECUTED`のまま残る | `JIT_CardAgingSweep` |
 | TEST-JITR-101 | 呼出し後継続blockのentry stack words | 呼出し結果の前に演算数が残るloop本体があり、継続blockがその演算数を消費する | 結果を比較し、継続blockが常駐traceになることを確認する | 結果は`n(n+1)/2`と一致する。継続blockはentry stack words 2で、JITにコンパイルされる。entry stack wordsを0と読むと継続blockはコンパイルされない | `runtime_loader.md`「`module.blocks`と`block_storage`」の`entry_stack_words` |
 | TEST-JITR-102 | 入口語数を超えるpopは契約違反 | 呼出し後継続blockの入口語数を0と読ませたloader metadataがある | 別プロセスでloadし、トレースを実行する | プロセスはassertで停止する。入口語数の不足を0として黙って失敗を返さない | `jit_compiler.md`「コンパイル失敗の要因」 |
+| TEST-JITR-103 | 命令 0 件の block はコンパイラの契約違反 | 命令が 0 件で、呼出しの終端もない block だけを持つ module | 別プロセスでコンパイルする | プロセスは assert で中断する | `jit_compiler.md`「命令が 0 件の block」 |
 | TEST-JITR-104 | loaderが受理するopcodeのruntime API slot | loaderが受理する単一byte opcodeと0xFCの subopcode 0–7、10、11 | 公開されたslot表で、stencilと終端の経路を除く各opcodeの slot を引く | 全opcodeにslotがある。欠けると trace compiler は assert で停止する | `jit_compiler.md`「コンパイル失敗の要因」 |
 | TEST-JITR-105 | operand値の上限に達するblockのコンパイル | 64個のi64定数を積み、呼出しで消費するblockがあり、その語数は値スタック容量に等しい | blockをコンパイルする | traceが得られる。深さの検査はこの境界で拒否しない | `jit_compiler.md`「1トレースは」の共有stack深さ |
 | TEST-JITR-106 | 到達不能blockは同じcardが HOT でも待ち列に入らない | `unreachable` 相当の `br` の後ろに短い到達不能blockがあり、実行されるblockと同じcardを共有する | 実行を3回行い、idle hookを呼ぶ | 実行されたblockだけがコンパイルされ、到達不能blockのtraceは存在しない | `jit_compiler.md`「コンパイラが受け取るのは実行された block だけである」 |

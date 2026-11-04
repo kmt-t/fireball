@@ -187,6 +187,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-113 | 段階が緩くなったときの却下の回復 | 20 個の破棄で段階を厳しくし、対象の block を段階の上限で却下させ、空の区切りで段階を緩める | 対象の候補マスクが戻り、ストライクが 0 になり、次の採否でコンパイルされる | 回復は段階が緩くなった区切りだけで起きる（ルール「回復」） | `jit_runtime.md`「回復」 |
 | TEST-JITR-114 | 点数不足の却下は段階の緩和で戻らない | 113 の段階の変化の中で、点数が閾値未満の block を観測させる | 点数による却下の block は、ストライク 5 のままで、トラッカブルマスクが戻らない | 回復はストライク 6 の block だけに行う（ルール「回復」） | `jit_runtime.md`「回復」 |
 | TEST-JITR-116 | providerの共通trace entryと配置 | JIT runtimeを接続し、providerを読む | providerの`trace_entry_address`を、共通コード領域の入口と比べる。`fb_native_jit_provider`の大きさと各欄のoffsetを、C++側のoffsetofと照合する | `trace_entry_address`が共通コード領域の入口のaddressと一致する。ctypesの大きさと各欄のoffsetがC++側と一致し、ずれると試験が失敗する | `test_jit_runtime.py::test_jitr_provider_carries_the_one_common_trace_entry`、[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)「JITランタイム呼出し契約」 |
+| TEST-JITR-117 | trace終了位置の制御opcodeを境界metadataへ記録する | 終了位置が`br_if`の直前、後続が通常opcode、ブロックの終端の3つのblock | blockをコンパイルし、境界metadataの`interpreter_terminator_pending`を読む | 直前が`br_if`なら1、通常opcodeまたは終端なら0となる。Interpreterは終了位置のbyteを比べず、この値を読む | `test_jit_runtime.py::test_jitr_117_trace_exit_flags_an_interpreter_terminator`、[`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)「トレース境界metadata」 |
 
 ### 実装上の注意点に対応する検証
 <!-- traceability: {GOTCHA-INTP-06} {GOTCHA-JITR-01} {GOTCHA-JITR-02} {GOTCHA-JITR-03} {GOTCHA-JITR-05} {GOTCHA-JITR-06} {GOTCHA-JITR-07} {GOTCHA-JITR-08} {GOTCHA-JITR-09} -->

@@ -34,6 +34,9 @@ struct fb_native_jit_trace_exit {
   // Loader-resolved block index for next_pc; invalid when no successor exists.
   block_index_t block_index;
   frame_depth_t frame_depth;
+  // 1 when the Interpreter executes the opcode at body_end_ip after this trace (if, br, br_if,
+  // call, call_indirect). Decided at compile time from that opcode.
+  std::uint8_t interpreter_terminator_pending;
 };
 
 enum fb_native_jit_trace_exit_kind : std::uint8_t {

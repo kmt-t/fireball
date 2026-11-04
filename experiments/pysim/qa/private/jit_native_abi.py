@@ -113,6 +113,7 @@ class NativeTraceExit(ctypes.Structure):
         ("interpreter_rel_bytes", ctypes.c_uint32),
         ("block_index", ctypes.c_uint16),
         ("frame_depth", ctypes.c_uint8),
+        ("interpreter_terminator_pending", ctypes.c_uint8),
     )
 
 
@@ -136,6 +137,7 @@ assert NativeTraceHeader.const_rel_offset.offset == 28
 assert ctypes.sizeof(NativeTraceHeader) == 32
 assert NativeTraceExit.block_index.offset == 16
 assert NativeTraceExit.frame_depth.offset == 18
+assert NativeTraceExit.interpreter_terminator_pending.offset == 19
 assert ctypes.sizeof(NativeTraceExit) == 20
 
 

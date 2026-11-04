@@ -55,7 +55,7 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 - **共通コード領域**: x64 JIT領域には`lir/x64/common.S`から生成したchain dispatcherを配置する。配置offsetはTier 1構成から渡し、C++ ABI probeから得た構造体offsetをassembly macroへ反映する。共通chain dispatcherはopcodeを判定しない。x64の領域サイズとoffsetは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) および [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) を正本とする。ARMv8-Mのサイズと配置はTBDである。 `{JIT_MultiBuffer_Cache}`
 - **操作ステンシル (`lir/x64/operations.S`)**: 算術、local操作、Runtime API呼出しをアセンブリで定義する。生成器はPIC raw binaryとsymbol・分岐・即値・命令slot metadataを出力する。実行時trace builderは操作コードを連結し、即値slotを埋め、local memory instructionをエンコードする。ARMv8-Mの物理仕様はTBD。
 - **JIT トレースヘッダ (`jit_trace_header`)**: 各ネイティブtraceの先頭に配置する実行時ヘッダである。x64では32バイトで、chain target、chain dispatcherへの相対値、配置サイズ、stack境界値、frame depth、exit種別、u16基本ブロック番号、定数領域offsetを保持する。bodyはヘッダ直後の`+0x20`から始まる。exit種別は既存reserved byteを用いてcall CPS終端operationを識別し、そのtraceを通常のnative chainから除外する。定数領域の先頭4 byteにheader相対参照をtraceごとに一つ置き、その後にRuntime API recordを使用順に並べる。pool footerやノードごとのheader参照は置かない。chain先ではtarget headerのpool anchorからrecord先頭へ`rel`を初期化する。
-- **トレース境界metadata (`jit_trace_boundary_metadata`)**: JIT exitでInterpreterへ返す20バイトrecordである。`body_end_ip`、`next_pc`、`loops_to`、注釈消費byte数をu32で保持し、offset 16にu16の次BasicBlock index、offset 18にu8の制御深度、offset 19にu8の結果word数を置く。`block_index`はLoaderから渡された`next_block_index`を格納し、Interpreterはindexと`next_pc`の一致を検証する。`boundary_next_pc`と`boundary_loops_to`は`run_step`との境界比較用にPCのまま保持する。
+- **トレース境界metadata (`jit_trace_boundary_metadata`)**: JIT exitでInterpreterへ返す20バイトrecordである。`body_end_ip`、`next_pc`、`loops_to`、注釈消費byte数をu32で保持し、offset 16にu16の次BasicBlock index、offset 18にu8の制御深度、offset 19にu8の`interpreter_terminator_pending`を置く。その値は、Interpreterが`body_end_ip`の命令を続けて実行するなら1、しないなら0である（判定の規則は「制御フロー境界」を正本とする）。`block_index`はLoaderから渡された`next_block_index`を格納し、Interpreterはindexと`next_pc`の一致を検証する。`boundary_next_pc`と`boundary_loops_to`は`run_step`との境界比較用にPCのまま保持する。
 
 #### コンパイラ入口
 <!-- traceability: {JIT_AssemblyStencilCodegen} {META_ContractImplSplit} -->
@@ -113,7 +113,7 @@ Loaderは構造化制御フローを静的metadataへ解決する。trace compil
 | `else` | `0x05` | `if`のelse側の継続先を静的に記録する | 操作なし（0 byte） |
 | `end` | `0x0B` | 制御構造の終了と継続先を静的に記録する | 操作なし（0 byte） |
 
-`if`、`br`、`br_if`は構文デリミタではない。traceはそれらのopcode直前で終了し、opcodeを実行しない。C++ Interpreter dispatcherがLoader metadataと未実行opcodeからCPS handlerを選び、条件評価、stack復元、PC、block indexを更新する。分岐先traceが常駐していてもnative chainは行わない。
+`if`、`br`、`br_if`は構文デリミタではない。traceはそれらのopcode直前で終了し、opcodeを実行しない。trace終了位置のopcodeが`if`、`br`、`br_if`、`call`、`call_indirect`のいずれかなら、境界metadataの`interpreter_terminator_pending`を1にする。Interpreterはこの値を読み、終了位置のbyteを比べ直さない。C++ Interpreter dispatcherがLoader metadataと未実行opcodeからCPS handlerを選び、条件評価、stack復元、PC、block indexを更新する。分岐先traceが常駐していてもnative chainは行わない。
 
 trace chainは、直線後続の常駐traceへ共通コード領域のchain dispatcherからtail-jumpする経路である。連結の可否は制御の形（直線後続、後方辺、loop、call CPS）だけで決め、スタックの語数では決めない。連結先は入口の値を消費してよく、sp は連結先の末尾で`execution_context.stack_pointer`へ書き戻される。分岐命令はchain接続点にせず、分岐のハンドラがJIT入口を判定し、入口のときだけCPS exitを出す。取得済みLOOP後方辺は共有`loop_jump_count`へ一度だけ加算し、yieldしきい値とstatusの契約は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)に従う。
 

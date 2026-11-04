@@ -29,6 +29,17 @@ struct jit_compile_result {
   fb_native_jit_trace_exit_kind exit_kind = FB_NATIVE_JIT_TRACE_NORMAL;
 };
 
+/** @brief The exit ip of a trace: the block end unless the compiler ended the body earlier. */
+inline code_ip_t trace_body_end(const jit_compile_result &result, code_ip_t block_end) {
+  return result.body_end_ip == kNoTraceExitIp ? block_end : result.body_end_ip;
+}
+
+/** @brief Opcodes the Interpreter's CPS handlers execute after a trace: if, br, br_if, call,
+ * call_indirect. */
+inline bool opcode_is_interpreter_terminator(std::uint8_t opcode) {
+  return opcode == 0x04 || opcode == 0x0C || opcode == 0x0D || opcode == 0x10 || opcode == 0x11;
+}
+
 int compile_wasm_trace(const std::uint8_t *code, code_offset_t code_bytes,
                        code_offset_t code_offset, code_offset_t byte_span,
                        std::uint32_t has_next_pc, wasm_pc_t next_pc, std::uint32_t has_loops_to,
@@ -48,6 +59,6 @@ int build_trace(const std::uint8_t *body, code_offset_t body_bytes,
                 const fireball::jit_compile_result *result, wasm_pc_t head_pc,
                 frame_depth_t frame_depth, block_index_t block_index, code_ip_t body_end_ip,
                 wasm_pc_t next_pc, wasm_pc_t loops_to, block_index_t next_block_index,
-                std::uint8_t *output, code_offset_t capacity);
+                bool interpreter_terminator_pending, std::uint8_t *output, code_offset_t capacity);
 } // namespace fireball
 #endif

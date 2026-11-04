@@ -1179,14 +1179,9 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Resul
   assert(completed_trace_exit->block_index == completed_block.next_block_index);
   frame.boundary_next_pc = completed_trace_exit->next_pc;
   frame.boundary_loops_to = completed_trace_exit->loops_to;
-  const auto interpreter_terminator_pending =
-      context.ip < context.code_size &&
-      (context.code[context.ip] == 0x04 || context.code[context.ip] == 0x0C ||
-       context.code[context.ip] == 0x0D || context.code[context.ip] == 0x10 ||
-       context.code[context.ip] == 0x11);
   // The Interpreter CPS handler still needs the source block for an unexecuted
-  // control or call terminator after the trace has returned.
-  if (!interpreter_terminator_pending) {
+  // control or call terminator after the trace has returned. The compiler decided this.
+  if (completed_trace_exit->interpreter_terminator_pending == 0) {
     context.current_block_index = completed_trace_exit->block_index;
   }
   dispatch_rel = interpreter_rel_after_jit_trace(frame, completed_block_index,

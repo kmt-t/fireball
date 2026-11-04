@@ -91,7 +91,7 @@ Interpreter opcode handlerの型は`void (execution_context*, const uint8_t*, ui
 ヘッダはJITコードから相対参照できるコード近傍に置く。生成コードまたは共通コードが読み取るtrace固有の値だけを保持する。
 先頭PC、コード長、論理的な後続PCはcacheの管理情報に保持する。未使用のvariant予約欄は設けない。
 
-trace末尾には境界metadataを置き、定数poolをその直後に置く。境界metadataは`body_end_ip`、`next_pc`、`loops_to`、`interpreter_rel_bytes`をu32、`block_index`をu16、`frame_depth`をu8で持ち、末尾の1バイトは配置の余白とし、全体は20バイトである。`interpreter_rel_bytes`はtrace内命令が消費するInterpreter注釈poolのbyte数であり、導出値recordと可変命令幅recordを含む。`body_end_ip`は関数内相対offsetで、x64終端dispatcherが`execution_context.ip`へ設定する。`next_pc`と`loops_to`はmodule内PCである。slot数fieldは設けない。共通chain dispatcherへの相対値は`common_code_relative`に記録する。ステンシルとchain dispatcherはPICとして生成し、GOT/PLTを使わない。生成器は出力objectのGOT/PLT sectionとコードrelocationを拒否する。
+trace末尾には境界metadataを置き、定数poolをその直後に置く。境界metadataは`body_end_ip`、`next_pc`、`loops_to`、`interpreter_rel_bytes`をu32、`block_index`をu16、`frame_depth`をu8で持ち、末尾の1バイトは`interpreter_terminator_pending`とし、その規則と位置は[`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)の境界metadataの項を正本とする。全体は20バイトである。`interpreter_rel_bytes`はtrace内命令が消費するInterpreter注釈poolのbyte数であり、導出値recordと可変命令幅recordを含む。`body_end_ip`は関数内相対offsetで、x64終端dispatcherが`execution_context.ip`へ設定する。`next_pc`と`loops_to`はmodule内PCである。slot数fieldは設けない。共通chain dispatcherへの相対値は`common_code_relative`に記録する。ステンシルとchain dispatcherはPICとして生成し、GOT/PLTを使わない。生成器は出力objectのGOT/PLT sectionとコードrelocationを拒否する。
 
 Runtime API 記録の形の正本は、この節である。記録は、u8 slot、u8 即値個数、u8 即値の幅の和、u32 `code_ip_t`、即値、末尾の u32 再開位置の順に並ぶ。即値の幅の和は、即値の幅の合計に末尾の再開位置の 4 byte を含めた値である。終端 API 記録では、先頭の即値が関数注釈 pool の byte offset（u32、命令の注釈の先頭）である。末尾の再開位置（u32）は、その命令を実行した後の注釈 pool の byte offset（命令の注釈の直後）である。Runtime API が Interpreter へ戻るとき、Interpreter はこの位置から続きを読む。スタブは、先頭 7 byte と即値の幅の和だけ `rel` を進める。
 

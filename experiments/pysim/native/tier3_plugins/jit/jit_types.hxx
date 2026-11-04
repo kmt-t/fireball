@@ -49,6 +49,7 @@ using jit_trace_boundary_metadata = fb_native_jit_trace_exit;
 static_assert(offsetof(jit_trace_boundary_metadata, body_end_ip) == 0);
 static_assert(offsetof(jit_trace_boundary_metadata, block_index) == 16);
 static_assert(offsetof(jit_trace_boundary_metadata, frame_depth) == 18);
+static_assert(offsetof(jit_trace_boundary_metadata, interpreter_terminator_pending) == 19);
 static_assert(sizeof(jit_trace_boundary_metadata) == 20);
 struct jit_common_layout {
   code_offset_t region_bytes, common_code_bytes;

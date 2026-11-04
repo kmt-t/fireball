@@ -128,8 +128,8 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
                           const fireball::jit_compile_result *r, wasm_pc_t head_pc,
                           frame_depth_t frame_depth, block_index_t block_index,
                           code_ip_t body_end_ip, wasm_pc_t next_pc, wasm_pc_t loops_to,
-                          block_index_t next_block_index, std::uint8_t *output,
-                          code_offset_t capacity) {
+                          block_index_t next_block_index, bool interpreter_terminator_pending,
+                          std::uint8_t *output, code_offset_t capacity) {
   using namespace fireball;
   if (body == nullptr || r == nullptr || output == nullptr ||
       capacity < header_bytes + kTraceBoundaryMetadataBytes || bytes > capacity - header_bytes) {
@@ -171,13 +171,18 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
   if (metadata_offset > header_bytes + bytes) {
     std::memset(output + header_bytes + bytes, 0, metadata_offset - header_bytes - bytes);
   }
-  const auto trace_body_end_ip = r->body_end_ip == kNoTraceExitIp ? body_end_ip : r->body_end_ip;
+  const auto trace_body_end_ip = trace_body_end(*r, body_end_ip);
   if (trace_body_end_ip > body_end_ip && r->exit_kind != FB_NATIVE_JIT_TRACE_CALL_CPS) {
     return 0;
   }
-  const jit_trace_boundary_metadata boundary_metadata{trace_body_end_ip, next_pc,
-                                                      loops_to,          r->interpreter_rel_bytes,
-                                                      next_block_index,  frame_depth};
+  const jit_trace_boundary_metadata boundary_metadata{
+      trace_body_end_ip,
+      next_pc,
+      loops_to,
+      r->interpreter_rel_bytes,
+      next_block_index,
+      frame_depth,
+      static_cast<std::uint8_t>(interpreter_terminator_pending)};
   std::memcpy(output + metadata_offset, &boundary_metadata, sizeof(boundary_metadata));
   return 1;
 }
@@ -203,9 +208,13 @@ extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block *block, std::
   if (status != 1) {
     return status;
   }
+  const auto block_end = block->offset + block->byte_span;
+  const auto exit_ip = trace_body_end(result, block_end);
+  const auto terminator_pending =
+      exit_ip < block->code.bytes && opcode_is_interpreter_terminator(block->code.data[exit_ip]);
   return build_trace(body_scratch, result.body_bytes, &result, block->head_pc, block->frame_depth,
-                     block->block_index, block->offset + block->byte_span, block->next_pc,
-                     block->loops_to, block->next_block_index, output, capacity)
+                     block->block_index, block_end, block->next_pc, block->loops_to,
+                     block->next_block_index, terminator_pending, output, capacity)
              ? 1
              : -1;
 }

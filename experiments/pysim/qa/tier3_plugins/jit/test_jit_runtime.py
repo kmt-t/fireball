@@ -3984,6 +3984,47 @@ engine.call(Interpreter(module), 0, [])
 
 
 
+@pytest.mark.parametrize(
+    ("code_bytes", "byte_length", "expected_pending"),
+    (
+        # The block ends right before a br_if, which the Interpreter handles after the trace.
+        (b"\x41\x01\x0d\x00", 2, 1),
+        # The next opcode is a plain operation, so the Interpreter does not take over.
+        (b"\x41\x01\x41\x02", 2, 0),
+        # The block ends at the end of its code.
+        (b"\x41\x01\x41\x02", 4, 0),
+    ),
+)
+def test_jitr_117_trace_exit_flags_an_interpreter_terminator(
+    code_bytes, byte_length, expected_pending
+):
+    """TEST-JITR-117: the trace exit record says whether the Interpreter handles the next opcode.
+
+    The flag is decided at compile time from the opcode at the exit point. The Interpreter reads
+    the flag and does not compare the code bytes after the trace returns.
+    """
+    empty_view = native_abi.NativeByteView(0, 0)
+    code_storage = ctypes.create_string_buffer(code_bytes)
+    annotation_storage = ctypes.create_string_buffer(bytes(10))
+    block = native_abi.WasmBlock(
+        head_pc=0x200,
+        code=native_abi.NativeByteView(ctypes.addressof(code_storage), len(code_bytes)),
+        offset=0,
+        byte_length=byte_length,
+        next_pc=0x202,
+        loops_to=None,
+        locals=native_abi.NativeLocalLayout(empty_view, empty_view, 0, 0),
+        interpreter_annotations=native_abi.NativeByteView(ctypes.addressof(annotation_storage), 10),
+    )
+    trace = TraceCompiler.compile_wasm(block)
+    assert trace is not None and trace.code_blob is not None
+    header = native_abi.NativeTraceHeader.from_buffer_copy(trace.code_blob)
+    exit_offset = header.const_rel_offset - ctypes.sizeof(native_abi.NativeTraceExit)
+    trace_exit = native_abi.NativeTraceExit.from_buffer_copy(trace.code_blob, exit_offset)
+    assert trace_exit.interpreter_terminator_pending == expected_pending
+
+
+
 if __name__ == "__main__":
     test_hotspot_01_2bit_card_marking_state_transitions()
     test_jitr_01_card_marking_granularity()

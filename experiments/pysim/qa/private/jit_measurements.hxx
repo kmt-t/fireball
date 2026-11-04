@@ -60,6 +60,7 @@ struct jit_measurements {
   std::array<std::uint64_t, admission_stage_count * admission_rank_buckets> admission_rank_hist{};
   std::array<std::uint64_t, admission_stage_count * admission_use_levels> admission_use_hist{};
   std::uint64_t lookup_calls = 0;
+  std::uint64_t interpreter_block_entries = 0;
   std::uint64_t execution_count = 0, history_overwritten = 0, last_overwritten = 0;
   std::uint64_t history_dropped = 0;
   std::uint64_t trackable_generation = 0;
@@ -91,6 +92,7 @@ struct jit_measurements {
            printk_u64(writer, "jit.installed_bytes_total", installed_bytes_total) &&
            write_eviction_buckets(writer) && write_block_installs(writer) &&
            write_admission(writer) && printk_u64(writer, "jit.execution_count", execution_count) &&
+           printk_u64(writer, "jit.interpreter_block_entries", interpreter_block_entries) &&
            printk_u64(writer, "jit.history_overwritten", history_overwritten) &&
            printk_u64(writer, "jit.last_overwritten", last_overwritten) &&
            printk_u64(writer, "jit.trackable_generation", trackable_generation) &&
@@ -212,6 +214,8 @@ struct jit_measurements {
     }
   }
   void lookup_called() { ++lookup_calls; }
+  // Every interpreter block head, whether or not its card is trackable.
+  void interpreter_block_entered() { ++interpreter_block_entries; }
   void trace_evicted(block_index_t index) {
     assert(index < per_block_capacity);
     ++evictions;

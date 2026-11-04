@@ -1387,6 +1387,7 @@ int jit_provider_adapter<Measurement>::observe_runtime_block(std::uintptr_t owne
   auto &runtime = *reinterpret_cast<runtime_type *>(owner);
   if constexpr (!std::is_void_v<Measurement>) {
     runtime.record_runtime_transition(block_index, pc);
+    runtime.measurements.interpreter_block_entered();
   }
   if (!runtime.is_profiled_pc(pc)) {
     return 0;

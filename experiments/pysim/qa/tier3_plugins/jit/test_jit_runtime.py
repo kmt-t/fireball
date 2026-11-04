@@ -5042,7 +5042,8 @@ def test_jitr_111_a_block_at_its_stage_limit_is_rejected_by_its_next_decision():
     """TEST-JITR-111: a block whose strikes reach the stage limit is rejected, and never compiles.
 
     Four short evictions take the strikes to 4, which is the limit of the first stage. The next
-    decision rejects the block: its card is no longer a candidate, and no trace is installed.
+    decision rejects the block: its card is no longer a candidate, no trace is installed, and the
+    strikes take the stage-rejection value 6.
     """
     engine, module, manager, index, block = _admission_engine()
     for _ in range(4):
@@ -5055,7 +5056,8 @@ def test_jitr_111_a_block_at_its_stage_limit_is_rejected_by_its_next_decision():
     engine.idle_hook()
     assert manager.bitmap.get_state(block.head_pc) != CardState.COMPILED
     assert not manager.is_trackable(block.head_pc)
-    assert _strikes(_admission_record(manager, index)) == 4
+    # The stage rejection is marked by the strike value 6 (jit_runtime.md 8.2).
+    assert _strikes(_admission_record(manager, index)) == 6
 
 
 @pytest.mark.parametrize(
@@ -5096,3 +5098,136 @@ def test_jitr_112_a_candidate_below_the_score_threshold_is_rejected_before_compi
         assert not manager.is_trackable(block.head_pc)
         assert manager.cache.find_trace(block.head_pc) is None
 
+
+
+_RECOVERY_BURST_FUNCTIONS = 20
+
+
+def _recovery_module_wat() -> str:
+    """A target block and a burst of functions that all share the same admission group."""
+    functions = "".join(
+        f'(func (export "g{index}") (param i32) (result i32) local.get 0 i32.const {index} i32.add)'
+        for index in range(_RECOVERY_BURST_FUNCTIONS)
+    )
+    return (
+        f'(module (func (export "target") (param i32) (result i32)'
+        " local.get 0 i32.const 1 i32.add i32.const 2 i32.mul i32.const 3 i32.sub)"
+        f" {functions})"
+    )
+
+
+def test_jitr_113_stage_relaxation_restores_a_rejected_candidate_with_zero_strikes():
+    """TEST-JITR-113: a relaxed stage restores the candidates rejected by strikes, with zero strikes.
+
+    A burst of 20 evictions in one group tightens the stage to S = 3. The target takes one strike
+    at each eviction, so its third strike rejects it at the next decision. A group without
+    evictions then relaxes the stage to S = 4, which restores the target's trackable bit and
+    resets its strikes. The next decision compiles it.
+    """
+    wat = _recovery_module_wat()
+    engine = make_runtime_engine()
+    interpreter = None
+    module = engine.load_wasm(bytes(wasmtime.wat2wasm(wat)))
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    target = next(
+        block for block in instruction_blocks(module) if block.head_pc == module.function_pc_offset(0)
+    )
+    target_index = next(i for i, block in enumerate(module.blocks) if block.head_pc == target.head_pc)
+    interpreter = Interpreter(module)
+    functions = [module.export_func_index(f"g{index}") for index in range(_RECOVERY_BURST_FUNCTIONS)]
+    target_function = module.export_func_index("target")
+
+    def burst_and_rotate() -> None:
+        for _ in range(3):
+            for function_index in (*functions, target_function):
+                assert engine.call(interpreter, function_index, [5]).unwrap()
+        engine.idle_hook()
+        for _ in range(_ADMISSION_GROUP_ROTATIONS):
+            manager.cache.rotate()
+
+    while _admission_window(manager)[2] != 0:
+        manager.cache.rotate()
+    for _ in range(3):
+        burst_and_rotate()
+    assert _admission_window(manager)[1] >= 16
+    # Cycle four: the third strike rejects the target at its decision.
+    for _ in range(3):
+        for function_index in (*functions, target_function):
+            engine.call(interpreter, function_index, [5]).unwrap()
+    engine.idle_hook()
+    rejected = _admission_record(manager, target_index)
+    assert _strikes(rejected) == 6
+    assert not manager.is_trackable(target.head_pc)
+    for _ in range(_ADMISSION_GROUP_ROTATIONS):
+        manager.cache.rotate()
+    restored = _admission_record(manager, target_index)
+    assert _strikes(restored) == 0
+    assert manager.is_trackable(target.head_pc)
+    for _ in range(3):
+        engine.call(interpreter, target_function, [5]).unwrap()
+    engine.idle_hook()
+    assert manager.bitmap.get_state(target.head_pc) == CardState.COMPILED
+
+
+_ADMISSION_GROUP_ROTATIONS = 8
+
+
+def test_jitr_114_a_score_rejection_is_not_restored_when_the_stage_relaxes():
+    """TEST-JITR-114: a rejection for a low score is permanent, and the stage relaxation skips it.
+
+    The low block is trackable by the test marking, so it is observed and rejected by rule (i) at
+    its first decision. Its record keeps the no-history strike and its card loses the bit. The
+    stage relaxation of TEST-JITR-113 restores the stage rejection of the target only.
+    """
+    functions = "".join(
+        f'(func (export "g{index}") (param i32) (result i32) local.get 0 i32.const {index} i32.add)'
+        for index in range(_RECOVERY_BURST_FUNCTIONS)
+    )
+    wat = (
+        f'(module (func (export "target") (param i32) (result i32)'
+        " local.get 0 i32.const 1 i32.add i32.const 2 i32.mul i32.const 3 i32.sub)"
+        ' (func (export "low") (result i32) (block (nop) (nop) (br 0)) (i32.const 1))'
+        f" {functions})"
+    )
+    engine = make_runtime_engine()
+    module = engine.load_wasm(bytes(wasmtime.wat2wasm(wat)))
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    low_function = module.export_func_index("low")
+    low_base = module.function_pc_offset(low_function)
+    for pc in range(low_base, low_base + len(module.code_for(low_function))):
+        manager.trackable.mark(pc)
+    low_block = next(block for block in instruction_blocks(module) if block.head_pc >= low_base)
+    low_index = next(i for i, block in enumerate(module.blocks) if block.head_pc == low_block.head_pc)
+    target = module.export_func_index("target")
+    functions = [module.export_func_index(f"g{index}") for index in range(_RECOVERY_BURST_FUNCTIONS)]
+    interpreter = Interpreter(module)
+
+    def run(indices) -> None:
+        for function_index in indices:
+            arguments = [] if function_index == low_function else [5]
+            engine.call(interpreter, function_index, arguments).unwrap()
+
+    def burst_and_rotate() -> None:
+        for _ in range(3):
+            run((*functions, target, low))
+        engine.idle_hook()
+        for _ in range(_ADMISSION_GROUP_ROTATIONS):
+            manager.cache.rotate()
+
+    low = low_function
+    while _admission_window(manager)[2] != 0:
+        manager.cache.rotate()
+    for _ in range(3):
+        burst_and_rotate()
+    assert _admission_window(manager)[1] >= 16
+    run((*functions, target, low))
+    engine.idle_hook()
+    assert _strikes(_admission_record(manager, low_index)) == 5
+    assert not manager.is_trackable(low_block.head_pc)
+    for _ in range(_ADMISSION_GROUP_ROTATIONS):
+        manager.cache.rotate()
+    assert not manager.is_trackable(low_block.head_pc)
+    assert _strikes(_admission_record(manager, low_index)) == 5
+    assert manager.bitmap.get_state(low_block.head_pc) != CardState.COMPILED

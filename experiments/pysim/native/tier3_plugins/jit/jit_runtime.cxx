@@ -239,6 +239,10 @@ int jit_runtime<Measurement>::compile_queued_candidates() {
         static_cast<std::uint8_t>(hotspots.admission_records[block_index] >> kAdmissionStrikeShift);
     if (strikes != kAdmissionNoHistory &&
         strikes >= admission_stage_limit(hotspots.admission_window.previous_evictions)) {
+      // The stage rejection is marked in the strikes until a relaxed stage restores it.
+      auto &record = hotspots.admission_records[block_index];
+      record = static_cast<std::uint8_t>((kAdmissionStageRejected << kAdmissionStrikeShift) |
+                                         (record & kAdmissionLifetimeMask));
       exclude_compile_candidate(pc);
       continue;
     }
@@ -839,9 +843,32 @@ void jit_runtime<Measurement>::advance_admission_window() {
   auto &window = hotspots.admission_window;
   ++window.rotations;
   if (window.rotations == kAdmissionRotationGroup) {
+    const auto previous_limit = admission_stage_limit(window.previous_evictions);
     window.previous_evictions = window.evictions;
     window.evictions = 0;
     window.rotations = 0;
+    if (admission_stage_limit(window.previous_evictions) > previous_limit) {
+      restore_stage_rejections();
+    }
+  }
+}
+
+template <jit_measurement_policy Measurement>
+void jit_runtime<Measurement>::restore_stage_rejections() {
+  // Runs only when the stage relaxes, at most once per group of rotations. It costs one pass
+  // over the block records.
+  for (std::uint32_t index = 0; index < module_view->block_count; ++index) {
+    auto &record = hotspots.admission_records[index];
+    if ((record >> kAdmissionStrikeShift) != kAdmissionStageRejected) {
+      continue;
+    }
+    record = static_cast<std::uint8_t>(record & kAdmissionLifetimeMask);
+    const auto card = module_view->blocks[index].head_pc >> FB_CONF_JIT_CARD_SHIFT;
+    assert(card < hotspots.card_count && hotspots.configuration.trackable != nullptr);
+    hotspots.configuration.trackable[card / 8] |= static_cast<std::uint8_t>(1u << (card % 8));
+    if constexpr (!std::is_void_v<Measurement>) {
+      measurements.mask_changed();
+    }
   }
 }
 

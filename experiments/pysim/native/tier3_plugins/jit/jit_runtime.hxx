@@ -103,6 +103,8 @@ inline constexpr std::uint8_t kAdmissionLifetimeMask = 0x1F;
 inline constexpr std::uint8_t kAdmissionNoHistory = 5;
 // A trace whose lifetime is below this count takes a strike at its eviction.
 inline constexpr std::uint8_t kAdmissionShortLifetime = 10;
+// Strike value of a block rejected at its stage limit; a relaxed stage restores it to zero.
+inline constexpr std::uint8_t kAdmissionStageRejected = 6;
 // Evictions are counted over groups of this many rotations.
 inline constexpr std::uint8_t kAdmissionRotationGroup = 8;
 
@@ -239,8 +241,10 @@ public:
   void record_install(block_index_t block_index);
   /** @brief 破棄の時点で、寿命からストライクを更新し、破棄数を数える。 */
   void record_eviction(block_index_t block_index);
-  /** @brief 回転の時点で、8 回転の区切りを進める。 */
+  /** @brief 回転の時点で、8 回転の区切りを進める。段階が緩くなったら却下を戻す。 */
   void advance_admission_window();
+  /** @brief 段階の却下の block の候補マスクを戻し、ストライクを 0 に戻す。 */
+  void restore_stage_rejections();
   /** @brief カードの2ビット状態を読み出す。 */
   std::uint32_t card_state(std::uint32_t card) const;
   /** @brief カードの2ビット状態を更新する。 */

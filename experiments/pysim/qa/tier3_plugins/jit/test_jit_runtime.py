@@ -68,6 +68,7 @@ from qa.shared.jit_cache import (
     JITTraceHeader,
 )
 from qa.shared.jit_manager import JITRuntimeManager
+from qa.shared.native_provider_abi import FIELD_NAMES, NativeJitProvider
 from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
 from qa.shared.runtime_support import (
     compile_module_block,
@@ -5304,50 +5305,23 @@ def test_jitr_103_block_without_instructions_is_a_contract_violation():
     assert "Assertion" in completed.stderr, completed.stderr[-400:]
 
 
-class _NativeProviderLayout(ctypes.Structure):
-    """Mirror of fb_native_jit_provider (native_abi.hxx); the Interpreter reads it at every dispatch."""
-
-    _fields_ = (
-        ("owner", ctypes.c_size_t),
-        ("card_states", ctypes.c_void_p),
-        ("card_count", ctypes.c_uint32),
-        ("card_shift", ctypes.c_uint8),
-        ("reserved0", ctypes.c_uint8 * 3),
-        ("lookup", ctypes.c_void_p),
-        ("observe_block", ctypes.c_void_p),
-        ("finish_boundary", ctypes.c_void_p),
-        ("trace_entry_address", ctypes.c_size_t),
-    )
-
-
 def test_jitr_provider_carries_the_one_common_trace_entry():
     """TEST-JITR-116: the provider holds the common trace entry once, and its mirror matches C++.
 
-    The ctypes mirror is a second copy of fb_native_jit_provider; its size and field offsets
-    are checked against the offsets that the compiler gives the C++ struct.
+    The shared ctypes mirror (qa/shared/native_provider_abi.py) is the only Python copy of
+    fb_native_jit_provider; its size and field offsets are checked against the compiler's offsets.
     """
-    layout = (ctypes.c_uint32 * 10)()
+    layout = (ctypes.c_uint32 * (len(FIELD_NAMES) + 1))()
     native_abi.RUNTIME_PROVIDER_LAYOUT(layout)
-    assert ctypes.sizeof(_NativeProviderLayout) == layout[0]
-    fields = (
-        "owner",
-        "card_states",
-        "card_count",
-        "card_shift",
-        "reserved0",
-        "lookup",
-        "observe_block",
-        "finish_boundary",
-        "trace_entry_address",
-    )
-    for index, field in enumerate(fields, start=1):
-        assert getattr(_NativeProviderLayout, field).offset == layout[index], field
+    assert ctypes.sizeof(NativeJitProvider) == layout[0]
+    for index, field in enumerate(FIELD_NAMES, start=1):
+        assert getattr(NativeJitProvider, field).offset == layout[index], field
     module = parse_standalone(
         wat_to_wasm('(module (func (export "f") (result i32) i32.const 1))')
     )
     manager = _bound_manager(module)
     provider_address = native_abi.RUNTIME_PROVIDER(manager._native.pointer)
-    provider = _NativeProviderLayout.from_address(provider_address)
+    provider = NativeJitProvider.from_address(provider_address)
     expected_entry = native_abi.RUNTIME_COMMON_TRACE_ENTRY(manager._native.pointer)
     assert expected_entry != 0
     assert provider.trace_entry_address == expected_entry

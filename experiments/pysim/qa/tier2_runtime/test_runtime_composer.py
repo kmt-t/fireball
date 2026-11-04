@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import pytest
+from qa.shared.native_provider_abi import NativeJitProvider
 from system_containers import StaticVector
 from tier2_runtime.observability.events import (
     RUNTIME_EVENT_ABI_MAJOR,
@@ -345,32 +346,20 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     observe_callback = JitObserve(observe)
     finish_callback = JitFinish(finish_boundary)
 
-    class NativeJitProvider(ctypes.Structure):
-        _fields_ = (
-            ("owner", ctypes.c_size_t),
-            ("card_states", ctypes.c_void_p),
-            ("card_count", ctypes.c_uint32),
-            ("card_shift", ctypes.c_uint32),
-            ("lookup", JitLookup),
-            ("observe_block", JitObserve),
-            ("finish_boundary", JitFinish),
-            ("trace_entry_address", ctypes.c_size_t),
-        )
-
     # The fake lookup never hits, so this entry is never called; the provider still needs a non-null one.
     trace_entry_byte = ctypes.c_uint8(0xC3)
     trace_entry_address = ctypes.addressof(trace_entry_byte)
     packed_card_states = card_state | (card_state << 2)
     card_states = ctypes.c_uint8(packed_card_states)
     provider = NativeJitProvider(
-        123,
-        ctypes.addressof(card_states),
-        2,
-        31,
-        lookup_callback,
-        observe_callback,
-        finish_callback,
-        trace_entry_address,
+        owner=123,
+        card_states=ctypes.addressof(card_states),
+        card_count=2,
+        card_shift=31,
+        lookup=ctypes.cast(lookup_callback, ctypes.c_void_p),
+        observe_block=ctypes.cast(observe_callback, ctypes.c_void_p),
+        finish_boundary=ctypes.cast(finish_callback, ctypes.c_void_p),
+        trace_entry_address=trace_entry_address,
     )
     provider_address = ctypes.addressof(provider)
 

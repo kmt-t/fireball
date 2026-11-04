@@ -146,8 +146,6 @@ template <class Profile> struct jit_hotspot_state {
   // One admission record per block, borrowed from the plugin region with the card workspace.
   std::uint8_t *admission_records = nullptr;
   jit_admission_window admission_window{};
-  // Rank thresholds T_f by stage, indexed by admission_stage.
-  std::array<std::uint32_t, 3> admission_rank_threshold{};
   std::uint8_t *dirty_cards = nullptr;
   card_index_t card_count = 0;
   std::uint32_t dirty_mask_bytes = 0;

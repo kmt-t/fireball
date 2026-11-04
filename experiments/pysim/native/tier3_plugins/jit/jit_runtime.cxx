@@ -250,18 +250,6 @@ int jit_runtime<Measurement>::compile_queued_candidates() {
       reject_at_stage();
       continue;
     }
-    // Rule (iv): a block with history whose rank, the last lifetime times the score, is below the
-    // rank threshold of its stage is rejected as a stage rejection. Threshold 0 rejects nothing.
-    if (strikes != kAdmissionNoHistory) {
-      const auto lifetime = static_cast<std::uint64_t>(hotspots.admission_records[block_index] &
-                                                       kAdmissionLifetimeMask);
-      const auto rank =
-          lifetime * static_cast<std::uint64_t>(fireball::score_block(*admission_view));
-      if (rank < hotspots.admission_rank_threshold[static_cast<std::size_t>(stage)]) {
-        reject_at_stage();
-        continue;
-      }
-    }
     int status = 0;
     if constexpr (std::is_void_v<Measurement>) {
       status = compile_one_candidate(block_index, pc);
@@ -1481,9 +1469,6 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
   auto *admission_records = card_workspace + card_workspace_size;
   std::memset(admission_records, kAdmissionNoHistory << kAdmissionStrikeShift, view->block_count);
   runtime->hotspots.admission_records = admission_records;
-  runtime->hotspots.admission_rank_threshold = {FB_CONF_JIT_ADMISSION_RANK_STRICT,
-                                                FB_CONF_JIT_ADMISSION_RANK_MIDDLE,
-                                                FB_CONF_JIT_ADMISSION_RANK_RELAXED};
   auto *dirty = card_workspace + state_bytes;
   auto *mask = dirty + mask_bytes;
   typename runtime_type::profile_type profile{};

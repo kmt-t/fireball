@@ -710,9 +710,6 @@ class CardViews(ctypes.Structure):
 ADMISSION_RECORD = _NATIVE_LIBRARY.fb_qa_admission_record
 ADMISSION_RECORD.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
 ADMISSION_RECORD.restype = ctypes.c_int
-ADMISSION_RANK_THRESHOLD = _NATIVE_LIBRARY.fb_qa_set_admission_rank_threshold
-ADMISSION_RANK_THRESHOLD.argtypes = (ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32)
-ADMISSION_RANK_THRESHOLD.restype = None
 ADMISSION_WINDOW = _NATIVE_LIBRARY.fb_qa_admission_window
 ADMISSION_WINDOW.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32))
 ADMISSION_WINDOW.restype = None

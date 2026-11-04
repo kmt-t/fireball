@@ -31,10 +31,6 @@ FB_CONF_JIT_ADMISSION_LIMIT_RELAXED: int = 4
 # middle stage; below it, the relaxed stage.
 FB_CONF_JIT_ADMISSION_RATE_STRICT: int = 6
 FB_CONF_JIT_ADMISSION_RATE_MIDDLE: int = 2
-# Rank thresholds T_f (rank = last lifetime times candidate score). Undecided: 0 rejects nothing.
-FB_CONF_JIT_ADMISSION_RANK_STRICT: int = 0
-FB_CONF_JIT_ADMISSION_RANK_MIDDLE: int = 0
-FB_CONF_JIT_ADMISSION_RANK_RELAXED: int = 0
 
 # Fixed capacities and physical cache dimensions used by the simulator.
 FB_CONF_MAX_TYPES: int = 256

@@ -638,11 +638,3 @@ extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_admission_window(const qa_jit_runtime 
   output[1] = window.previous_evictions;
   output[2] = window.rotations;
 }
-
-// Sets the rank threshold of one admission stage (0 strict, 1 middle, 2 relaxed) in the QA runtime.
-extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_set_admission_rank_threshold(qa_jit_runtime *runtime,
-                                                                       std::uint32_t stage,
-                                                                       std::uint32_t threshold) {
-  assert(runtime != nullptr && stage < runtime->hotspots.admission_rank_threshold.size());
-  runtime->hotspots.admission_rank_threshold[stage] = threshold;
-}

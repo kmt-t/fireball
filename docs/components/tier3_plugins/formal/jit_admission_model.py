@@ -2,8 +2,8 @@
 
 The record holds a strike count and a lifetime count (one byte per block). The model covers the
 decision for one candidate block: the strike rule of the eviction, and the rejection rule of the
-admission (rules (ii) and (iii) of jit_runtime.md 8.2). The rank rule (iv) is undecided and is not
-modeled. The stage limit is fixed to S = 3, the middle stage.
+admission (rules (ii) and (iii) of jit_runtime.md 8.2). The stage limit is fixed to S = 3, the
+middle stage.
 """
 
 from collections import deque
@@ -47,7 +47,7 @@ def _successors(state: str, *, guards: bool, recovery: str) -> list[str]:
             else:
                 result.append(_state(strike, "compiled"))
         else:
-            # The rank rule (iv) is undecided, so a block below the limit compiles.
+            # A block below the stage limit compiles.
             result.append(_state(strike, "compiled"))
         return result
     if phase == "rejected" and strike == STAGE_REJECTED and guards and recovery != "none":

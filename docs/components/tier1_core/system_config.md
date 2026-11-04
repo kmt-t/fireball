@@ -108,9 +108,6 @@ ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式�
 | `FB_CONF_JIT_ADMISSION_LIMIT_RELAXED` | f < `RATE_MIDDLE` の段階の S | `4` | 段階の表（handoff の 3） |
 | `FB_CONF_JIT_ADMISSION_RATE_STRICT` | 厳しい段階の境界 f（破棄数 ÷ 区切り） | `6` | 段階の表（handoff の 3） |
 | `FB_CONF_JIT_ADMISSION_RATE_MIDDLE` | 中間の段階の境界 f | `2` | 段階の表（handoff の 3） |
-| `FB_CONF_JIT_ADMISSION_RANK_STRICT` | 厳しい段階の順位の閾値 T_f（直前の寿命 × 点数）。0 は順位による却下を行わない | `0`（未決） | 未決。測定の曲線を見て決める（測定記録はリポジトリ外） |
-| `FB_CONF_JIT_ADMISSION_RANK_MIDDLE` | 中間の段階の順位の閾値 T_f | `0`（未決） | 未決。同上 |
-| `FB_CONF_JIT_ADMISSION_RANK_RELAXED` | 緩い段階の順位の閾値 T_f | `0` | f < 2 の緩い段階は 0 とする（承認） |
 
 | `FB_CONF_GUEST_RAM_BASE` | ゲストRAMの開始アドレス（64KB境界配置） | `0x00000000` | |
 | `FB_CONF_GUEST_RAM_SIZE` | vMMIO Stage 1アドレス窓の境界判定サイズ。WASMリニアメモリのページ数とは別の設定である | 対象構成で定義 | |

@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 TEST_DIR = Path(__file__).resolve().parent
@@ -223,6 +224,23 @@ def assert_registered_test_modules(test_dir: Path, registered: Sequence[Path]) -
     assert not stale, f"missing or empty test suites: {sorted(str(path) for path in stale)}"
 
 
+def run_suite(
+    script_path: Path, test_env: dict[str, str]
+) -> tuple[subprocess.CompletedProcess[str], float]:
+    """Run one suite in its own pytest child with the cache provider off.
+
+    The cache directory is shared by every suite of this runner, so the children do not write it.
+    """
+    t0 = time.perf_counter()
+    res = run_python(
+        ["-m", "pytest", "-q", "-p", "no:cacheprovider", str(script_path), "-s"],
+        capture_output=True,
+        cwd=REPO_ROOT,
+        environment=test_env,
+    )
+    return res, (time.perf_counter() - t0) * 1000
+
+
 def run_all_tests():
     assert_native_libraries_current()
     assert_registered_test_modules(TEST_DIR, tuple(path for _, _, path in TEST_SUITES))
@@ -241,21 +259,21 @@ def run_all_tests():
         python_paths.append(existing_python_path)
     test_env["PYTHONPATH"] = os.pathsep.join(python_paths)
 
-    for tier, name, script_path in TEST_SUITES:
+    # Suites run in parallel, one pytest child each. The worker count follows the CPU affinity
+    # (os.process_cpu_count), so `taskset` limits it. Results are printed in registration order.
+    workers = os.process_cpu_count()
+    assert workers is not None and workers > 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [
+            pool.submit(run_suite, script_path, test_env) for _, _, script_path in TEST_SUITES
+        ]
+        outcomes = [future.result() for future in futures]
+
+    for (tier, name, script_path), (res, elapsed_ms) in zip(TEST_SUITES, outcomes, strict=True):
         if tier != current_tier:
             current_tier = tier
             print(f"\n[{current_tier.upper()}]")
             print("-" * 84)
-
-        t0 = time.perf_counter()
-        res = run_python(
-            ["-m", "pytest", "-q", str(script_path), "-s"],
-            capture_output=True,
-            cwd=REPO_ROOT,
-            environment=test_env,
-        )
-        t1 = time.perf_counter()
-        elapsed_ms = (t1 - t0) * 1000
 
         if res.returncode == 0:
             status = "[PASS]"

@@ -480,7 +480,7 @@ block_index_t jit_runtime<Measurement>::trace_successor_block_index(jit_cache_en
 
 static bool chain_terminator_is_unsupported(const jit_trace_header *header,
                                             const jit_wasm_block &source) {
-  if (header != nullptr && header->exit_kind == jit_trace_exit_kind::call_cps) {
+  if (header != nullptr && header->exit_kind == FB_NATIVE_JIT_TRACE_CALL_CPS) {
     return true;
   }
   assert(source.code.data != nullptr);
@@ -525,7 +525,7 @@ chain_source_rejection_reason(const jit_trace_header &header, const jit_wasm_blo
 template <jit_measurement_policy Measurement>
 bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
   const auto *header = trace_header(value);
-  if (header->exit_kind == jit_trace_exit_kind::call_cps) {
+  if (header->exit_kind == FB_NATIVE_JIT_TRACE_CALL_CPS) {
     return false;
   }
   const auto successor = trace_successor_pc(value);
@@ -571,7 +571,7 @@ bool jit_runtime<Measurement>::can_chain_to(jit_cache_entry value, jit_cache_ent
   }
   // A call-terminated target exits through an Interpreter CPS handler. A chain only links
   // straight-line continuations, so such a target is never a chain successor.
-  if (trace_header(target)->exit_kind == jit_trace_exit_kind::call_cps) {
+  if (trace_header(target)->exit_kind == FB_NATIVE_JIT_TRACE_CALL_CPS) {
     return false;
   }
   const auto successor_index = trace_successor_block_index(value);
@@ -1330,10 +1330,10 @@ void jit_provider_adapter<Measurement>::fb_jit_runtime_close(runtime_type *runti
 }
 
 template <jit_measurement_policy Measurement>
-int jit_provider_adapter<Measurement>::lookup_runtime_trace(std::uintptr_t owner,
-                                                            block_index_t block_index, wasm_pc_t pc,
-                                                            fb_native_jit_trace *output) {
-  assert(owner != 0 && output != nullptr);
+const fb_native_jit_trace_header *
+jit_provider_adapter<Measurement>::lookup_runtime_trace(std::uintptr_t owner,
+                                                        block_index_t block_index, wasm_pc_t pc) {
+  assert(owner != 0);
   auto &runtime = *reinterpret_cast<runtime_type *>(owner);
   if constexpr (!std::is_void_v<Measurement>) {
     runtime.record_runtime_transition(block_index, pc);
@@ -1345,26 +1345,17 @@ int jit_provider_adapter<Measurement>::lookup_runtime_trace(std::uintptr_t owner
   const auto start_location = runtime.lookup_cached_trace(block_index, pc);
   auto *start = start_location.trace_entry;
   if (start == nullptr) {
-    return 0;
+    return nullptr;
   }
   runtime.count_root_entry(block_index);
   const auto *start_header = runtime.trace_header(*start);
   assert(start_header->const_rel_offset >= fireball::kTraceBoundaryMetadataBytes);
   assert(start_header->const_rel_offset <= start_header->blob_bytes);
   assert(start_header->chain_body_count != 0);
-  const auto *rel = reinterpret_cast<const std::uint8_t *>(
-      reinterpret_cast<const std::uint8_t *>(start_header) + start_header->const_rel_offset);
-  *output = {runtime.common_trace_entry_address(),
-             rel,
-             start_header->frame_depth,
-             start_header->chain_words,
-             start_header->chain_body_count,
-             static_cast<std::uint8_t>(start_header->exit_kind),
-             reinterpret_cast<std::uintptr_t>(start_header)};
   if constexpr (!std::is_void_v<Measurement>) {
     runtime.measurements.trace_entered(block_index);
   }
-  return 1;
+  return start_header;
 }
 
 template <jit_measurement_policy Measurement>
@@ -1442,12 +1433,14 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
                        {},
                        lookup_runtime_trace,
                        observe_runtime_block,
-                       finish_runtime_boundary};
+                       finish_runtime_boundary,
+                       0};
   fireball::borrow_executable_region(&runtime->cache.code_memory, region + data_region_size(view),
                                      FB_CONF_JIT_CACHE_REGION_BYTES);
   auto *workspace = region + sizeof(runtime_type);
   const auto *function_table = jit_api::initialize_runtime_function_table(workspace, call_handlers);
   fireball::initialize_common_code(&runtime->cache.code_memory, function_table);
+  runtime->provider.trace_entry_address = runtime->common_trace_entry_address();
   fb_jit_memory_commit(&runtime->cache.code_memory);
   constexpr code_offset_t offsets[] = {FB_CONF_JIT_CACHE_ACTIVE_OFFSET_BYTES,
                                        FB_CONF_JIT_CACHE_WARM_OFFSET_BYTES,

@@ -317,8 +317,8 @@ template <jit_measurement_policy Measurement> struct jit_provider_adapter {
   /** @brief 配置されたランタイムの寿命を終了する。 */
   static void fb_jit_runtime_close(runtime_type *runtime);
   /** @brief Interpreterへ常駐トレースの実行情報を渡す。 */
-  static int lookup_runtime_trace(std::uintptr_t owner, block_index_t block_index, wasm_pc_t pc,
-                                  fb_native_jit_trace *output);
+  static const fb_native_jit_trace_header *
+  lookup_runtime_trace(std::uintptr_t owner, block_index_t block_index, wasm_pc_t pc);
   /** @brief 対象ブロックの実行履歴を記録する。 */
   static int observe_runtime_block(std::uintptr_t owner, block_index_t block_index, wasm_pc_t pc);
   /** @brief Interpreterの終了状態をJITの境界処理へ変換する。 */

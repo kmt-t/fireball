@@ -3924,33 +3924,63 @@ def test_jitr_trace_execution_retirement_records_zero_and_used_traces():
     assert len(records) == 3
 
 
-def test_jitr_trace_execution_count_excludes_invalid_static_depth():
-    """TEST-JITR-75: a resident trace declined before execution keeps count zero."""
-    module = parse_standalone(
-        wat_to_wasm("""(module (func (export "f") (result i32)
-        i32.const 2 i32.const 3 i32.add))""")
+@pytest.mark.skipif(sys.platform != "linux", reason="Uses Linux process assertion signals")
+def test_jitr_trace_execution_stops_on_invalid_static_depth():
+    """TEST-JITR-75: a trace whose frame depth differs from its block stops at the contract assert.
+
+    The Interpreter does not fall back to the handler chain; it asserts that the header depth
+    equals the block depth. The check runs in a subprocess, so the expected stop is a SIGABRT
+    from the Interpreter assert and not an AssertionError of the test itself.
+    """
+    import os
+    import signal
+    import subprocess
+
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        str(Path(path or ".").resolve()) for path in sys.path
     )
-    engine = make_runtime_engine()
-    engine.register_module_blocks(module)
-    manager = engine.jit_runtime
-    block = module.blocks[0]
-    trace = compile_runtime_block(manager, block)
-    assert trace is not None
-    metadata_provider = manager.cache.metadata_provider
-    assert metadata_provider is not None
+    script = """
+import resource
+from qa.shared.helpers import make_native_interpreter as Interpreter
+from qa.shared.helpers import wat_to_wasm
+from qa.shared.runtime_support import compile_runtime_block, make_runtime_engine
+from tier2_runtime.wasm.reader import parse_standalone
+resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+module = parse_standalone(
+    wat_to_wasm('(module (func (export "f") (result i32) i32.const 2 i32.const 3 i32.add))')
+)
+engine = make_runtime_engine()
+engine.register_module_blocks(module)
+manager = engine.jit_runtime
+block = module.blocks[0]
+trace = compile_runtime_block(manager, block)
+assert trace is not None and block.frame_depth != 0xFF
+metadata_provider = manager.cache.metadata_provider
+assert metadata_provider is not None
 
-    def require_invalid_static_depth(candidate: JITTrace) -> None:
-        metadata_provider(candidate)
-        candidate._native.frame_depth = 0xFFFF
 
-    manager.cache.metadata_provider = require_invalid_static_depth
-    assert_result_32 = manager.cache.insert(trace)
-    assert assert_result_32
-    assert trace.header._native.frame_depth == 0xFF
-    assert block.frame_depth != 0xFF
-    assert engine.call(Interpreter(module), 0, []).unwrap() == [5]
-    assert trace.exec_count == 0
-    assert engine.stat_jit_invocations == 0
+def require_invalid_static_depth(candidate):
+    metadata_provider(candidate)
+    candidate._native.frame_depth = 0xFFFF
+
+
+manager.cache.metadata_provider = require_invalid_static_depth
+inserted = manager.cache.insert(trace)
+assert inserted
+engine.call(Interpreter(module), 0, [])
+"""
+    process = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        env=environment,
+        check=False,
+        timeout=60,
+    )
+    assert process.returncode == -signal.SIGABRT, process.stderr
+    assert "header->frame_depth == source_block.frame_depth" in process.stderr, process.stderr
+
 
 
 if __name__ == "__main__":
@@ -5272,3 +5302,52 @@ def test_jitr_103_block_without_instructions_is_a_contract_violation():
     )
     assert completed.returncode != 0, completed.stdout + completed.stderr[-400:]
     assert "Assertion" in completed.stderr, completed.stderr[-400:]
+
+
+class _NativeProviderLayout(ctypes.Structure):
+    """Mirror of fb_native_jit_provider (native_abi.hxx); the Interpreter reads it at every dispatch."""
+
+    _fields_ = (
+        ("owner", ctypes.c_size_t),
+        ("card_states", ctypes.c_void_p),
+        ("card_count", ctypes.c_uint32),
+        ("card_shift", ctypes.c_uint8),
+        ("reserved0", ctypes.c_uint8 * 3),
+        ("lookup", ctypes.c_void_p),
+        ("observe_block", ctypes.c_void_p),
+        ("finish_boundary", ctypes.c_void_p),
+        ("trace_entry_address", ctypes.c_size_t),
+    )
+
+
+def test_jitr_provider_carries_the_one_common_trace_entry():
+    """TEST-JITR-116: the provider holds the common trace entry once, and its mirror matches C++.
+
+    The ctypes mirror is a second copy of fb_native_jit_provider; its size and field offsets
+    are checked against the offsets that the compiler gives the C++ struct.
+    """
+    layout = (ctypes.c_uint32 * 10)()
+    native_abi.RUNTIME_PROVIDER_LAYOUT(layout)
+    assert ctypes.sizeof(_NativeProviderLayout) == layout[0]
+    fields = (
+        "owner",
+        "card_states",
+        "card_count",
+        "card_shift",
+        "reserved0",
+        "lookup",
+        "observe_block",
+        "finish_boundary",
+        "trace_entry_address",
+    )
+    for index, field in enumerate(fields, start=1):
+        assert getattr(_NativeProviderLayout, field).offset == layout[index], field
+    module = parse_standalone(
+        wat_to_wasm('(module (func (export "f") (result i32) i32.const 1))')
+    )
+    manager = _bound_manager(module)
+    provider_address = native_abi.RUNTIME_PROVIDER(manager._native.pointer)
+    provider = _NativeProviderLayout.from_address(provider_address)
+    expected_entry = native_abi.RUNTIME_COMMON_TRACE_ENTRY(manager._native.pointer)
+    assert expected_entry != 0
+    assert provider.trace_entry_address == expected_entry

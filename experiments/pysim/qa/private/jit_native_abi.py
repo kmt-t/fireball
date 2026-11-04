@@ -828,6 +828,9 @@ RUNTIME_COMMON_TRACE_ENTRY = _NATIVE_LIBRARY.fb_qa_runtime_common_trace_entry
 RUNTIME_COMMON_TRACE_ENTRY.argtypes = (ctypes.c_void_p,)
 RUNTIME_COMMON_TRACE_ENTRY.restype = ctypes.c_size_t
 
+RUNTIME_PROVIDER_LAYOUT = _NATIVE_LIBRARY.fb_qa_native_provider_layout
+RUNTIME_PROVIDER_LAYOUT.argtypes = (ctypes.POINTER(ctypes.c_uint32),)
+RUNTIME_PROVIDER_LAYOUT.restype = None
 RUNTIME_PROVIDER = _NATIVE_LIBRARY.fb_qa_runtime_provider
 RUNTIME_PROVIDER.argtypes = (ctypes.c_void_p,)
 RUNTIME_PROVIDER.restype = ctypes.c_void_p

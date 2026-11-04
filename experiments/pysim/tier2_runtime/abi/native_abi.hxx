@@ -2,6 +2,7 @@
 #define FIREBALL_PYSIM_NATIVE_ABI_HXX
 
 #include "integer_types.hxx"
+#include <cstddef>
 #include <cstdint>
 
 #if defined(_WIN32)
@@ -35,24 +36,39 @@ struct fb_native_jit_trace_exit {
   frame_depth_t frame_depth;
 };
 
-enum fb_native_jit_trace_exit_kind {
+enum fb_native_jit_trace_exit_kind : std::uint8_t {
   FB_NATIVE_JIT_TRACE_NORMAL = 0,
   FB_NATIVE_JIT_TRACE_CALL_CPS = 1,
 };
 
 static_assert(sizeof(fb_native_jit_trace_exit) == 20);
 
-// Tier 2 native execution extension contract. The Interpreter owns invoking
-// the returned trace entry; an extension returns only root-entry data.
-struct fb_native_jit_trace {
-  std::uintptr_t entry_address;
-  const std::uint8_t *rel;
-  frame_depth_t frame_depth;
+// Header at the start of every resident trace blob, read by the Interpreter after a lookup hit.
+// Its layout is fixed by the JIT compiler (jit_trace_header is an alias of this struct).
+struct fb_native_jit_trace_header {
+  std::uint64_t chain_target_address;
+  std::int32_t common_code_relative;
+  wasm_pc_t head_pc;
+  code_offset_t blob_bytes;
   jit_stack_words_t stack_words;
-  jit_body_count_t body_count;
-  std::uint8_t exit_kind;
-  std::uintptr_t trace_cookie;
+  jit_stack_words_t chain_words;
+  jit_body_count_t chain_body_count;
+  frame_depth_t frame_depth;
+  fb_native_jit_trace_exit_kind exit_kind;
+  block_index_t block_index;
+  code_offset_t const_rel_offset;
 };
+static_assert(offsetof(fb_native_jit_trace_header, common_code_relative) == 8);
+static_assert(offsetof(fb_native_jit_trace_header, head_pc) == 12);
+static_assert(offsetof(fb_native_jit_trace_header, blob_bytes) == 16);
+static_assert(offsetof(fb_native_jit_trace_header, stack_words) == 20);
+static_assert(offsetof(fb_native_jit_trace_header, chain_words) == 21);
+static_assert(offsetof(fb_native_jit_trace_header, chain_body_count) == 22);
+static_assert(offsetof(fb_native_jit_trace_header, frame_depth) == 23);
+static_assert(offsetof(fb_native_jit_trace_header, exit_kind) == 24);
+static_assert(offsetof(fb_native_jit_trace_header, block_index) == 26);
+static_assert(offsetof(fb_native_jit_trace_header, const_rel_offset) == 28);
+static_assert(sizeof(fb_native_jit_trace_header) == 32);
 
 /** @brief Interpreterが借用するJIT接続。callbackの契約違反は呼出し直後でassertする。 */
 struct fb_native_jit_provider {
@@ -62,18 +78,20 @@ struct fb_native_jit_provider {
   card_index_t card_count;
   std::uint8_t card_shift;
   std::uint8_t reserved0[3];
-  // Return 1 for a resident root trace and 0 for a cache miss.
+  // Returns the header of a resident root trace, or nullptr on a cache miss.
   // The Interpreter resolves the BasicBlock before checking its card and
   // calls lookup only when this PC's card state is COMPILED. The result does
   // not describe the chain endpoint. On normal completion, the terminal chain
   // dispatcher sets execution_context.ip and publishes exit metadata through
   // execution_context.rel before the trace entry returns true.
-  int (*lookup)(std::uintptr_t owner, block_index_t block_index, wasm_pc_t pc,
-                fb_native_jit_trace *trace);
+  const fb_native_jit_trace_header *(*lookup)(std::uintptr_t owner, block_index_t block_index,
+                                              wasm_pc_t pc);
   /** @brief 解決済みブロックを観測する。記録した場合は1、対象外は0を返す。 */
   int (*observe_block)(std::uintptr_t owner, block_index_t block_index, wasm_pc_t pc);
   /** @brief 境界の履歴と候補処理を実行し、完了を示す1を返す。 */
   int (*finish_boundary)(std::uintptr_t owner, std::uint32_t status);
+  // The common trace entry is shared by every trace; the Interpreter calls it for each root entry.
+  std::uintptr_t trace_entry_address;
 };
 
 struct fb_native_dispatch_call {

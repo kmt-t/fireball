@@ -315,32 +315,21 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
     from tier2_runtime.wasm.reader import parse_standalone
 
-    class NativeJitTrace(ctypes.Structure):
-        _fields_ = (
-            ("entry_address", ctypes.c_size_t),
-            ("rel", ctypes.c_void_p),
-            ("frame_depth", ctypes.c_uint8),
-            ("stack_words", ctypes.c_uint8),
-            ("body_count", ctypes.c_uint8),
-            ("exit_kind", ctypes.c_uint8),
-            ("trace_cookie", ctypes.c_size_t),
-        )
-
+    # lookup returns the trace header (NULL on a miss); the entry address lives in the provider.
     JitLookup = ctypes.CFUNCTYPE(
-        ctypes.c_int,
+        ctypes.c_void_p,
         ctypes.c_size_t,
         ctypes.c_uint32,
         ctypes.c_uint32,
-        ctypes.POINTER(NativeJitTrace),
     )
     JitObserve = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_uint32)
     JitFinish = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32)
     callbacks = [0, 0, 0]
 
-    def lookup(owner, block_index, pc, trace):
+    def lookup(owner, block_index, pc):
         assert owner == 123
         callbacks[0] += 1
-        return 0
+        return None
 
     def observe(owner, block_index, pc):
         assert owner == 123
@@ -365,8 +354,12 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
             ("lookup", JitLookup),
             ("observe_block", JitObserve),
             ("finish_boundary", JitFinish),
+            ("trace_entry_address", ctypes.c_size_t),
         )
 
+    # The fake lookup never hits, so this entry is never called; the provider still needs a non-null one.
+    trace_entry_byte = ctypes.c_uint8(0xC3)
+    trace_entry_address = ctypes.addressof(trace_entry_byte)
     packed_card_states = card_state | (card_state << 2)
     card_states = ctypes.c_uint8(packed_card_states)
     provider = NativeJitProvider(
@@ -377,6 +370,7 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         lookup_callback,
         observe_callback,
         finish_callback,
+        trace_entry_address,
     )
     provider_address = ctypes.addressof(provider)
 

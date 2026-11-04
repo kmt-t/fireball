@@ -95,7 +95,7 @@ trace末尾には境界metadataを置き、定数poolをその直後に置く。
 
 Runtime API 記録の形の正本は、この節である。記録は、u8 slot、u8 即値個数、u8 即値の幅の和、u32 `code_ip_t`、即値、末尾の u32 再開位置の順に並ぶ。即値の幅の和は、即値の幅の合計に末尾の再開位置の 4 byte を含めた値である。終端 API 記録では、先頭の即値が関数注釈 pool の byte offset（u32、命令の注釈の先頭）である。末尾の再開位置（u32）は、その命令を実行した後の注釈 pool の byte offset（命令の注釈の直後）である。Runtime API が Interpreter へ戻るとき、Interpreter はこの位置から続きを読む。スタブは、先頭 7 byte と即値の幅の和だけ `rel` を進める。
 
-chainはtrace終端から共通コード領域のchain dispatcherへ移り、そのdispatcherが`chain_target_addr`（連結先のbody）を解決して共通入口のcall箇所へtail-jumpする経路を指す。dispatcherはchain先headerの`const_rel_offset`を読み、target traceの`rel`を初期化する。trace entry prologueはroot traceで一度だけ実行し、chain先で保存済み`r12`とstack frameを積み重ねない。targetがない場合、終端dispatcherはfooter pointerを`execution_context.rel`へ一時保存し、footerの`body_end_ip`を`execution_context.ip`へ設定して`true`で戻る。C++ dispatcherは復帰後にmetadataからstackとInterpreter `rel`を更新して`block_index`から次のBasicBlockを直接取得し、PC一致を検証する。分岐opcodeはtraceに含めず、C++ Interpreter CPS handlerへ渡す。lookupはroot entry address、root `rel`、root frame depth、chain全体のstack上限とtrace body数、root trace cookieを返し、chain終端を走査しない。
+chainはtrace終端から共通コード領域のchain dispatcherへ移り、そのdispatcherが`chain_target_addr`（連結先のbody）を解決して共通入口のcall箇所へtail-jumpする経路を指す。dispatcherはchain先headerの`const_rel_offset`を読み、target traceの`rel`を初期化する。trace entry prologueはroot traceで一度だけ実行し、chain先で保存済み`r12`とstack frameを積み重ねない。targetがない場合、終端dispatcherはfooter pointerを`execution_context.rel`へ一時保存し、footerの`body_end_ip`を`execution_context.ip`へ設定して`true`で戻る。C++ dispatcherは復帰後にmetadataからstackとInterpreter `rel`を更新して`block_index`から次のBasicBlockを直接取得し、PC一致を検証する。分岐opcodeはtraceに含めず、C++ Interpreter CPS handlerへ渡す。chain終端は走査しない。root `rel`、stack上限、trace body数、exit kindはheaderから読む。
 
 `common.S`から生成したchain dispatcherは、trace末尾から次traceへ移る処理だけを担う。C++ ABI probeから本番構造体offsetを取得してassembly macroへ渡す。共通コード領域にはdispatcherと、Tier 3 JITの実行状態が所有するRuntime API function pointer tableへの8-byte借用pointerを配置する。JIT初期化時にRuntime API entryとTier 2から渡す`call`／`call_indirect` CPS handler entryを表へ配置し、以後は読取り専用として扱う。表本体を共通コード領域や各cacheへ複製しない。表を借用するJIT実行状態は参照先より長く存続する。traceにはAPI/handlerの添字を格納し、関数の絶対アドレスを埋め込まない。Runtime API stencilはAPI table entryを呼び、通常継続なら後続JIT operationへ戻る。call stencilは専用handler entryへtail-callする。Interpreter opcode handler表はTier 2が所有し、JIT Runtime API tableと混同しない。local操作は操作・WASM型別のstencilを選び、word offsetは命令エンコーダがmemory instructionへ直接書き込む。
 
@@ -105,7 +105,7 @@ chainはtrace終端から共通コード領域のchain dispatcherへ移り、そ
 
 Tier 2は共有実行状態とブロック開始PCを実行拡張へ渡す接続契約を定める。JIT providerは2-bit card-state表の読み取り専用ビューとカード範囲を渡す。Interpreterは、ジャンプ、呼出しの入口、後方辺、関数復帰の判定点でカード状態を読み、`COMPILED`以外ではlookup関数を呼ばない。判定の結果が`COMPILED`のときだけ、CPSを終えてdispatcherからtraceを実行する。ビューの領域はdispatch期間中JIT拡張が保持する。JIT拡張が正確なPCのキャッシュ検索、chain終端の反映、履歴記録を内部で完了する。Tier 2へJITキャッシュ配置や置換状態を公開しない。
 
-providerのlookupと観測callbackは0または1を返す。0はcache missまたは観測対象外を示す。境界処理callbackは1を返す。これ以外は内部接続契約の違反として呼出し直後でassertし、WASMのtrapや継続可能な内部エラーへ変換しない。callbackの実行はassert式の外へ置く。
+providerのlookupはroot traceのheader pointerを返し、cache missは`nullptr`で示す。共通のtrace entry addressは接続時に一度だけprovider値`trace_entry_address`として渡す。観測callbackは0または1を返す。0は観測対象外を示す。境界処理callbackは1を返す。これ以外は内部接続契約の違反として呼出し直後でassertし、WASMのtrapや継続可能な内部エラーへ変換しない。callbackの実行はassert式の外へ置く。
 
 ネイティブdispatchには`execution_context`、値スタック基点、ローカルスタック基点、実行拡張を渡す。命令位置、コードと制御状態、スタック位置と容量、local base、関数番号、yieldしきい値はInterpreterが所有する実行状態から取得する。個別の呼出し構造体へ複製しない。戻り値はstatusとABIエラーだけを持ち、命令位置、スタック位置、trap codeは`execution_context`を唯一の格納先とする。実行拡張は`owner`、本体実行入口、観測入口で構成する。観測入口はInterpreterが対象ブロックを実行した後に候補判定と履歴記録を一度に行う。候補マスクと履歴配列をInterpreterへ渡さず、複製もしない。
 

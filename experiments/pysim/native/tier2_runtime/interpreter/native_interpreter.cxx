@@ -1103,27 +1103,27 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Resul
                   fireball_call_frame_native &frame, block_index_t block_index, wasm_pc_t pc,
                   const std::uint8_t *&dispatch_rel) {
   auto &context = state.context;
-  fb_native_jit_trace trace{};
-  const auto lookup =
-      state.jit_provider->lookup(state.jit_provider->owner, block_index, pc, &trace);
-  assert(lookup == 0 || lookup == 1);
-  if (lookup == 0) {
+  const auto *header = state.jit_provider->lookup(state.jit_provider->owner, block_index, pc);
+  if (header == nullptr) {
     return 0;
   }
-  assert(trace.entry_address != 0 && trace.rel != nullptr && trace.body_count != 0);
-  const auto *trace_exit = reinterpret_cast<const fb_native_jit_trace_exit *>(
-      trace.rel - sizeof(fb_native_jit_trace_exit));
+  const auto entry = state.jit_provider->trace_entry_address;
+  const auto *rel = reinterpret_cast<const std::uint8_t *>(header) + header->const_rel_offset;
+  const auto body_count = header->chain_body_count;
+  const auto exit_kind = header->exit_kind;
+  const auto trace_cookie = reinterpret_cast<std::uintptr_t>(header);
+  const auto *trace_exit =
+      reinterpret_cast<const fb_native_jit_trace_exit *>(rel - sizeof(fb_native_jit_trace_exit));
   const auto *module = frame.function_view->module_view;
   assert(module != nullptr && block_index < module->block_count);
   [[maybe_unused]] const auto &source_block = module->blocks[block_index];
-  if (trace.frame_depth != source_block.frame_depth) {
-    return 0;
-  }
+  // The trace is compiled for this block, so its frame depth equals the block's frame depth.
+  assert(header->frame_depth == source_block.frame_depth);
   assert(source_block.next_pc == trace_exit->next_pc);
   assert(source_block.next_block_index == trace_exit->block_index);
   assert(trace_exit->block_index == kNoBlockIndex || trace_exit->block_index < module->block_count);
   // The function entry reserved its loader-proven peak, including this trace.
-  assert(trace.stack_words <=
+  assert(header->chain_words <=
          static_cast<std::uint32_t>(context.stack_limit - context.stack_pointer));
   context.local_base = frame.local_base;
   context.code = frame.function_view->code;
@@ -1133,24 +1133,24 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Resul
   frame.boundary_next_pc = trace_exit->next_pc;
   frame.boundary_loops_to = trace_exit->loops_to;
   // complete() clears kRelCursorReadyFlag, so the rel after a function completion is not reused.
-  context.rel = trace.rel;
-  if (trace.exit_kind == FB_NATIVE_JIT_TRACE_CALL_CPS) {
-    reinterpret_cast<fireball_native_cps_handler>(trace.entry_address)(
-        &context, context.code + context.ip, context.stack_pointer, trace.rel);
+  context.rel = rel;
+  if (exit_kind == FB_NATIVE_JIT_TRACE_CALL_CPS) {
+    reinterpret_cast<fireball_native_cps_handler>(entry)(&context, context.code + context.ip,
+                                                         context.stack_pointer, rel);
     if constexpr (WithExtension) {
-      state.extension->trace_executed(&state.input, trace.trace_cookie);
+      state.extension->trace_executed(&state.input, trace_cookie);
     }
     assert(context.trap_code != 0 || cps_exit_pending(context));
-    return trace.body_count;
+    return body_count;
   }
-  const auto completed = reinterpret_cast<fireball_native_jit_trace_entry>(trace.entry_address)(
-      &context, context.code + context.ip, context.stack_pointer, trace.rel);
+  const auto completed = reinterpret_cast<fireball_native_jit_trace_entry>(entry)(
+      &context, context.code + context.ip, context.stack_pointer, rel);
   if constexpr (WithExtension) {
-    state.extension->trace_executed(&state.input, trace.trace_cookie);
+    state.extension->trace_executed(&state.input, trace_cookie);
   }
   if (!completed) {
     if (context.trap_code != 0) {
-      return trace.body_count;
+      return body_count;
     }
     assert(cps_exit_pending(context));
     const auto exit_kind = cps_exit_kind(context);
@@ -1163,7 +1163,7 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Resul
     } else if (exit_kind == kBlockBoundary) {
       assert((context.runtime_flags & kRelCursorReadyFlag) != 0);
     }
-    return trace.body_count;
+    return body_count;
   }
   assert(context.trap_code == 0 && !cps_exit_pending(context));
   const auto *completed_trace_exit =
@@ -1192,7 +1192,7 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Resul
   dispatch_rel = interpreter_rel_after_jit_trace(frame, completed_block_index,
                                                  completed_trace_exit->interpreter_rel_bytes);
   context.rel = dispatch_rel;
-  return trace.body_count;
+  return body_count;
 }
 
 template <bool CollectStats, bool WithJit, bool WithExtension,
@@ -1275,7 +1275,7 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
   if constexpr (WithJit) {
     assert(jit_provider != nullptr && jit_provider->owner != 0);
     assert(jit_provider->lookup != nullptr && jit_provider->observe_block != nullptr &&
-           jit_provider->finish_boundary != nullptr);
+           jit_provider->finish_boundary != nullptr && jit_provider->trace_entry_address != 0);
     assert(jit_provider->card_shift < 32 &&
            (jit_provider->card_count == 0 || jit_provider->card_states != nullptr));
   } else {

@@ -1924,7 +1924,7 @@ int fireball::compile_wasm_trace(
       result->body_end_ip = terminal_end_ip;
     }
     if (call_exit || terminal_end_ip != trace_end) {
-      result->exit_kind = jit_trace_exit_kind::call_cps;
+      result->exit_kind = FB_NATIVE_JIT_TRACE_CALL_CPS;
     }
   }
   return status;

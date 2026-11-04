@@ -171,17 +171,13 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
   if (metadata_offset > header_bytes + bytes) {
     std::memset(output + header_bytes + bytes, 0, metadata_offset - header_bytes - bytes);
   }
-  const auto trace_body_end_ip =
-      r->body_end_ip == kNoTraceExitIp ? body_end_ip : r->body_end_ip;
-  if (trace_body_end_ip > body_end_ip && r->exit_kind != jit_trace_exit_kind::call_cps) {
+  const auto trace_body_end_ip = r->body_end_ip == kNoTraceExitIp ? body_end_ip : r->body_end_ip;
+  if (trace_body_end_ip > body_end_ip && r->exit_kind != FB_NATIVE_JIT_TRACE_CALL_CPS) {
     return 0;
   }
-  const jit_trace_boundary_metadata boundary_metadata{trace_body_end_ip,
-                                                      next_pc,
-                                                      loops_to,
-                                                      r->interpreter_rel_bytes,
-                                                      next_block_index,
-                                                      frame_depth};
+  const jit_trace_boundary_metadata boundary_metadata{trace_body_end_ip, next_pc,
+                                                      loops_to,          r->interpreter_rel_bytes,
+                                                      next_block_index,  frame_depth};
   std::memcpy(output + metadata_offset, &boundary_metadata, sizeof(boundary_metadata));
   return 1;
 }
@@ -202,8 +198,7 @@ extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block *block, std::
       static_cast<std::uint32_t>(next), 0, 0, block->interpreter_annotations.data,
       block->interpreter_annotations.bytes, block->interpreter_annotation_byte_offset,
       block->global_widths, block->entry_stack_words,
-      reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data),
-      block->locals.types.data,
+      reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data), block->locals.types.data,
       block->locals.count, block->locals.total_words, body_scratch, kMaxBodyBytes, &result);
   if (status != 1) {
     return status;
@@ -220,4 +215,3 @@ extern "C" int fb_jit_region_init(fireball::executable_memory *memory) {
   fireball::initialize_common_code(memory, fireball::jit_api::runtime_api_table_data());
   return 1;
 }
-

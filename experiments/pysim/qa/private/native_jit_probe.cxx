@@ -368,36 +368,21 @@ static const fb_native_trace_descriptor *qa_find(const qa_dispatch_buffers &b, w
   return nullptr;
 }
 
-static int qa_lookup_trace(std::uintptr_t owner, [[maybe_unused]] block_index_t block_index,
-                           wasm_pc_t pc, fb_native_jit_trace *output) {
-  if (owner == 0 || output == nullptr) {
-    return -1;
-  }
+static const fireball::jit_trace_header *
+qa_lookup_trace(std::uintptr_t owner, [[maybe_unused]] block_index_t block_index, wasm_pc_t pc) {
+  assert(owner != 0);
   const auto &b = reinterpret_cast<qa_dispatch_owner *>(owner)->buffers;
   const auto *start = qa_find(b, pc);
   if (start == nullptr) {
-    return 0;
+    return nullptr;
   }
-  if (start->entry_address == 0 || start->entry_address < FB_CONF_JIT_X64_TRACE_HEADER_BYTES) {
-    return -1;
-  }
+  assert(start->entry_address != 0 && start->entry_address >= FB_CONF_JIT_X64_TRACE_HEADER_BYTES);
   const auto *header = reinterpret_cast<const fireball::jit_trace_header *>(
       start->entry_address - FB_CONF_JIT_X64_TRACE_HEADER_BYTES);
-  if (header->blob_bytes < FB_CONF_JIT_X64_TRACE_HEADER_BYTES ||
-      header->const_rel_offset > header->blob_bytes || start->chain_body_count == 0) {
-    return -1;
-  }
-  const auto *rel = reinterpret_cast<const std::uint8_t *>(
-      reinterpret_cast<const std::uint8_t *>(header) + header->const_rel_offset);
+  assert(header->blob_bytes >= FB_CONF_JIT_X64_TRACE_HEADER_BYTES);
+  assert(header->const_rel_offset <= header->blob_bytes && start->chain_body_count != 0);
   assert(b.common_trace_entry != 0);
-  *output = {b.common_trace_entry,
-             rel,
-             header->frame_depth,
-             static_cast<jit_stack_words_t>(start->chain_stack_words),
-             static_cast<jit_body_count_t>(start->chain_body_count),
-             static_cast<std::uint8_t>(header->exit_kind),
-             reinterpret_cast<std::uintptr_t>(start)};
-  return 1;
+  return header;
 }
 
 static int qa_observe_block(std::uintptr_t owner, block_index_t, wasm_pc_t) {
@@ -434,11 +419,15 @@ static bool qa_observe(const fb_native_dispatch_call *input, std::uint32_t pc) {
 
 static void qa_trace_executed(const fb_native_dispatch_call *input, std::uintptr_t trace_cookie) {
   auto *owner = qa_owner(input);
-  auto *current = reinterpret_cast<const fb_native_trace_descriptor *>(trace_cookie);
-  if (owner == nullptr || current == nullptr) {
+  if (owner == nullptr || trace_cookie == 0) {
     return;
   }
   const auto &b = owner->buffers;
+  const auto *header = reinterpret_cast<const fireball::jit_trace_header *>(trace_cookie);
+  auto *current = qa_find(b, header->head_pc);
+  if (current == nullptr) {
+    return;
+  }
   std::uint32_t count = 0;
   while (current != nullptr && count++ < b.count) {
     if (current->exec_count != nullptr && *current->exec_count != fireball::jit_invalid_pc) {
@@ -467,12 +456,28 @@ fb_qa_dispatch(int (*dispatch)(const fb_native_dispatch_extension_call *, fb_nat
   const auto owner_address = reinterpret_cast<std::uintptr_t>(&owner);
   static constexpr std::uint8_t all_compiled_cards[] = {0xFFu, 0xFFu};
   const fb_native_jit_provider provider{
-      owner_address,    all_compiled_cards, 8, 29, {}, qa_lookup_trace,
-      qa_observe_block, qa_finish_boundary};
+      owner_address,      all_compiled_cards,         8, 29, {}, qa_lookup_trace, qa_observe_block,
+      qa_finish_boundary, buffers->common_trace_entry};
   call.jit_provider = &provider;
   fb_native_execution_extension extension{owner_address, qa_observe, qa_trace_executed};
   fb_native_dispatch_extension_call extension_call{call, &extension};
   return dispatch(&extension_call, result);
+}
+
+// Offsets of fb_native_jit_provider as the compiler sees them; the QA test checks its ctypes
+// mirror.
+extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_native_provider_layout(std::uint32_t *output) {
+  assert(output != nullptr);
+  output[0] = static_cast<std::uint32_t>(sizeof(fb_native_jit_provider));
+  output[1] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, owner));
+  output[2] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, card_states));
+  output[3] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, card_count));
+  output[4] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, card_shift));
+  output[5] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, reserved0));
+  output[6] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, lookup));
+  output[7] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, observe_block));
+  output[8] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, finish_boundary));
+  output[9] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, trace_entry_address));
 }
 
 extern "C" FB_PYSIM_ABI_EXPORT const fb_native_jit_provider *

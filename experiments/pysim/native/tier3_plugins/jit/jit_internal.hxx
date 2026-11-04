@@ -26,7 +26,7 @@ struct jit_compile_result {
   code_offset_t relocation_bytes;
   annotation_offset_t interpreter_rel_bytes;
   code_ip_t body_end_ip = kNoTraceExitIp;
-  jit_trace_exit_kind exit_kind = jit_trace_exit_kind::normal;
+  fb_native_jit_trace_exit_kind exit_kind = FB_NATIVE_JIT_TRACE_NORMAL;
 };
 
 int compile_wasm_trace(const std::uint8_t *code, code_offset_t code_bytes,

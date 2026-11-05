@@ -88,10 +88,10 @@ def test_plugin_candidate_gate_uses_specification_threshold(
         native_input = marshal_block(manager._block_input(block.head_pc, block))
         assert native_score(ctypes.byref(native_input)) == score
         assert manager.trackable.is_marked(block.head_pc) == candidate
-        assert manager.exec_counter == 0
+        assert manager.history_visit_count == 0
         head_pc = block.head_pc
         assert not manager.record_block_head(head_pc)
-        assert manager.exec_counter == (1 if candidate else 0)
+        assert manager.history_visit_count == (1 if candidate else 0)
         manager.on_interpreter_exit(False)
         assert manager.card_state(head_pc) == (1 if candidate else 0)
     finally:

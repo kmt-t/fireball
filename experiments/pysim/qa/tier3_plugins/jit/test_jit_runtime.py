@@ -266,7 +266,7 @@ def test_hotspot_02_history_ring_buffered_yield_drain():
         manager.record_block_head(pc)
     manager.on_interpreter_exit(False)
     overwritten = visits - JIT_HISTORY_CAPACITY
-    assert manager.exec_counter == visits
+    assert manager.history_visit_count == visits
     assert manager.history_overwritten_count == overwritten
     assert manager.last_history_analysis_approximate
     assert all(manager.card_state(pc) == CardState.UNEXECUTED for pc in pcs[:overwritten])
@@ -778,7 +778,7 @@ def test_jitr_chained_successor_cps_boundary_stops_at_its_block():
         interpreter,
         call,
         manager.native_dispatch_state(),
-        manager.exec_counter,
+        manager.history_visit_count,
         native_dispatcher=select_native_jit_dispatch_entry(False),
     )
     assert result[0] == NATIVE_DISPATCH_RUNTIME_API_BOUNDARY
@@ -2179,8 +2179,8 @@ def test_jitr_native_history_overwrite_does_not_yield():
         assert boundaries < 4
 
     assert call_state.results == [iterations]
-    assert manager.exec_counter > JIT_HISTORY_CAPACITY
-    assert manager.history_overwritten_count == manager.exec_counter - JIT_HISTORY_CAPACITY
+    assert manager.history_visit_count > JIT_HISTORY_CAPACITY
+    assert manager.history_overwritten_count == manager.history_visit_count - JIT_HISTORY_CAPACITY
     assert manager.last_history_analysis_approximate
     # The recent visits still drive analysis: the loop's blocks reach HOT and queue for compilation.
     assert manager.has_pending_compilation()
@@ -2268,7 +2268,7 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
         interpreter,
         call,
         snapshot,
-        manager.exec_counter,
+        manager.history_visit_count,
         native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
     )
     visits = native_result[5]
@@ -2302,7 +2302,7 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
         interpreter,
         second_call,
         snapshot,
-        manager.exec_counter,
+        manager.history_visit_count,
         native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
     )
     assert second_result[0] == 1
@@ -2317,7 +2317,7 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
     assert tuple(second_result[7][index] for index in range(second_count)) == expected_heads
     manager.record_native_block_visits(second_result[7], second_count)
     manager.on_interpreter_exit(False)
-    assert manager.exec_counter == 2 * len(expected_heads)
+    assert manager.history_visit_count == 2 * len(expected_heads)
     assert manager.block_lookups == []
     if expected_heads:
         assert manager.has_pending_compilation()
@@ -2513,7 +2513,7 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
             interpreter,
             call,
             snapshot,
-            manager.exec_counter,
+            manager.history_visit_count,
             native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
         )
         visits, history = result[5], result[7]
@@ -2543,7 +2543,7 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
     assert tuple(recorded) == expected_heads
     # Every body here starts with a profileable head, so the observation count is not vacuous.
     assert expected_heads
-    assert manager.exec_counter == len(expected_heads)
+    assert manager.history_visit_count == len(expected_heads)
     assert fc_handoffs == int("memory.fill" in body)
     if memory_fill_memory is not None:
         assert memory_fill_memory[0] == 42
@@ -2588,7 +2588,7 @@ def test_jitr_native_step_consumes_pending_head_before_memory_fallback(collect_s
         interpreter,
         call,
         manager.native_dispatch_state(),
-        manager.exec_counter,
+        manager.history_visit_count,
         native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
     )
     assert result[0] == 1
@@ -4426,7 +4426,7 @@ def test_jitr_29_structural_ends_share_a_candidate_card(body, helper, collect_st
         interpreter,
         call,
         snapshot,
-        manager.exec_counter,
+        manager.history_visit_count,
         native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
     )
     visits = native_result[5]
@@ -4477,7 +4477,7 @@ def test_jitr_29_structural_ends_share_a_candidate_card(body, helper, collect_st
         interpreter,
         second_call,
         snapshot,
-        manager.exec_counter,
+        manager.history_visit_count,
         native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
     )
     assert second_result[0] == 1
@@ -4492,7 +4492,7 @@ def test_jitr_29_structural_ends_share_a_candidate_card(body, helper, collect_st
     assert tuple(second_result[7][index] for index in range(second_count)) == expected_heads
     manager.record_native_block_visits(second_result[7], second_count)
     manager.on_interpreter_exit(False)
-    assert manager.exec_counter == 2 * len(expected_heads)
+    assert manager.history_visit_count == 2 * len(expected_heads)
     assert manager.block_lookups == []
     if expected_heads:
         assert manager.has_pending_compilation()
@@ -4546,7 +4546,7 @@ def test_jitr_29_memory_continuation_shares_a_candidate_card(collect_stats):
             interpreter,
             call,
             snapshot,
-            manager.exec_counter,
+            manager.history_visit_count,
             native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
         )
         visits, history = result[5], result[7]
@@ -4583,7 +4583,7 @@ def test_jitr_29_memory_continuation_shares_a_candidate_card(collect_stats):
         in _PROFILEABLE_BLOCK_HEAD_OPCODES
     )
     assert tuple(recorded) == expected_heads
-    assert manager.exec_counter == len(expected_heads)
+    assert manager.history_visit_count == len(expected_heads)
     assert fc_handoffs == int("memory.fill" in body)
     if memory_fill_memory is not None:
         assert memory_fill_memory[0] == 42
@@ -4814,12 +4814,12 @@ def test_jitr_measurements_are_formatted_in_cpp_through_shared_printk():
         sink = PrintkSink(capture, LogDictionary().decode_record)
         assert RUNTIME_PRINT(manager._native.pointer, ctypes.byref(sink._raw_writer)) == 1
         lines = capture.drain_output().decode().splitlines()
-        assert f"jit.execution_count={visits}" in lines
+        assert f"jit.history_visits={visits}" in lines
         assert f"jit.history_overwritten={visits - JIT_HISTORY_CAPACITY}" in lines
         assert "jit.compile_attempts=0" in lines
         assert "jit.compile_ns=0" in lines
         assert "jit.aging_ns=0" in lines
-        assert manager.exec_counter == visits
+        assert manager.history_visit_count == visits
         assert manager.history_overwritten_count == visits - JIT_HISTORY_CAPACITY
         rejected = PrintkBuffer(capacity=1)
         rejected_sink = PrintkSink(rejected, LogDictionary().decode_record)

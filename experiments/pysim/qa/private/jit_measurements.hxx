@@ -63,7 +63,9 @@ struct jit_measurements {
   std::uint64_t interpreter_block_entries = 0;
   // Split of interpreter_block_entries by the card state of the observed head (TEST-JITR-118).
   std::uint64_t interpreter_block_trackable = 0, interpreter_block_untracked = 0;
-  std::uint64_t execution_count = 0, history_overwritten = 0, last_overwritten = 0;
+  // history_visits: visits recorded from the history analysis; history_overwritten: the overwritten
+  // records at the last analysis; last_overwritten: the value before the last analysis.
+  std::uint64_t history_visits = 0, history_overwritten = 0, last_overwritten = 0;
   std::uint64_t history_dropped = 0;
   std::uint64_t trackable_generation = 0;
   bool history_approximate = false;
@@ -93,12 +95,13 @@ struct jit_measurements {
            printk_u64(writer, "jit.distinct_installs", distinct_installs) &&
            printk_u64(writer, "jit.installed_bytes_total", installed_bytes_total) &&
            write_eviction_buckets(writer) && write_block_installs(writer) &&
-           write_admission(writer) && printk_u64(writer, "jit.execution_count", execution_count) &&
+           write_admission(writer) && printk_u64(writer, "jit.history_visits", history_visits) &&
            printk_u64(writer, "jit.interpreter_block_entries", interpreter_block_entries) &&
            printk_u64(writer, "jit.interpreter_block_trackable", interpreter_block_trackable) &&
            printk_u64(writer, "jit.interpreter_block_untracked", interpreter_block_untracked) &&
            printk_u64(writer, "jit.history_overwritten", history_overwritten) &&
-           printk_u64(writer, "jit.last_overwritten", last_overwritten) &&
+           printk_u64(writer, "jit.history_dropped", history_dropped) &&
+           printk_u64(writer, "jit.lookup_calls", lookup_calls) &&
            printk_u64(writer, "jit.trackable_generation", trackable_generation) &&
            write_chain_measurements(writer);
   }
@@ -402,7 +405,7 @@ struct jit_measurements {
     }
     return true;
   }
-  void visits_recorded(std::uint64_t total) { execution_count += total; }
+  void visits_recorded(std::uint64_t total) { history_visits += total; }
   void history_record_overwritten() {
     assert(history_dropped != std::numeric_limits<std::uint64_t>::max());
     ++history_dropped;
@@ -414,11 +417,11 @@ struct jit_measurements {
   }
   void boundary_analyzed(bool yielded) {
     if (yielded) {
-      execution_count = 0;
+      history_visits = 0;
     }
   }
   void profile_bound() {
-    execution_count = history_overwritten = last_overwritten = history_dropped = 0;
+    history_visits = history_overwritten = last_overwritten = history_dropped = 0;
     history_approximate = false;
     compilation_order.fill(no_pc);
     compilation_count = 0;

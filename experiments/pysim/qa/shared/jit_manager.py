@@ -240,8 +240,9 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         )
 
     @property
-    def exec_counter(self) -> int:
-        return self.cache.scalar(CacheField.EXECUTION_COUNT)
+    def history_visit_count(self) -> int:
+        """Visits recorded by the history analysis (not trace body executions)."""
+        return self.cache.scalar(CacheField.HISTORY_VISITS)
 
     @property
     def history_overwritten_count(self) -> int:

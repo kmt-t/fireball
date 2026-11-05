@@ -156,7 +156,7 @@ enum class cache_field : std::uint32_t {
   aging_scanned = 8,
   bank_used = 9,
   bank_entry_capacity = 11,
-  execution_count = 15,
+  history_visits = 15,
   history_overwritten = 16,
   history_approximate = 17,
   trackable_generation = 18,
@@ -196,8 +196,8 @@ extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_jit_runtime_scalar(const qa_jit_
     }
     return capacity;
   }
-  case fireball::cache_field::execution_count:
-    return runtime->measurements.execution_count;
+  case fireball::cache_field::history_visits:
+    return runtime->measurements.history_visits;
   case fireball::cache_field::history_overwritten:
     return runtime->measurements.history_overwritten;
   case fireball::cache_field::history_approximate:
@@ -336,7 +336,7 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_visits(qa_jit_runtime *runtime,
          retained == (total < runtime->hotspots.observation_history.capacity
                           ? total
                           : runtime->hotspots.observation_history.capacity) &&
-         total <= UINT64_MAX - runtime->measurements.execution_count);
+         total <= UINT64_MAX - runtime->measurements.history_visits);
   // Validate and record each visit once; contract violations stop at the
   // source.
   for (std::uint64_t i = total - retained; i < total; ++i) {
@@ -346,7 +346,7 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_visits(qa_jit_runtime *runtime,
   const auto omitted = total - retained;
   assert(omitted <= UINT64_MAX - runtime->measurements.history_dropped);
   runtime->measurements.history_dropped += omitted;
-  runtime->measurements.execution_count += total - retained;
+  runtime->measurements.history_visits += total - retained;
   return 1;
 }
 extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_analyze(qa_jit_runtime *runtime, int yielded) {

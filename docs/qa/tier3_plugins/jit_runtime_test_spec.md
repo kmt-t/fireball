@@ -222,6 +222,8 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-JITR-76 | 反復実行、飽和、Oldest実行、測定区間のリセット | 実行回数が既知の常駐loop traceがある | QA計測構成で通常統計とホットスポット検出の有効・無効を組み合わせて反復実行し、Oldest実行、QA snapshot再生成、32ビット上限、QA resetを確認する | trace bodyを実行するたび、実行カウンタ領域がある構成では1回数える。カウンタ領域がない構成ではNULL pointerを維持し、QA viewも0として読む。lookupでは増えない。世代交代とsnapshot更新で値・所在を保ち、有効なカウンタは最大値で飽和しreset後は0から数える | `` |
 | TEST-JITR-77 | 直接chainの後続bodyの実行回数 | 2 traceの直線chainがある | QA計測構成で通常統計の有効・無効を組み合わせ、Runtimeからchainを実行する | 先頭と後続の回数がともに1増え、ゲストの結果が一致する | `` |
+| TEST-JITR-127 | 完了したtraceの後に解釈器が後続を実行する移りは、観測されない trace 終端 | 先頭blockだけをtraceとして常駐させ、後続blockは未コンパイルで、同じdispatchで解釈器が実行する | 5回呼び出す。計数は QA の extension dispatch で取る | 根の入口は5回、移りは0回、観測されない trace 終端は5回、分類されない移りは0回 | 計数の配線（`record_runtime_trace_exit`、dispatch 終了時の保留の解消）。`test_jit_runtime.py::test_jitr_127_trace_end_before_an_interpreted_successor_is_unobserved` |
+| TEST-JITR-128 | 連結された後続bodyは根の入口にならず、連鎖の終端は観測されない trace 終端になる | 2 blockの直線traceがあり、先頭が後続へ連結されている。後続の後の block は解釈器が実行する | 5回呼び出す | 先頭の根の入口は5回、後続の根の入口は0回、移りは0回、観測されない trace 終端は5回 | 連結の対象（直線の続き）。計数の配線。`test_jit_runtime.py::test_jitr_128_chained_body_is_not_a_root_entry_and_its_end_is_unobserved` |
 | TEST-JITR-78 | QAの退役記録と新traceの計数寿命 | 実行済みと未実行のtrace、および収集先がある | QAハーネスでlookup、rotate、置換、flush前後の常駐状態を比較する | lookupでは記録せず値を保持する。脱落したtraceのPCと操作前に保存した回数を一度通知する。未実行の0も通知する。同じPCの新traceは0から始まる | `` |
 | TEST-JITR-79 | 無効な静的metadataで実行されないtraceの除外 | 常駐traceの`frame_depth` metadataが無効値である | Runtimeから関数を実行する | Interpreterで正しい結果を得て、metadata検査によりtrace実行を辞退し、traceの回数は0のままとなる | `` |
 

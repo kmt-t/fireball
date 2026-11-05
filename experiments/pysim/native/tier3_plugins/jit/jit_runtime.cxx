@@ -623,6 +623,20 @@ bool jit_runtime<Measurement>::can_chain_to(jit_cache_entry value, jit_cache_ent
 }
 
 template <jit_measurement_policy Measurement>
+void jit_runtime<Measurement>::record_runtime_trace_exit(block_index_t source_block_index)
+  requires(!std::is_void_v<Measurement>)
+{
+  // The source is the block whose body ended the completed trace, chained bodies included. A
+  // trace end that was not followed by a transition is counted as unobserved.
+  assert(source_block_index < module_view->block_count);
+  auto &measurements = this->measurements;
+  if (measurements.pending_runtime_source_block != jit_invalid_block_index) {
+    ++measurements.chain_runtime_unobserved_trace_exits;
+  }
+  measurements.pending_runtime_source_block = source_block_index;
+}
+
+template <jit_measurement_policy Measurement>
 void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_block_index,
                                                          wasm_pc_t target_pc)
   requires(!std::is_void_v<Measurement>)

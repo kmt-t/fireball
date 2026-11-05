@@ -4230,6 +4230,108 @@ def test_jitr_123_discarded_trace_restores_the_card_marker():
     assert traced[0].jit_cache_reference == _NO_TRACE_UNOBSERVED
 
 
+_CHAIN_EXIT_WAT = (
+    '(module (func (export "f") (result i32) '
+    "(block i32.const 1 i32.const 2 i32.add drop) i32.const 7))"
+)
+_CHAIN_LINKED_WAT = (
+    '(module (func (export "f") (result i32) '
+    "(block i32.const 1 i32.const 2 i32.add drop) "
+    "(block i32.const 3 i32.const 4 i32.add drop) i32.const 7))"
+)
+
+
+def _runtime_chain_counts(manager, prefix: str = "jit."):
+    """Read the printed QA counters whose names start with `prefix`."""
+    from qa.private.jit_native_abi import RUNTIME_PRINT
+    from tier2_runtime.observability.logger import LogDictionary
+    from tier3_platform.drivers.printk import PrintkBuffer, PrintkSink
+
+    counts = {}
+    capture = PrintkBuffer(capacity=1 << 20)
+    sink = PrintkSink(capture, LogDictionary().decode_record)
+    assert RUNTIME_PRINT(manager._native.pointer, ctypes.byref(sink._raw_writer)) == 1
+    for line in capture.drain_output().decode().splitlines():
+        key, sep, raw = line.partition("=")
+        if sep and key.startswith(prefix):
+            counts[key] = int(raw)
+    return counts
+
+
+def _route_stats_through_qa_extension(monkeypatch):
+    """Make the stats engine dispatch through the QA runtime extension (trace-exit callbacks)."""
+    from qa.shared import runtime_stats
+    from qa.shared.jit_abi import make_qa_runtime_dispatch_entry
+
+    monkeypatch.setattr(
+        runtime_stats,
+        "select_runtime_dispatch_entry",
+        lambda collect_stats, with_jit: make_qa_runtime_dispatch_entry(collect_stats),
+    )
+
+
+def test_jitr_127_trace_end_before_an_interpreted_successor_is_unobserved(monkeypatch):
+    """TEST-JITR-127: a completed trace whose successor the Interpreter runs in the same dispatch.
+
+    Block 0 is compiled and resident; its straight-line successor is never compiled and runs in the
+    Interpreter inside the same native dispatch. No lookup or observation follows the trace end, so
+    each of the five calls is one unobserved trace exit and no transition. The root lookup of each
+    call is one root entry.
+    """
+    _route_stats_through_qa_extension(monkeypatch)
+    module = parse_standalone(wat_to_wasm(_CHAIN_EXIT_WAT))
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    source = instruction_blocks(module)[0]
+    trace = compile_module_block(TraceCompiler(), module, source)
+    assert trace is not None
+    inserted = manager.cache.insert(trace)
+    assert inserted
+    interpreter = Interpreter(module)
+    function_index = module.export_func_index("f")
+    for _ in range(5):
+        assert list(engine.call(interpreter, function_index, []).unwrap()) == [7]
+    counts = _runtime_chain_counts(manager)
+    source_index = next(i for i, b in enumerate(module.blocks) if b.head_pc == source.head_pc)
+    assert counts[f"jit.block.{source_index}.entries"] == 5
+    assert counts["jit.chain_runtime_transitions"] == 0
+    assert counts["jit.chain_runtime_unobserved_trace_exits"] == 5
+    assert counts["jit.chain_runtime_unclassified"] == 0
+
+
+def test_jitr_128_chained_body_is_not_a_root_entry_and_its_end_is_unobserved(monkeypatch):
+    """TEST-JITR-128: a linked successor runs inside the chain, and the chain end is unobserved.
+
+    Block 0 is linked to block 1 by the install, so each of the five calls takes one root lookup for
+    block 0 and runs block 1 through the chain without a lookup. The Interpreter then runs block 2 in
+    the same dispatch, so the end of block 1 is one unobserved trace exit per call.
+    """
+    _route_stats_through_qa_extension(monkeypatch)
+    module = parse_standalone(wat_to_wasm(_CHAIN_LINKED_WAT))
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    first, second = instruction_blocks(module)[0], instruction_blocks(module)[1]
+    for block in (second, first):
+        trace = compile_module_block(TraceCompiler(), module, block)
+        assert trace is not None
+        inserted = manager.cache.insert(trace)
+        assert inserted
+    assert manager.cache.find_trace(first.head_pc).header.chain_target_addr != 0
+    interpreter = Interpreter(module)
+    function_index = module.export_func_index("f")
+    for _ in range(5):
+        assert list(engine.call(interpreter, function_index, []).unwrap()) == [7]
+    counts = _runtime_chain_counts(manager)
+    first_index = next(i for i, b in enumerate(module.blocks) if b.head_pc == first.head_pc)
+    second_index = next(i for i, b in enumerate(module.blocks) if b.head_pc == second.head_pc)
+    assert counts[f"jit.block.{first_index}.entries"] == 5
+    assert counts.get(f"jit.block.{second_index}.entries", 0) == 0
+    assert counts["jit.chain_runtime_transitions"] == 0
+    assert counts["jit.chain_runtime_unobserved_trace_exits"] == 5
+
+
 def test_jitr_125_no_jit_dispatch_on_a_jit_bound_module_completes_in_the_interpreter():
     """TEST-JITR-125: without the JIT dispatch, a module whose records hold traces still completes.
 

@@ -41,7 +41,8 @@ static void qa_runtime_trace_executed(const fb_native_dispatch_call *input,
     }
     header = runtime.chain_target_header(*header);
   }
-  ++runtime.measurements.chain_runtime_unobserved_trace_exits;
+  // Not a CPS exit of the chain: the trace completed. The terminal body is the current block.
+  runtime.record_runtime_trace_exit(context->current_block_index);
 }
 
 extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_dispatch(
@@ -54,7 +55,15 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_dispatch(
   const fb_native_execution_extension extension{input->jit_provider->owner, qa_runtime_observe,
                                                 qa_runtime_trace_executed};
   const fb_native_dispatch_extension_call extension_call{*input, &extension};
-  return dispatch(&extension_call, result);
+  const auto status = dispatch(&extension_call, result);
+  // A trace end with no lookup or observation after it in this dispatch is unobserved.
+  auto &runtime = *reinterpret_cast<qa_jit_runtime *>(input->jit_provider->owner);
+  auto &measurements = runtime.measurements;
+  if (measurements.pending_runtime_source_block != fireball::jit_invalid_block_index) {
+    ++measurements.chain_runtime_unobserved_trace_exits;
+    measurements.pending_runtime_source_block = fireball::jit_invalid_block_index;
+  }
+  return status;
 }
 
 extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_flush(qa_jit_runtime *runtime) {

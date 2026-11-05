@@ -130,7 +130,6 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         "compile_queue_capacity",
         "history_capacity",
         "jit_compiler",
-        "min_trace_bytes",
         "trackable",
         "update_bitmap",
     )
@@ -151,7 +150,6 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         self.jit_compiler: JITCompiler = TraceCompiler()
         self.history_capacity = JIT_HISTORY_CAPACITY
         self.module_id = module_id
-        self.min_trace_bytes = 1 << JIT_CARD_SHIFT
         self._card_shift = JIT_CARD_SHIFT
         self._retire_observer = retire_observer
         # The product runtime is created when a module is registered; it has no earlier state.

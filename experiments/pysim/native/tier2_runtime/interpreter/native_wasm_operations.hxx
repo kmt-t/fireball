@@ -16,7 +16,6 @@ constexpr std::uint32_t kBlockBoundary = 3;
 constexpr std::uint32_t kRuntimeApiBoundary = 8;
 constexpr std::uint32_t kStopAtBlockBoundaryFlag = 1u << 0;
 constexpr std::uint32_t kSingleControlStepFlag = 1u << 2;
-constexpr std::uint32_t kJitDispatchFlag = 1u << 3;
 constexpr std::uint32_t kRelCursorReadyFlag = 1u << 4;
 constexpr std::uint32_t kPendingBlockHeadFlag = 1u << 5;
 constexpr std::uint32_t kCpsExitShift = 8;
@@ -38,7 +37,8 @@ constexpr std::uint32_t kTrapInvalidConversion = 17;
 constexpr std::uint32_t kSentinel = 0xFFFF'FFFFu;
 constexpr block_index_t kInvalidBlockIndex = FIREBALL_INVALID_BLOCK_INDEX;
 constexpr std::uint32_t kOpcodeFcPrefix = 0xFC;
-// RPN expression protocol (REQ-097 D). The values mirror tier2_runtime/wasm/opcodes.py; the loader owns them.
+// RPN expression protocol (REQ-097 D). The values mirror tier2_runtime/wasm/opcodes.py; the loader
+// owns them.
 constexpr std::uint32_t kRpnExprHead = 0xD3;
 constexpr std::uint32_t kNativeLocalGetW1 = 0xD4;
 constexpr std::uint32_t kNativeLocalSetW1 = 0xD5;
@@ -50,7 +50,8 @@ constexpr std::uint32_t kRpnElemBinopBase = 0x10;
 constexpr std::uint32_t kRpnElemUnaryBase = 0x40;
 constexpr std::uint32_t kRpnBinopKindCount = 25;
 constexpr std::uint32_t kRpnElemSpecBase = 0x80;
-// Operand kinds and destinations of a specialised element (the order follows RPN_SPECIALISED_FORMS).
+// Operand kinds and destinations of a specialised element (the order follows
+// RPN_SPECIALISED_FORMS).
 constexpr std::uint32_t kRpnOperandTemp = 0;
 constexpr std::uint32_t kRpnOperandLocal = 1;
 constexpr std::uint32_t kRpnOperandImm = 2;
@@ -540,8 +541,7 @@ template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
 runtime_memory_load_decoded(execution_context *context, std::uint32_t *&sp,
                             [[maybe_unused]] std::uint32_t *&local_base,
                             const std::uint8_t *&instruction_ip, code_ip_t source_ip,
-                            code_ip_t next_pc, std::uint32_t offset,
-                            const std::uint8_t *rel);
+                            code_ip_t next_pc, std::uint32_t offset, const std::uint8_t *rel);
 
 template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
 /** @brief `runtime_memory_load`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。
@@ -559,8 +559,7 @@ template <std::uint32_t Width, std::uint32_t ValueWords>
 runtime_memory_store_decoded(execution_context *context, std::uint32_t *&sp,
                              [[maybe_unused]] std::uint32_t *&local_base,
                              const std::uint8_t *&instruction_ip, code_ip_t source_ip,
-                             code_ip_t next_pc, std::uint32_t offset,
-                             const std::uint8_t *rel);
+                             code_ip_t next_pc, std::uint32_t offset, const std::uint8_t *rel);
 
 template <std::uint32_t Width, std::uint32_t ValueWords>
 /** @brief `runtime_memory_store`の一操作を実行し、通常継続ならtrue、trapまたは境界ならfalseを返す。

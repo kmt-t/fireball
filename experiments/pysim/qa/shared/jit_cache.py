@@ -174,7 +174,7 @@ class CardUpdateBitmap:
 
 
 class BlockCardMask:
-    """Boundary view of native candidate/suppression bits."""
+    """Read-only boundary view of the native candidate bits; the product bind writes them."""
 
     __slots__ = ("_bits", "card_shift", "region", "storage")
 
@@ -194,17 +194,8 @@ class BlockCardMask:
     def card_count(self) -> int:
         return self.region.card_count(self.card_shift)
 
-    def mark(self, pc: int) -> None:
-        self._bits.operation(self.region.card_index(pc, self.card_shift), 1, 1)
-
     def is_marked(self, pc: int) -> bool:
         return self._bits.operation(self.region.card_index(pc, self.card_shift)) != 0
-
-    def unmark(self, pc: int) -> None:
-        self._bits.operation(self.region.card_index(pc, self.card_shift), 1, 0)
-
-    def clear(self) -> None:
-        self._bits.operation(operation=4)
 
 
 class JITTraceHeader:

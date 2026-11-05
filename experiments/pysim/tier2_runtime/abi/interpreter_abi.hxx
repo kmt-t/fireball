@@ -107,6 +107,18 @@ typedef struct fireball_wasm_block_execution_view_native {
   block_index_t loops_to_block_index;
 } fireball_wasm_block_execution_view_native;
 
+// jit_cache_reference of a block without a resident trace. Every other value is a trace reference.
+// The JIT extension writes these values and the Interpreter reads them at each block transfer.
+enum {
+  // A trace-free block whose card is trackable: a transfer into it leaves the Interpreter flow
+  // so the block head is observed.
+  FB_NATIVE_JIT_NO_TRACE_OBSERVED = 0xFF,
+  // A trace-free block whose card is not trackable: a transfer into it stays in the Interpreter
+  // flow.
+  // The Loader sets this value before any JIT extension binds the module.
+  FB_NATIVE_JIT_NO_TRACE_UNOBSERVED = 0xFE,
+};
+
 typedef struct fireball_wasm_module_execution_view_native {
   const fireball_wasm_function_execution_view_native *functions;
   function_index_t function_count;

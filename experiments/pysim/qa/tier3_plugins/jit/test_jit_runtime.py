@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from qa.private.interpreter_native_abi import select_native_jit_dispatch_entry
 from qa.shared.jit_abi import dispatch_for_test
+from tier2_runtime.wasm.module import NO_TRACE_OBSERVED as _NO_TRACE_OBSERVED
+from tier2_runtime.wasm.module import NO_TRACE_UNOBSERVED as _NO_TRACE_UNOBSERVED
 from tier2_runtime.wasm.reader import parse_standalone
 
 """
@@ -60,7 +62,6 @@ from qa.shared.jit_abi import (
     make_qa_jit_dispatch_entry,
 )
 from qa.shared.jit_cache import (
-    BlockCardMask,
     CardState,
     HotspotBitmap,
     JitRuntimeBoundary,
@@ -195,26 +196,48 @@ def test_hotspot_01_2bit_card_marking_state_transitions():
 
 
 def test_hotspot_and_trackable_bitmaps_share_one_code_region_card_space():
-    """Hotspot and candidate state use flat code-region storage across function boundaries."""
+    """Hotspot and candidate state use one flat card space across function boundaries.
+
+    The hotspot bitmap is checked alone. The candidate mask is checked through the product bind of
+    a two-function module: the card index is the global pc index, the mask covers every function,
+    and the candidate in the second function sets its card while its record reads OBSERVED.
+    """
     lengths = (3, 3)
     bases = (0, 3)
     hotspot = HotspotBitmap(code_lengths=lengths, function_pc_bases=bases)
-    trackable = BlockCardMask(code_lengths=lengths, function_pc_bases=bases)
     first_function_pc = 2
     second_function_pc = 3
 
     assert hotspot.card_count == 2
-    assert trackable.card_count == 2
     assert hotspot.storage.count == hotspot.card_count
-    assert trackable.storage.count == trackable.card_count
     assert hotspot.card_of(first_function_pc) == hotspot.card_of(second_function_pc) == 0
     assert hotspot.touch(first_function_pc) == CardState.EXECUTED
     assert hotspot.get_state(second_function_pc) == CardState.EXECUTED
     assert hotspot.touch(second_function_pc) == CardState.HOT
-    trackable.mark(first_function_pc)
-    assert trackable.is_marked(second_function_pc)
-    trackable.unmark(second_function_pc)
-    assert not trackable.is_marked(first_function_pc)
+
+    module = parse_standalone(
+        wat_to_wasm(
+            '(module (func (export "first") (result i32) i32.const 1)'
+            ' (func (export "second") (result i32)'
+            " i32.const 1 i32.const 2 i32.add drop i32.const 1))"
+        )
+    )
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    first_head = next(b for b in module.blocks if b.func_index == 0 and b.byte_span > 0)
+    second_head = next(b for b in module.blocks if b.func_index == 1 and b.byte_span > 0)
+    end_pc = module.function_pc_offset(1) + len(module.code_for(1))
+
+    # One card index formula covers both functions: the second function's card is global.
+    assert _card_of(first_head.head_pc) < _card_of(second_head.head_pc)
+    assert manager.trackable.card_count == _card_of(end_pc - 1) + 1
+    assert _card_of(second_head.head_pc) < manager.trackable.card_count
+    # The candidate in the second function sets its card; the first function's block keeps its own.
+    assert second_head.jit_cache_reference == _NO_TRACE_OBSERVED
+    assert manager.trackable.is_marked(second_head.head_pc)
+    assert first_head.jit_cache_reference == _NO_TRACE_UNOBSERVED
+    assert not manager.trackable.is_marked(first_head.head_pc)
 
 
 def test_jitr_01_card_marking_granularity():
@@ -240,7 +263,6 @@ def test_hotspot_02_history_ring_buffered_yield_drain():
     pcs = tuple(b.head_pc for b in instruction_blocks(module))[:visits]
     assert len(pcs) == visits
     for pc in pcs:
-        manager.trackable.mark(pc)
         manager.record_block_head(pc)
     manager.on_interpreter_exit(False)
     overwritten = visits - JIT_HISTORY_CAPACITY
@@ -714,15 +736,13 @@ def test_jitr_chained_successor_cps_boundary_stops_at_its_block():
     module = parse_standalone(
         wasmtime.wat2wasm(
             '(module (memory 1) (func (export "run") (result i32) (local i32)'
-            " (block i32.const 7 local.set 0) (block memory.size drop) local.get 0))"
+            " (block i32.const 7 local.set 0) (block memory.size drop i32.const 1 i32.const 2 i32.add drop) local.get 0))"
         )
     )
     manager = JITRuntimeManager()
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=False)
     engine.register_module_blocks(module)
     base = module.function_pc_offset(0)
-    for pc in range(base, base + len(module.code_for(0))):
-        manager.trackable.mark(pc)
     code = module.code_for(0)
     memory_size_ip = bytes(code).index(b"\x3f\x00")  # memory.size with its memory index
     boundary_block = next(
@@ -736,6 +756,8 @@ def test_jitr_chained_successor_cps_boundary_stops_at_its_block():
         if block.next_pc == module.blocks[boundary_block].head_pc
     )
 
+    # Precondition: the boundary block is observed on the bind path (record OBSERVED), no QA mark.
+    assert module.blocks[boundary_block].jit_cache_reference == _NO_TRACE_OBSERVED
     # Compile both blocks with the loader metadata; inserting the successor first links the chain.
     compiler = TraceCompiler()
     successor = compile_module_block(compiler, module, module.blocks[boundary_block])
@@ -1080,7 +1102,8 @@ def test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing():
     """
     wasm_bytes = bytes(wasmtime.wat2wasm(wat))
     engine = RuntimeEngine(jit_runtime=JITRuntimeManager())
-    assert engine.jit_runtime.min_trace_bytes == 4
+    # The native profile takes its minimum span from the card size (jit_runtime.cxx, profile init).
+    assert 1 << JIT_CARD_SHIFT == 4
     mod = engine.load_wasm(wasm_bytes)
     h0 = mod.blocks[0].head_pc
     h1 = mod.blocks[1].head_pc
@@ -1107,7 +1130,6 @@ def test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace():
     engine = make_runtime_engine()
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
-    engine.jit_runtime.trackable.mark(pc)
     engine.jit_runtime.record_block_head(pc)
     engine.jit_runtime.record_block_head(pc)
     engine.jit_runtime.on_yield()
@@ -1818,7 +1840,7 @@ def _install_single_control_trace(
     # Only the target may become a compile candidate: the other heads keep their profile but never compile.
     for other in module.blocks:
         if other.byte_span > 0 and other.head_pc != block.head_pc:
-            manager.trackable.unmark(other.head_pc)
+            manager.unmark_trackable(other.head_pc)
     trace = compile_runtime_block(manager, block)
     assert trace is not None
     assert_result_19 = manager.cache.insert(trace)
@@ -2168,17 +2190,22 @@ def test_jitr_native_history_overwrite_does_not_yield():
 @pytest.mark.parametrize(
     "body,expected",
     (
-        ("(block (block nop)) i32.const 42", [42]),
         ("(block (result i32) (block (result i32) nop nop i32.const 42))", [42]),
         ("(block (result i32) (block (result i32) f64.const 3 drop i32.const 42))", [42]),
-        ("f32.const 42 i32.trunc_sat_f32_s return", [42]),
+        ("f32.const 42 i32.trunc_sat_f32_s i32.const 0 i32.add return", [42]),
         ("f32.const 42 i32.trunc_sat_f32_s i32.const 0 i32.add", [42]),
-        ("i32.const 0 if (result i32) i32.const 42 else i32.const 17 end", [17]),
-        ("i32.const 1 if (result i32) i32.const 42 else i32.const 17 end", [42]),
-        ("call $helper", [42]),
+        (
+            "i32.const 1 i32.const -1 i32.add if (result i32) i32.const 42 i32.const 0 i32.add "
+            "else i32.const 17 i32.const 0 i32.add end",
+            [17],
+        ),
+        (
+            "i32.const 0 i32.const 1 i32.add if (result i32) i32.const 42 i32.const 0 i32.add "
+            "else i32.const 17 i32.const 0 i32.add end",
+            [42],
+        ),
         ("i32.const 0 i32.const 0 i32.const 0 memory.fill i32.const 42", [42]),
         ("i32.const 0 i32.const 0 i32.const 0 memory.copy i32.const 42", [42]),
-        ("(block (block))", []),
     ),
 )
 def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected, collect_stats):
@@ -2204,31 +2231,9 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
     manager = CountingManager()
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=collect_stats)
     engine.register_module_blocks(module)
-    # Deliberately mark every card, including control-only and NOP-only
-    # intervals. Eligibility must come from execution, not an exact-PC list.
+    # Trackable cards come only from the product bind. Eligibility must come from execution,
+    # not an exact-PC list or a QA mark.
     base = module.function_pc_offset(0)
-    for function_index in range(len(module.functions)):
-        function_base = module.function_pc_offset(function_index)
-        for pc in range(function_base, function_base + len(module.code_for(function_index))):
-            manager.trackable.mark(pc)
-    manager.block_lookups.clear()
-    snapshot = manager.native_dispatch_state()
-    interpreter = Interpreter(module)
-    call = interpreter.start(0, [])
-    native_result = dispatch_for_test(
-        interpreter,
-        call,
-        snapshot,
-        manager.exec_counter,
-        native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
-    )
-    visits = native_result[5]
-    history = native_result[7]
-    assert native_result[0] == 1
-    interpreter.step_native(call)
-    assert call.finished
-    assert call.results == expected
-    assert call.context.runtime_flags == 0
     if " if " in body:
         # Both arms are registered; only the selected arm may be recorded.
         selected_offset = bytes(module.code_for(0)).index(bytes((I32_CONST, expected[0])))
@@ -2252,6 +2257,27 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
             ]
             in _PROFILEABLE_BLOCK_HEAD_OPCODES
         )
+    for head in expected_heads:
+        # Precondition: the record shows the head observed by the bind, with no QA mark.
+        assert _block_at(module, head).jit_cache_reference == _NO_TRACE_OBSERVED, head
+    manager.block_lookups.clear()
+    snapshot = manager.native_dispatch_state()
+    interpreter = Interpreter(module)
+    call = interpreter.start(0, [])
+    native_result = dispatch_for_test(
+        interpreter,
+        call,
+        snapshot,
+        manager.exec_counter,
+        native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
+    )
+    visits = native_result[5]
+    history = native_result[7]
+    assert native_result[0] == 1
+    interpreter.step_native(call)
+    assert call.finished
+    assert call.results == expected
+    assert call.context.runtime_flags == 0
     history_count = visits
     if not collect_stats:
         # The lean dispatcher does not export its observation counter. Its
@@ -2259,6 +2285,12 @@ def test_jitr_mask_card_collision_does_not_profile_structural_pc(body, expected,
         # PCs from the actual observer side effect.
         history_count = sum(1 for index in range(len(history)) if history[index] != 0)
     assert tuple(history[index] for index in range(history_count)) == expected_heads
+    if expected_heads:
+        # The observation really happened: every expected head was recorded, and nothing else.
+        assert history_count == len(expected_heads)
+    else:
+        # A control-only body: its card is marked trackable above, and nothing is recorded.
+        assert manager.trackable.is_marked(base)
     assert manager.block_lookups == []
     # Compilation also uses the registered native Loader descriptors.
     manager.record_native_block_visits(history, history_count)
@@ -2351,7 +2383,7 @@ def test_jit_structural_delimiters_are_loader_metadata_and_emit_no_operations():
             assert block_at_delimiter is None or block_at_delimiter.byte_span == 0
 
     # Every block with an instruction compiles from its own metadata. A block holding only
-    # delimiters scores zero, so rule (i) of the admission rejects it before the compiler.
+    # delimiters scores zero, so the admission contract never queues them.
     delimiter_heads = []
     for block in function_blocks:
         if block.byte_span == 0:
@@ -2374,8 +2406,6 @@ def test_jit_structural_delimiters_are_loader_metadata_and_emit_no_operations():
     engine_module = engine.load_wasm(bytes(wasmtime.wat2wasm(wat)))
     engine.register_module_blocks(engine_module)
     manager = engine.jit_runtime
-    for pc in range(function.code_pc_offset, function.code_pc_offset + len(code)):
-        manager.trackable.mark(pc)
     interpreter = Interpreter(engine_module)
     for _ in range(5):
         engine.call(interpreter, engine_module.export_func_index("delimiters"), [1]).unwrap()
@@ -2427,9 +2457,9 @@ def test_jit_compile_call_blocks_and_tail_call_cps_handler(
     (
         "memory.size drop i32.const 42",
         "i32.const 0 memory.grow drop i32.const 42",
-        "(block memory.size drop) i32.const 42",
-        "memory.size drop call $host i32.const 42",
-        "memory.size drop i32.const 0 call_indirect (type $host_type) i32.const 42",
+        "i32.const 1 i32.const 0 i32.add drop memory.size drop call $host i32.const 42 i32.const 0 i32.add",
+        "i32.const 1 i32.const 0 i32.add drop memory.size drop i32.const 0 call_indirect "
+        "(type $host_type) i32.const 42 i32.const 0 i32.add",
         "memory.size drop i32.const 0 i32.const 42 i32.const 1 memory.fill i32.const 42",
     ),
 )
@@ -2453,9 +2483,18 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
     manager = JITRuntimeManager()
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=collect_stats)
     engine.register_module_blocks(module)
-    base = module.function_pc_offset(function_index)
-    for pc in range(base, base + len(module.code_for(function_index))):
-        manager.trackable.mark(pc)
+    expected_heads = tuple(
+        block.head_pc
+        for block in module.blocks
+        if block.func_index == function_index
+        and module.code_for(block.func_index)[
+            block.head_pc - module.function_pc_offset(block.func_index)
+        ]
+        in _PROFILEABLE_BLOCK_HEAD_OPCODES
+    )
+    for head in expected_heads:
+        # Precondition: the record shows the head observed by the bind, with no QA mark.
+        assert _block_at(module, head).jit_cache_reference == _NO_TRACE_OBSERVED, head
     snapshot = manager.native_dispatch_state()
     interpreter = Interpreter(module, host_functions=host_functions)
     call = interpreter.start(function_index, [])
@@ -2501,16 +2540,9 @@ def test_jitr_memory_boundary_continuation_does_not_become_a_block_head(body, co
     interpreter.step_native(call)
     assert call.finished and call.results == [42]
     assert call.context.runtime_flags == 0
-    expected_heads = tuple(
-        block.head_pc
-        for block in module.blocks
-        if block.func_index == function_index
-        and module.code_for(block.func_index)[
-            block.head_pc - module.function_pc_offset(block.func_index)
-        ]
-        in _PROFILEABLE_BLOCK_HEAD_OPCODES
-    )
     assert tuple(recorded) == expected_heads
+    # Every body here starts with a profileable head, so the observation count is not vacuous.
+    assert expected_heads
     assert manager.exec_counter == len(expected_heads)
     assert fc_handoffs == int("memory.fill" in body)
     if memory_fill_memory is not None:
@@ -2522,22 +2554,34 @@ def test_jitr_native_step_consumes_pending_head_before_memory_fallback(collect_s
     """TEST-JITR-29: switching native APIs cannot profile a memory continuation as a head."""
     module = parse_standalone(
         wasmtime.wat2wasm(
-            '(module (memory 1) (func (export "run") (result i32) '
-            "memory.size drop (block nop) i32.const 42))"
+            '(module (memory 1) (func (export "run") (result i32) (local i32) '
+            "memory.size drop (block nop) i32.const 42 i32.const 1 drop nop))"
         )
     )
     manager = JITRuntimeManager()
     engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=collect_stats)
     engine.register_module_blocks(module)
     base = module.function_pc_offset(0)
-    for pc in range(base, base + len(module.code_for(0))):
-        manager.trackable.mark(pc)
+    code = bytes(module.code_for(0))
+    # The base is the memory.size head at pc 5 (a local declaration moves the code start), so
+    # memory.size (3f 00) and its continuation drop (1a) at pc 7 share card 1 with the base block,
+    # which the product bind marks as a candidate.
+    assert code[0] == 0x3F and code[1] == 0x00 and code[2] == 0x1A
+    continuation = base + 2
+    assert continuation >> JIT_CARD_SHIFT == base >> JIT_CARD_SHIFT
+    assert manager.trackable.is_marked(continuation)
+    assert all(b.head_pc != continuation for b in module.blocks)
+    assert manager.trackable.is_marked(base)
     interpreter = Interpreter(module)
     call = interpreter.start(0, [])
     assert call._frame is not None
     call._frame.set_runtime_boundary(base + len(module.code_for(0)) - 1, None)
     call.context.runtime_flags |= EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
+    assert call.context.runtime_flags & EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD
     assert interpreter._try_native_step_to_boundary(call)
+    assert not (call.context.runtime_flags & EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD)
+    # The native step consumed the pending head and advanced past memory.size, to the continuation.
+    assert call._ip == 2
     assert call.context.runtime_flags == EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
     assert call._ip > 0
     result = dispatch_for_test(
@@ -2561,6 +2605,8 @@ def test_jitr_native_step_consumes_pending_head_before_memory_fallback(collect_s
         in _PROFILEABLE_BLOCK_HEAD_OPCODES
     )
     assert expected_heads
+    for head in expected_heads:
+        assert manager.trackable.is_marked(head), f"expected head {head} not trackable"
     assert tuple(result[7][index] for index in range(history_count)) == expected_heads
     interpreter.step_native(call)
     assert call.finished and call.results == [42]
@@ -3337,7 +3383,6 @@ def _pc(module: Module, index: int, func: int = 0) -> int:
 
 def _touch_via_yield(engine, pc):
     """Record one block head and let the yield handler touch its card."""
-    engine.jit_runtime.trackable.mark(pc)
     engine.jit_runtime.record_block_head(pc)
     engine.jit_runtime.on_yield()
 
@@ -3983,7 +4028,6 @@ engine.call(Interpreter(module), 0, [])
     assert "header->frame_depth == source_block.frame_depth" in process.stderr, process.stderr
 
 
-
 @pytest.mark.parametrize(
     ("code_bytes", "byte_length", "expected_pending"),
     (
@@ -4024,7 +4068,6 @@ def test_jitr_117_trace_exit_flags_an_interpreter_terminator(
     assert trace_exit.interpreter_terminator_pending == expected_pending
 
 
-
 def _interpreter_block_counts(manager) -> dict[str, int]:
     """Read the observed-head counters through the shared printk dump (TEST-JITR-118)."""
     from qa.private.jit_native_abi import RUNTIME_PRINT
@@ -4049,19 +4092,21 @@ def test_jitr_118_observed_heads_split_into_trackable_and_untracked(trackable_al
     The two counts add up to the interpreted-head count. With every card trackable, no head is
     untracked; with no card trackable, no head is trackable.
     """
-    blocks = "(block i32.const 1 drop) " * 6
+    # Every block scores at least the candidate threshold and spans at least the minimum trace
+    # bytes, so the product bind makes every head trackable. The other case unmarks each head
+    # through the product exclusion path.
+    blocks = "(block i32.const 1 i32.const 2 i32.add drop) " * 6
     module = parse_standalone(
-        wat_to_wasm(f'(module (func (export "f") (result i32) {blocks}i32.const 7))')
+        wat_to_wasm(
+            f'(module (func (export "f") (result i32) {blocks}i32.const 3 i32.const 4 i32.add))'
+        )
     )
     engine = make_runtime_engine()
     engine.register_module_blocks(module)
     manager = engine.jit_runtime
-    # The mask starts with every card trackable, so the other case unmarks each head's card.
-    for block in instruction_blocks(module):
-        if trackable_all:
-            manager.trackable.mark(block.head_pc)
-        else:
-            manager.trackable.unmark(block.head_pc)
+    if not trackable_all:
+        for block in instruction_blocks(module):
+            manager.unmark_trackable(block.head_pc)
     interpreter = Interpreter(module)
     assert list(engine.call(interpreter, module.export_func_index("f"), []).unwrap()) == [7]
     counts = _interpreter_block_counts(manager)
@@ -4075,6 +4120,371 @@ def test_jitr_118_observed_heads_split_into_trackable_and_untracked(trackable_al
     else:
         assert trackable == 0 and untracked == entries
 
+
+_BLOCK_TRANSFER_WAT = (
+    '(module (func (export "f") (result i32) ' + "(block i32.const 1 drop) " * 6 + "i32.const 7))"
+)
+
+
+def _block_at(module: Module, head_pc: int):
+    return next(block for block in module.blocks if block.head_pc == head_pc)
+
+
+def _card_of(pc: int) -> int:
+    return pc >> JIT_CARD_SHIFT
+
+
+def test_jitr_119_untracked_block_transfer_stays_in_the_interpreter():
+    """TEST-JITR-119: a block transfer into an untracked card leaves no interpreter flow.
+
+    The record of every head is the no-trace value that means "not observed". The whole call
+    is one dispatch segment and no trace runs.
+    """
+    module = parse_standalone(wat_to_wasm(_BLOCK_TRANSFER_WAT))
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    for block in instruction_blocks(module):
+        manager.unmark_trackable(block.head_pc)
+    interpreter = Interpreter(module)
+    assert list(engine.call(interpreter, module.export_func_index("f"), []).unwrap()) == [7]
+    assert engine.stat_jit_invocations == 0
+    assert engine.stat_interp_steps <= 2, engine.stat_interp_steps
+
+
+def test_jitr_120_trackable_block_transfer_leaves_the_interpreter_and_is_observed():
+    """TEST-JITR-120: a block transfer into a trackable card leaves the interpreter flow, and
+    the head is observed."""
+    # The bind alone makes every head trackable: each block is a candidate.
+    module = parse_standalone(
+        wat_to_wasm(
+            '(module (func (export "f") (result i32) '
+            + "(block i32.const 1 i32.const 2 i32.add drop) " * 6
+            + "i32.const 3 i32.const 4 i32.add))"
+        )
+    )
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    interpreter = Interpreter(module)
+    assert list(engine.call(interpreter, module.export_func_index("f"), []).unwrap()) == [7]
+    counts = _interpreter_block_counts(manager)
+    assert counts["jit.interpreter_block_trackable"] > 0
+    assert engine.stat_interp_steps >= 6, engine.stat_interp_steps
+
+
+def test_jitr_121_block_transfer_into_a_resident_trace_enters_the_trace():
+    """TEST-JITR-121: a block transfer into a block with a resident trace runs that trace."""
+    module = parse_standalone(wat_to_wasm(_BLOCK_TRANSFER_WAT))
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    interpreter = Interpreter(module)
+    function_index = module.export_func_index("f")
+    for _ in range(5):
+        assert list(engine.call(interpreter, function_index, []).unwrap()) == [7]
+        engine.idle_hook()
+    assert any(block.jit_cache_reference < 0xFE for block in module.blocks)
+    invocations = engine.stat_jit_invocations
+    assert list(engine.call(interpreter, function_index, []).unwrap()) == [7]
+    assert engine.stat_jit_invocations > invocations
+    assert manager is not None
+
+
+def test_jitr_122_block_marker_follows_the_card_trackable_bit():
+    """TEST-JITR-122: untracking a card sets its trace-free blocks to the not-observed marker."""
+    module = parse_standalone(wat_to_wasm(_BLOCK_TRANSFER_WAT))
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    interpreter = Interpreter(module)
+    assert list(engine.call(interpreter, module.export_func_index("f"), []).unwrap()) == [7]
+    heads = [block.head_pc for block in instruction_blocks(module)]
+    manager.unmark_trackable(heads[0])
+    untracked_card = _card_of(heads[0])
+    for block in module.blocks:
+        if block.head_pc == 0:
+            continue
+        expected = _NO_TRACE_UNOBSERVED if _card_of(block.head_pc) == untracked_card else None
+        if expected is not None:
+            assert block.jit_cache_reference == expected, hex(block.head_pc)
+
+
+def test_jitr_123_discarded_trace_restores_the_card_marker():
+    """TEST-JITR-123: a discarded trace leaves the marker of its block by the card's trackable bit."""
+    module = parse_standalone(wat_to_wasm(_BLOCK_TRANSFER_WAT))
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    interpreter = Interpreter(module)
+    function_index = module.export_func_index("f")
+    for _ in range(5):
+        assert list(engine.call(interpreter, function_index, []).unwrap()) == [7]
+        engine.idle_hook()
+    traced = [block for block in module.blocks if block.jit_cache_reference < 0xFE]
+    assert traced, "the setup needs a resident trace"
+    head = traced[0].head_pc
+    manager.unmark_trackable(head)
+    assert traced[0].jit_cache_reference < 0xFE, "a resident trace keeps its reference"
+    manager.flush_all()
+    assert traced[0].jit_cache_reference == _NO_TRACE_UNOBSERVED
+
+
+def test_jitr_125_no_jit_dispatch_on_a_jit_bound_module_completes_in_the_interpreter():
+    """TEST-JITR-125: without the JIT dispatch, a module whose records hold traces still completes.
+
+    The records keep the references of the traces the JIT installed. The dispatch that has no JIT
+    plugin leaves the flow at each such block, and every exit completes in the Interpreter. No trace
+    body runs, and the result is the Interpreter's.
+    """
+    from tier2_runtime.wasm.module import NO_TRACE_UNOBSERVED
+
+    module = parse_standalone(wat_to_wasm(_BLOCK_TRANSFER_WAT))
+    jit = make_runtime_engine()
+    jit.register_module_blocks(module)
+    function_index = module.export_func_index("f")
+    warm = Interpreter(module)
+    for _ in range(5):
+        assert list(jit.call(warm, function_index, []).unwrap()) == [7]
+        jit.idle_hook()
+    assert any(block.jit_cache_reference < NO_TRACE_UNOBSERVED for block in module.blocks)
+    plain = RuntimeEngine(bump_allocator=module.allocator, collect_runtime_stats=True)
+    plain.register_module_blocks(module)
+    assert list(plain.call(Interpreter(module), function_index, []).unwrap()) == [7]
+    assert plain.stat_jit_invocations == 0
+    assert plain.stat_interp_steps >= 1
+
+
+@pytest.mark.parametrize("collect_stats", (False, True))
+@pytest.mark.parametrize(
+    "body,helper",
+    (
+        ("(block (block nop i32.const 1 drop nop)) i32.const 42 i32.const 1 drop nop", ""),
+        (
+            "call $helper",
+            "(func $helper (result i32) (block (block nop i32.const 1 drop nop)) "
+            "i32.const 42 i32.const 1 drop nop)",
+        ),
+    ),
+)
+def test_jitr_29_structural_ends_share_a_candidate_card(body, helper, collect_stats):
+    """TEST-JITR-29: structural end PCs in a card with a candidate head are never recorded.
+
+    The cards are trackable only through the product bind; no QA mark is written. The structural
+    end PCs and the expected head cards are asserted to be trackable, so a change of the
+    candidate score makes this test fail instead of checking nothing.
+    """
+
+    class CountingManager(JITRuntimeManager):
+        __slots__ = ("block_lookups",)
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.block_lookups = []
+
+        def get_block(self, pc: int):
+            self.block_lookups.append(pc)
+            return super().get_block(pc)
+
+    module = parse_standalone(
+        wasmtime.wat2wasm(f'(module (func (export "run") (result i32) {body}) {helper})')
+    )
+    manager = CountingManager()
+    engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=collect_stats)
+    engine.register_module_blocks(module)
+    interval_function = 1 if "call" in body else 0
+    base = module.function_pc_offset(interval_function)
+    code = bytes(module.code_for(interval_function))
+    # The structural ends are the two inner `end` bytes; the candidate head shares their card.
+    assert code[9] == 0x0B and code[10] == 0x0B and code[11] == 0x41
+    for offset in (9, 10):
+        # A structural `end` is never a profiled head: any Loader entry at it has no bytes.
+        entries = [b for b in module.blocks if b.head_pc == base + offset]
+        assert all(b.byte_span == 0 for b in entries)
+        assert manager.trackable.is_marked(base + offset), f"end at {base + offset} not trackable"
+    head_block = next(b for b in module.blocks if b.head_pc == base + 11)
+    assert manager.trackable.is_marked(head_block.head_pc)
+    profileable_heads = tuple(
+        b.head_pc
+        for b in module.blocks
+        if b.func_index == interval_function
+        and code[b.head_pc - base] in _PROFILEABLE_BLOCK_HEAD_OPCODES
+    )
+    for head in profileable_heads:
+        assert manager.trackable.is_marked(head), f"expected head {head} not trackable"
+    expected = [42]
+    snapshot = manager.native_dispatch_state()
+    interpreter = Interpreter(module)
+    call = interpreter.start(0, [])
+    manager.block_lookups.clear()
+    snapshot = manager.native_dispatch_state()
+    interpreter = Interpreter(module)
+    call = interpreter.start(0, [])
+    native_result = dispatch_for_test(
+        interpreter,
+        call,
+        snapshot,
+        manager.exec_counter,
+        native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
+    )
+    visits = native_result[5]
+    history = native_result[7]
+    assert native_result[0] == 1
+    interpreter.step_native(call)
+    assert call.finished
+    assert call.results == expected
+    assert call.context.runtime_flags == 0
+    if " if " in body:
+        # Both arms are registered; only the selected arm may be recorded.
+        selected_offset = bytes(module.code_for(0)).index(bytes((I32_CONST, expected[0])))
+        expected_heads = (base, base + selected_offset)
+    elif "call" in body:
+        expected_heads = tuple(
+            block.head_pc
+            for block in module.blocks
+            if block.func_index == 1
+            and module.code_for(block.func_index)[
+                block.head_pc - module.function_pc_offset(block.func_index)
+            ]
+            in _PROFILEABLE_BLOCK_HEAD_OPCODES
+        )
+    else:
+        expected_heads = tuple(
+            block.head_pc
+            for block in module.blocks
+            if module.code_for(block.func_index)[
+                block.head_pc - module.function_pc_offset(block.func_index)
+            ]
+            in _PROFILEABLE_BLOCK_HEAD_OPCODES
+        )
+    history_count = visits
+    if not collect_stats:
+        # The lean dispatcher does not export its observation counter. Its
+        # freshly-allocated history buffer is zero-filled, so count populated
+        # PCs from the actual observer side effect.
+        history_count = sum(1 for index in range(len(history)) if history[index] != 0)
+    assert tuple(history[index] for index in range(history_count)) == expected_heads
+    assert manager.block_lookups == []
+    # Compilation also uses the registered native Loader descriptors.
+    manager.record_native_block_visits(history, history_count)
+    manager.on_interpreter_exit(False)
+    assert manager.block_lookups == []
+
+    second_call = interpreter.start(0, [])
+    second_result = dispatch_for_test(
+        interpreter,
+        second_call,
+        snapshot,
+        manager.exec_counter,
+        native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
+    )
+    assert second_result[0] == 1
+    interpreter.step_native(second_call)
+    assert second_call.finished
+    assert second_call.results == expected
+    second_count = second_result[5]
+    if not collect_stats:
+        second_count = sum(
+            1 for index in range(len(second_result[7])) if second_result[7][index] != 0
+        )
+    assert tuple(second_result[7][index] for index in range(second_count)) == expected_heads
+    manager.record_native_block_visits(second_result[7], second_count)
+    manager.on_interpreter_exit(False)
+    assert manager.exec_counter == 2 * len(expected_heads)
+    assert manager.block_lookups == []
+    if expected_heads:
+        assert manager.has_pending_compilation()
+        manager.idle_hook()
+        assert manager.block_lookups == []
+        assert not manager.has_pending_compilation()
+    else:
+        assert not manager.has_pending_compilation()
+
+
+@pytest.mark.parametrize("collect_stats", (False, True))
+def test_jitr_29_memory_continuation_shares_a_candidate_card(collect_stats):
+    """TEST-JITR-29: a memory-helper continuation is not a block head; its card is trackable.
+
+    The continuation `drop` (pc 11) and the memory head (pc 9) share a card with a candidate head
+    that the product bind marks. Expected heads are the profileable Loader heads of the function.
+    """
+    body = "(block i32.const 1 drop) memory.size drop i32.const 42 i32.const 1 drop nop"
+    module = parse_standalone(
+        wasmtime.wat2wasm(f'(module (memory 1) (func (export "run") (result i32) {body}))')
+    )
+    manager = JITRuntimeManager()
+    engine = RuntimeEngine(jit_runtime=manager, collect_runtime_stats=collect_stats)
+    engine.register_module_blocks(module)
+    function_index = 0
+    base = module.function_pc_offset(function_index)
+    code = bytes(module.code_for(function_index))
+    # memory.size (3f 00) at offsets 6-7, its continuation drop (1a) at offset 8.
+    assert code[6] == 0x3F and code[7] == 0x00 and code[8] == 0x1A
+    continuation = base + 8
+    assert manager.trackable.is_marked(continuation), "the continuation's card is not trackable"
+    assert all(b.head_pc != continuation for b in module.blocks)
+    assert manager.trackable.is_marked(base + 6)
+    expected = tuple(
+        b.head_pc
+        for b in module.blocks
+        if b.func_index == function_index
+        and code[b.head_pc - base] in _PROFILEABLE_BLOCK_HEAD_OPCODES
+    )
+    for head in expected:
+        assert manager.trackable.is_marked(head), f"expected head {head} not trackable"
+    snapshot = manager.native_dispatch_state()
+    interpreter = Interpreter(module)
+    call = interpreter.start(function_index, [])
+    fc_handoffs = 0
+    memory_fill_memory: bytearray | None = None
+    recorded = []
+    fc_handoffs = 0
+    while True:
+        result = dispatch_for_test(
+            interpreter,
+            call,
+            snapshot,
+            manager.exec_counter,
+            native_dispatcher=select_native_jit_dispatch_entry(collect_stats),
+        )
+        visits, history = result[5], result[7]
+        if not collect_stats:
+            visits = sum(1 for index in range(len(history)) if history[index] != 0)
+        recorded.extend(history[index] for index in range(visits))
+        manager.record_native_block_visits(history, visits)
+        if result[0] == 1:
+            break
+        assert result[0] == NATIVE_DISPATCH_RUNTIME_API_BOUNDARY
+        boundary_ip = int(call.context.ip)
+        code = module.code_for(function_index)
+        if boundary_ip < len(code) and code[boundary_ip] == FC_PREFIX:
+            before_block_index = int(call.context.current_block_index)
+            assert not (call.context.runtime_flags & EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD)
+            fc_handoffs += 1
+            interpreter.resolve_native_api_boundary(call)
+            assert int(call.context.current_block_index) == before_block_index
+            assert not (call.context.runtime_flags & EXECUTION_CONTEXT_FLAG_PENDING_BLOCK_HEAD)
+            assert call.context.runtime_flags & EXECUTION_CONTEXT_FLAG_REL_CURSOR_READY
+        else:
+            interpreter.resolve_native_api_boundary(call)
+        assert len(recorded) <= len(module.blocks)
+    interpreter.step_native(call)
+    assert call.finished and call.results == [42]
+    assert call.context.runtime_flags == 0
+    expected_heads = tuple(
+        block.head_pc
+        for block in module.blocks
+        if block.func_index == function_index
+        and module.code_for(block.func_index)[
+            block.head_pc - module.function_pc_offset(block.func_index)
+        ]
+        in _PROFILEABLE_BLOCK_HEAD_OPCODES
+    )
+    assert tuple(recorded) == expected_heads
+    assert manager.exec_counter == len(expected_heads)
+    assert fc_handoffs == int("memory.fill" in body)
+    if memory_fill_memory is not None:
+        assert memory_fill_memory[0] == 42
 
 
 if __name__ == "__main__":
@@ -4222,10 +4632,15 @@ def test_jitr_26_compiled_block_dispatch_hits_the_direct_cache_reference():
 
 
 def test_native_product_plugin_close_clears_borrowed_block_references():
-    """Closing a product cache releases every reference before the next owner binds."""
+    """TEST-JITR-126: closing a product cache returns every block record to the Loader default.
+
+    The default is the unobserved no-trace value, so a module without the JIT runs without the
+    observer exits; the next owner binds the records again.
+    """
     import mmap
 
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
+    from tier2_runtime.wasm.module import NO_TRACE_UNOBSERVED
     from tier3_plugins.jit.jit_manager import JITRuntimeManager as ProductPlugin
 
     module = parse_standalone(
@@ -4251,7 +4666,7 @@ def test_native_product_plugin_close_clears_borrowed_block_references():
             assert interpreter.call(0, [50]).unwrap() == [1275]
         finally:
             plugin.close()
-        assert all(block.jit_cache_reference == 0xFF for block in module.blocks)
+        assert all(block.jit_cache_reference == NO_TRACE_UNOBSERVED for block in module.blocks)
 
 
 def test_native_product_plugin_retains_region_until_gc_close():
@@ -4291,7 +4706,6 @@ def test_jitr_measurements_are_formatted_in_cpp_through_shared_printk():
     pcs = tuple(b.head_pc for b in instruction_blocks(module))[:visits]
     try:
         for pc in pcs:
-            manager.trackable.mark(pc)
             manager.record_block_head(pc)
         manager.on_interpreter_exit(False)
         capture = PrintkBuffer()
@@ -5075,7 +5489,9 @@ def _admission_engine():
     module = engine.load_wasm(bytes(wasmtime.wat2wasm(_ADMISSION_WAT)))
     engine.register_module_blocks(module)
     block = max(instruction_blocks(module), key=lambda candidate: candidate.byte_span)
-    index = next(i for i, candidate in enumerate(module.blocks) if candidate.head_pc == block.head_pc)
+    index = next(
+        i for i, candidate in enumerate(module.blocks) if candidate.head_pc == block.head_pc
+    )
     return engine, module, engine.jit_runtime, index, block
 
 
@@ -5197,44 +5613,26 @@ def test_jitr_111_a_block_at_its_stage_limit_is_rejected_by_its_next_decision():
     assert _strikes(_admission_record(manager, index)) == 6
 
 
-@pytest.mark.parametrize(
-    ("body", "compiled"),
-    (
-        # Rule (i): a block of nops and a branch scores below the candidate threshold.
-        ("(block (nop) (nop) (br 0))", False),
-        # The control scores above the threshold and compiles under the same harness.
-        ("(block (i32.const 1) (drop) (br 0))", True),
-    ),
-)
-def test_jitr_112_a_candidate_below_the_score_threshold_is_rejected_before_compilation(
-    body, compiled
-):
-    """TEST-JITR-112: rule (i) rejects an observed block whose score is below the threshold.
+def test_jitr_112_a_candidate_above_the_score_threshold_compiles():
+    """TEST-JITR-112: a block whose score reaches the candidate threshold compiles.
 
-    Every card is marked, so the block is observed and reaches its decision. A rejected block
-    keeps its card HOT, loses its trackable bit, and never gets a trace.
+    The bind marks the card of the block, so no QA mark is written. The record reads OBSERVED
+    before the first decision, and the decision compiles the block.
     """
+    body = "(block (i32.const 1) (drop) (br 0))"
     wat = f'(module (func (export "f") (result i32) {body} (i32.const 1)))'
     engine = make_runtime_engine()
     module = engine.load_wasm(bytes(wasmtime.wat2wasm(wat)))
     engine.register_module_blocks(module)
     manager = engine.jit_runtime
-    base = module.function_pc_offset(0)
-    for pc in range(base, base + len(module.code_for(0))):
-        manager.trackable.mark(pc)
+    block = instruction_blocks(module)[0]
+    assert block.jit_cache_reference == _NO_TRACE_OBSERVED
     function_index = module.export_func_index("f")
     for _ in range(5):
         assert list(engine.call(Interpreter(module), function_index, []).unwrap()) == [1]
     engine.idle_hook()
-    block = instruction_blocks(module)[0]
-    if compiled:
-        assert manager.bitmap.get_state(block.head_pc) == CardState.COMPILED
-        assert block.head_pc in manager.compilation_pcs
-    else:
-        assert manager.bitmap.get_state(block.head_pc) == CardState.HOT
-        assert not manager.is_trackable(block.head_pc)
-        assert manager.cache.find_trace(block.head_pc) is None
-
+    assert manager.bitmap.get_state(block.head_pc) == CardState.COMPILED
+    assert block.head_pc in manager.compilation_pcs
 
 
 _RECOVERY_BURST_FUNCTIONS = 20
@@ -5268,11 +5666,17 @@ def test_jitr_113_stage_relaxation_restores_a_rejected_candidate_with_zero_strik
     engine.register_module_blocks(module)
     manager = engine.jit_runtime
     target = next(
-        block for block in instruction_blocks(module) if block.head_pc == module.function_pc_offset(0)
+        block
+        for block in instruction_blocks(module)
+        if block.head_pc == module.function_pc_offset(0)
     )
-    target_index = next(i for i, block in enumerate(module.blocks) if block.head_pc == target.head_pc)
+    target_index = next(
+        i for i, block in enumerate(module.blocks) if block.head_pc == target.head_pc
+    )
     interpreter = Interpreter(module)
-    functions = [module.export_func_index(f"g{index}") for index in range(_RECOVERY_BURST_FUNCTIONS)]
+    functions = [
+        module.export_func_index(f"g{index}") for index in range(_RECOVERY_BURST_FUNCTIONS)
+    ]
     target_function = module.export_func_index("target")
 
     def burst_and_rotate() -> None:
@@ -5307,67 +5711,132 @@ def test_jitr_113_stage_relaxation_restores_a_rejected_candidate_with_zero_strik
     assert manager.bitmap.get_state(target.head_pc) == CardState.COMPILED
 
 
-_ADMISSION_GROUP_ROTATIONS = 8
+def test_jitr_124_restored_card_marks_its_trace_free_block_observed():
+    """TEST-JITR-124: the block record follows the card's trackable bit through rejection and restore.
 
-
-def test_jitr_114_a_score_rejection_is_not_restored_when_the_stage_relaxes():
-    """TEST-JITR-114: a rejection for a low score is permanent, and the stage relaxation skips it.
-
-    The low block is trackable by the test marking, so it is observed and rejected by rule (i) at
-    its first decision. Its record keeps the no-history strike and its card loses the bit. The
-    stage relaxation of TEST-JITR-113 restores the stage rejection of the target only.
+    The setup is that of TEST-JITR-113. A rejected card's trace-free block carries the not-observed
+    value, and the stage relaxation that restores the card sets the observed value.
     """
-    functions = "".join(
-        f'(func (export "g{index}") (param i32) (result i32) local.get 0 i32.const {index} i32.add)'
-        for index in range(_RECOVERY_BURST_FUNCTIONS)
-    )
-    wat = (
-        f'(module (func (export "target") (param i32) (result i32)'
-        " local.get 0 i32.const 1 i32.add i32.const 2 i32.mul i32.const 3 i32.sub)"
-        ' (func (export "low") (result i32) (block (nop) (nop) (br 0)) (i32.const 1))'
-        f" {functions})"
-    )
+    from tier2_runtime.wasm.module import NO_TRACE_OBSERVED, NO_TRACE_UNOBSERVED
+
+    wat = _recovery_module_wat()
     engine = make_runtime_engine()
     module = engine.load_wasm(bytes(wasmtime.wat2wasm(wat)))
     engine.register_module_blocks(module)
     manager = engine.jit_runtime
-    low_function = module.export_func_index("low")
-    low_base = module.function_pc_offset(low_function)
-    for pc in range(low_base, low_base + len(module.code_for(low_function))):
-        manager.trackable.mark(pc)
-    low_block = next(block for block in instruction_blocks(module) if block.head_pc >= low_base)
-    low_index = next(i for i, block in enumerate(module.blocks) if block.head_pc == low_block.head_pc)
-    target = module.export_func_index("target")
-    functions = [module.export_func_index(f"g{index}") for index in range(_RECOVERY_BURST_FUNCTIONS)]
+    target = next(
+        block
+        for block in instruction_blocks(module)
+        if block.head_pc == module.function_pc_offset(0)
+    )
+    target_index = next(
+        i for i, block in enumerate(module.blocks) if block.head_pc == target.head_pc
+    )
     interpreter = Interpreter(module)
-
-    def run(indices) -> None:
-        for function_index in indices:
-            arguments = [] if function_index == low_function else [5]
-            engine.call(interpreter, function_index, arguments).unwrap()
+    functions = [
+        module.export_func_index(f"g{index}") for index in range(_RECOVERY_BURST_FUNCTIONS)
+    ]
+    target_function = module.export_func_index("target")
 
     def burst_and_rotate() -> None:
         for _ in range(3):
-            run((*functions, target, low))
+            for function_index in (*functions, target_function):
+                assert engine.call(interpreter, function_index, [5]).unwrap()
         engine.idle_hook()
         for _ in range(_ADMISSION_GROUP_ROTATIONS):
             manager.cache.rotate()
 
-    low = low_function
     while _admission_window(manager)[2] != 0:
         manager.cache.rotate()
     for _ in range(3):
         burst_and_rotate()
     assert _admission_window(manager)[1] >= 16
-    run((*functions, target, low))
+    for _ in range(3):
+        for function_index in (*functions, target_function):
+            engine.call(interpreter, function_index, [5]).unwrap()
     engine.idle_hook()
-    assert _strikes(_admission_record(manager, low_index)) == 5
-    assert not manager.is_trackable(low_block.head_pc)
+    assert not manager.is_trackable(target.head_pc)
+    assert module.blocks[target_index].jit_cache_reference == NO_TRACE_UNOBSERVED
     for _ in range(_ADMISSION_GROUP_ROTATIONS):
         manager.cache.rotate()
-    assert not manager.is_trackable(low_block.head_pc)
-    assert _strikes(_admission_record(manager, low_index)) == 5
-    assert manager.bitmap.get_state(low_block.head_pc) != CardState.COMPILED
+    assert manager.is_trackable(target.head_pc)
+    assert module.blocks[target_index].jit_cache_reference == NO_TRACE_OBSERVED
+
+
+_ADMISSION_GROUP_ROTATIONS = 8
+
+
+def test_jitr_114_stage_relaxation_keeps_a_block_below_the_limit():
+    """TEST-JITR-114: a relaxed stage restores only the stage-rejected blocks.
+
+    The setup is that of TEST-JITR-113, but the rejecting cycle decides only the target. The
+    bystander g0 stays below the stage limit, so the relaxation leaves its strikes, trackable bit,
+    record, and card state unchanged.
+    """
+    wat = _recovery_module_wat()
+    engine = make_runtime_engine()
+    module = engine.load_wasm(bytes(wasmtime.wat2wasm(wat)))
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    target = next(
+        block
+        for block in instruction_blocks(module)
+        if block.head_pc == module.function_pc_offset(0)
+    )
+    target_index = next(
+        i for i, block in enumerate(module.blocks) if block.head_pc == target.head_pc
+    )
+    bystander_function = module.export_func_index("g0")
+    bystander = next(
+        block for block in instruction_blocks(module) if block.func_index == bystander_function
+    )
+    bystander_index = next(
+        i for i, block in enumerate(module.blocks) if block.head_pc == bystander.head_pc
+    )
+    interpreter = Interpreter(module)
+    functions = [
+        module.export_func_index(f"g{index}") for index in range(_RECOVERY_BURST_FUNCTIONS)
+    ]
+    target_function = module.export_func_index("target")
+
+    def bystander_state() -> tuple[int, bool, int, int]:
+        return (
+            _strikes(_admission_record(manager, bystander_index)),
+            manager.is_trackable(bystander.head_pc),
+            module.blocks[bystander_index].jit_cache_reference,
+            manager.bitmap.get_state(bystander.head_pc),
+        )
+
+    def burst_and_rotate() -> None:
+        for _ in range(3):
+            for function_index in (*functions, target_function):
+                assert engine.call(interpreter, function_index, [5]).unwrap()
+        engine.idle_hook()
+        for _ in range(_ADMISSION_GROUP_ROTATIONS):
+            manager.cache.rotate()
+
+    while _admission_window(manager)[2] != 0:
+        manager.cache.rotate()
+    for _ in range(3):
+        burst_and_rotate()
+    assert _admission_window(manager)[1] >= 16
+    # The rejecting cycle decides only the target: its third strike rejects it.
+    for _ in range(3):
+        engine.call(interpreter, target_function, [5]).unwrap()
+    engine.idle_hook()
+    assert _strikes(_admission_record(manager, target_index)) == 6
+    assert not manager.is_trackable(target.head_pc)
+    assert module.blocks[target_index].jit_cache_reference == _NO_TRACE_UNOBSERVED
+    # Below the stage limit, the bystander keeps the values it had before the relaxation.
+    before = bystander_state()
+    assert before[0] == 3 and before[1] and before[2] == _NO_TRACE_OBSERVED
+    for _ in range(_ADMISSION_GROUP_ROTATIONS):
+        manager.cache.rotate()
+    # Only the stage-rejected target is restored.
+    assert _strikes(_admission_record(manager, target_index)) == 0
+    assert manager.is_trackable(target.head_pc)
+    assert module.blocks[target_index].jit_cache_reference == _NO_TRACE_OBSERVED
+    assert bystander_state() == before
 
 
 _STRUCTURAL_BLOCK_WORKER = """
@@ -5384,7 +5853,7 @@ print("compiled" if compile_module_block(TraceCompiler(), module, block) else "r
 def test_jitr_103_block_without_instructions_is_a_contract_violation():
     """TEST-JITR-103: a block that holds no instruction and no call exit aborts the compiler.
 
-    Its score is zero, so rule (i) of the admission rejects it before it reaches the compiler.
+    Its score is zero, so the admission contract never queues it.
     The compiler asserts instead of returning a silent failure.
     """
     completed = subprocess.run(
@@ -5403,15 +5872,18 @@ def test_jitr_provider_carries_the_one_common_trace_entry():
 
     The shared ctypes mirror (qa/shared/native_provider_abi.py) is the only Python copy of
     fb_native_jit_provider; its size and field offsets are checked against the compiler's offsets.
+    The block-record marks in tier2_runtime/wasm/module.py are checked against the C++ enum values.
     """
     layout = (ctypes.c_uint32 * (len(FIELD_NAMES) + 1))()
     native_abi.RUNTIME_PROVIDER_LAYOUT(layout)
     assert ctypes.sizeof(NativeJitProvider) == layout[0]
     for index, field in enumerate(FIELD_NAMES, start=1):
         assert getattr(NativeJitProvider, field).offset == layout[index], field
-    module = parse_standalone(
-        wat_to_wasm('(module (func (export "f") (result i32) i32.const 1))')
-    )
+    native_marks = (ctypes.c_uint8 * 2)()
+    native_abi.RUNTIME_NO_TRACE_MARKERS(native_marks)
+    assert native_marks[0] == _NO_TRACE_OBSERVED
+    assert native_marks[1] == _NO_TRACE_UNOBSERVED
+    module = parse_standalone(wat_to_wasm('(module (func (export "f") (result i32) i32.const 1))'))
     manager = _bound_manager(module)
     provider_address = native_abi.RUNTIME_PROVIDER(manager._native.pointer)
     provider = NativeJitProvider.from_address(provider_address)

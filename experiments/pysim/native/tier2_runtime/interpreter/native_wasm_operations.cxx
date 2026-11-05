@@ -293,21 +293,26 @@ code_ip_t code_ip_for_block_index(const execution_context &current, block_index_
   return ip;
 }
 
-void set_block_cursor(execution_context &current, code_ip_t ip, block_index_t block_index,
-                      const std::uint8_t *&rel) {
+// Returns the block record of the new cursor, so the caller reads the record once.
+const fireball_wasm_block_execution_view_native &set_block_cursor(execution_context &current,
+                                                                  code_ip_t ip,
+                                                                  block_index_t block_index,
+                                                                  const std::uint8_t *&rel) {
   const auto &frame = active_frame(current);
   assert(ip < current.code_size);
   assert(frame.function_view != nullptr && frame.function_view->module_view != nullptr);
   const auto &module = *frame.function_view->module_view;
   assert(module.blocks != nullptr && block_index != kInvalidBlockIndex);
   assert(block_index < module.block_count);
-  assert(module.blocks[block_index].head_pc == frame.function_view->code_pc_offset + ip);
+  const auto &block = module.blocks[block_index];
+  assert(block.head_pc == frame.function_view->code_pc_offset + ip);
   current.current_block_index = block_index;
   rel = interpreter_rel_for_block_index(frame, block_index);
   current.ip = ip;
   current.rel = rel;
   current.runtime_flags |= kRelCursorReadyFlag;
   current.trap_code = 0;
+  return block;
 }
 
 // The next block head is pending for the dispatcher after every block exit.
@@ -342,16 +347,18 @@ bool transfer_to_block(execution_context &current, code_ip_t ip, block_index_t b
 
 bool continue_to_block(execution_context &current, code_ip_t ip, block_index_t block_index,
                        const std::uint8_t *&rel) {
-  set_block_cursor(current, ip, block_index, rel);
-  if ((current.runtime_flags & (kSingleControlStepFlag | kJitDispatchFlag)) != 0) {
+  const auto &block = set_block_cursor(current, ip, block_index, rel);
+  // A trace-free block that is not observed stays in this flow. The record decides for every
+  // target: a resident trace or an observed head leaves the flow.
+  if ((current.runtime_flags & kSingleControlStepFlag) != 0 ||
+      block.jit_cache_reference != FB_NATIVE_JIT_NO_TRACE_UNOBSERVED) {
     exit_block_boundary(current);
     return false;
   }
   return true;
 }
 
-bool continue_within_block(execution_context &current, code_ip_t ip,
-                           const std::uint8_t *&rel) {
+bool continue_within_block(execution_context &current, code_ip_t ip, const std::uint8_t *&rel) {
   if ((current.runtime_flags & kSingleControlStepFlag) == 0) {
     return true;
   }
@@ -513,8 +520,8 @@ local_value_span local_span(const fireball_call_frame_native &frame, local_count
   assert(index < function.local_count);
   const frame_word_offset_t offset = function.local_offsets[index];
   const auto value_type = function.local_types[index];
-  const operand_words_t width =
-      static_cast<operand_words_t>(value_type == kValueTypeI64 || value_type == kValueTypeF64 ? 2u : 1u);
+  const operand_words_t width = static_cast<operand_words_t>(
+      value_type == kValueTypeI64 || value_type == kValueTypeF64 ? 2u : 1u);
   assert(width == 1 || width == 2);
   assert(offset + width <= function.local_slot_count);
   return {offset, width};
@@ -582,8 +589,7 @@ bool conversion_i32_wrap_i64(execution_context &current, std::uint32_t *&sp,
 // Truncation to an integer of Bits width. Signed targets trap or saturate outside
 // [-2^(Bits-1), 2^(Bits-1)), unsigned targets outside (-1, 2^Bits). NaN and infinities
 // trap in the checked form and saturate to zero in the saturating form.
-template <typename Float, bool Signed, int Bits>
-constexpr Float trunc_upper_bound() {
+template <typename Float, bool Signed, int Bits> constexpr Float trunc_upper_bound() {
   if constexpr (Bits == 32) {
     return Signed ? kTwoPow31<Float> : kTwoPow32<Float>;
   } else {
@@ -622,8 +628,8 @@ bool trunc_checked(execution_context &current, std::uint32_t *&sp, std::uint32_t
     trap_code = kTrapInvalidConversion;
     return false;
   }
-  const auto result = Signed ? static_cast<Result>(static_cast<SignedInt>(value))
-                             : static_cast<Result>(value);
+  const auto result =
+      Signed ? static_cast<Result>(static_cast<SignedInt>(value)) : static_cast<Result>(value);
   push_truncated(current, sp, result);
   trap_code = 0;
   return true;
@@ -636,7 +642,8 @@ bool trunc_saturating(execution_context &current, std::uint32_t *&sp) {
   constexpr Float upper = trunc_upper_bound<Float, Signed, Bits>();
   constexpr Result kMinimum =
       Bits == 32 ? static_cast<Result>(kI32SignBit) : static_cast<Result>(kI64SignBit);
-  constexpr Result kMaximum = Signed ? static_cast<Result>(~kMinimum) : static_cast<Result>(~Result{0});
+  constexpr Result kMaximum =
+      Signed ? static_cast<Result>(~kMinimum) : static_cast<Result>(~Result{0});
   Float value = 0;
   pop_float(current, sp, value);
   Result result = 0;
@@ -647,49 +654,50 @@ bool trunc_saturating(execution_context &current, std::uint32_t *&sp) {
   } else if (Signed && value <= -upper) {
     result = kMinimum;
   } else {
-    result = Signed ? static_cast<Result>(static_cast<SignedInt>(value)) : static_cast<Result>(value);
+    result =
+        Signed ? static_cast<Result>(static_cast<SignedInt>(value)) : static_cast<Result>(value);
   }
   push_truncated(current, sp, result);
   return true;
 }
 
 bool conversion_i32_trunc_f32_s(execution_context &current, std::uint32_t *&sp,
-                 std::uint32_t &trap_code) {
+                                std::uint32_t &trap_code) {
   return trunc_checked<float, true, 32>(current, sp, trap_code);
 }
 
 bool conversion_i32_trunc_f32_u(execution_context &current, std::uint32_t *&sp,
-                 std::uint32_t &trap_code) {
+                                std::uint32_t &trap_code) {
   return trunc_checked<float, false, 32>(current, sp, trap_code);
 }
 
 bool conversion_i32_trunc_f64_s(execution_context &current, std::uint32_t *&sp,
-                 std::uint32_t &trap_code) {
+                                std::uint32_t &trap_code) {
   return trunc_checked<double, true, 32>(current, sp, trap_code);
 }
 
 bool conversion_i32_trunc_f64_u(execution_context &current, std::uint32_t *&sp,
-                 std::uint32_t &trap_code) {
+                                std::uint32_t &trap_code) {
   return trunc_checked<double, false, 32>(current, sp, trap_code);
 }
 
 bool conversion_i64_trunc_f32_s(execution_context &current, std::uint32_t *&sp,
-                 std::uint32_t &trap_code) {
+                                std::uint32_t &trap_code) {
   return trunc_checked<float, true, 64>(current, sp, trap_code);
 }
 
 bool conversion_i64_trunc_f32_u(execution_context &current, std::uint32_t *&sp,
-                 std::uint32_t &trap_code) {
+                                std::uint32_t &trap_code) {
   return trunc_checked<float, false, 64>(current, sp, trap_code);
 }
 
 bool conversion_i64_trunc_f64_s(execution_context &current, std::uint32_t *&sp,
-                 std::uint32_t &trap_code) {
+                                std::uint32_t &trap_code) {
   return trunc_checked<double, true, 64>(current, sp, trap_code);
 }
 
 bool conversion_i64_trunc_f64_u(execution_context &current, std::uint32_t *&sp,
-                 std::uint32_t &trap_code) {
+                                std::uint32_t &trap_code) {
   return trunc_checked<double, false, 64>(current, sp, trap_code);
 }
 
@@ -903,8 +911,8 @@ bool runtime_br_if(execution_context *context, const std::uint8_t *&instruction_
     return transfer_to_block<Direct>(current, next_ip, source_block.next_block_index, rel, false);
   }
   branch(current, sp, target_block_index, target_stack_base_words, result_words);
-  return continue_at_branch_target<Direct>(current, instruction_ip, local_base, rel,
-                                           source_ip, target_block_index);
+  return continue_at_branch_target<Direct>(current, instruction_ip, local_base, rel, source_ip,
+                                           target_block_index);
 }
 
 bool runtime_local_get_annotated(execution_context &current, std::uint32_t *&sp,
@@ -921,7 +929,7 @@ bool runtime_local_get(execution_context *context, const std::uint8_t *&instruct
   const auto encoded_width = read_u8(rel);
   const auto offset = static_cast<frame_word_offset_t>(read_u16(rel));
   const auto width = read_u8(rel);
-  (void)read_u16(rel);  // RPN ext: read by expression heads and terminals only
+  (void)read_u16(rel); // RPN ext: read by expression heads and terminals only
   if (!runtime_local_get_annotated(current, sp, local_base, offset, width)) {
     return false;
   }
@@ -935,7 +943,7 @@ bool runtime_local_get_w1(execution_context *context, const std::uint8_t *&instr
   auto &current = *context;
   const auto encoded_width = read_u8(rel);
   const auto offset = static_cast<frame_word_offset_t>(read_u16(rel));
-  rel += 3;  // width (always one word for this opcode) and the RPN ext
+  rel += 3; // width (always one word for this opcode) and the RPN ext
   assert(current.stack_limit - sp >= 1);
   sp[0] = local_base[offset];
   sp += 1;
@@ -949,7 +957,7 @@ bool runtime_local_set_w1(execution_context *context, const std::uint8_t *&instr
   auto &current = *context;
   const auto encoded_width = read_u8(rel);
   const auto offset = static_cast<frame_word_offset_t>(read_u16(rel));
-  rel += 3;  // width (always one word for this opcode) and the RPN ext
+  rel += 3; // width (always one word for this opcode) and the RPN ext
   assert(current.stack_limit - sp >= 1);
   sp -= 1;
   local_base[offset] = sp[0];
@@ -964,7 +972,7 @@ bool runtime_local_set(execution_context *context, const std::uint8_t *&instruct
   const auto encoded_width = read_u8(rel);
   const auto offset = static_cast<frame_word_offset_t>(read_u16(rel));
   const auto width = read_u8(rel);
-  (void)read_u16(rel);  // RPN ext: read by expression heads and terminals only
+  (void)read_u16(rel); // RPN ext: read by expression heads and terminals only
   if (!runtime_local_set_annotated(current, sp, local_base, offset, width, true)) {
     return false;
   }
@@ -1150,8 +1158,8 @@ bool runtime_br_table(execution_context *context, const std::uint8_t *&instructi
   const auto selected_stack_base_words = read_u8(selected_block_rel);
   const auto selected_result_words = read_u8(selected_block_rel);
   branch(current, sp, selected_block_index, selected_stack_base_words, selected_result_words);
-  return continue_at_branch_target<Direct>(current, instruction_ip, local_base, rel,
-                                           source_ip, selected_block_index);
+  return continue_at_branch_target<Direct>(current, instruction_ip, local_base, rel, source_ip,
+                                           selected_block_index);
 }
 
 bool runtime_i32_const(execution_context *context, const std::uint8_t *&instruction_ip,
@@ -1364,8 +1372,7 @@ bool push_call_frame(execution_context &current, const std::uint8_t *&instructio
 
 template <bool Indirect, bool DirectCps>
 bool runtime_call(execution_context *context, const std::uint8_t *&instruction_ip,
-                  std::uint32_t *&sp, std::uint32_t *&local_stack,
-                  const std::uint8_t *&rel) {
+                  std::uint32_t *&sp, std::uint32_t *&local_stack, const std::uint8_t *&rel) {
   auto &current = *context;
   const auto source_ip = instruction_offset(current, instruction_ip);
   const auto encoded_width = read_u8(rel);
@@ -1544,8 +1551,7 @@ template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
 bool runtime_memory_load_decoded(execution_context *context, std::uint32_t *&sp,
                                  [[maybe_unused]] std::uint32_t *&local_base,
                                  const std::uint8_t *&instruction_ip, code_ip_t source_ip,
-                                 code_ip_t next_pc, std::uint32_t offset,
-                                 const std::uint8_t *rel) {
+                                 code_ip_t next_pc, std::uint32_t offset, const std::uint8_t *rel) {
   auto &current = *context;
   assert(sp != current.stack_base);
 
@@ -1582,8 +1588,7 @@ bool runtime_memory_load_decoded(execution_context *context, std::uint32_t *&sp,
 }
 template <std::uint32_t Width, std::uint32_t ResultWords, bool Signed>
 bool runtime_memory_load(execution_context *context, const std::uint8_t *&instruction_ip,
-                         std::uint32_t *&sp, std::uint32_t *&local_base,
-                         const std::uint8_t *&rel) {
+                         std::uint32_t *&sp, std::uint32_t *&local_base, const std::uint8_t *&rel) {
   auto &current = *context;
   const auto encoded_width = read_u8(rel);
   const auto offset = read_u32(rel);
@@ -1666,8 +1671,8 @@ bool runtime_br(execution_context *context, const std::uint8_t *&instruction_ip,
   const auto target_stack_base_words = read_u8(rel);
   const auto result_words = read_u8(rel);
   branch(current, sp, target_block_index, target_stack_base_words, result_words);
-  return continue_at_branch_target<Direct>(current, instruction_ip, local_base, rel,
-                                           source_ip, target_block_index);
+  return continue_at_branch_target<Direct>(current, instruction_ip, local_base, rel, source_ip,
+                                           target_block_index);
 }
 
 bool runtime_fc_memory_copy_decoded(execution_context *context, std::uint32_t *&sp,
@@ -1754,20 +1759,20 @@ bool runtime_fc_memory_fill(execution_context *context, const std::uint8_t *&ins
 }
 
 template bool runtime_call<false, false>(execution_context *context,
-                                  const std::uint8_t *&instruction_ip,
-                                  std::uint32_t *&sp, std::uint32_t *&local_stack,
-                                  [[maybe_unused]] const std::uint8_t *&rel);
+                                         const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
+                                         std::uint32_t *&local_stack,
+                                         [[maybe_unused]] const std::uint8_t *&rel);
 template bool runtime_call<true, false>(execution_context *context,
-                                 const std::uint8_t *&instruction_ip,
-                                 std::uint32_t *&sp, std::uint32_t *&local_stack,
-                                 [[maybe_unused]] const std::uint8_t *&rel);
+                                        const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
+                                        std::uint32_t *&local_stack,
+                                        [[maybe_unused]] const std::uint8_t *&rel);
 template bool runtime_call<false, true>(execution_context *context,
-                                        const std::uint8_t *&instruction_ip,
-                                        std::uint32_t *&sp, std::uint32_t *&local_stack,
+                                        const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
+                                        std::uint32_t *&local_stack,
                                         [[maybe_unused]] const std::uint8_t *&rel);
 template bool runtime_call<true, true>(execution_context *context,
-                                       const std::uint8_t *&instruction_ip,
-                                       std::uint32_t *&sp, std::uint32_t *&local_stack,
+                                       const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
+                                       std::uint32_t *&local_stack,
                                        [[maybe_unused]] const std::uint8_t *&rel);
 template bool runtime_conversion<conversion_f32_convert_i32_s>(
     execution_context *context, const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
@@ -2286,132 +2291,89 @@ template bool runtime_memory_store<8, 2>(execution_context *context,
                                          const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                                          std::uint32_t *&local_base,
                                          [[maybe_unused]] const std::uint8_t *&rel);
-template bool runtime_memory_load_decoded<4, 1, false>(execution_context *context,
-                                                       std::uint32_t *&sp,
-                                                       [[maybe_unused]] std::uint32_t *&local_base,
-                                                       const std::uint8_t *&instruction_ip,
-                                                       code_ip_t source_ip, code_ip_t next_pc,
-                                                       std::uint32_t offset,
-                                                       const std::uint8_t *rel);
-template bool runtime_memory_load_decoded<8, 2, false>(execution_context *context,
-                                                       std::uint32_t *&sp,
-                                                       [[maybe_unused]] std::uint32_t *&local_base,
-                                                       const std::uint8_t *&instruction_ip,
-                                                       code_ip_t source_ip, code_ip_t next_pc,
-                                                       std::uint32_t offset,
-                                                       const std::uint8_t *rel);
-template bool runtime_memory_load_decoded<1, 1, true>(execution_context *context,
-                                                      std::uint32_t *&sp,
-                                                      [[maybe_unused]] std::uint32_t *&local_base,
-                                                      const std::uint8_t *&instruction_ip,
-                                                      code_ip_t source_ip, code_ip_t next_pc,
-                                                      std::uint32_t offset,
-                                                       const std::uint8_t *rel);
-template bool runtime_memory_load_decoded<1, 1, false>(execution_context *context,
-                                                       std::uint32_t *&sp,
-                                                       [[maybe_unused]] std::uint32_t *&local_base,
-                                                       const std::uint8_t *&instruction_ip,
-                                                       code_ip_t source_ip, code_ip_t next_pc,
-                                                       std::uint32_t offset,
-                                                       const std::uint8_t *rel);
-template bool runtime_memory_load_decoded<2, 1, true>(execution_context *context,
-                                                      std::uint32_t *&sp,
-                                                      [[maybe_unused]] std::uint32_t *&local_base,
-                                                      const std::uint8_t *&instruction_ip,
-                                                      code_ip_t source_ip, code_ip_t next_pc,
-                                                      std::uint32_t offset,
-                                                       const std::uint8_t *rel);
-template bool runtime_memory_load_decoded<2, 1, false>(execution_context *context,
-                                                       std::uint32_t *&sp,
-                                                       [[maybe_unused]] std::uint32_t *&local_base,
-                                                       const std::uint8_t *&instruction_ip,
-                                                       code_ip_t source_ip, code_ip_t next_pc,
-                                                       std::uint32_t offset,
-                                                       const std::uint8_t *rel);
-template bool runtime_memory_load_decoded<1, 2, true>(execution_context *context,
-                                                      std::uint32_t *&sp,
-                                                      [[maybe_unused]] std::uint32_t *&local_base,
-                                                      const std::uint8_t *&instruction_ip,
-                                                      code_ip_t source_ip, code_ip_t next_pc,
-                                                      std::uint32_t offset,
-                                                       const std::uint8_t *rel);
-template bool runtime_memory_load_decoded<1, 2, false>(execution_context *context,
-                                                       std::uint32_t *&sp,
-                                                       [[maybe_unused]] std::uint32_t *&local_base,
-                                                       const std::uint8_t *&instruction_ip,
-                                                       code_ip_t source_ip, code_ip_t next_pc,
-                                                       std::uint32_t offset,
-                                                       const std::uint8_t *rel);
-template bool runtime_memory_load_decoded<2, 2, true>(execution_context *context,
-                                                      std::uint32_t *&sp,
-                                                      [[maybe_unused]] std::uint32_t *&local_base,
-                                                      const std::uint8_t *&instruction_ip,
-                                                      code_ip_t source_ip, code_ip_t next_pc,
-                                                      std::uint32_t offset,
-                                                       const std::uint8_t *rel);
-template bool runtime_memory_load_decoded<2, 2, false>(execution_context *context,
-                                                       std::uint32_t *&sp,
-                                                       [[maybe_unused]] std::uint32_t *&local_base,
-                                                       const std::uint8_t *&instruction_ip,
-                                                       code_ip_t source_ip, code_ip_t next_pc,
-                                                       std::uint32_t offset,
-                                                       const std::uint8_t *rel);
-template bool runtime_memory_load_decoded<4, 2, true>(execution_context *context,
-                                                      std::uint32_t *&sp,
-                                                      [[maybe_unused]] std::uint32_t *&local_base,
-                                                      const std::uint8_t *&instruction_ip,
-                                                      code_ip_t source_ip, code_ip_t next_pc,
-                                                      std::uint32_t offset,
-                                                       const std::uint8_t *rel);
-template bool runtime_memory_load_decoded<4, 2, false>(execution_context *context,
-                                                       std::uint32_t *&sp,
-                                                       [[maybe_unused]] std::uint32_t *&local_base,
-                                                       const std::uint8_t *&instruction_ip,
-                                                       code_ip_t source_ip, code_ip_t next_pc,
-                                                       std::uint32_t offset,
-                                                       const std::uint8_t *rel);
+template bool runtime_memory_load_decoded<4, 1, false>(
+    execution_context *context, std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+    const std::uint8_t *&instruction_ip, code_ip_t source_ip, code_ip_t next_pc,
+    std::uint32_t offset, const std::uint8_t *rel);
+template bool runtime_memory_load_decoded<8, 2, false>(
+    execution_context *context, std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+    const std::uint8_t *&instruction_ip, code_ip_t source_ip, code_ip_t next_pc,
+    std::uint32_t offset, const std::uint8_t *rel);
+template bool runtime_memory_load_decoded<1, 1, true>(
+    execution_context *context, std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+    const std::uint8_t *&instruction_ip, code_ip_t source_ip, code_ip_t next_pc,
+    std::uint32_t offset, const std::uint8_t *rel);
+template bool runtime_memory_load_decoded<1, 1, false>(
+    execution_context *context, std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+    const std::uint8_t *&instruction_ip, code_ip_t source_ip, code_ip_t next_pc,
+    std::uint32_t offset, const std::uint8_t *rel);
+template bool runtime_memory_load_decoded<2, 1, true>(
+    execution_context *context, std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+    const std::uint8_t *&instruction_ip, code_ip_t source_ip, code_ip_t next_pc,
+    std::uint32_t offset, const std::uint8_t *rel);
+template bool runtime_memory_load_decoded<2, 1, false>(
+    execution_context *context, std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+    const std::uint8_t *&instruction_ip, code_ip_t source_ip, code_ip_t next_pc,
+    std::uint32_t offset, const std::uint8_t *rel);
+template bool runtime_memory_load_decoded<1, 2, true>(
+    execution_context *context, std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+    const std::uint8_t *&instruction_ip, code_ip_t source_ip, code_ip_t next_pc,
+    std::uint32_t offset, const std::uint8_t *rel);
+template bool runtime_memory_load_decoded<1, 2, false>(
+    execution_context *context, std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+    const std::uint8_t *&instruction_ip, code_ip_t source_ip, code_ip_t next_pc,
+    std::uint32_t offset, const std::uint8_t *rel);
+template bool runtime_memory_load_decoded<2, 2, true>(
+    execution_context *context, std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+    const std::uint8_t *&instruction_ip, code_ip_t source_ip, code_ip_t next_pc,
+    std::uint32_t offset, const std::uint8_t *rel);
+template bool runtime_memory_load_decoded<2, 2, false>(
+    execution_context *context, std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+    const std::uint8_t *&instruction_ip, code_ip_t source_ip, code_ip_t next_pc,
+    std::uint32_t offset, const std::uint8_t *rel);
+template bool runtime_memory_load_decoded<4, 2, true>(
+    execution_context *context, std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+    const std::uint8_t *&instruction_ip, code_ip_t source_ip, code_ip_t next_pc,
+    std::uint32_t offset, const std::uint8_t *rel);
+template bool runtime_memory_load_decoded<4, 2, false>(
+    execution_context *context, std::uint32_t *&sp, [[maybe_unused]] std::uint32_t *&local_base,
+    const std::uint8_t *&instruction_ip, code_ip_t source_ip, code_ip_t next_pc,
+    std::uint32_t offset, const std::uint8_t *rel);
 template bool runtime_memory_store_decoded<4, 1>(execution_context *context, std::uint32_t *&sp,
                                                  [[maybe_unused]] std::uint32_t *&local_base,
                                                  const std::uint8_t *&instruction_ip,
                                                  code_ip_t source_ip, code_ip_t next_pc,
-                                                 std::uint32_t offset,
-                                                       const std::uint8_t *rel);
+                                                 std::uint32_t offset, const std::uint8_t *rel);
 template bool runtime_memory_store_decoded<8, 2>(execution_context *context, std::uint32_t *&sp,
                                                  [[maybe_unused]] std::uint32_t *&local_base,
                                                  const std::uint8_t *&instruction_ip,
                                                  code_ip_t source_ip, code_ip_t next_pc,
-                                                 std::uint32_t offset,
-                                                       const std::uint8_t *rel);
+                                                 std::uint32_t offset, const std::uint8_t *rel);
 template bool runtime_memory_store_decoded<1, 1>(execution_context *context, std::uint32_t *&sp,
                                                  [[maybe_unused]] std::uint32_t *&local_base,
                                                  const std::uint8_t *&instruction_ip,
                                                  code_ip_t source_ip, code_ip_t next_pc,
-                                                 std::uint32_t offset,
-                                                       const std::uint8_t *rel);
+                                                 std::uint32_t offset, const std::uint8_t *rel);
 template bool runtime_memory_store_decoded<2, 1>(execution_context *context, std::uint32_t *&sp,
                                                  [[maybe_unused]] std::uint32_t *&local_base,
                                                  const std::uint8_t *&instruction_ip,
                                                  code_ip_t source_ip, code_ip_t next_pc,
-                                                 std::uint32_t offset,
-                                                       const std::uint8_t *rel);
+                                                 std::uint32_t offset, const std::uint8_t *rel);
 template bool runtime_memory_store_decoded<1, 2>(execution_context *context, std::uint32_t *&sp,
                                                  [[maybe_unused]] std::uint32_t *&local_base,
                                                  const std::uint8_t *&instruction_ip,
                                                  code_ip_t source_ip, code_ip_t next_pc,
-                                                 std::uint32_t offset,
-                                                       const std::uint8_t *rel);
+                                                 std::uint32_t offset, const std::uint8_t *rel);
 template bool runtime_memory_store_decoded<2, 2>(execution_context *context, std::uint32_t *&sp,
                                                  [[maybe_unused]] std::uint32_t *&local_base,
                                                  const std::uint8_t *&instruction_ip,
                                                  code_ip_t source_ip, code_ip_t next_pc,
-                                                 std::uint32_t offset,
-                                                       const std::uint8_t *rel);
+                                                 std::uint32_t offset, const std::uint8_t *rel);
 template bool runtime_memory_store_decoded<4, 2>(execution_context *context, std::uint32_t *&sp,
                                                  [[maybe_unused]] std::uint32_t *&local_base,
                                                  const std::uint8_t *&instruction_ip,
                                                  code_ip_t source_ip, code_ip_t next_pc,
-                                                 std::uint32_t offset,
-                                                       const std::uint8_t *rel);
+                                                 std::uint32_t offset, const std::uint8_t *rel);
 template bool
 runtime_fc_saturating_conversion_decoded<conversion_i32_trunc_sat_f32_s>(execution_context *context,
                                                                          std::uint32_t *&sp);

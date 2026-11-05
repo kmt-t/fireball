@@ -35,6 +35,7 @@ from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.abi.interpreter_abi import NATIVE_VALUE_STACK_CAPACITY
 from tier2_runtime.interpreter.control_flow import iter_block_ops
 from tier2_runtime.interpreter.interpreter import NativeInterpreter, TrapCode
+from tier2_runtime.wasm.module import NO_TRACE_OBSERVED as _NO_TRACE_OBSERVED_DIFF
 from tier2_runtime.wasm.module import Module
 from tier2_runtime.wasm.opcodes import BR, I32_ROTL, I32_ROTR
 from tier2_runtime.wasm.reader import parse_standalone
@@ -67,6 +68,10 @@ def _tier2_result(wasm: bytes, export: str, args: list[int]) -> int:
     return interpreter.call(module.export_func_index(export), args).unwrap()[0] & MASK32
 
 
+def _block_record(module, head_pc):
+    return next(b for b in module.blocks if b.head_pc == head_pc)
+
+
 def _tier3(
     wasm: bytes,
     export: str,
@@ -84,9 +89,14 @@ def _tier3(
     )
     module = engine.load_wasm(wasm)
     if compile_only is not None:
-        engine.jit_runtime.trackable.clear()
+        # Only the requested heads stay trackable; the product exclusion path removes the others.
+        for block in module.blocks:
+            if block.byte_span > 0 and block.head_pc not in compile_only:
+                engine.jit_runtime.unmark_trackable(block.head_pc)
         for head_pc in compile_only:
-            engine.jit_runtime.trackable.mark(head_pc)
+            assert _block_record(module, head_pc).jit_cache_reference == _NO_TRACE_OBSERVED_DIFF, (
+                head_pc
+            )
     result = engine.call(_guest(module), module.export_func_index(export), args).unwrap()
     return result[0] & MASK32, engine
 
@@ -305,8 +315,13 @@ def test_jitr_53_loop_entered_after_hot_block_uses_static_branch_metadata():
     engine = make_runtime_engine()
     module = engine.load_wasm(wasm)
     first_function_block_pc = parse_standalone(wasm).blocks[0].head_pc
-    engine.jit_runtime.trackable.clear()
-    engine.jit_runtime.trackable.mark(first_function_block_pc)
+    for block in module.blocks:
+        if block.byte_span > 0 and block.head_pc != first_function_block_pc:
+            engine.jit_runtime.unmark_trackable(block.head_pc)
+    assert (
+        _block_record(module, first_function_block_pc).jit_cache_reference
+        == _NO_TRACE_OBSERVED_DIFF
+    )
     interpreter = _guest(module)
     func_index = module.export_func_index("f")
     for _ in range(3):

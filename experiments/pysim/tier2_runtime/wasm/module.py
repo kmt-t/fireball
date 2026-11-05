@@ -77,6 +77,13 @@ def _function_block_index_for_pc(
     return block_index_t(result)
 
 
+# jit_cache_reference of a block without a resident trace (mirrors the C++ enum in the tier 2 ABI).
+# Every other value is a trace reference. The Loader sets the unobserved value; a JIT extension
+# sets the observed value for trace-free blocks of trackable cards.
+NO_TRACE_OBSERVED = 0xFF
+NO_TRACE_UNOBSERVED = 0xFE
+
+
 class BasicBlock(ctypes.Structure):
     """
     A straight-line run of WASM instructions ending with branch/return, as PC
@@ -121,7 +128,7 @@ class BasicBlock(ctypes.Structure):
         self.loops_to = loops_to
         assert 0 <= frame_depth <= 0xFF
         self.frame_depth = frame_depth
-        self.jit_cache_reference = 0xFF
+        self.jit_cache_reference = NO_TRACE_UNOBSERVED
         # Operand stack height in words when control reaches this block (WASM validation fixes it).
         assert 0 <= entry_stack_words <= 0xFF
         self.entry_stack_words = entry_stack_words

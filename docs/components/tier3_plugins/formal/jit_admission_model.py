@@ -35,8 +35,9 @@ def _successors(state: str, *, guards: bool, recovery: str) -> list[str]:
     if phase == "idle":
         return [_state(strike, "queued")]
     if phase == "queued":
-        # Rule (i): a candidate below the score threshold is rejected, and never restored.
-        result = [_state(strike, "rejected")]
+        # The admission contract (jit_runtime.md 8.2) queues only candidates at the score threshold,
+        # so no queued block leaves by its score. Rules (ii) and (iii) decide.
+        result: list[str] = []
         if strike == NO_HISTORY:
             # Rule (ii): a block without history is compiled.
             result.append(_state(strike, "compiled"))

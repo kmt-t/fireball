@@ -1895,7 +1895,7 @@ int fireball::compile_wasm_trace(
   }
   // The scanner consumes the whole block, or the block ends in a call exit.
   assert(cursor == end || call_exit);
-  // A block with no instruction scores zero, so rule (i) of the admission never selects it. A
+  // A block with no instruction scores zero, so the admission contract never queues it. A
   // call exit alone is a valid trace, because a call is not an instruction of the trace.
   assert(instruction_count != 0 || call_exit);
 

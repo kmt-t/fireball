@@ -150,6 +150,7 @@ void jit_runtime<Measurement>::exclude_compile_candidate(wasm_pc_t pc) {
   const auto card = pc >> FB_CONF_JIT_CARD_SHIFT;
   assert(card < hotspots.card_count && hotspots.configuration.trackable != nullptr);
   hotspots.configuration.trackable[card / 8] &= static_cast<std::uint8_t>(~(1u << (card % 8)));
+  refresh_card_markers(card);
   if constexpr (!std::is_void_v<Measurement>) {
     measurements.mask_changed();
   }
@@ -227,12 +228,11 @@ int jit_runtime<Measurement>::compile_queued_candidates() {
     if constexpr (!std::is_void_v<Measurement>) {
       measurements.admission_sample(block_index, fireball::score_block(*admission_view));
     }
-    // Rule (i): a candidate whose score is below the candidate threshold is rejected.
-    if (fireball::score_block(*admission_view) <
-        static_cast<std::int64_t>(hotspots.configuration.candidate_threshold)) {
-      exclude_compile_candidate(pc);
-      continue;
-    }
+    // Contract (jit_runtime.md 8.2): only candidates reach admission, so the score is at least the
+    // candidate threshold. Only the bind marks cards, and only a candidate head gets a card with
+    // bytes, so a block below the threshold cannot be queued.
+    assert(fireball::score_block(*admission_view) >=
+           static_cast<std::int64_t>(hotspots.configuration.candidate_threshold));
     // Rule (iii): a block whose strikes reach its stage limit is rejected. Rule (ii): a block
     // without history (no-history strike) is compiled.
     const auto strikes =
@@ -353,8 +353,46 @@ void jit_runtime<Measurement>::invalidate_block_cache_references() {
     assert(block_index < module_view->block_count);
     auto &block = module_view->blocks[block_index];
     assert(block.head_pc == value.head_pc);
-    assert(block.jit_cache_reference == reference || block.jit_cache_reference == 0xFFu);
-    block.jit_cache_reference = 0xFFu;
+    assert(block.jit_cache_reference == reference ||
+           block.jit_cache_reference >= jit_cache_total_entry_capacity);
+    set_unreferenced_marker(block_index);
+  }
+}
+
+template <jit_measurement_policy Measurement>
+void jit_runtime<Measurement>::set_unreferenced_marker(block_index_t block_index) {
+  assert(block_index < module_view->block_count);
+  auto &block = module_view->blocks[block_index];
+  block.jit_cache_reference = is_profiled_pc(block.head_pc) ? FB_NATIVE_JIT_NO_TRACE_OBSERVED
+                                                            : FB_NATIVE_JIT_NO_TRACE_UNOBSERVED;
+}
+
+template <jit_measurement_policy Measurement>
+void jit_runtime<Measurement>::release_block_markers() {
+  assert(module_view != nullptr);
+  // Closing the JIT returns every record to the Loader default, so the module runs without it.
+  for (block_index_t index = 0; index < module_view->block_count; ++index) {
+    module_view->blocks[index].jit_cache_reference = FB_NATIVE_JIT_NO_TRACE_UNOBSERVED;
+  }
+}
+
+template <jit_measurement_policy Measurement>
+void jit_runtime<Measurement>::refresh_card_markers(std::uint32_t card) {
+  // The block records are sorted by head PC (bind asserts it), so one card is a contiguous range.
+  const auto *begin = module_view->blocks;
+  const auto *end = begin + module_view->block_count;
+  const auto first_pc = static_cast<std::uint64_t>(card) << FB_CONF_JIT_CARD_SHIFT;
+  const auto last_pc = (static_cast<std::uint64_t>(card) + 1) << FB_CONF_JIT_CARD_SHIFT;
+  const auto *block =
+      std::lower_bound(begin, end, first_pc, [](const auto &record, std::uint64_t value) {
+        return record.head_pc < value;
+      });
+  for (; block != end && block->head_pc < last_pc; ++block) {
+    // A resident trace keeps its reference; only trace-free blocks of this card change.
+    if (block->jit_cache_reference < jit_cache_total_entry_capacity) {
+      continue;
+    }
+    set_unreferenced_marker(static_cast<block_index_t>(block - begin));
   }
 }
 
@@ -403,7 +441,7 @@ void jit_runtime<Measurement>::rebuild_cache_indices() {
     assert(block_index < module_view->block_count);
     auto &block = module_view->blocks[block_index];
     assert(block.head_pc == value.head_pc);
-    assert(block.jit_cache_reference == 0xFFu);
+    assert(block.jit_cache_reference >= jit_cache_total_entry_capacity);
     block.jit_cache_reference = reference;
   }
 }
@@ -870,6 +908,7 @@ void jit_runtime<Measurement>::restore_stage_rejections() {
     const auto card = module_view->blocks[index].head_pc >> FB_CONF_JIT_CARD_SHIFT;
     assert(card < hotspots.card_count && hotspots.configuration.trackable != nullptr);
     hotspots.configuration.trackable[card / 8] |= static_cast<std::uint8_t>(1u << (card % 8));
+    refresh_card_markers(card);
     if constexpr (!std::is_void_v<Measurement>) {
       measurements.mask_changed();
     }
@@ -1017,7 +1056,7 @@ jit_trace_location jit_runtime<Measurement>::lookup_cached_trace(block_index_t b
   }
   assert(block_index < module_view->block_count && module_view->blocks[block_index].head_pc == pc);
   const auto &basic_block = module_view->blocks[block_index];
-  if (basic_block.jit_cache_reference == jit_cache_state::no_reference) {
+  if (basic_block.jit_cache_reference >= jit_cache_total_entry_capacity) {
     return {};
   }
   // All generations execute in place; rotation owns retirement and unlinking.
@@ -1279,6 +1318,13 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_bind_profile(
          p.mask_bytes == runtime->hotspots.dirty_mask_bytes &&
          (runtime->hotspots.card_count == 0 || p.trackable != nullptr) &&
          jit_card_count(p.code_bytes, FB_CONF_JIT_CARD_SHIFT) == runtime->hotspots.card_count);
+  // A candidate spans at least one card, which keeps a block with bytes out of a candidate card.
+  assert(p.min_trace_bytes == (1u << FB_CONF_JIT_CARD_SHIFT));
+  // Block records are sorted by head PC, so block_index_for_pc and the card ranges use lower_bound.
+  assert(std::is_sorted(
+      runtime->module_view->blocks,
+      runtime->module_view->blocks + runtime->module_view->block_count,
+      [](const auto &left, const auto &right) { return left.head_pc < right.head_pc; }));
   if constexpr (!std::is_void_v<Measurement>) {
   }
   runtime->hotspots.observation_history = {runtime->hotspots.history_records.data(),
@@ -1301,6 +1347,11 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_bind_profile(
     if (block.byte_span != 0 && block.byte_span >= p.min_trace_bytes &&
         score >= p.candidate_threshold) {
       p.trackable[card / 8] |= static_cast<std::uint8_t>(1u << (card % 8));
+    }
+  }
+  for (std::uint32_t i = 0; i < block_count; ++i) {
+    if (runtime->module_view->blocks[i].jit_cache_reference >= jit_cache_total_entry_capacity) {
+      runtime->set_unreferenced_marker(i);
     }
   }
   if constexpr (!std::is_void_v<Measurement>) {
@@ -1326,6 +1377,7 @@ int jit_provider_adapter<Measurement>::finish_boundary(runtime_type *runtime, in
 template <jit_measurement_policy Measurement>
 void jit_provider_adapter<Measurement>::fb_jit_runtime_close(runtime_type *runtime) {
   runtime->invalidate_block_cache_references();
+  runtime->release_block_markers();
   runtime->~runtime_type();
 }
 

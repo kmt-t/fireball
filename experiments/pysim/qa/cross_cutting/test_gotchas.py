@@ -213,7 +213,9 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     engine = make_runtime_engine()
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
-    engine.jit_runtime.trackable.mark(pc)
+    from tier2_runtime.wasm.module import NO_TRACE_OBSERVED
+
+    assert mod.blocks[0].jit_cache_reference == NO_TRACE_OBSERVED
     engine.jit_runtime.record_block_head(pc)
     engine.jit_runtime.record_block_head(pc)
     engine.jit_runtime.on_yield()

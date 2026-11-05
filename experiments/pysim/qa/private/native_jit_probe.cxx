@@ -480,6 +480,13 @@ extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_native_provider_layout(std::uint32_t *
   output[9] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, trace_entry_address));
 }
 
+// Block-record marks as the native code defines them; the QA test checks the Python mirror.
+extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_no_trace_markers(std::uint8_t *output) {
+  assert(output != nullptr);
+  output[0] = static_cast<std::uint8_t>(FB_NATIVE_JIT_NO_TRACE_OBSERVED);
+  output[1] = static_cast<std::uint8_t>(FB_NATIVE_JIT_NO_TRACE_UNOBSERVED);
+}
+
 extern "C" FB_PYSIM_ABI_EXPORT const fb_native_jit_provider *
 fb_qa_runtime_provider(qa_jit_runtime *runtime) {
   return &runtime->provider;

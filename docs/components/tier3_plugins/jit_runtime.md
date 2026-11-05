@@ -74,7 +74,7 @@ JIT拡張はInterpreterへ接続する選択可能コンポーネントである
   - `1: EXECUTED` (実行済み)
   - `2: HOT` (コンパイル要求中)
   - `3: COMPILED` (コンパイル済み / オンデマンド許可)
-- **コンパイル対象可否マスク (Trackable Mask)**: Tier 3 JIT拡張がコード領域全体に対して一枚だけ持つ、カードごとの 1 ビット状態表である。Loader のブロック記述子は正確な head PC とコード範囲を保持する。静的適格性は JIT が評価する。実行時は制御処理で確定したブロック開始PCを保持し、コード領域マスクでカード単位の抑止を確認する。通常命令を実行したブロックだけを履歴へ記録する。`next_pc` を持ち、かつバイト長が `min_trace_bytes` 以上のブロックを対象とする。コンパイル失敗時はそのカードを解除し、同じカードに属する候補も外す。 `{TrackableBlockMask}` <!-- definition: {TrackableBlockMask} -->
+- **コンパイル対象可否マスク (Trackable Mask)**: Tier 3 JIT拡張がコード領域全体に対して一枚だけ持つ、カードごとの 1 ビット状態表である。Loader のブロック記述子は正確な head PC とコード範囲を保持する。静的適格性は JIT が評価する。実行時は制御処理で確定したブロック開始PCを保持し、コード領域マスクでカード単位の抑止を確認する。通常命令を実行したブロックだけを履歴へ記録する。`next_pc` を持ち、かつバイト長が `min_trace_bytes` 以上のブロックを対象とする。コンパイル失敗時はそのカードを解除し、同じカードに属する候補も外す。 trackableが変わるとき（解除、段階による回復）と、traceを設置・破棄するときは、そのカードのブロック記録の印を決め直す。印の値の正本は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)の「JITランタイム呼出し契約」である。 `{TrackableBlockMask}` <!-- definition: {TrackableBlockMask} -->
 - **カード更新表 (Card Update Bitmap)**: コード領域全体の各カードに対応する 1 ビットdirty表である。カードが `UNEXECUTED` から `EXECUTED` へ遷移した時だけ、そのカードのビットを立てる。密ビュー `fireball::bit_view<1>` として参照する。8カードを1バイトにまとめる。
 - **エイジングカーソル**: カード更新表のバイト位置を保持する整数である。モジュール登録時に 0 で初期化し、表の末尾に達したら先頭へ戻る。
 - **JITエントリ表と全バンク索引**: 各バンクは`head_pc`順の固定容量エントリ配列を持つ。別の固定容量参照配列を `FB_CONF_JIT_NUM_BUFFERS` 面共通で一つ持ち、常駐エントリを`head_pc`順に索引する。参照はバンク番号とエントリ位置を示す。Interpreterが現在のBasicBlock indexをJITへ渡し、その`jit_cache_reference`が有効なら索引探索を省いてエントリへ進む。未設定時はcache missとする。連結候補とtrace exitではLoaderの辺indexを使い、PCも照合する。同じPCを複数バンクへ挿入する契約違反は挿入入口でassertする。バンク配列のシフト、挿入、削除、破棄後は全BasicBlock参照を常駐エントリに合わせて更新し、退役エントリへの参照を残さない。現行設定では最大 `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件であり、参照は8ビットで表現する。JITの検索キーは`(module_id, pc)`であり、indexはLoader metadataとの照合と直接参照に使う。JIT用Radix索引と製品実行時のPC→trace検索経路は設けない。QA計測の入口だけがPCからブロック索引を検索する。
@@ -111,7 +111,7 @@ flowchart TD
 #### JITエントリインデックス（JitEntryIndex）構造体
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| BasicBlockのJITキャッシュ参照 | 常駐JITエントリのbank・entry位置を保持し、同じブロックのPC再検索を省く | Loader BasicBlock内の8bit値 | `0`〜`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY - 1`、未設定`0xFF` |
+| BasicBlockのJITキャッシュ参照 | 常駐JITエントリのbank・entry位置を保持し、同じブロックのPC再検索を省く | Loader BasicBlock内の8bit値 | 常駐traceの参照（`0`〜`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY - 1`）。trace がない値の意味は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)の正本に従う |
 | 全バンク参照索引 | `FB_CONF_JIT_NUM_BUFFERS` バンクのエントリ位置を`head_pc`順に保持する。キャッシュ更新時の参照再構築とchain metadataの後方再計算に使う | 固定長配列 | `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下、8ビット参照 |
 | バンク別エントリ配列 | 各バンクの`head_pc`昇順JITエントリを保持する | 固定長ソート配列 | 各バンク最大 `FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY` 件 |
 | カードマーキング表 | カードごとの 2-bit 状態表 | 密ビュー | `fireball::bit_view<2>` |
@@ -163,7 +163,7 @@ block を切る命令（`if`・`br`・`br_if`・`br_table`・`return`・`call_in
 
 1. **実行コンテキストのBasicBlock index参照 ($O(1)$)**: Loaderが関数入口と制御辺についてindexを前計算し、Interpreterは`current_block_index`へ現在indexを保持する。分岐と通常継続は注釈済みindexからBasicBlock metadataと`rel`開始位置を直接得る。呼出しと復帰のindexは[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)の契約に従う。境界停止のPC比較を除き、dispatch中にPCからindexを検索しない。
 2. **カード状態によるJIT検索抑止 ($O(1)$)**: BasicBlock解決後にカード状態を読む。状態が`COMPILED`でなければJIT providerを呼ばず、キャッシュ参照も変更せずInterpreter命令を実行する。状態が`COMPILED`でもカード内の別ブロックだけがコンパイル済みの場合があるため、正確なPCはBasicBlock参照またはJIT索引で照合する。
-3. **BasicBlock内キャッシュ参照 ($O(1)$)**: `jit_cache_reference != 0xFF`なら、値が指す常駐エントリを使う。キャッシュ配列の並べ替え・削除・破棄時は参照をresident entryへ更新し、residentでないentryへの参照を残さない。Runtime領域の解放前にも、借用しているBasicBlockの常駐参照を無効化する。
+3. **BasicBlock内キャッシュ参照 ($O(1)$)**: `jit_cache_reference`が常駐traceの参照を示すなら、値が指す常駐エントリを使う（trace がない値の定義は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)）。キャッシュ配列の並べ替え・削除・破棄時は参照をresident entryへ更新し、residentでないentryへの参照を残さない。Runtime領域の解放前にも、借用しているBasicBlockの常駐参照を無効化する。
 4. **キャッシュ更新用PC索引 ($O(n \log n)$)**: キャッシュ更新時に全バンク合計 `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下の参照を`head_pc`順に並べ、BasicBlock参照の再構築とchain metadataの後方再計算に使う。通常の実行lookupとchain successor解決では索引を検索しない。QA計測のPC入口だけが`lower_bound`でブロック索引を引く。JIT用Radix表や製品実行時のグローバルPC→trace検索経路は設けない。
 5. **ホットスポット昇格判定**:
    - C++ Interpreterはブロック開始PCを保持する。通常命令を実行したブロックを実行拡張へ通知する。候補マスクの判定と開始PCの固定履歴バッファへの記録はTier 3 JIT拡張が行う。JIT拡張は境界で履歴を分析し、カード状態を更新する。JIT trace/chainだけの実行区間では記録しない。
@@ -402,7 +402,7 @@ QA専用の実行回数・退役記録の計測契約、抽象モデル、およ
 ### 8.2 コンパイル採否とキャッシュ代謝
 <!-- traceability: {Challenge_JITCacheEfficiency} {ADR_SafeQueuingOnHotMiss} -->
 
-- **ステータス**: 3面ローテーションとOldestのその場実行は採用。コンパイル採否の (i) から (iii) は採用する。
+- **ステータス**: 3面ローテーションとOldestのその場実行は採用。コンパイル採否は、ルール（ii）と（iii）を採用する。判定の前提は、採否の契約として後述する。
 - **採否記録**: 各 BasicBlock は 1 B の採否記録を持つ。記録は JIT 拡張が `block_count` 個分の領域として保持する。上位 3 bit の値は、0〜4 が破棄によるストライク、5 が記録なし、6 が段階の上限による却下を表す。下位 5 bit は計数である。
 - **計数の用途**: 下位 5 bit は時期ごとに次の値を表す。
   - 設置時: 0 に戻し、以後は設置中の入口回数を数える。
@@ -412,9 +412,14 @@ QA専用の実行回数・退役記録の計測契約、抽象モデル、およ
 - **ストライク**: 履歴のない block の値は 5 とする。段階の上限による却下の値は 6 とする。破棄時、寿命が K 未満ならストライクを 1 増やし、ストライクは S で止める。寿命が K 以上ならストライクを 0 に戻す。K は 10 とする。履歴なしからの最初の破棄は、ストライク 0 から数える。
 - **段階**: 直前に終わった 8 回転の区切りで破棄された trace の数 w を用いる。f = w ÷ 8 とする。f ≥ 6 のとき S = 2、2 ≤ f < 6 のとき S = 3、f < 2 のとき S = 4 とする。
 - **採否**: 待ち列から取り出した候補ごとに、次の順で判定する。
-  1. 点数（score_block）が候補しきい値 `S_threshold` に届かない場合は却下する。
-  2. 履歴なし（ストライク 5）の場合はコンパイルする。
-  3. ストライクが S 以上の場合は却下する。
-- **却下**: 却下された候補は、トラッカブルマスクを解除する。解除は、コンパイル失敗と同じ経路で行う。点数による却下（ルール（i））は、点数が変わらないため回復しない。段階の上限による却下（ルール（iii））では、ストライクの値を 6 とする。
+  - ルール（ii）: 履歴なし（ストライク 5）の場合はコンパイルする。
+  - ルール（iii）: ストライクが S 以上の場合は却下する。
+- **判定の前提（契約）**: 採否の判定に来る block の点数（score_block）は候補しきい値 `S_threshold` 以上である。根拠は次のとおり。
+  - カードを trackable にするのは、bind の候補（点数が `S_threshold` 以上、span が `min_trace_bytes` 以上）だけである。
+  - `min_trace_bytes` は 1 << `FB_CONF_JIT_CARD_SHIFT` で、カードの大きさと同じである。
+  - したがって、候補と同じカードに入る他の block の頭は、バイトを持たない構造の block だけになる。構造の block は観測されないため、待ち列に入らない。
+  - この関係は、カードの大きさの設定を変えても成り立つ。
+  - 実装は、採否の処理で点数の条件を `assert` し、bind で `min_trace_bytes` とカードの大きさの一致を `assert` する。
+- **却下**: 却下された候補は、トラッカブルマスクを解除する。解除は、コンパイル失敗と同じ経路で行う。段階の上限による却下（ルール（iii））では、ストライクの値を 6 とする。
 - **回復**: 8 回転の区切りで段階の上限が大きくなったとき（段階が緩くなったとき）、ストライクが 6 の block の候補マスクを戻し、ストライクを 0 に戻す。回復は、段階が緩くなった区切りだけで、全 block の採否記録を 1 回走査する。費用は block 数に比例する。回転のたびには走査しない。
 - **責務境界**: 記録の追加はコンパイル抑止やキャッシュ方策の採用を意味しない。Guest Profilerの変更は要求しない。

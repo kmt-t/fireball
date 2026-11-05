@@ -33,8 +33,9 @@ constexpr std::size_t jit_compile_scratch_bytes =
 constexpr code_offset_t jit_invalid_code_offset = std::numeric_limits<code_offset_t>::max();
 static_assert(jit_cache_bank_entry_capacity > 0);
 static_assert(kMaxTraceInstructions <= std::numeric_limits<jit_body_count_t>::max());
-// 0xFF is the unset BasicBlock reference, so it cannot identify a cache entry.
-static_assert(jit_cache_total_entry_capacity <= std::numeric_limits<std::uint8_t>::max());
+// The BasicBlock record stores a cache reference or one of the two no-trace values; the references
+// must stay below the no-trace values.
+static_assert(jit_cache_total_entry_capacity <= FB_NATIVE_JIT_NO_TRACE_UNOBSERVED);
 static_assert(jit_compile_scratch_bytes <= FB_CONF_JIT_CACHE_BANK_CAPACITY_BYTES);
 
 /** @brief 一つの常駐トレースを識別する8バイトのキャッシュ要素。 */
@@ -217,6 +218,13 @@ public:
   void analyze_observation_history(bool yielded);
   /** @brief 索引変更前にBasicBlockのキャッシュ参照を無効化する。 */
   void invalidate_block_cache_references();
+  /** @brief trace のないBasicBlockの印を、先頭PCのカードの trackable から決め直す。 */
+  void set_unreferenced_marker(block_index_t block_index);
+  /** @brief カードの trackable が変わったとき、そのカードの trace のない BasicBlock
+   * の印を決め直す。 */
+  void refresh_card_markers(std::uint32_t card);
+  /** @brief JITを閉じるとき、全BasicBlockの記録をLoaderの既定値（観測なし）へ戻す。 */
+  void release_block_markers();
   jit_cache_entry &cache_entry_at_reference(std::uint8_t reference);
   /** @brief 固定参照から物理バンク番号を求める。 */
   std::uint32_t bank_of_reference(std::uint8_t reference) const;

@@ -251,7 +251,7 @@ trace単位コード生成はx64実装に限って定義する。ARMv8-M向けLI
 
 コンパイラが受け取るのは実行された block だけである。ローダーは到達不能のコードの型と積み値を確かめない。到達不能の block は観測されないため、待ち列に入らず、トレースの入力にもならない（TEST-JITR-106）。
 
-- 命令が 0 件の block は、点数が 0 であり候補のしきい値に届かない。そのため採否の判定（ルール（i）、[`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) 8.2）で却下され、コンパイラに渡らない。コンパイラは入口で命令 1 件以上（呼出しの終端を除く）を assert する（TEST-JITR-103）。候補のしきい値の値は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が正本である。
+- 命令が 0 件の block は、点数が 0 であり候補のしきい値に届かない。候補の頭にならないため、採否の判定に届かず、コンパイラに渡らない（判定の前提は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) 8.2）。コンパイラは入口で命令 1 件以上（呼出しの終端を除く）を assert する（TEST-JITR-103）。候補のしきい値の値は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が正本である。
 
 ## 4. 動的モデル
 

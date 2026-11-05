@@ -103,7 +103,7 @@ chainはtrace終端から共通コード領域のchain dispatcherへ移り、そ
 
 ### JITランタイム呼出し契約
 
-Tier 2は共有実行状態とブロック開始PCを実行拡張へ渡す接続契約を定める。JIT providerは2-bit card-state表の読み取り専用ビューとカード範囲を渡す。Interpreterは、ブロックの移りの判定点で、移り先のブロックの記録の印だけを読み、CPSを抜けるかどうかを決める。印の値は下記の正本に従う。Interpreterは印の値を比較するだけで、trace の位置は使わない。dispatcherは、抜けた先のブロック先頭でカード状態を読み、`COMPILED`のときだけlookup関数を呼ぶ。ビューの領域はdispatch期間中JIT拡張が保持する。JIT拡張が正確なPCのキャッシュ検索、chain終端の反映、履歴記録を内部で完了する。Tier 2へJITキャッシュ配置や置換状態を公開しない。
+Tier 2は共有実行状態とブロック開始PCを実行拡張へ渡す接続契約を定める。JIT providerは2-bit card-state表の読み取り専用ビューとカード範囲を渡す。Interpreterは、ブロックの移りの判定点で、移り先のブロックの記録の印だけを読み、CPSを抜けるかどうかを決める。印の値は下記の正本に従う。Interpreterは印の値を比較するだけで、trace の位置は使わない。印を読むのは、JIT が接続された dispatch だけである。dispatcherは、抜けた先のブロック先頭でカード状態を読み、`COMPILED`のときだけlookup関数を呼ぶ。ビューの領域はdispatch期間中JIT拡張が保持する。JIT拡張が正確なPCのキャッシュ検索、chain終端の反映、履歴記録を内部で完了する。Tier 2へJITキャッシュ配置や置換状態を公開しない。
 
 ブロック記録の`jit_cache_reference`（1バイト）の値は次のとおりである。`FB_NATIVE_JIT_NO_TRACE_OBSERVED`（0xFF）は、traceがなく、先頭のカードがtrackableであることを示す。観測が要る。`FB_NATIVE_JIT_NO_TRACE_UNOBSERVED`（0xFE）は、traceがなく、観測が要らないことを示す。Loaderの既定値である。それ以外の値は常駐traceの参照であり、JIT拡張の内部の位置を示す。書き手はJIT拡張だけである。traceの設置・破棄、カードのtrackableの変化の各契機で、同じ手続きが印の値を決める。JIT拡張を閉じると、全記録はUNOBSERVEDへ戻る。
 

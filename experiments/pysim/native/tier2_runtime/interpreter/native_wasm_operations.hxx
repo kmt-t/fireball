@@ -16,6 +16,8 @@ constexpr std::uint32_t kBlockBoundary = 3;
 constexpr std::uint32_t kRuntimeApiBoundary = 8;
 constexpr std::uint32_t kStopAtBlockBoundaryFlag = 1u << 0;
 constexpr std::uint32_t kSingleControlStepFlag = 1u << 2;
+// Set by the dispatch entry only when a JIT is connected; it enables the block record check.
+constexpr std::uint32_t kJitDispatchFlag = 1u << 3;
 constexpr std::uint32_t kRelCursorReadyFlag = 1u << 4;
 constexpr std::uint32_t kPendingBlockHeadFlag = 1u << 5;
 constexpr std::uint32_t kCpsExitShift = 8;

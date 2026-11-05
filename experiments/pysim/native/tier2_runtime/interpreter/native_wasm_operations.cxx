@@ -348,8 +348,11 @@ bool transfer_to_block(execution_context &current, code_ip_t ip, block_index_t b
 bool continue_to_block(execution_context &current, code_ip_t ip, block_index_t block_index,
                        const std::uint8_t *&rel) {
   const auto &block = set_block_cursor(current, ip, block_index, rel);
-  // A trace-free block that is not observed stays in this flow. The record decides for every
-  // target: a resident trace or an observed head leaves the flow.
+  if ((current.runtime_flags & (kSingleControlStepFlag | kJitDispatchFlag)) == 0) {
+    return true;
+  }
+  // Only a dispatch with a connected JIT reads the record: a trace-free block that is not observed
+  // stays in this flow, and any other record leaves it.
   if ((current.runtime_flags & kSingleControlStepFlag) != 0 ||
       block.jit_cache_reference != FB_NATIVE_JIT_NO_TRACE_UNOBSERVED) {
     exit_block_boundary(current);

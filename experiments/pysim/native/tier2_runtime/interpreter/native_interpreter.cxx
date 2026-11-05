@@ -1294,6 +1294,10 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
   }
 
   const auto previous_runtime_flags = context.runtime_flags;
+  context.runtime_flags &= ~kJitDispatchFlag;
+  if constexpr (WithJit) {
+    context.runtime_flags |= kJitDispatchFlag;
+  }
   context.runtime_flags &= ~kStopAtBlockBoundaryFlag;
   assert((context.runtime_flags & kRelCursorReadyFlag) != 0);
   while (true) {
@@ -1382,7 +1386,8 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
     }
   }
 
-  constexpr auto kDispatchStateFlags = kPendingBlockHeadFlag | kRelCursorReadyFlag;
+  constexpr auto kDispatchStateFlags =
+      kPendingBlockHeadFlag | kRelCursorReadyFlag | kJitDispatchFlag;
   context.runtime_flags = (previous_runtime_flags & ~kDispatchStateFlags) |
                           (context.runtime_flags & (kPendingBlockHeadFlag | kRelCursorReadyFlag));
   result->status = state.status;

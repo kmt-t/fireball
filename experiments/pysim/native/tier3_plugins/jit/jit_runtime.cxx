@@ -1415,10 +1415,10 @@ jit_provider_adapter<Measurement>::lookup_runtime_trace(std::uintptr_t owner,
   assert(card < runtime.hotspots.card_count);
   assert(runtime.card_state(card) == 3);
   const auto start_location = runtime.lookup_cached_trace(block_index, pc);
+  // The caller reads the record only when it holds a resident trace reference (see
+  // jit_abi.md), so the lookup always finds a trace.
   auto *start = start_location.trace_entry;
-  if (start == nullptr) {
-    return nullptr;
-  }
+  assert(start != nullptr);
   runtime.count_root_entry(block_index);
   if constexpr (!std::is_void_v<Measurement>) {
     runtime.measurements.count_root_entry();

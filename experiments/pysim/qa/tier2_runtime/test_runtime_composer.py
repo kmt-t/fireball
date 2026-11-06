@@ -305,7 +305,7 @@ if __name__ == "__main__":
 
 
 @pytest.mark.parametrize("collect_stats", (False, True))
-@pytest.mark.parametrize("record", ("unobserved", "observed", "resident"))
+@pytest.mark.parametrize("record", ("unobserved", "observed"))
 def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_stats, record):
     """An opaque execution owner binds once and uses the common runtime boundary."""
     import ctypes
@@ -368,13 +368,10 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
 
         def bind_execution(self, execution):
             assert execution.module is self.module
-            # The block records select what the Interpreter calls: a resident trace reference
-            # reaches lookup, an OBSERVED marker reaches observe, and UNOBSERVED reaches neither.
-            marker = {
-                "unobserved": NO_TRACE_UNOBSERVED,
-                "observed": NO_TRACE_OBSERVED,
-                "resident": 0,
-            }[record]
+            # The block records select what the Interpreter calls: an OBSERVED marker reaches
+            # observe, and UNOBSERVED reaches neither. A resident trace reference would reach lookup,
+            # which must return a real trace; that path is tested by test_jit_runtime (TEST-JITR-130).
+            marker = {"unobserved": NO_TRACE_UNOBSERVED, "observed": NO_TRACE_OBSERVED}[record]
             for block in execution.module.blocks:
                 block.jit_cache_reference = marker
             self.bindings.append(execution)
@@ -409,9 +406,7 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     for _ in range(2):
         assert engine.call(interpreter, 0, [9]).unwrap() == [0]
     assert len(plugin.bindings) == 1
-    if record == "resident":
-        assert callbacks[0] >= 8 and callbacks[1] == 0
-    elif record == "observed":
+    if record == "observed":
         assert callbacks[0] == 0 and callbacks[1] >= 8
     else:
         assert callbacks[0] == 0 and callbacks[1] == 0

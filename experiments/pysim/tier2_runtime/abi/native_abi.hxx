@@ -76,10 +76,9 @@ static_assert(sizeof(fb_native_jit_trace_header) == 32);
 /** @brief Interpreterが借用するJIT接続。callbackの契約違反は呼出し直後でassertする。 */
 struct fb_native_jit_provider {
   std::uintptr_t owner;
-  // Returns the header of a resident root trace, or nullptr on a cache miss.
-  // The Interpreter resolves the BasicBlock and calls lookup only when the
-  // BasicBlock's jit_cache_reference holds a resident trace (the card is then
-  // COMPILED). The result does
+  // Returns the header of the resident root trace of the block. The Interpreter calls lookup
+  // only when the BasicBlock's jit_cache_reference holds a resident trace (the card is then
+  // COMPILED), so the result is never nullptr. The result does
   // not describe the chain endpoint. On normal completion, the terminal chain
   // dispatcher sets execution_context.ip and publishes exit metadata through
   // execution_context.rel before the trace entry returns true.

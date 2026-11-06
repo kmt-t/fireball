@@ -1103,10 +1103,10 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Resul
                   fireball_call_frame_native &frame, block_index_t block_index, wasm_pc_t pc,
                   const std::uint8_t *&dispatch_rel) {
   auto &context = state.context;
+  // The Interpreter calls lookup only for a block whose record holds a resident trace reference,
+  // so the lookup always returns that trace (jit_abi.md, the lookup contract).
   const auto *header = state.jit_provider->lookup(state.jit_provider->owner, block_index, pc);
-  if (header == nullptr) {
-    return 0;
-  }
+  assert(header != nullptr);
   const auto entry = state.jit_provider->trace_entry_address;
   const auto *rel = reinterpret_cast<const std::uint8_t *>(header) + header->const_rel_offset;
   const auto body_count = header->chain_body_count;

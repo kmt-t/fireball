@@ -638,8 +638,13 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
   requires(!std::is_void_v<Measurement>)
 {
   auto &measurements = this->measurements;
+  const auto first_event = measurements.dispatch_first_event;
+  measurements.dispatch_first_event = false;
   const auto source_block_index = measurements.pending_runtime_source_block;
   if (source_block_index == jit_invalid_block_index) {
+    measurements.classify_entry(first_event ? measurements.root_entry_dispatch_start
+                                            : measurements.root_entry_interpreter,
+                                measurements.root_entry_opcode_other);
     return;
   }
   measurements.pending_runtime_source_block = jit_invalid_block_index;
@@ -651,6 +656,8 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
   if (source == nullptr || target_block == nullptr || target_pc == jit_invalid_pc ||
       target_block->head_pc != target_pc) {
     ++measurements.chain_runtime_unclassified;
+    measurements.classify_entry(measurements.root_entry_unclassified,
+                                measurements.root_entry_opcode_other);
     return;
   }
   const auto source_trace = lookup_cached_trace(source_block_index, source->head_pc);
@@ -692,6 +699,12 @@ void jit_runtime<Measurement>::record_runtime_transition(block_index_t target_bl
   assert(source_terminator < source->code.bytes);
   const auto source_opcode = source->code.data[source_terminator];
   measurements.record_chain_runtime(reason, source_opcode);
+  // Where the lookup lands relative to the trace end: its next block, its loop head, or another block.
+  const auto kind = target_pc == source->next_pc ? measurements.root_entry_trace_end_next
+                    : (source->loops_to != jit_invalid_pc && target_pc == source->loops_to)
+                        ? measurements.root_entry_trace_end_loop
+                        : measurements.root_entry_trace_end_other;
+  measurements.classify_entry(kind, measurements.control_index(source_opcode));
 }
 
 template <jit_measurement_policy Measurement>
@@ -1410,6 +1423,9 @@ jit_provider_adapter<Measurement>::lookup_runtime_trace(std::uintptr_t owner,
     return nullptr;
   }
   runtime.count_root_entry(block_index);
+  if constexpr (!std::is_void_v<Measurement>) {
+    runtime.measurements.count_root_entry();
+  }
   const auto *start_header = runtime.trace_header(*start);
   assert(start_header->const_rel_offset >= fireball::kTraceBoundaryMetadataBytes);
   assert(start_header->const_rel_offset <= start_header->blob_bytes);

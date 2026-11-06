@@ -55,10 +55,12 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_dispatch(
   const fb_native_execution_extension extension{input->jit_provider->owner, qa_runtime_observe,
                                                 qa_runtime_trace_executed};
   const fb_native_dispatch_extension_call extension_call{*input, &extension};
-  const auto status = dispatch(&extension_call, result);
-  // A trace end with no lookup or observation after it in this dispatch is unobserved.
   auto &runtime = *reinterpret_cast<qa_jit_runtime *>(input->jit_provider->owner);
   auto &measurements = runtime.measurements;
+  measurements.dispatch_first_event = true;
+  const auto status = dispatch(&extension_call, result);
+  measurements.dispatch_first_event = false;
+  // A trace end with no lookup or observation after it in this dispatch is unobserved.
   if (measurements.pending_runtime_source_block != fireball::jit_invalid_block_index) {
     ++measurements.chain_runtime_unobserved_trace_exits;
     measurements.pending_runtime_source_block = fireball::jit_invalid_block_index;

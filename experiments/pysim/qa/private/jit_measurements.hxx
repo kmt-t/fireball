@@ -115,7 +115,7 @@ struct jit_measurements {
            printk_u64(writer, "jit.history_dropped", history_dropped) &&
            printk_u64(writer, "jit.lookup_calls", lookup_calls) &&
            printk_u64(writer, "jit.trackable_generation", trackable_generation) &&
-           write_chain_measurements(writer);
+           write_chain_measurements(writer) && write_root_entries(writer);
   }
 
   bool write_chain_measurements(const printk_writer &writer) const {
@@ -177,6 +177,38 @@ struct jit_measurements {
     return true;
   }
 
+  // Root entries (lookups that start a trace), classified by the Interpreter events before them in the
+  // same native dispatch. A kind is decided at the lookup from the last event: a trace end (the pending
+  // source) and where the lookup lands, or the start of the dispatch, or Interpreter activity.
+  static constexpr std::size_t root_entry_kind_count = 6;
+  static constexpr std::array<std::string_view, root_entry_kind_count> root_entry_kind_names{
+      "dispatch_start", "trace_end_next", "trace_end_loop", "trace_end_other", "interpreter",
+      "unclassified"};
+  static constexpr std::size_t root_entry_dispatch_start = 0;
+  static constexpr std::size_t root_entry_trace_end_next = 1;
+  static constexpr std::size_t root_entry_trace_end_loop = 2;
+  static constexpr std::size_t root_entry_trace_end_other = 3;
+  static constexpr std::size_t root_entry_interpreter = 4;
+  static constexpr std::size_t root_entry_unclassified = 5;
+  static constexpr std::size_t root_entry_opcode_other = control_opcodes.size();
+  bool dispatch_first_event = false;
+  std::size_t last_entry_kind = root_entry_unclassified;
+  std::size_t last_entry_opcode = root_entry_opcode_other;
+  std::array<std::array<std::uint64_t, control_opcodes.size() + 1>, root_entry_kind_count>
+      root_entries{};
+  std::size_t control_index(std::uint8_t opcode) const {
+    for (std::size_t index = 0; index < control_opcodes.size(); ++index) {
+      if (control_opcodes[index] == opcode) {
+        return index;
+      }
+    }
+    return root_entry_opcode_other;
+  }
+  void classify_entry(std::size_t kind, std::size_t opcode_index) {
+    last_entry_kind = kind;
+    last_entry_opcode = opcode_index;
+  }
+  void count_root_entry() { ++root_entries[last_entry_kind][last_entry_opcode]; }
   void record_chain_construction(jit_chain_reason reason) {
     assert(reason < jit_chain_reason::count);
     ++chain_construction_attempts;
@@ -201,6 +233,67 @@ struct jit_measurements {
     chain_runtime_unclassified = 0;
     chain_runtime_unobserved_trace_exits = 0;
     pending_runtime_source_block = std::numeric_limits<block_index_t>::max();
+    dispatch_first_event = false;
+    last_entry_kind = root_entry_unclassified;
+    last_entry_opcode = root_entry_opcode_other;
+    for (auto &kinds : root_entries) {
+      kinds.fill(0);
+    }
+  }
+
+  bool write_root_entries(const printk_writer &writer) const {
+    for (std::size_t kind = 0; kind < root_entry_kind_count; ++kind) {
+      std::uint64_t total = 0;
+      for (const auto count : root_entries[kind]) {
+        total += count;
+      }
+      if (total == 0) {
+        continue;
+      }
+      if (!write_root_label(writer, "jit.root_entry.", root_entry_kind_names[kind], total)) {
+        return false;
+      }
+      for (std::size_t opcode = 0; opcode <= control_opcodes.size(); ++opcode) {
+        const auto count = root_entries[kind][opcode];
+        if (count == 0) {
+          continue;
+        }
+        const std::string_view name = opcode == root_entry_opcode_other
+                                          ? std::string_view("other")
+                                          : control_opcode_names[opcode];
+        if (!write_root_label(writer, "jit.root_entry_op.", root_entry_kind_names[kind], name, count)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+  static bool write_root_label(const printk_writer &writer, std::string_view prefix,
+                               std::string_view first, std::string_view second,
+                               std::uint64_t value) {
+    std::array<char, 112> label{};
+    std::size_t offset = 0;
+    for (const auto text : {prefix, first, std::string_view("."), second}) {
+      for (const auto character : text) {
+        assert(offset + 1 < label.size());
+        label[offset++] = character;
+      }
+    }
+    label[offset] = '\0';
+    return printk_u64(writer, label.data(), value);
+  }
+  static bool write_root_label(const printk_writer &writer, std::string_view prefix,
+                               std::string_view kind, std::uint64_t value) {
+    std::array<char, 112> label{};
+    std::size_t offset = 0;
+    for (const auto text : {prefix, kind}) {
+      for (const auto character : text) {
+        assert(offset + 1 < label.size());
+        label[offset++] = character;
+      }
+    }
+    label[offset] = '\0';
+    return printk_u64(writer, label.data(), value);
   }
 
   struct compile_scope {

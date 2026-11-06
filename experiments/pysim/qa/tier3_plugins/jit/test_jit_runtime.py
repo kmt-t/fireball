@@ -4258,6 +4258,69 @@ def test_jitr_77_chained_successor_body_is_counted_once_per_run(collect_stats):
     assert successor.exec_count == successor_before + step
 
 
+_ROOT_LOOP_WAT = (
+    '(module (func (export "sum") (param i32) (result i32) (local i32)'
+    " (loop $loop local.get 1 local.get 0 i32.add local.set 1"
+    " local.get 0 i32.const 1 i32.sub local.tee 0 br_if $loop)"
+    " local.get 1))"
+)
+
+
+def test_jitr_129_root_entry_at_dispatch_start_is_classified(monkeypatch):
+    """TEST-JITR-129: a root entry that starts a native dispatch is a dispatch-start entry.
+
+    Block 0 is resident and its successor runs in the Interpreter inside the same dispatch, so each
+    of the five calls has one root lookup, at the start of its dispatch, and no other root entry.
+    """
+    _route_stats_through_qa_extension(monkeypatch)
+    module = parse_standalone(wat_to_wasm(_CHAIN_EXIT_WAT))
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    trace = compile_module_block(TraceCompiler(), module, instruction_blocks(module)[0])
+    assert trace is not None
+    inserted = manager.cache.insert(trace)
+    assert inserted
+    interpreter = Interpreter(module)
+    function_index = module.export_func_index("f")
+    for _ in range(5):
+        assert list(engine.call(interpreter, function_index, []).unwrap()) == [7]
+    counts = _runtime_chain_counts(manager, "jit.root_entry")
+    assert counts == {
+        "jit.root_entry.dispatch_start": 5,
+        "jit.root_entry_op.dispatch_start.other": 5,
+    }
+
+
+def test_jitr_130_root_entry_after_a_taken_backedge_is_a_loop_trace_end(monkeypatch):
+    """TEST-JITR-130: a backedge taken after br_if is a trace end into the loop head.
+
+    The loop body is resident. One call of sum(5) runs five iterations. The first lookup starts the
+    dispatch. The trace ends before br_if; the four taken backedges go back to the loop head through a
+    lookup, and the fifth br_if falls through without a lookup. So the loop entries are four.
+    """
+    _route_stats_through_qa_extension(monkeypatch)
+    module = parse_standalone(wat_to_wasm(_ROOT_LOOP_WAT))
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    loop_block = next(b for b in module.blocks if b.loops_to == b.head_pc)
+    trace = compile_module_block(TraceCompiler(), module, loop_block)
+    assert trace is not None
+    inserted = manager.cache.insert(trace)
+    assert inserted
+    interpreter = Interpreter(module)
+    function_index = module.export_func_index("sum")
+    assert list(engine.call(interpreter, function_index, [5]).unwrap()) == [15]
+    counts = _runtime_chain_counts(manager, "jit.root_entry")
+    assert counts == {
+        "jit.root_entry.dispatch_start": 1,
+        "jit.root_entry_op.dispatch_start.other": 1,
+        "jit.root_entry.trace_end_loop": 4,
+        "jit.root_entry_op.trace_end_loop.br_if": 4,
+    }
+
+
 _CHAIN_EXIT_WAT = (
     '(module (func (export "f") (result i32) '
     "(block i32.const 1 i32.const 2 i32.add drop) i32.const 7))"

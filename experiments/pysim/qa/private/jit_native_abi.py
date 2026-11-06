@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ctypes
 import os
-import struct
 import sys
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -419,12 +418,6 @@ def install_common_trace(
     )
     assert result == 1
     return entry.value
-
-
-def pack_trace_header(chain: int, helper: int) -> bytes:
-    assert 0 <= chain <= 0xFFFF_FFFF_FFFF_FFFF
-    assert 0 <= helper <= 0xFFFF_FFFF_FFFF_FFFF
-    return struct.pack("<QQiIIBBBBIII4x", chain, helper, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
 
 MEMORY_INIT = _NATIVE_LIBRARY.fb_jit_memory_init

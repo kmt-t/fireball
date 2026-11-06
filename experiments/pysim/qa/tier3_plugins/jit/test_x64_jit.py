@@ -48,7 +48,6 @@ from qa.shared.x64_jit import TraceCompiler
 from tier2_runtime.abi.interpreter_abi import (
     ExecutionContextABI,
 )
-from tier2_runtime.interpreter.control_flow import build_control_map, extract_basic_blocks
 from tier2_runtime.interpreter.interpreter import ExecutionContext
 from tier2_runtime.wasm.module import I32, I64, LocalLayout
 from tier2_runtime.wasm.opcodes import (
@@ -100,11 +99,6 @@ def _invoke_loader_block(module, block, trace, ctx) -> int:
     ctx.code = ctypes.cast(ctypes.c_char_p(code), ctypes.c_void_p).value
     ctx.ip = block.head_pc
     return trace.invoke(ctx)
-
-
-def _extract_test_blocks(code: bytes):
-    code_view = memoryview(code)
-    return extract_basic_blocks(code_view, build_control_map(code_view))
 
 
 def _call_trace(trace: JITTrace, context, local_words, stack_words, sp_index: int = 0) -> None:

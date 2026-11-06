@@ -45,15 +45,9 @@ _library = ctypes.PyDLL(
 RUN_DISPATCH = _library.fb_qa_run_dispatch
 RUN_DISPATCH.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeDiagnosticResult))
 RUN_DISPATCH.restype = ctypes.c_int
-RUN_DISPATCH_EXTENSION = _library.fb_qa_run_dispatch_extension
-RUN_DISPATCH_EXTENSION.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeDiagnosticResult))
-RUN_DISPATCH_EXTENSION.restype = ctypes.c_int
 RUN_DISPATCH_STATS = _library.fb_qa_run_dispatch_stats
 RUN_DISPATCH_STATS.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeDiagnosticResult))
 RUN_DISPATCH_STATS.restype = ctypes.c_int
-RUN_DISPATCH_STATS_EXTENSION = _library.fb_qa_run_dispatch_stats_extension
-RUN_DISPATCH_STATS_EXTENSION.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeDiagnosticResult))
-RUN_DISPATCH_STATS_EXTENSION.restype = ctypes.c_int
 RUN_DISPATCH_JIT = _library.fb_qa_run_dispatch_jit
 RUN_DISPATCH_JIT.argtypes = (ctypes.c_void_p, ctypes.POINTER(NativeDiagnosticResult))
 RUN_DISPATCH_JIT.restype = ctypes.c_int
@@ -76,14 +70,6 @@ RUN_DISPATCH_JIT_STATS_EXTENSION.argtypes = (
 )
 RUN_DISPATCH_JIT_STATS_EXTENSION.restype = ctypes.c_int
 NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE = True
-
-
-def select_native_dispatch_entry(
-    collect_stats: bool, with_extension: bool
-) -> NativeDispatchEntryPoint:
-    if collect_stats:
-        return RUN_DISPATCH_STATS_EXTENSION if with_extension else RUN_DISPATCH_STATS
-    return RUN_DISPATCH_EXTENSION if with_extension else RUN_DISPATCH
 
 
 def select_runtime_dispatch_entry(collect_stats: bool, with_jit: bool) -> NativeDispatchEntryPoint:

@@ -1125,9 +1125,11 @@ execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, Resul
   // The function entry reserved its loader-proven peak, including this trace.
   assert(header->chain_words <=
          static_cast<std::uint32_t>(context.stack_limit - context.stack_pointer));
-  context.local_base = frame.local_base;
-  context.code = frame.function_view->code;
-  context.code_size = frame.function_view->code_size;
+  // Every frame change (entry, call, return) sets these three fields, so they already hold the
+  // current frame's values here (see prepare_native_dispatch and the frame-changing operations).
+  assert(context.local_base == frame.local_base);
+  assert(context.code == frame.function_view->code);
+  assert(context.code_size == frame.function_view->code_size);
   context.runtime_flags &= ~fb_native_cps_exit_mask;
   // Control Runtime APIs consume the loader's static edge for this block.
   frame.boundary_next_pc = trace_exit->next_pc;

@@ -23,7 +23,7 @@ constexpr std::uint32_t kF32ConstWidth = 1 + sizeof(std::uint32_t);
 // 命令コード 1 バイトと loader の f64.const の即値 8 バイトの和。
 constexpr std::uint32_t kF64ConstWidth = 1 + sizeof(std::uint64_t);
 // 符号化された CPS exit の最大値。kind は +1 して格納するため、最大 kind の符号化値となる。
-constexpr std::uint32_t kCpsExitEncodedMax = kRuntimeApiBoundary + 1;
+[[maybe_unused]] constexpr std::uint32_t kCpsExitEncodedMax = kRuntimeApiBoundary + 1;
 // 浮動小数点の変換範囲の境界値（2 の冪）。f32 と f64 の双方で厳密に表せる。
 template <typename Float> constexpr Float kTwoPow31 = static_cast<Float>(2147483648.0);
 template <typename Float> constexpr Float kTwoPow32 = static_cast<Float>(4294967296.0);
@@ -537,7 +537,7 @@ void branch(execution_context &current, std::uint32_t *&sp, block_index_t target
   assert(module != nullptr);
   if (target_block_index != kInvalidBlockIndex) {
     assert(target_block_index < module->block_count);
-    const auto &target_block = module->blocks[target_block_index];
+    [[maybe_unused]] const auto &target_block = module->blocks[target_block_index];
     assert(target_block.head_pc >= call_frame.function_view->code_pc_offset);
     assert(target_block.head_pc - call_frame.function_view->code_pc_offset < current.code_size);
   }
@@ -943,7 +943,7 @@ bool runtime_local_get(execution_context *context, const std::uint8_t *&instruct
 bool runtime_local_get_w1(execution_context *context, const std::uint8_t *&instruction_ip,
                           std::uint32_t *&sp, std::uint32_t *&local_base,
                           const std::uint8_t *&rel) {
-  auto &current = *context;
+  [[maybe_unused]] auto &current = *context;
   const auto encoded_width = read_u8(rel);
   const auto offset = static_cast<frame_word_offset_t>(read_u16(rel));
   rel += 3; // width (always one word for this opcode) and the RPN ext
@@ -957,7 +957,7 @@ bool runtime_local_get_w1(execution_context *context, const std::uint8_t *&instr
 bool runtime_local_set_w1(execution_context *context, const std::uint8_t *&instruction_ip,
                           std::uint32_t *&sp, std::uint32_t *&local_base,
                           const std::uint8_t *&rel) {
-  auto &current = *context;
+  [[maybe_unused]] auto &current = *context;
   const auto encoded_width = read_u8(rel);
   const auto offset = static_cast<frame_word_offset_t>(read_u16(rel));
   rel += 3; // width (always one word for this opcode) and the RPN ext

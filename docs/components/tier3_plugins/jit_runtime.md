@@ -17,7 +17,7 @@ JIT ランタイム管理は、Tier 2 Interpreterへ任意に接続するTier 3�
 
 JIT拡張はInterpreterのネイティブ実行拡張として接続する。Interpreter dispatcherが共有実行状態と解決済みBasicBlockを渡し、JIT拡張がtrace entryを検索して返す。trace関数の実行、返却metadataによる実行状態の更新、未実行の終端命令のInterpreter処理、次BasicBlockの準備はTier 2 Interpreterが担当する。JIT拡張は履歴分析とコンパイル要求も処理する。RuntimeはInterpreterの実行境界だけを受け取り、JITの選択や実行を行わない。Tier 2 RuntimeやC++ InterpreterにJIT専用の状態オブジェクトや操作API群を追加しない。
 
-JIT traceの選択は`execution_context.current_block_index`からBasicBlock metadataを直接参照して行う。現在のindexとPCはInterpreterからJIT providerへ渡し、BasicBlockの`head_pc`がPCと一致することを検証する。対象カードが`COMPILED`でなければ、JITエントリ検索を呼ばずInterpreterを実行する。`COMPILED`ならBasicBlock内の8bitキャッシュ参照を使う。未設定なら当該ブロックはcache missとする。カード状態は複数BasicBlockで共有されうるため、カードが`COMPILED`でも未常駐のブロックがある。LoaderのRadix表はロード時の構築とその他の利用に残るが、通常dispatchのブロック解決には使わない。JIT常駐索引はPC順を維持し、JITのキーは引き続き`(module_id, pc)`である。
+JIT traceの選択は`execution_context.current_block_index`からBasicBlock metadataを直接参照して行う。現在のindexとPCはInterpreterからJIT providerへ渡し、BasicBlockの`head_pc`がPCと一致することを検証する。BasicBlock内の8bitキャッシュ参照（`jit_cache_reference`）に常駐traceの参照がないブロックは、JITエントリ検索を呼ばずInterpreterを実行する。参照の値の意味は`jit_abi.md`の記録の値を正本とする。常駐traceの参照は、そのブロックのカードが`COMPILED`のときにだけ存在する（不変条件。traceの破棄では、カード状態を`COMPILED`から戻す前に、全ブロック参照を先に消す。`retire_cache_bank`が行う）。カード状態は複数BasicBlockで共有されうるため、`COMPILED`のカードにも参照のないブロックがあり、その場合は検索しない。LoaderのRadix表はロード時の構築とその他の利用に残るが、通常dispatchのブロック解決には使わない。JIT常駐索引はPC順を維持し、JITのキーは引き続き`(module_id, pc)`である。
 
 InterpreterはLoader注釈プールの辺indexと`current_block_index`を使い、分岐先と通常継続先のBasicBlockを得る。call先と復帰先の解決は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とする。JIT境界metadataの`block_index`には次BasicBlock indexを入れる。chain link、候補受入れ、JIT trace exitはindexとPCの両方を照合する。terminal call stencilのhandler接続要件は[`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)と[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)に従う。通常の製品経路では`find_cached_trace_by_pc`を呼ばない。
 
@@ -78,7 +78,7 @@ JIT拡張はInterpreterへ接続する選択可能コンポーネントである
 - **カード更新表 (Card Update Bitmap)**: コード領域全体の各カードに対応する 1 ビットdirty表である。カードが `UNEXECUTED` から `EXECUTED` へ遷移した時だけ、そのカードのビットを立てる。密ビュー `fireball::bit_view<1>` として参照する。8カードを1バイトにまとめる。
 - **エイジングカーソル**: カード更新表のバイト位置を保持する整数である。モジュール登録時に 0 で初期化し、表の末尾に達したら先頭へ戻る。
 - **JITエントリ表と全バンク索引**: 各バンクは`head_pc`順の固定容量エントリ配列を持つ。別の固定容量参照配列を `FB_CONF_JIT_NUM_BUFFERS` 面共通で一つ持ち、常駐エントリを`head_pc`順に索引する。参照はバンク番号とエントリ位置を示す。Interpreterが現在のBasicBlock indexをJITへ渡し、その`jit_cache_reference`が有効なら索引探索を省いてエントリへ進む。未設定時はcache missとする。連結候補とtrace exitではLoaderの辺indexを使い、PCも照合する。同じPCを複数バンクへ挿入する契約違反は挿入入口でassertする。バンク配列のシフト、挿入、削除、破棄後は全BasicBlock参照を常駐エントリに合わせて更新し、退役エントリへの参照を残さない。現行設定では最大 `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件であり、参照は8ビットで表現する。JITの検索キーは`(module_id, pc)`であり、indexはLoader metadataとの照合と直接参照に使う。JIT用Radix索引と製品実行時のPC→trace検索経路は設けない。QA計測の入口だけがPCからブロック索引を検索する。
-- **ネイティブ実行拡張の接続**: JIT拡張への本体実行と観測入口を初期化時に固定する。JIT providerは2-bit card-state表の読み取り専用ビューをdispatch期間中貸し出す。C++ Interpreter dispatcherは`execution_context.current_block_index`とPCからLoaderのBasicBlockを直接参照し、indexの`head_pc`がPCと一致することをassertする。判定点（ジャンプ、呼出しの入口、後方辺、関数復帰）で、飛び先のBasicBlockから注釈開始位置を得て`rel`を初期化してからカード状態を確認する。`COMPILED`以外ではJIT entry lookupを呼ばずInterpreter実行を続ける。`COMPILED`ならblock indexとPCをJIT拡張へ渡し、BasicBlockの有効な`jit_cache_reference`を直接使う。参照が未設定ならcache missとしてInterpreterを続ける。カード単位状態と正確なPC照合は区別する。観測入口は判定点で候補判定と履歴記録をまとめて行う。コンパイル候補の状態更新はJIT拡張が担当する。
+- **ネイティブ実行拡張の接続**: JIT拡張への本体実行と観測入口を初期化時に固定する。C++ Interpreter dispatcherは`execution_context.current_block_index`とPCからLoaderのBasicBlockを直接参照し、indexの`head_pc`がPCと一致することをassertする。判定点（ジャンプ、呼出しの入口、後方辺、関数復帰）で、飛び先のBasicBlockから注釈開始位置を得て`rel`を初期化してから、BasicBlockの`jit_cache_reference`を読む。常駐traceの参照があるときだけ、block indexとPCをJIT拡張へ渡してlookupする。参照がないときはJIT entry lookupを呼ばずInterpreter実行を続ける。カード単位状態と正確なPC照合は区別する。観測入口は判定点で候補判定と履歴記録をまとめて行う。コンパイル候補の状態更新はJIT拡張が担当する。
   x64参照構成の記述枠は `FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY` により各バンクを上限とする。全バンクの上限は `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` である。これはRAM予算の設定値であり、既定コンストラクタ値や生成コードの平均サイズから導出しない。
   JIT entryは全バンクの固定容量上限に従う。同一PCの常駐traceを重複生成しない。WarmまたはOldestに存在するPCを新規insertすると契約違反とする。Oldestのlookup hitは所在とコードアドレスを変えず実行する。Tier 2はキャッシュの世代を扱わない。
   コード領域または固定長JIT entry表が満杯になれば、既存の3面ローテーションを行う。生成コードの長さは可変である。短いtraceでもentry表の上限を超えて挿入しない。
@@ -99,11 +99,9 @@ JIT拡張はInterpreterへ接続する選択可能コンポーネントである
 ```mermaid
 flowchart TD
     Search[BasicBlock start PC] --> Block[Resolve sorted Loader BasicBlock array]
-    Block --> Card[Read card state O1]
-    Card -->|NOT COMPILED| Interp[Interpreter dispatch]
-    Card -->|COMPILED| Ref[Read BasicBlock jit_cache_reference]
-    Ref -->|Valid| Exec[exec_trace native code]
-    Ref -->|Unset| Interp
+    Block --> Ref[Read BasicBlock jit_cache_reference O1]
+    Ref -->|Resident trace reference| Exec[exec_trace native code]
+    Ref -->|No trace reference| Interp[Interpreter dispatch]
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
@@ -238,11 +236,9 @@ flowchart TD
     Context --> Metadata["Read module.blocks[index]"]
     Metadata --> Validate{"head_pc == execution PC?"}
     Validate -->|"No"| Assert["Internal contract assertion"]
-    Validate -->|"Yes"| Card["Read card state (O(1))"]
-    Card -->|"NOT COMPILED"| ExitInterp(["Continue Interpreter without JIT lookup"])
-    Card -->|"COMPILED"| ReadRef["Read BasicBlock jit_cache_reference"]
-    ReadRef -->|"Valid"| ReturnTrace(["Use resident exec_trace entry (O(1))"])
-    ReadRef -->|"Unset"| ExitInterp
+    Validate -->|"Yes"| ReadRef["Read BasicBlock jit_cache_reference (O(1))"]
+    ReadRef -->|"Resident trace reference"| ReturnTrace(["Use resident exec_trace entry (O(1))"])
+    ReadRef -->|"No trace reference"| ExitInterp(["Continue Interpreter without JIT lookup"])
 ```
 
 #### 3面世代交代ローテーションと被チェイン局所アンリンク（責務シーケンス図）

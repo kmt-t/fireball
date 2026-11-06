@@ -305,8 +305,8 @@ if __name__ == "__main__":
 
 
 @pytest.mark.parametrize("collect_stats", (False, True))
-@pytest.mark.parametrize("card_state", (0, 1, 2, 3))
-def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_stats, card_state):
+@pytest.mark.parametrize("trace_resident", (False, True))
+def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_stats, trace_resident):
     """An opaque execution owner binds once and uses the common runtime boundary."""
     import ctypes
 
@@ -349,13 +349,8 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     # The fake lookup never hits, so this entry is never called; the provider still needs a non-null one.
     trace_entry_byte = ctypes.c_uint8(0xC3)
     trace_entry_address = ctypes.addressof(trace_entry_byte)
-    packed_card_states = card_state | (card_state << 2)
-    card_states = ctypes.c_uint8(packed_card_states)
     provider = NativeJitProvider(
         owner=123,
-        card_states=ctypes.addressof(card_states),
-        card_count=2,
-        card_shift=31,
         lookup=ctypes.cast(lookup_callback, ctypes.c_void_p),
         observe_block=ctypes.cast(observe_callback, ctypes.c_void_p),
         finish_boundary=ctypes.cast(finish_callback, ctypes.c_void_p),
@@ -372,6 +367,10 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
 
         def bind_execution(self, execution):
             assert execution.module is self.module
+            if trace_resident:
+                # A resident trace reference marks the block; only such blocks reach lookup.
+                for block in execution.module.blocks:
+                    block.jit_cache_reference = 0
             self.bindings.append(execution)
             return provider_address
 
@@ -404,7 +403,10 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     for _ in range(2):
         assert engine.call(interpreter, 0, [9]).unwrap() == [0]
     assert len(plugin.bindings) == 1
-    assert (callbacks[0] >= 8) == (card_state == 3)
+    if trace_resident:
+        assert callbacks[0] >= 8
+    else:
+        assert callbacks[0] == 0
     assert callbacks[1] >= 8
     assert callbacks[2] > 0
     assert engine.stat_jit_invocations == 0

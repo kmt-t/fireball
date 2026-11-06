@@ -1271,8 +1271,6 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
     assert(jit_provider != nullptr && jit_provider->owner != 0);
     assert(jit_provider->lookup != nullptr && jit_provider->observe_block != nullptr &&
            jit_provider->finish_boundary != nullptr && jit_provider->trace_entry_address != 0);
-    assert(jit_provider->card_shift < 32 &&
-           (jit_provider->card_count == 0 || jit_provider->card_states != nullptr));
   } else {
     assert(jit_provider == nullptr);
   }
@@ -1313,13 +1311,13 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
     if constexpr (std::is_void_v<Debugger>) {
       if constexpr (WithJit) {
         if (block_head && opcode_is_block_body(context.code[ip])) {
+          // A trace reference in the block record exists only in a trackable card (lookup asserts
+          // it), so the record alone decides whether a lookup can hit.
           const auto pc = frame.function_view->code_pc_offset + ip;
-          const auto card = pc >> state.jit_provider->card_shift;
-          assert(card < state.jit_provider->card_count &&
-                 state.jit_provider->card_states != nullptr);
-          const auto card_state =
-              (state.jit_provider->card_states[card >> 2] >> ((card & 3u) * 2u)) & 3u;
-          if (card_state == 3u) {
+          const auto reference =
+              frame.function_view->module_view->blocks[block_index].jit_cache_reference;
+          if (reference != FB_NATIVE_JIT_NO_TRACE_OBSERVED &&
+              reference != FB_NATIVE_JIT_NO_TRACE_UNOBSERVED) {
             executed_bodies = execute_jit_trace<CollectStats, WithExtension, ResultType>(
                 state, frame, block_index, pc, dispatch_rel);
           }

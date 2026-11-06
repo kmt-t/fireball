@@ -465,10 +465,8 @@ fb_qa_dispatch(int (*dispatch)(const fb_native_dispatch_extension_call *, fb_nat
   auto call = *input;
   qa_dispatch_owner owner{*buffers};
   const auto owner_address = reinterpret_cast<std::uintptr_t>(&owner);
-  static constexpr std::uint8_t all_compiled_cards[] = {0xFFu, 0xFFu};
-  const fb_native_jit_provider provider{
-      owner_address,      all_compiled_cards,         8, 29, {}, qa_lookup_trace, qa_observe_block,
-      qa_finish_boundary, buffers->common_trace_entry};
+  const fb_native_jit_provider provider{owner_address, qa_lookup_trace, qa_observe_block,
+                                        qa_finish_boundary, buffers->common_trace_entry};
   call.jit_provider = &provider;
   fb_native_execution_extension extension{owner_address, qa_observe, qa_trace_executed};
   fb_native_dispatch_extension_call extension_call{call, &extension};
@@ -481,14 +479,10 @@ extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_native_provider_layout(std::uint32_t *
   assert(output != nullptr);
   output[0] = static_cast<std::uint32_t>(sizeof(fb_native_jit_provider));
   output[1] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, owner));
-  output[2] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, card_states));
-  output[3] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, card_count));
-  output[4] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, card_shift));
-  output[5] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, reserved0));
-  output[6] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, lookup));
-  output[7] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, observe_block));
-  output[8] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, finish_boundary));
-  output[9] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, trace_entry_address));
+  output[2] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, lookup));
+  output[3] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, observe_block));
+  output[4] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, finish_boundary));
+  output[5] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, trace_entry_address));
 }
 
 // Block-record marks as the native code defines them; the QA test checks the Python mirror.

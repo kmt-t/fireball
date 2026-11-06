@@ -12,10 +12,6 @@ import ctypes
 class NativeJitProvider(ctypes.Structure):
     _fields_ = (
         ("owner", ctypes.c_size_t),
-        ("card_states", ctypes.c_void_p),
-        ("card_count", ctypes.c_uint32),
-        ("card_shift", ctypes.c_uint8),
-        ("reserved0", ctypes.c_uint8 * 3),
         ("lookup", ctypes.c_void_p),
         ("observe_block", ctypes.c_void_p),
         ("finish_boundary", ctypes.c_void_p),
@@ -25,10 +21,6 @@ class NativeJitProvider(ctypes.Structure):
 
 FIELD_NAMES = (
     "owner",
-    "card_states",
-    "card_count",
-    "card_shift",
-    "reserved0",
     "lookup",
     "observe_block",
     "finish_boundary",

@@ -1327,9 +1327,6 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_bind_cards(
   runtime->hotspots.card_count = cards;
   runtime->hotspots.dirty_mask_bytes = dirty_bytes;
   runtime->hotspots.aging_cursor = cursor;
-  runtime->provider.card_states = states;
-  runtime->provider.card_count = cards;
-  runtime->provider.card_shift = FB_CONF_JIT_CARD_SHIFT;
   return 1;
 }
 
@@ -1506,10 +1503,6 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
     runtime->measurements.owns_memory = false;
   }
   runtime->provider = {reinterpret_cast<std::uintptr_t>(runtime),
-                       nullptr,
-                       0,
-                       0,
-                       {},
                        lookup_runtime_trace,
                        observe_runtime_block,
                        finish_runtime_boundary,

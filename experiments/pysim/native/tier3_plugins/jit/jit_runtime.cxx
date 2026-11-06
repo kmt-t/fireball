@@ -174,7 +174,7 @@ jit_runtime<Measurement>::patch_transaction::~patch_transaction() {
 }
 
 template <jit_measurement_policy Measurement>
-int jit_runtime<Measurement>::compile_one_candidate(block_index_t block_index, wasm_pc_t pc) {
+int jit_runtime<Measurement>::compile_one_candidate(block_index_t block_index, [[maybe_unused]] wasm_pc_t pc) {
   jit_wasm_block input_storage{};
   assert(block_index < module_view->block_count);
   assert(module_view->blocks[block_index].head_pc == pc);
@@ -347,7 +347,7 @@ void jit_runtime<Measurement>::invalidate_block_cache_references() {
     assert(value.resident());
     const auto block_index = trace_header(value)->block_index;
     assert(block_index < module_view->block_count);
-    auto &block = module_view->blocks[block_index];
+    [[maybe_unused]] auto &block = module_view->blocks[block_index];
     assert(block.head_pc == value.head_pc);
     assert(block.jit_cache_reference == reference ||
            block.jit_cache_reference >= jit_cache_total_entry_capacity);
@@ -1072,7 +1072,7 @@ void jit_runtime<Measurement>::install_trace(const std::uint8_t *blob, std::uint
 
 template <jit_measurement_policy Measurement>
 jit_trace_location jit_runtime<Measurement>::lookup_cached_trace(block_index_t block_index,
-                                                                 wasm_pc_t pc) {
+                                                                 [[maybe_unused]] wasm_pc_t pc) {
   assert(pc != jit_invalid_pc);
   if constexpr (!std::is_void_v<Measurement>) {
     measurements.lookup_called();

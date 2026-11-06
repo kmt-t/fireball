@@ -190,7 +190,7 @@ void build_branch_prefix(const stencil_view &stencil, const std::uint8_t *stenci
                          branch_prefix_table &prefix) {
   assert(stencil.branch_range_valid() && stencil.branch_count + 1 <= prefix.size());
   prefix[0] = 0;
-  std::size_t previous_end = 0;
+  [[maybe_unused]] std::size_t previous_end = 0;
   for (std::size_t index = 0; index < stencil.branch_count; ++index) {
     const auto branch = stencil.branch_fixup(index);
     assert(branch.instruction_offset >= previous_end && branch.instruction_offset <= stencil.size &&
@@ -258,7 +258,7 @@ static_assert(kMaxBodyBytes <= std::numeric_limits<std::int32_t>::max() / 2);
 
 // Writes the rel32 displacement of the field at displacement_offset. The caller has
 // checked rel32_fits() and that the field lies inside code_size.
-void write_rel32(std::uint8_t *code, std::size_t code_size, std::size_t displacement_offset,
+void write_rel32(std::uint8_t *code, [[maybe_unused]] std::size_t code_size, std::size_t displacement_offset,
                  std::size_t next_offset) {
   assert(displacement_offset <= code_size &&
          sizeof(std::int32_t) <= code_size - displacement_offset);
@@ -398,7 +398,7 @@ struct trace_builder {
     operations[operation_count++] = stencil;
   }
 
-  void append_patched(stencil_view stencil, std::uint64_t value, std::uint8_t width) {
+  void append_patched(stencil_view stencil, std::uint64_t value, [[maybe_unused]] std::uint8_t width) {
     assert(stencil.instruction_slot_width == 0 && stencil.patch_slot_width == width);
     append_node(stencil);
     patch_values[operation_count - 1] = value;
@@ -406,7 +406,7 @@ struct trace_builder {
 
   void append_local(stencil_view stencil, std::uint32_t byte_offset,
                     local_memory_operation operation, std::uint64_t patch_value = 0,
-                    std::uint8_t patch_width = 0) {
+                    [[maybe_unused]] std::uint8_t patch_width = 0) {
     std::array<std::uint8_t, kMaxLocalInstructionBytes> encoded{};
     encode_local_memory_instruction(operation, byte_offset, stencil.instruction_slot_width,
                                     encoded);
@@ -567,7 +567,7 @@ struct trace_builder {
       if (stencil.image_start == nullptr) {
         return false;
       }
-      const auto *stencil_code = stencil.image_start + stencil.code_offset;
+      [[maybe_unused]] const auto *stencil_code = stencil.image_start + stencil.code_offset;
       std::size_t operation_size = 0;
       if (!expand_operation(index, operation_size)) {
         return false;
@@ -676,7 +676,7 @@ struct trace_builder {
         const auto target_offset = map_stencil_offset(branch.target_offset, stencil, branch_prefix);
         const auto linked_source = map_linked_offset(source_offset, next_slot, downstream_size);
         const auto linked_target = map_linked_offset(target_offset, next_slot, downstream_size);
-        const auto instruction_size = widened_branch_size(stencil_code, branch);
+        [[maybe_unused]] const auto instruction_size = widened_branch_size(stencil_code, branch);
         const auto opcode = stencil_code[branch.instruction_offset];
         const auto displacement_offset =
             branch.instruction_size == 2 ? (opcode == 0xeb ? 1u : 2u) : (opcode == 0xe9 ? 1u : 2u);
@@ -812,7 +812,7 @@ struct stack_model {
 
   /** @brief 先頭の値の幅が width であることを確かめる。空の模型では入口語が足りることを確かめる。
    */
-  void top_is(std::uint8_t width) const {
+  void top_is([[maybe_unused]] std::uint8_t width) const {
     if (value_count == 0) {
       // WASM validation bounds every pop by the block's entry stack, so the loader's entry words
       // cover the operand. A shortfall means the entry words are wrong.
@@ -948,14 +948,14 @@ stencil_view wide_binary_stencil(int op) {
 }
 
 void local_layout_entry(const frame_word_offset_t *offsets, const std::uint8_t *types,
-                        local_count_t count, local_count_t total_words, int index,
+                        [[maybe_unused]] local_count_t count, [[maybe_unused]] local_count_t total_words, int index,
                         code_offset_t &offset_bytes, operand_words_t &width, std::uint8_t &type) {
   // The loader fixes the local indexes, the value types and the frame layout before compilation.
   assert(index >= 0 && static_cast<std::uint32_t>(index) < count);
   assert(offsets != nullptr && types != nullptr);
   const auto offset = offsets[index];
   const auto local_type = types[index];
-  const bool narrow = local_type == kWasmI32 || local_type == kWasmF32;
+  [[maybe_unused]] const bool narrow = local_type == kWasmI32 || local_type == kWasmF32;
   const bool wide = local_type == kWasmI64 || local_type == kWasmF64;
   const auto size = wide ? 2u : 1u;
   assert(narrow || wide);
@@ -1120,7 +1120,7 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
   for (std::uint32_t index = 0; index < instruction_count;) {
     const auto &instruction = instructions[index];
     const auto op = static_cast<int>(instruction.opcode);
-    const bool has_operand = instruction.has_operand != 0;
+    [[maybe_unused]] const bool has_operand = instruction.has_operand != 0;
 
     if (op == 0x02 || op == 0x03 || op == 0x05 || op == 0x0B) {
       ++index;

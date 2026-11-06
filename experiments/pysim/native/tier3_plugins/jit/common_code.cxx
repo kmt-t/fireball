@@ -22,7 +22,7 @@ constexpr std::uint32_t chain_offset = FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_O
 constexpr std::uint32_t chain_bytes = FB_CONF_JIT_TRACE_COMMON_CHAIN_DISPATCH_BYTES;
 constexpr std::uint32_t header_bytes = FB_CONF_JIT_X64_TRACE_HEADER_BYTES;
 constexpr std::uint32_t body_offset = header_bytes;
-constexpr std::uint32_t trace_blob_overhead_bytes =
+[[maybe_unused]] constexpr std::uint32_t trace_blob_overhead_bytes =
     kTraceBoundaryMetadataBytes + alignof(std::uintptr_t) - 1;
 static_assert(sizeof(jit_trace_header) == header_bytes);
 static_assert(offsetof(jit_trace_header, const_rel_offset) == 28);

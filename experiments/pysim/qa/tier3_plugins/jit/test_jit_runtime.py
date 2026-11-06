@@ -1723,15 +1723,6 @@ def test_runtime_profile_counters_are_disabled_by_default_without_changing_resul
     assert not any(name.startswith("stat_") for name in ProductRuntimeEngine.__slots__)
 
 
-def test_jit_basic_block_extension_data_is_null_when_counters_are_not_built():
-    """The module view exposes block counters only in the counter build."""
-    module = parse_standalone(wat_to_wasm('(module (func (export "f") (result i32) i32.const 1))'))
-    manager = JITRuntimeManager()
-    manager.register_module(module)
-
-    assert bool(manager._execution._module_view.block_execution_counts) is False
-
-
 def test_native_interpreter_with_jit_runtime_matches_interpreter_only_execution():
     """RuntimeEngine composes the C++ interpreter with native JIT compilation."""
     wat = """
@@ -3926,7 +3917,8 @@ def test_jitr_branch_terminator_returns_through_interpreter_cps():
     assert source.chain_next is None
     assert _qa_trace_counted_call(engine, manager, Interpreter(module), 0, [10]) == [30]
     assert _qa_trace_counted_call(engine, manager, Interpreter(module), 0, [-5]) == [0]
-    assert source.exec_count == 0
+    # Two calls each run the source body up to br_if, and each execution counts once (TEST-JITR-76).
+    assert source.exec_count == 2
     assert engine.stat_jit_invocations >= 1
     assert engine.stat_native_control_handlers > 0
     assert engine.stat_trace_exits_to_interp > 0
@@ -4228,6 +4220,42 @@ def test_jitr_123_discarded_trace_restores_the_card_marker():
     assert traced[0].jit_cache_reference < 0xFE, "a resident trace keeps its reference"
     manager.flush_all()
     assert traced[0].jit_cache_reference == _NO_TRACE_UNOBSERVED
+
+
+_CHAIN_COUNT_WAT = (
+    '(module (func (export "f") (result i32) '
+    "(block i32.const 1 i32.const 2 i32.add drop) "
+    "(block i32.const 3 i32.const 4 i32.add drop) i32.const 7))"
+)
+
+
+@pytest.mark.parametrize("collect_stats", (False, True))
+def test_jitr_77_chained_successor_body_is_counted_once_per_run(collect_stats):
+    """TEST-JITR-77: a chain run counts the head body and its successor body once each.
+
+    Block 0 is linked to block 1 by the install. One run through the QA counting dispatcher executes
+    both bodies, so both counters rise by one. Without the counter region both counters stay zero.
+    """
+    module = parse_standalone(wat_to_wasm(_CHAIN_COUNT_WAT))
+    engine = make_runtime_engine(collect_runtime_stats=collect_stats)
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    first, second = instruction_blocks(module)[0], instruction_blocks(module)[1]
+    for block in (second, first):
+        trace = compile_module_block(TraceCompiler(), module, block)
+        assert trace is not None
+        inserted = manager.cache.insert(trace)
+        assert inserted
+    head = manager.cache.find_trace(first.head_pc)
+    successor = manager.cache.find_trace(second.head_pc)
+    assert head.header.chain_target_addr != 0
+    head_before, successor_before = head.exec_count, successor.exec_count
+    interpreter = Interpreter(module)
+    function_index = module.export_func_index("f")
+    assert _qa_trace_counted_call(engine, manager, interpreter, function_index, []) == [7]
+    step = 1 if collect_stats else 0
+    assert head.exec_count == head_before + step
+    assert successor.exec_count == successor_before + step
 
 
 _CHAIN_EXIT_WAT = (

@@ -137,7 +137,6 @@ typedef struct fireball_wasm_module_execution_view_native {
   fireball_wasm_block_execution_view_native *blocks;
   block_index_t block_count;
   uint16_t reserved3;
-  uint32_t *block_execution_counts;
 } fireball_wasm_module_execution_view_native;
 
 typedef struct fireball_call_frame_native {
@@ -337,17 +336,15 @@ static_assert(offsetof(wasm_block_execution_view_native, interpreter_annotation_
 static_assert(offsetof(wasm_block_execution_view_native, next_block_index) == 28);
 static_assert(offsetof(wasm_block_execution_view_native, loops_to_block_index) == 30);
 #if FB_NATIVE_POINTER_BYTES == 8
-static_assert(sizeof(wasm_module_execution_view_native) == 104);
+static_assert(sizeof(wasm_module_execution_view_native) == 96);
 static_assert(offsetof(wasm_module_execution_view_native, globals) == 56);
 static_assert(offsetof(wasm_module_execution_view_native, global_widths) == 64);
 static_assert(offsetof(wasm_module_execution_view_native, global_count) == 72);
-static_assert(offsetof(wasm_module_execution_view_native, block_execution_counts) == 96);
 #else
-static_assert(sizeof(wasm_module_execution_view_native) == 60);
+static_assert(sizeof(wasm_module_execution_view_native) == 56);
 static_assert(offsetof(wasm_module_execution_view_native, globals) == 32);
 static_assert(offsetof(wasm_module_execution_view_native, global_widths) == 36);
 static_assert(offsetof(wasm_module_execution_view_native, global_count) == 40);
-static_assert(offsetof(wasm_module_execution_view_native, block_execution_counts) == 56);
 #endif
 static_assert(sizeof(value_stack_native) == 520);
 static_assert(offsetof(value_stack_native, values) == 0);

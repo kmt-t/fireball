@@ -35,6 +35,7 @@ def make_runtime_engine(
     """
 
     manager = JITRuntimeManager(code_lengths=code_lengths, retire_observer=retire_observer)
+    manager.enable_body_counters(collect_runtime_stats)
     return RuntimeStatsEngine(
         jit_runtime=manager,
         debug=debug,

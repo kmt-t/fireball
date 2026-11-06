@@ -112,6 +112,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
     """QA-only views of cache and card state; the product adapter is opaque."""
 
     __slots__ = (
+        "_body_counters",
         "_card_shift",
         "_cards",
         "_code_bytes",
@@ -155,6 +156,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         # The product runtime is created when a module is registered; it has no earlier state.
         self.module: Module | None = None
         self._native: native_abi.NativeRuntimeStorage | None = None
+        self._body_counters = False
         self._pointer: int | None = None
         self._module_owner: NativeInterpreter | None = None
         self._execution: NativeModuleExecution | None = None
@@ -218,6 +220,7 @@ class JITRuntimeManager(NativeJITRuntimeManager):
             ctypes.addressof(self._execution._module_view), self.module_id
         )
         self._pointer = self._native.pointer
+        native_abi.RUNTIME_ENABLE_BODY_COUNTERS(self._pointer, 1 if self._body_counters else 0)
         self.cache = JitRuntimeBoundary.borrow(self._native, self._retire_observer)
         self.cache.metadata_provider = self._describe_trace
         self._native_dispatch_cache_key = None
@@ -452,6 +455,16 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         assert result >= 0
         self._check()
         return result
+
+    def enable_body_counters(self, enabled: bool) -> None:
+        """Request the per-block trace-body counters (QA counting configuration only).
+
+        The counters are attached when the module is registered, so the request is kept here and
+        applied at that point.
+        """
+        self._body_counters = enabled
+        if self._native is not None:
+            native_abi.RUNTIME_ENABLE_BODY_COUNTERS(self._native.pointer, 1 if enabled else 0)
 
     def flush_all(self) -> None:
         self.cache.flush_all()

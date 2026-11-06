@@ -128,7 +128,7 @@ static int build_dispatch_table(qa_jit_runtime *runtime, fb_native_trace_descrip
     }
     assert(output != nullptr && block != nullptr && runtime->trace_body_address(selected) != 0 &&
            header->blob_bytes > 0);
-    auto *executions = static_cast<std::uint32_t *>(block->extension_data);
+    auto *executions = runtime->measurements.body_counter(header->block_index);
     const auto *next = runtime->chain_target_header(*header);
     const auto next_pc = next == nullptr ? fireball::jit_invalid_pc : next->head_pc;
     const auto words = header->chain_words;
@@ -501,8 +501,18 @@ fb_qa_runtime_provider(qa_jit_runtime *runtime) {
   return &runtime->provider;
 }
 
+extern "C" FB_PYSIM_ABI_EXPORT std::uintptr_t fb_qa_body_counter_address(qa_jit_runtime *runtime,
+                                                                     std::uint32_t block_index) {
+  return reinterpret_cast<std::uintptr_t>(runtime->measurements.body_counter(block_index));
+}
+
+extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_enable_body_counters(qa_jit_runtime *runtime,
+                                                                  std::uint32_t enabled) {
+  runtime->measurements.body_counters_enabled = enabled != 0;
+}
+
 extern "C" FB_PYSIM_ABI_EXPORT void fb_jit_runtime_reset_counts(qa_jit_runtime *runtime) {
-  runtime->measurements.reset_trace_counts(*runtime);
+  runtime->measurements.reset_trace_counts();
 }
 
 extern "C" FB_PYSIM_ABI_EXPORT void
@@ -629,8 +639,7 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_resident_record(const qa_jit_runtime *r
       }
       if (index-- == 0) {
         const auto *trace = runtime->trace_header(resident_entry);
-        const auto entries = runtime->measurements.install_entries[trace->block_index];
-        *output = {bank_id, 0, resident_entry.head_pc, static_cast<std::uint32_t>(entries)};
+        *output = {bank_id, 0, resident_entry.head_pc, runtime->measurements.body_count(trace->block_index)};
         return 1;
       }
     }

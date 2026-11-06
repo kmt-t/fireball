@@ -193,7 +193,6 @@ class _NativeWasmBlock(ctypes.Structure):
         ("frame_depth", ctypes.c_uint8),
         ("code", _NativeByteView),
         ("locals", _NativeLocalLayout),
-        ("extension_data", ctypes.c_void_p),
         ("block_index", ctypes.c_uint16),
         ("next_block_index", ctypes.c_uint16),
         ("loops_to_block_index", ctypes.c_uint16),
@@ -208,13 +207,12 @@ assert _NativeLocalLayout.count.offset == 32
 assert ctypes.sizeof(_NativeLocalLayout) == 40
 assert _NativeWasmBlock.code.offset == 24
 assert _NativeWasmBlock.locals.offset == 40
-assert _NativeWasmBlock.extension_data.offset == 80
-assert _NativeWasmBlock.block_index.offset == 88
-assert _NativeWasmBlock.interpreter_annotations.offset == 96
-assert _NativeWasmBlock.interpreter_annotation_byte_offset.offset == 112
-assert _NativeWasmBlock.entry_stack_words.offset == 116
-assert _NativeWasmBlock.global_widths.offset == 120
-assert ctypes.sizeof(_NativeWasmBlock) == 136
+assert _NativeWasmBlock.block_index.offset == 80
+assert _NativeWasmBlock.interpreter_annotations.offset == 88
+assert _NativeWasmBlock.interpreter_annotation_byte_offset.offset == 104
+assert _NativeWasmBlock.entry_stack_words.offset == 108
+assert _NativeWasmBlock.global_widths.offset == 112
+assert ctypes.sizeof(_NativeWasmBlock) == 128
 
 
 RUNTIME_SIZE = _NATIVE_LIBRARY.fb_jit_runtime_size
@@ -328,6 +326,12 @@ RUNTIME_SNAPSHOT.argtypes = (ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32)
 RUNTIME_SNAPSHOT.restype = ctypes.c_int
 
 
+RUNTIME_ENABLE_BODY_COUNTERS = _NATIVE_LIBRARY.fb_qa_enable_body_counters
+RUNTIME_ENABLE_BODY_COUNTERS.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+RUNTIME_ENABLE_BODY_COUNTERS.restype = None
+RUNTIME_BODY_COUNTER_ADDRESS = _NATIVE_LIBRARY.fb_qa_body_counter_address
+RUNTIME_BODY_COUNTER_ADDRESS.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+RUNTIME_BODY_COUNTER_ADDRESS.restype = ctypes.c_size_t
 RUNTIME_RESET_COUNTS = _NATIVE_LIBRARY.fb_jit_runtime_reset_counts
 RUNTIME_RESET_COUNTS.argtypes = (ctypes.c_void_p,)
 RUNTIME_RESET_COUNTS.restype = None
@@ -775,7 +779,6 @@ def marshal_block(block: WasmBlock) -> _NativeWasmBlock:
             block.locals.local_count,
             block.locals.total_words,
         ),
-        0,
         block.block_index,
         0xFFFF if block.next_block_index is None else block.next_block_index,
         0xFFFF if block.loops_to_block_index is None else block.loops_to_block_index,

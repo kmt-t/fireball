@@ -449,22 +449,31 @@ class JITTrace:
         self._native.chain_next_pc = 0xFFFF_FFFF if value is None else value
 
     @property
-    def exec_count(self) -> int:
-        """Runtime-dispatched body executions in the current measurement interval."""
+    def exec_count_address(self) -> int:
+        """Borrow the block's body counter of the QA counting build; 0 when counters are off."""
 
-        return 0 if not self._native.exec_count else self._native.exec_count.contents.value
+        if self._native_owner is None:
+            return 0
+        return int(
+            native_abi.RUNTIME_BODY_COUNTER_ADDRESS(
+                self._native_owner.pointer, self._header._native.block_index
+            )
+            or 0
+        )
+
+    @property
+    def exec_count(self) -> int:
+        """Runtime-dispatched body executions of this block in the current measurement interval."""
+
+        address = self.exec_count_address
+        return 0 if not address else ctypes.c_uint32.from_address(address).value
 
     @exec_count.setter
     def exec_count(self, value: int) -> None:
         assert 0 <= value <= 0xFFFF_FFFF
-        if self._native.exec_count:
-            self._native.exec_count.contents.value = value
-
-    @property
-    def exec_count_address(self) -> int:
-        """Borrow the trace-owned counter without copying it into a snapshot."""
-
-        return ctypes.addressof(self._native.exec_count.contents) if self._native.exec_count else 0
+        address = self.exec_count_address
+        if address:
+            ctypes.c_uint32.from_address(address).value = value
 
     @property
     def fn(self) -> NativeTraceFn | None:

@@ -80,6 +80,18 @@ struct jit_measurements {
   std::uint64_t chain_runtime_unclassified = 0;
   std::uint64_t chain_runtime_unobserved_trace_exits = 0;
   block_index_t pending_runtime_source_block = std::numeric_limits<block_index_t>::max();
+  // Trace-body executions per block, counted along each chain by the QA dispatcher. The counter is
+  // present only when the counter region is enabled (QA counting configuration with stats).
+  bool body_counters_enabled = false;
+  std::array<std::uint32_t, per_block_capacity> block_body_executions{};
+  std::uint32_t *body_counter(block_index_t index) {
+    assert(index < per_block_capacity);
+    return body_counters_enabled ? &block_body_executions[index] : nullptr;
+  }
+  std::uint32_t body_count(block_index_t index) const {
+    assert(index < per_block_capacity);
+    return body_counters_enabled ? block_body_executions[index] : 0;
+  }
 
   bool write_measurements(const printk_writer &writer) const {
     return printk_u64(writer, "jit.evictions", evictions) &&
@@ -426,16 +438,6 @@ struct jit_measurements {
     compilation_order.fill(no_pc);
     compilation_count = 0;
   }
-  template <class Runtime> void reset_trace_counts(Runtime &runtime) {
-    const auto count = runtime.module_view->block_count;
-    for (std::uint32_t i = 0; i < count; ++i) {
-      void *extension = runtime.module_view->block_execution_counts == nullptr
-                            ? nullptr
-                            : runtime.module_view->block_execution_counts + i;
-      if (extension != nullptr) {
-        *static_cast<std::uint32_t *>(extension) = 0;
-      }
-    }
-  }
+  void reset_trace_counts() { block_body_executions.fill(0); }
 };
 } // namespace fireball

@@ -139,7 +139,6 @@ class ModuleExecutionViewNative(ctypes.Structure):
         ("blocks", ctypes.c_void_p),
         ("block_count", ctypes.c_uint16),
         ("reserved3", ctypes.c_uint16),
-        ("block_execution_counts", ctypes.c_void_p),
     )
 
 
@@ -610,7 +609,7 @@ assert FunctionExecutionViewNative.entry_block_index.offset == 60
 assert FunctionExecutionViewNative.max_operand_stack_words.offset == 65
 assert ctypes.sizeof(FunctionTypeExecutionViewNative) == 16
 assert ctypes.sizeof(TableExecutionViewNative) == 16
-assert ctypes.sizeof(ModuleExecutionViewNative) == 104
+assert ctypes.sizeof(ModuleExecutionViewNative) == 96
 assert ctypes.sizeof(BasicBlock) == 32
 assert BasicBlock.frame_depth.offset == 16
 assert BasicBlock.jit_cache_reference.offset == 17
@@ -622,7 +621,6 @@ assert BasicBlock._loops_to_block_index.offset == 30
 assert ModuleExecutionViewNative.globals.offset == 56
 assert ModuleExecutionViewNative.global_widths.offset == 64
 assert ModuleExecutionViewNative.global_count.offset == 72
-assert ModuleExecutionViewNative.block_execution_counts.offset == 96
 assert CallFrameNative.boundary_next_pc.offset == 28
 assert CallFrameNative.boundary_loops_to.offset == 32
 assert CallFrameNative.return_block_index.offset == 36

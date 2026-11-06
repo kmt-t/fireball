@@ -93,7 +93,7 @@ JIT拡張はInterpreterへ接続する選択可能コンポーネントである
 - **chainメタデータ**: `chain_next_pc`は接続先PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpする常駐targetを保持する。直線後続だけを接続し、分岐opcodeからのchain targetは登録しない。`chain_body_count`と`chain_words`は、連結の列を根から終端まで一度ずつ辿って求める。退役時は被chain逆引き表でリンクを解除する。接続条件は [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) §7.4に示す。
 - **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである。Interpreterが解決した基本ブロックindexと`UnifiedPC`を各8バイトレコードに保持する。Runtimeは単一moduleに束縛されるため、レコードへ`module_id`を複製しない。容量は`JIT_HISTORY_CAPACITY`以下で指定する。待ち列容量は`JIT_COMPILE_QUEUE_CAPACITY`以下で指定する。判定点で記録し、Interpreterの実行境界（yield、Runtime API境界、trap、関数完了、関数復帰の閾値超過）で履歴順に分析する。JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}`
 
-トレース実行回数と退役記録はQA専用の計測構成で採取する。計測の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は計数状態、時計、計測用の後続走査、および退役通知を持たない。履歴分析はネイティブ実行境界で完了する。
+トレース実行回数と退役記録はQA専用の計測構成で採取する。実行回数は、ブロックごとに、trace body を実行するたび 1 回ずつ数え、計数の領域は統計の収集が有効なQA計測構成だけに置く。{Challenge_JITCacheEfficiency} が求める trace ごとの実行回数の記録への対応は、この計数用ビルドの計数である。製品構成は実行回数の領域を持たない。計測の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は計数状態、時計、計測用の後続走査、および退役通知を持たない。履歴分析はネイティブ実行境界で完了する。
 
 ### 3.2 内部ブロック図
 ```mermaid

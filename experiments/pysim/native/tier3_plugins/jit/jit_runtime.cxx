@@ -93,9 +93,6 @@ jit_runtime<Measurement>::make_compiler_block_view(block_index_t index,
   const auto &b = module_view->blocks[index];
   assert(b.function_index < module_view->function_count);
   const auto &f = module_view->functions[b.function_index];
-  auto *execution_count = module_view->block_execution_counts == nullptr
-                              ? nullptr
-                              : module_view->block_execution_counts + index;
   output = {b.head_pc,
             b.head_pc - f.code_pc_offset,
             b.byte_span,
@@ -108,7 +105,6 @@ jit_runtime<Measurement>::make_compiler_block_view(block_index_t index,
              {f.local_types, f.local_count},
              f.local_count,
              f.local_slot_count},
-            execution_count,
             index,
             b.next_block_index,
             b.loops_to_block_index,

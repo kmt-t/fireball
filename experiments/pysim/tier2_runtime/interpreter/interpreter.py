@@ -710,7 +710,6 @@ class NativeModuleExecution:
     """Own immutable module descriptors and borrow stable table buffers for C++."""
 
     __slots__ = (
-        "_block_execution_counts",
         "_function_views",
         "_function_views_address",
         "_module_view",
@@ -797,7 +796,6 @@ class NativeModuleExecution:
             descriptor = self._table_views[table_index]
             descriptor.function_indices = table.native_address
             descriptor.size = len(table)
-        self._block_execution_counts = None
         self._module_view = ModuleExecutionViewNative(
             functions=self._function_views_address,
             function_count=function_count,
@@ -812,7 +810,6 @@ class NativeModuleExecution:
             global_count=global_count,
             blocks=module.blocks.native_address,
             block_count=len(module.blocks),
-            block_execution_counts=0,
         )
         module_view_address = ctypes.addressof(self._module_view)
         for function_index in range(function_count):
@@ -839,17 +836,6 @@ class NativeModuleExecution:
         return self._function_views_address + func_index * ctypes.sizeof(
             FunctionExecutionViewNative
         )
-
-    def enable_block_execution_counters(self) -> None:
-        """Attach one bounded counter to each shared module block view."""
-
-        if self._block_execution_counts is None:
-            self._block_execution_counts = (ctypes.c_uint32 * len(self.module.blocks))()
-            self._module_view.block_execution_counts = (
-                0
-                if len(self.module.blocks) == 0
-                else ctypes.addressof(self._block_execution_counts)
-            )
 
 
 # The interpreter call's resumable continuation: (next_ip, frame, local_base).

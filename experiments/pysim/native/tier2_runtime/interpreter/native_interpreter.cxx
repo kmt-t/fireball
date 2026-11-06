@@ -1339,16 +1339,13 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
       assert(context.ip < context.code_size);
       clear_cps_exit(context);
       const auto interpreter_ip = context.ip;
-      if (executed_bodies == 0 && (context.runtime_flags & kPendingBlockHeadFlag) != 0) {
-        block_index = context.current_block_index;
-        assert(frame.function_view->module_view != nullptr &&
-               block_index < frame.function_view->module_view->block_count);
-      }
+      // No trace ran here, so block_index and ip still hold the values of the block head judgment.
+      assert(executed_bodies != 0 || !block_head ||
+             (frame.function_view->module_view != nullptr &&
+              block_index < frame.function_view->module_view->block_count));
       [[maybe_unused]] bool observed_interpreter_body = false;
       if constexpr (WithExtension || WithJit) {
-        observed_interpreter_body = executed_bodies == 0 &&
-                                    (context.runtime_flags & kPendingBlockHeadFlag) != 0 &&
-                                    interpreter_ip < context.code_size &&
+        observed_interpreter_body = block_head && executed_bodies == 0 &&
                                     opcode_is_block_body(context.code[interpreter_ip]);
       }
       const std::uint8_t *rel = dispatch_rel;

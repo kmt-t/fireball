@@ -286,7 +286,7 @@ Interpreter dispatcherは最初のJIT traceを通常の4引数C ABIで呼び出�
 flowchart TD
     Start(["HOT trace request"]) --> Scan["C++ x64 compiler scans WASM trace"]
     Scan --> Supported{"All instructions supported?"}
-    Supported -- "No" --> Fallback["Keep interpreter execution"]
+    Supported -- "No" --> Fallback["Exclude candidate and release its trackable bit; keep interpreter execution"]
     Supported -- "Yes" --> Emit["Emit x64 header and body"]
     Emit --> Register["Runtime registers body and resolves chain targets"]
     Register --> Protect["x64 executable buffer commits code"]
@@ -297,7 +297,7 @@ flowchart TD
 <!-- traceability: {JIT_LazyChaining} {JIT_ReverseCompilationOrder} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} -->
 ```mermaid
 stateDiagram-v2
-    state "C++ dispatcher lookup" as Lookup
+    state "Block record check and resident lookup" as Lookup
     state "x64 trace body" as Trace
     state "C++ Interpreter handler" as Handler
     state "Common-code chain dispatcher" as Chain
@@ -329,13 +329,14 @@ sequenceDiagram
     participant H as C++ Interpreter handler
     participant O as COOS
 
-    I->>C: lookup current BasicBlock trace
-    alt Resident trace
+    I->>I: read current BasicBlock jit_cache_reference
+    alt Resident trace reference
+        I->>C: lookup trace by block index and PC
         C-->>I: trace entry
         I->>T: enter trace
         T->>D: transfer for eligible straight-line successor
         D->>T: tail-jump to target body
-    else No resident trace
+    else No trace reference
         I->>H: execute handler at current PC
         H-->>I: update shared state and branch count
     end

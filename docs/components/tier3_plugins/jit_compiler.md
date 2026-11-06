@@ -115,7 +115,7 @@ Loaderは構造化制御フローを静的metadataへ解決する。trace compil
 
 `if`、`br`、`br_if`は構文デリミタではない。traceはそれらのopcode直前で終了し、opcodeを実行しない。trace終了位置のopcodeが`if`、`br`、`br_if`、`call`、`call_indirect`のいずれかなら、境界metadataの`interpreter_terminator_pending`を1にする。Interpreterはこの値を読み、終了位置のbyteを比べ直さない。C++ Interpreter dispatcherがLoader metadataと未実行opcodeからCPS handlerを選び、条件評価、stack復元、PC、block indexを更新する。分岐先traceが常駐していてもnative chainは行わない。
 
-trace chainは、直線後続の常駐traceへ共通コード領域のchain dispatcherからtail-jumpする経路である。連結の可否は制御の形（直線後続、後方辺、loop、call CPS）だけで決め、スタックの語数では決めない。連結先は入口の値を消費してよく、sp は連結先の末尾で`execution_context.stack_pointer`へ書き戻される。分岐命令はchain接続点にせず、分岐のハンドラがJIT入口を判定し、入口のときだけCPS exitを出す。取得済みLOOP後方辺は共有`loop_jump_count`へ一度だけ加算し、yieldしきい値とstatusの契約は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)に従う。
+trace chainは、直線後続の常駐traceへ共通コード領域のchain dispatcherからtail-jumpする経路である。連結の可否は制御の形（直線後続、後方辺、loop）だけで決め、スタックの語数では決めない。call CPS で終わるtraceは連結しない（{JIT_LazyChaining}: C++ Interpreter handler実行後のdispatcher遷移はchainに含めない）。連結先は入口の値を消費してよく、sp は連結先の末尾で`execution_context.stack_pointer`へ書き戻される。分岐命令はchain接続点にせず、分岐のハンドラがJIT入口を判定し、入口のときだけCPS exitを出す。取得済みLOOP後方辺は共有`loop_jump_count`へ一度だけ加算し、yieldしきい値とstatusの契約は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)に従う。
 
 未接続chain targetでは、終端dispatcherが境界metadataと再開PCをInterpreterへ渡す。C++ handler実行後にC++ dispatcherが次traceを検索・起動する遷移はchainではない。共通chain dispatcherは、生成コードが確定したtargetへの転送を担う。
 

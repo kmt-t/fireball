@@ -4078,11 +4078,11 @@ def _interpreter_block_counts(manager) -> dict[str, int]:
 
 
 @pytest.mark.parametrize("trackable_all", (True, False))
-def test_jitr_118_observed_heads_split_into_trackable_and_untracked(trackable_all):
-    """TEST-JITR-118: each interpreted block head is counted once as trackable or untracked.
+def test_jitr_118_only_trackable_heads_are_observed(trackable_all):
+    """TEST-JITR-118: the Interpreter observes a block head only when its card is trackable.
 
-    The two counts add up to the interpreted-head count. With every card trackable, no head is
-    untracked; with no card trackable, no head is trackable.
+    With every card trackable, each interpreted head is observed once. With no card trackable,
+    no head is observed (its record is UNOBSERVED, so the Interpreter makes no observation call).
     """
     # Every block scores at least the candidate threshold and spans at least the minimum trace
     # bytes, so the product bind makes every head trackable. The other case unmarks each head
@@ -4103,14 +4103,10 @@ def test_jitr_118_observed_heads_split_into_trackable_and_untracked(trackable_al
     assert list(engine.call(interpreter, module.export_func_index("f"), []).unwrap()) == [7]
     counts = _interpreter_block_counts(manager)
     entries = counts["jit.interpreter_block_entries"]
-    trackable = counts["jit.interpreter_block_trackable"]
-    untracked = counts["jit.interpreter_block_untracked"]
-    assert entries > 0
-    assert trackable + untracked == entries
     if trackable_all:
-        assert trackable == entries and untracked == 0
+        assert entries > 0
     else:
-        assert trackable == 0 and untracked == entries
+        assert entries == 0
 
 
 _BLOCK_TRANSFER_WAT = (
@@ -4161,7 +4157,7 @@ def test_jitr_120_trackable_block_transfer_leaves_the_interpreter_and_is_observe
     interpreter = Interpreter(module)
     assert list(engine.call(interpreter, module.export_func_index("f"), []).unwrap()) == [7]
     counts = _interpreter_block_counts(manager)
-    assert counts["jit.interpreter_block_trackable"] > 0
+    assert counts["jit.interpreter_block_entries"] > 0
     assert engine.stat_interp_steps >= 6, engine.stat_interp_steps
 
 

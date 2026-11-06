@@ -1308,16 +1308,17 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
     const auto ip = context.ip;
     const auto block_head =
         (context.runtime_flags & kPendingBlockHeadFlag) != 0 && ip < context.code_size;
+    // The block record of the head is read once; the observation below reuses it.
+    std::uint8_t block_reference = FB_NATIVE_JIT_NO_TRACE_UNOBSERVED;
     if constexpr (std::is_void_v<Debugger>) {
       if constexpr (WithJit) {
         if (block_head && opcode_is_block_body(context.code[ip])) {
           // A trace reference in the block record exists only in a trackable card (lookup asserts
           // it), so the record alone decides whether a lookup can hit.
           const auto pc = frame.function_view->code_pc_offset + ip;
-          const auto reference =
-              frame.function_view->module_view->blocks[block_index].jit_cache_reference;
-          if (reference != FB_NATIVE_JIT_NO_TRACE_OBSERVED &&
-              reference != FB_NATIVE_JIT_NO_TRACE_UNOBSERVED) {
+          block_reference = frame.function_view->module_view->blocks[block_index].jit_cache_reference;
+          if (block_reference != FB_NATIVE_JIT_NO_TRACE_OBSERVED &&
+              block_reference != FB_NATIVE_JIT_NO_TRACE_UNOBSERVED) {
             executed_bodies = execute_jit_trace<CollectStats, WithExtension, ResultType>(
                 state, frame, block_index, pc, dispatch_rel);
           }
@@ -1355,7 +1356,9 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
                                        rel);
       const auto pc = frame.function_view->code_pc_offset + interpreter_ip;
       if constexpr (WithJit) {
-        if (observed_interpreter_body) {
+        // Only an OBSERVED record (a trackable head without a trace) is observed; UNOBSERVED
+        // heads are not trackable, so their observation would record nothing.
+        if (observed_interpreter_body && block_reference == FB_NATIVE_JIT_NO_TRACE_OBSERVED) {
           [[maybe_unused]] const auto observed =
               state.jit_provider->observe_block(state.jit_provider->owner, block_index, pc);
           assert(observed == 0 || observed == 1);

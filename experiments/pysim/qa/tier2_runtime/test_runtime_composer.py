@@ -305,8 +305,8 @@ if __name__ == "__main__":
 
 
 @pytest.mark.parametrize("collect_stats", (False, True))
-@pytest.mark.parametrize("trace_resident", (False, True))
-def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_stats, trace_resident):
+@pytest.mark.parametrize("record", ("unobserved", "observed", "resident"))
+def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_stats, record):
     """An opaque execution owner binds once and uses the common runtime boundary."""
     import ctypes
 
@@ -314,6 +314,7 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
     from tier2_runtime.abi import native_abi
     from tier2_runtime.interpreter.interpreter import InterpreterBindings, NativeInterpreter
+    from tier2_runtime.wasm.module import NO_TRACE_OBSERVED, NO_TRACE_UNOBSERVED
     from tier2_runtime.wasm.reader import parse_standalone
 
     # lookup returns the trace header (NULL on a miss); the entry address lives in the provider.
@@ -367,10 +368,15 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
 
         def bind_execution(self, execution):
             assert execution.module is self.module
-            if trace_resident:
-                # A resident trace reference marks the block; only such blocks reach lookup.
-                for block in execution.module.blocks:
-                    block.jit_cache_reference = 0
+            # The block records select what the Interpreter calls: a resident trace reference
+            # reaches lookup, an OBSERVED marker reaches observe, and UNOBSERVED reaches neither.
+            marker = {
+                "unobserved": NO_TRACE_UNOBSERVED,
+                "observed": NO_TRACE_OBSERVED,
+                "resident": 0,
+            }[record]
+            for block in execution.module.blocks:
+                block.jit_cache_reference = marker
             self.bindings.append(execution)
             return provider_address
 
@@ -403,11 +409,12 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     for _ in range(2):
         assert engine.call(interpreter, 0, [9]).unwrap() == [0]
     assert len(plugin.bindings) == 1
-    if trace_resident:
-        assert callbacks[0] >= 8
+    if record == "resident":
+        assert callbacks[0] >= 8 and callbacks[1] == 0
+    elif record == "observed":
+        assert callbacks[0] == 0 and callbacks[1] >= 8
     else:
-        assert callbacks[0] == 0
-    assert callbacks[1] >= 8
+        assert callbacks[0] == 0 and callbacks[1] == 0
     assert callbacks[2] > 0
     assert engine.stat_jit_invocations == 0
     assert (engine.stat_interp_steps > 0) == collect_stats

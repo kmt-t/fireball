@@ -1330,7 +1330,7 @@ bool check_indirect_signature(execution_context &current, code_ip_t source_ip,
  * @pre 呼出し先の局所変数領域と呼び出し階層の容量は、呼出し側で検査済みである。
  * @details 引数は呼出し側のオペランドスタック末尾から局所変数領域へ複写する。
  */
-template <bool DirectCps>
+template <bool DirectCps, bool JitEntry>
 bool push_call_frame(execution_context &current, const std::uint8_t *&instruction_ip,
                      std::uint32_t *&sp, std::uint32_t *&local_stack, const std::uint8_t *&rel,
                      const fireball_wasm_function_execution_view_native &target,
@@ -1366,11 +1366,14 @@ bool push_call_frame(execution_context &current, const std::uint8_t *&instructio
   local_stack = callee_local_base;
   current.local_base = local_stack;
   if constexpr (DirectCps) {
-    // The callee entry is a block transfer: its record decides whether the chain continues, by the
-    // same rule as continue_to_block. A head that needs the judgment leaves the chain.
-    if (block_record_needs_judgment(
-            target.module_view->blocks[target.entry_block_index].jit_cache_reference)) {
-      return block_boundary(current, 0, target.entry_block_index, rel);
+    // With a JIT connected, the callee entry is a block transfer: its record decides whether the
+    // chain continues, by the same rule as continue_to_block. Without a JIT the records are never
+    // read (jit_abi.md: only a JIT-connected dispatch reads them), so the chain continues.
+    if constexpr (JitEntry) {
+      if (block_record_needs_judgment(
+              target.module_view->blocks[target.entry_block_index].jit_cache_reference)) {
+        return block_boundary(current, 0, target.entry_block_index, rel);
+      }
     }
     rel = interpreter_rel_for_block_index(callee, target.entry_block_index);
     return true;
@@ -1379,7 +1382,7 @@ bool push_call_frame(execution_context &current, const std::uint8_t *&instructio
   }
 }
 
-template <bool Indirect, bool DirectCps>
+template <bool Indirect, bool DirectCps, bool JitEntry>
 bool runtime_call(execution_context *context, const std::uint8_t *&instruction_ip,
                   std::uint32_t *&sp, std::uint32_t *&local_stack, const std::uint8_t *&rel) {
   auto &current = *context;
@@ -1429,7 +1432,7 @@ bool runtime_call(execution_context *context, const std::uint8_t *&instruction_i
     return trap(current, kTrapOperandStackCapacity, source_ip);
   }
 
-  return push_call_frame<DirectCps>(current, instruction_ip, sp, local_stack, rel, target,
+  return push_call_frame<DirectCps, JitEntry>(current, instruction_ip, sp, local_stack, rel, target,
                                     argument_base, return_ip, return_block_index);
 }
 template <auto Operation>
@@ -1783,6 +1786,14 @@ template bool runtime_call<true, true>(execution_context *context,
                                        const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
                                        std::uint32_t *&local_stack,
                                        [[maybe_unused]] const std::uint8_t *&rel);
+template bool runtime_call<false, true, true>(execution_context *context,
+                                              const std::uint8_t *&instruction_ip,
+                                              std::uint32_t *&sp, std::uint32_t *&local_stack,
+                                              [[maybe_unused]] const std::uint8_t *&rel);
+template bool runtime_call<true, true, true>(execution_context *context,
+                                             const std::uint8_t *&instruction_ip,
+                                             std::uint32_t *&sp, std::uint32_t *&local_stack,
+                                             [[maybe_unused]] const std::uint8_t *&rel);
 template bool runtime_conversion<conversion_f32_convert_i32_s>(
     execution_context *context, const std::uint8_t *&instruction_ip, std::uint32_t *&sp,
     [[maybe_unused]] std::uint32_t *&local_base, [[maybe_unused]] const std::uint8_t *&rel);

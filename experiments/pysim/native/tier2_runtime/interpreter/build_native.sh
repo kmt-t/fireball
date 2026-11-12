@@ -5,7 +5,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${script_dir}"
 project_root="$(cd "${script_dir}/../../../../.." && pwd)"
 uv_python="${project_root}/.venv/bin/python"
-native_build_dir="${TMPDIR:-/tmp}/fireball-pysim-native"
+native_build_dir="${project_root}/experiments/pysim/build/native"
 mkdir -p "${native_build_dir}"
 source_cpp="${script_dir}/native_interpreter.cxx"
 native_sources=("${source_cpp}" "${script_dir}/native_wasm_operations.cxx")

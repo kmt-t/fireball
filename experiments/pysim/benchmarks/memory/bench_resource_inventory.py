@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import platform
 import subprocess
 import sys
@@ -205,8 +204,8 @@ def compiler_stack_frames() -> dict[str, int]:
                     "-fstack-usage",
                     "-I",
                     str(
-                        Path(os.environ.get("TMPDIR", "/tmp"))
-                        / "fireball-pysim-native/jit-stencils"
+                        Path(__file__).resolve().parents[2]
+                        / "build/native/jit-stencils"
                     ),
                     *(f"-D{name}={value}" for name, value in definitions.items()),
                     "-c",

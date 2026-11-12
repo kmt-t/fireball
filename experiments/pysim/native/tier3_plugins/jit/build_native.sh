@@ -28,7 +28,7 @@ if [[ -n "${output_override}" || -n "${aging_units_override}" || -n "${aging_sca
     # Variant libraries are QA measurement builds; the product library is never replaced.
     [[ "${qa_build}" == "1" && -n "${output_override}" ]] || { echo "variant builds need --qa and --output" >&2; exit 2; }
 fi
-NATIVE_BUILD_DIR="${TMPDIR:-/tmp}/fireball-pysim-native"
+NATIVE_BUILD_DIR="${project_root}/experiments/pysim/build/native"
 mkdir -p "${NATIVE_BUILD_DIR}"
 stencil_output_dir="${NATIVE_BUILD_DIR}/jit-stencils"
 native_source_dir="${script_dir}"

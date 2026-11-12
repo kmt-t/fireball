@@ -25,7 +25,7 @@ def generate(args: argparse.Namespace) -> None:
     header = (output_dir / args.header).resolve()
     header.parent.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory(prefix="jit-stencil-") as temp_name:
+    with tempfile.TemporaryDirectory(prefix="jit-stencil-", dir=output_dir) as temp_name:
         directory = Path(temp_name)
         abi = compile_abi_probe(clangxx, args.target, directory)
         object_path = directory / f"{source.stem}.o"

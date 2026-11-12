@@ -362,8 +362,8 @@ END_STACK は、VM の値スタックのポインタを変えない。一時値�
   - C++インタープリタ＋JIT経路は、拡張を接続した `NativeInterpreter.call()` から同じC++ dispatcherを実行する。
   - RuntimeEngineはSystemから要求されたscheduler境界までInterpreterを進める。C++ Interpreter dispatcherは共有実行状態を渡して任意のネイティブ実行拡張へtrace lookupを依頼する。JIT拡張は、常駐traceの参照を持つBasicBlockに対してそのtraceのヘッダを返す（戻り値の正本は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)）。Interpreter dispatcherがentryを呼び出し、trace bodyを実行する。InterpreterはJITキャッシュ状態や操作APIを所有しない。
 - **関数復帰の番兵**:
-  - JITは `return` 命令や専用RETURN sentinelを生成しない。
-  - JITトレースは `return` 直前で終了して共有状態を同期する。
+  - JITの `return` の扱いは[`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md)の関数終了の文を正本とする。
+  - JITは専用RETURN sentinelを生成しない。
   - インタープリタの return ハンドラが呼ぶRuntime APIが callee の `関数呼出し記述子` をポップする。
   - トップレベル復帰のみ専用の RETURN sentinel PC を生成し、RuntimeEngine が実行完了を判定する。
 - **Hotspot検知と JIT候補ビットマップによるバイパス (`JIT_CandidateBitmap`)**:

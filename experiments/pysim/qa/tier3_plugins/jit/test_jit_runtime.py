@@ -4317,6 +4317,52 @@ def test_jitr_130_root_entry_after_a_taken_backedge_is_a_loop_trace_end(monkeypa
     }
 
 
+_CALL_ENTRY_WAT = """
+(module
+  (func $f (param $x i32) (result i32) (i32.add (local.get $x) (i32.const 1)))
+  (func (export "main") (param $n i32) (result i32) (local $i i32) (local $acc i32)
+    (loop $l
+      (local.set $acc (i32.add (local.get $acc) (call $f (local.get $i))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br_if $l (i32.lt_s (local.get $i) (local.get $n))))
+    (local.get $acc)))
+"""
+
+
+def test_jitr_132_call_exit_from_a_trace_enters_the_callee_trace(monkeypatch):
+    """TEST-JITR-132: a call exit from a trace judges the callee entry block by its record.
+
+    The loop body is a trace whose last operation is `call $f`, and the callee's first block (the
+    whole of $f) has a resident trace. Each of the 50 calls leaves the trace through the CPS call
+    handler, and the callee entry block's record holds a trace reference, so the call must enter that
+    trace. The callee entry counter equals the number of calls. The result is sum(1..50) = 1275.
+    """
+    _route_stats_through_qa_extension(monkeypatch)
+    module = parse_standalone(wat_to_wasm(_CALL_ENTRY_WAT))
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    # The call sits in the loop head block (the back edge target), so that block is the caller trace.
+    back_edge = next(b for b in module.blocks if b.loops_to is not None)
+    loop_block = next(b for b in module.blocks if b.head_pc == back_edge.loops_to)
+    callee_pc = module.function_pc_offset(0)
+    callee_block = next(b for b in module.blocks if b.head_pc == callee_pc)
+    for block in (loop_block, callee_block):
+        trace = compile_module_block(TraceCompiler(), module, block)
+        assert trace is not None
+        inserted = manager.cache.insert(trace)
+        assert inserted
+    interpreter = Interpreter(module)
+    main_index = module.export_func_index("main")
+    assert list(engine.call(interpreter, main_index, [50]).unwrap()) == [1275]
+    counts = _runtime_chain_counts(manager, "jit.")
+    callee_index = next(i for i, b in enumerate(module.blocks) if b.head_pc == callee_pc)
+    assert counts[f"jit.block.{callee_index}.entries"] == 50, counts.get(
+        f"jit.block.{callee_index}.entries"
+    )
+    assert engine.stat_jit_invocations > 0
+
+
 _CHAIN_EXIT_WAT = (
     '(module (func (export "f") (result i32) '
     "(block i32.const 1 i32.const 2 i32.add drop) i32.const 7))"

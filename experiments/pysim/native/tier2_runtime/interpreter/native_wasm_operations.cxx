@@ -354,7 +354,7 @@ bool continue_to_block(execution_context &current, code_ip_t ip, block_index_t b
   // Only a dispatch with a connected JIT reads the record: a trace-free block that is not observed
   // stays in this flow, and any other record leaves it.
   if ((current.runtime_flags & kSingleControlStepFlag) != 0 ||
-      block.jit_cache_reference != FB_NATIVE_JIT_NO_TRACE_UNOBSERVED) {
+      block_record_needs_judgment(block.jit_cache_reference)) {
     exit_block_boundary(current);
     return false;
   }
@@ -1366,6 +1366,12 @@ bool push_call_frame(execution_context &current, const std::uint8_t *&instructio
   local_stack = callee_local_base;
   current.local_base = local_stack;
   if constexpr (DirectCps) {
+    // The callee entry is a block transfer: its record decides whether the chain continues, by the
+    // same rule as continue_to_block. A head that needs the judgment leaves the chain.
+    if (block_record_needs_judgment(
+            target.module_view->blocks[target.entry_block_index].jit_cache_reference)) {
+      return block_boundary(current, 0, target.entry_block_index, rel);
+    }
     rel = interpreter_rel_for_block_index(callee, target.entry_block_index);
     return true;
   } else {

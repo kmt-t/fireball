@@ -627,4 +627,11 @@ runtime_memory_manager_api_boundary(execution_context *context, const std::uint8
                                     [[maybe_unused]] std::uint32_t *&local_base,
                                     const std::uint8_t *&rel);
 
+/** @brief A block head whose record is not UNOBSERVED leaves the CPS chain, so the dispatch
+ * judges it (a trace reference is looked up, an OBSERVED head is observed). This rule applies to
+ * every block transfer. */
+inline bool block_record_needs_judgment(std::uint8_t reference) {
+  return reference != FB_NATIVE_JIT_NO_TRACE_UNOBSERVED;
+}
+
 } // namespace fireball::wasm_runtime

@@ -156,11 +156,19 @@ FB_STENCIL_END fb_stencil_i32_mul
 
 .macro FB_I32_SHIFT name, operation
   FB_STENCIL_BEGIN \name
+    /* The count must be in cl. On the SysV ABI cl is the REL role, which the stencil restores from
+       r10 anyway. On the Windows ABI cl is the CTX role, so it is saved in r11 and restored. */
     mov r10, FB_REL_REG
+#if defined(_WIN32)
+    mov r11, rcx
+#endif
     mov ecx, dword ptr [FB_SP_REG - 4]
     and ecx, 31
     \operation dword ptr [FB_SP_REG - 8], cl
     lea FB_SP_REG, [FB_SP_REG - 4]
+#if defined(_WIN32)
+    mov rcx, r11
+#endif
     mov FB_REL_REG, r10
   FB_STENCIL_END \name
 .endm

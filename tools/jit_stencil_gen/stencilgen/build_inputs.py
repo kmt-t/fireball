@@ -58,17 +58,29 @@ RUNTIME_API_STENCIL_OPTIMIZATION = r"""/* Resolve the API slot, prepare the nati
   FB_LOCAL_BRANCH_REL8 0x74, .Lruntime_api_abort_sync\@
   mov r10, qword ptr [rsp + 56]
   mov qword ptr [r11 + FB_CONTEXT_SP_OFFSET], r10
+#if defined(_WIN32)
+  /* The SP role is r8 on the Windows ABI, so the abort flag is kept in the frame. */
+  mov qword ptr [rsp + 48], 0
+#else
   xor r8d, r8d
+#endif
   FB_LOCAL_BRANCH_REL8 0xeb, .Lruntime_api_exit\@
 .Lruntime_api_abort_sync\@:
   mov r10, qword ptr [rsp + 32]
   mov qword ptr [r11 + FB_CONTEXT_SP_OFFSET], r10
+#if defined(_WIN32)
+  mov qword ptr [rsp + 48], 1
+#else
   mov r8d, 1
+#endif
 .Lruntime_api_exit\@:
   mov r10, qword ptr [rsp + 32]
   mov r11, qword ptr [rsp + 64]
   movzx eax, byte ptr [r11 + 2]
   lea r11, [r11 + rax + 7]
+#if defined(_WIN32)
+  mov rax, qword ptr [rsp + 48]
+#endif
   add rsp, 64
   pop FB_REL_REG
   pop FB_SP_REG
@@ -76,7 +88,11 @@ RUNTIME_API_STENCIL_OPTIMIZATION = r"""/* Resolve the API slot, prepare the nati
   pop FB_CTX_REG
   mov FB_SP_REG, r10
   mov FB_REL_REG, r11
+#if defined(_WIN32)
+  test rax, rax
+#else
   test r8d, r8d
+#endif
   FB_LOCAL_BRANCH_REL8 0x75, .Lruntime_api_abort\@
   FB_LOCAL_BRANCH_REL8 0xeb, .Lruntime_api_continue\@
 .Lruntime_api_abort\@:

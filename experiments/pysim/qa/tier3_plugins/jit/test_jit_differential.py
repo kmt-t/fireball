@@ -404,6 +404,89 @@ def _operand_overflow_wat() -> str:
 """
 
 
+def _division_before_call_wat(op: str, dividend_trap: int, divisor_trap: int) -> str:
+    """A hot loop whose division or remainder feeds a CPS call (TEST-JITR-131).
+
+    The loop divides `i + 1000` by 7. At `$trap_at` the dividend and divisor are replaced by the
+    given trap operands, so the same stencil runs hot first and then traps (or not, for rem).
+    """
+    return f"""
+(module
+  (func $f (param $x i32) (result i32) (i32.add (local.get $x) (i32.const 1)))
+  (func (export "main") (param $trap_at i32) (result i32) (local $i i32) (local $acc i32)
+    (loop $l
+      (local.set $acc (i32.add (local.get $acc)
+        (call $f
+          ({op}
+            (select (i32.const {dividend_trap}) (i32.add (local.get $i) (i32.const 1000))
+                    (i32.eq (local.get $i) (local.get $trap_at)))
+            (select (i32.const {divisor_trap}) (i32.const 7)
+                    (i32.eq (local.get $i) (local.get $trap_at)))))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br_if $l (i32.lt_s (local.get $i) (i32.const 400))))
+    (local.get $acc)))
+"""
+
+
+def _trap_code_on_jit(wasm: bytes, args: list[int]) -> tuple[int, RuntimeEngine]:
+    engine = make_runtime_engine()
+    module = engine.load_wasm(wasm)
+    outcome = engine.call(_guest(module), module.export_func_index("main"), args)
+    assert not outcome.is_ok and outcome.error is not None
+    return int(outcome.error.code), engine
+
+
+def test_jitr_131_division_before_a_cps_call_matches_the_interpreter_and_wasmtime():
+    """TEST-JITR-131: div_s, div_u, rem_s, and rem_u each feed a CPS call on the JIT.
+
+    A hot division traces a native stencil and then exits through the CPS call handler. The
+    stencils must keep the instruction-pointer and operand-stack roles across the division on both
+    ABIs. The cases are:
+      - non-trapping results (the values match wasmtime, Tier 2, and the JIT),
+      - the divide-by-zero trap (code 15) after the loop is hot,
+      - the `INT_MIN / -1` overflow trap (code 16) for div_s, and `INT_MIN % -1 = 0` for rem_s.
+    """
+    int_min = -(2**31)
+    checked = 0
+    for op in ("i32.div_s", "i32.div_u", "i32.rem_s", "i32.rem_u"):
+        wasm = wat_to_wasm(_division_before_call_wat(op, 0, 7))
+        expected = _wasmtime_result(wasm, "main", [1000])
+        assert _tier2_result(wasm, "main", [1000]) == expected, op
+        jit_value, engine = _tier3(wasm, "main", [1000])
+        assert jit_value == expected, f"{op}: JIT {jit_value:#x} != wasmtime {expected:#x}"
+        _assert_jit_ran(engine)
+        checked += 1
+
+        trap_wasm = wat_to_wasm(_division_before_call_wat(op, 0, 0))
+        trap_module = parse_standalone(trap_wasm)
+        native = _guest(trap_module).call(trap_module.export_func_index("main"), [300])
+        assert not native.is_ok and native.error is not None
+        assert int(native.error.code) == TrapCode.INTEGER_DIVIDE_BY_ZERO, op
+        jit_code, engine = _trap_code_on_jit(trap_wasm, [300])
+        assert jit_code == int(TrapCode.INTEGER_DIVIDE_BY_ZERO), op
+        _assert_jit_ran(engine)
+        checked += 1
+
+    for op in ("i32.div_s", "i32.rem_s"):
+        wasm = wat_to_wasm(_division_before_call_wat(op, int_min, -1))
+        if op == "i32.div_s":
+            jit_code, engine = _trap_code_on_jit(wasm, [300])
+            native_module = parse_standalone(wasm)
+            native = _guest(native_module).call(native_module.export_func_index("main"), [300])
+            assert not native.is_ok and native.error is not None
+            assert int(native.error.code) == TrapCode.INTEGER_OVERFLOW
+            assert jit_code == int(TrapCode.INTEGER_OVERFLOW)
+            _assert_jit_ran(engine)
+        else:
+            expected = _wasmtime_result(wasm, "main", [300])
+            assert _tier2_result(wasm, "main", [300]) == expected
+            jit_value, engine = _tier3(wasm, "main", [300])
+            assert jit_value == expected, f"rem_s: JIT {jit_value:#x} != wasmtime {expected:#x}"
+            _assert_jit_ran(engine)
+        checked += 1
+    assert checked == 10
+
+
 def test_jitr_61_terminal_call_preserves_stack_overflow_trap_in_cps():
     """TEST-JITR-61: a JIT terminal call enters its callee through CPS with pending values.
 

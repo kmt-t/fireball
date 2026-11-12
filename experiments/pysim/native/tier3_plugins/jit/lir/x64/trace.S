@@ -130,8 +130,21 @@ FB_F64_BINARY sub, subsd
 FB_F64_BINARY mul, mulsd
 FB_F64_BINARY div, divsd
 
+/* Integer division clobbers rdx (the implicit dividend and remainder register). rdx is the SP role
+   on the SysV ABI and the IP role on the Windows ABI. The SysV stencil recomputes SP from the saved
+   copy in r11. The Windows stencil keeps SP in r8, saves the IP role in r11, and restores rdx. */
+#if defined(_WIN32)
+#define FB_DIV_BASE r8
+#else
+#define FB_DIV_BASE r11
+#endif
+.macro FB_DIV_RESTORE_ROLE
+#if defined(_WIN32)
+  mov rdx, r11
+#endif
+.endm
+
 FB_TRACE_BEGIN fb_stencil_i32_div_s
-  mov FB_IP_REG, FB_SP_REG
   mov r10d, dword ptr [FB_SP_REG - 4]
   mov r11d, 15
   test r10d, r10d
@@ -146,68 +159,73 @@ FB_TRACE_BEGIN fb_stencil_i32_div_s
   mov dword ptr [FB_CTX_REG + FB_CONTEXT_TRAP_CODE_OFFSET], r11d
   FB_SLOT_MARK fb_jit_abort_slot__fb_stencil_i32_div_s, 0xe9
 .Ldiv_s_normal:
-  mov eax, dword ptr [FB_IP_REG - 8]
+  mov r11, rdx
+  mov eax, dword ptr [FB_DIV_BASE - 8]
   cdq
   idiv r10d
-  mov dword ptr [FB_IP_REG - 8], eax
-  lea FB_SP_REG, [FB_IP_REG - 4]
+  mov dword ptr [FB_DIV_BASE - 8], eax
+  FB_DIV_RESTORE_ROLE
+  lea FB_SP_REG, [FB_DIV_BASE - 4]
   FB_NEXT_MARK fb_stencil_i32_div_s
 FB_TRACE_END fb_stencil_i32_div_s
 
 FB_TRACE_BEGIN fb_stencil_i32_div_u
-  mov FB_IP_REG, FB_SP_REG
+  mov r11, rdx
   mov r10d, dword ptr [FB_SP_REG - 4]
   test r10d, r10d
   FB_LOCAL_BRANCH_REL8 0x75, .Ldiv_u_normal
   mov dword ptr [FB_CTX_REG + FB_CONTEXT_TRAP_CODE_OFFSET], 15
   FB_SLOT_MARK fb_jit_abort_slot__fb_stencil_i32_div_u, 0xe9
 .Ldiv_u_normal:
-  mov eax, dword ptr [FB_IP_REG - 8]
+  mov eax, dword ptr [FB_DIV_BASE - 8]
   xor edx, edx
   div r10d
-  mov dword ptr [FB_IP_REG - 8], eax
-  lea FB_SP_REG, [FB_IP_REG - 4]
+  mov dword ptr [FB_DIV_BASE - 8], eax
+  FB_DIV_RESTORE_ROLE
+  lea FB_SP_REG, [FB_DIV_BASE - 4]
   FB_NEXT_MARK fb_stencil_i32_div_u
 FB_TRACE_END fb_stencil_i32_div_u
 
 FB_TRACE_BEGIN fb_stencil_i32_rem_s
-  mov FB_IP_REG, FB_SP_REG
+  mov r11, rdx
   mov r10d, dword ptr [FB_SP_REG - 4]
   test r10d, r10d
   FB_LOCAL_BRANCH_REL8 0x75, .Lrem_s_check_overflow
   mov dword ptr [FB_CTX_REG + FB_CONTEXT_TRAP_CODE_OFFSET], 15
   FB_SLOT_MARK fb_jit_abort_slot__fb_stencil_i32_rem_s, 0xe9
 .Lrem_s_check_overflow:
-  mov eax, dword ptr [FB_IP_REG - 8]
+  mov eax, dword ptr [FB_DIV_BASE - 8]
   cmp eax, 0x80000000
   FB_LOCAL_BRANCH_REL8 0x75, .Lrem_s_normal
   cmp r10d, -1
   FB_LOCAL_BRANCH_REL8 0x75, .Lrem_s_normal
-  mov dword ptr [FB_IP_REG - 8], 0
+  mov dword ptr [FB_DIV_BASE - 8], 0
   FB_LOCAL_BRANCH_REL8 0xeb, .Lrem_s_done
 .Lrem_s_normal:
-  mov eax, dword ptr [FB_IP_REG - 8]
+  mov eax, dword ptr [FB_DIV_BASE - 8]
   cdq
   idiv r10d
-  mov dword ptr [FB_IP_REG - 8], edx
+  mov dword ptr [FB_DIV_BASE - 8], edx
+  FB_DIV_RESTORE_ROLE
 .Lrem_s_done:
-  lea FB_SP_REG, [FB_IP_REG - 4]
+  lea FB_SP_REG, [FB_DIV_BASE - 4]
   FB_NEXT_MARK fb_stencil_i32_rem_s
 FB_TRACE_END fb_stencil_i32_rem_s
 
 FB_TRACE_BEGIN fb_stencil_i32_rem_u
-  mov FB_IP_REG, FB_SP_REG
+  mov r11, rdx
   mov r10d, dword ptr [FB_SP_REG - 4]
   test r10d, r10d
   FB_LOCAL_BRANCH_REL8 0x75, .Lrem_u_normal
   mov dword ptr [FB_CTX_REG + FB_CONTEXT_TRAP_CODE_OFFSET], 15
   FB_SLOT_MARK fb_jit_abort_slot__fb_stencil_i32_rem_u, 0xe9
 .Lrem_u_normal:
-  mov eax, dword ptr [FB_IP_REG - 8]
+  mov eax, dword ptr [FB_DIV_BASE - 8]
   xor edx, edx
   div r10d
-  mov dword ptr [FB_IP_REG - 8], edx
-  lea FB_SP_REG, [FB_IP_REG - 4]
+  mov dword ptr [FB_DIV_BASE - 8], edx
+  FB_DIV_RESTORE_ROLE
+  lea FB_SP_REG, [FB_DIV_BASE - 4]
   FB_NEXT_MARK fb_stencil_i32_rem_u
 FB_TRACE_END fb_stencil_i32_rem_u
 

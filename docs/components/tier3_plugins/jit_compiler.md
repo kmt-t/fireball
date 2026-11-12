@@ -168,7 +168,7 @@ Interpreter opcode handlerとJIT trace entryは`ctx`, `ip`, `sp`, `rel`の4引�
 JIT trace entryは`ctx`, `ip`, `sp`, `rel`を受け取る。
 InterpreterはWASM値を共有オペランドスタックに保持する。
 各操作stencilは`ctx`, `ip`, `sp`, `rel`を対象ABIの引数レジスタから受け取り、次のstencilへ同じレジスタでstateを渡す。
-アセンブリ操作はcaller-save scratch registerだけを一時値に使う。
+アセンブリ操作の一時値と役割レジスタの保存規則は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)の「x64 継続引数と assembly ABI」に従う。
 trace builderは各成功link slotを除いて後続operationを配置するため、合成後の成功経路に操作間call/jumpはない。
 生成器は各operation stencilに`ret`、スタック操作、Runtime API stencil以外のcallがないことを検査し、操作単位のエピローグ生成を拒否する。
 trapを検出したoperationはabort link slotから一つのtrace共通terminal resultへ移る。

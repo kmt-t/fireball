@@ -104,9 +104,10 @@ def _run_guest_history(
     log_engine = Logger(wire, dictionary, min_level=LogLevel.DEBUG)
     profiler = GuestProfiler(log_engine)
     engine = make_runtime_engine() if jit_enabled else RuntimeEngine(collect_runtime_stats=True)
-    if engine.jit_runtime is not None:
-        resources.callback(engine.jit_runtime.cache._native.close)
     module = engine.load_wasm(bytes(wasmtime.wat2wasm(_GUEST_WAT)))
+    if engine.jit_runtime is not None:
+        # The JIT cache exists once a module is registered.
+        resources.callback(engine.jit_runtime.cache._native.close)
     memory = bytearray(b"\xa5" * 65536)
     interpreter = make_native_interpreter(module, memory=memory)
     if engine.jit_runtime is not None:

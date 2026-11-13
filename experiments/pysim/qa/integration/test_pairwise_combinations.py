@@ -308,12 +308,13 @@ def _run_workload(case_id: str, case_tuple: tuple[str, ...], resources: ExitStac
         engine = make_runtime_engine(drive_mode=drive_mode)
         assert engine.jit_runtime is not None
         assert engine.jit_runtime.jit_compiler is not None
-    if engine.jit_runtime is not None:
-        resources.callback(engine.jit_runtime.cache._native.close)
     # System's scheduler idle hook must service the plugin attached to this
     # test's Interpreter, rather than the default Runtime created by System.
     sysv.runtime_engine = engine
     engine.register_module_blocks(module)
+    if engine.jit_runtime is not None:
+        # The JIT cache exists once a module is registered.
+        resources.callback(engine.jit_runtime.cache._native.close)
     interp = make_native_interpreter(
         module,
         memory=memory,

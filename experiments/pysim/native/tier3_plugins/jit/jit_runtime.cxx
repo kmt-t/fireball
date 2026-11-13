@@ -422,11 +422,15 @@ void jit_runtime<Measurement>::rebuild_cache_indices() {
       cache.pc_index[cache.pc_index_count++] = reference;
       assert(source.entries[i].code_offset <= UINT16_MAX);
       cache.trace_offsets[reference] = static_cast<std::uint16_t>(source.entries[i].code_offset);
-      const auto successor = trace_successor_pc(source.entries[i]);
-      if (successor != jit_invalid_pc) {
-        const auto bucket = chain_bucket_for_pc(successor);
-        cache.inbound_chain_next[reference] = cache.inbound_chain_heads[bucket];
-        cache.inbound_chain_heads[bucket] = reference;
+      for (std::uint32_t exit = 0; exit < jit_cache_state::chain_exits_per_trace; ++exit) {
+        const auto successor = chain_exit_successor(source.entries[i], exit).pc;
+        if (successor != jit_invalid_pc) {
+          const auto node = static_cast<std::uint8_t>(
+              reference * jit_cache_state::chain_exits_per_trace + exit);
+          const auto bucket = chain_bucket_for_pc(successor);
+          cache.inbound_chain_next[node] = cache.inbound_chain_heads[bucket];
+          cache.inbound_chain_heads[bucket] = node;
+        }
       }
     }
   }
@@ -505,17 +509,33 @@ std::uintptr_t jit_runtime<Measurement>::common_trace_entry_address() const {
 }
 
 template <jit_measurement_policy Measurement>
-wasm_pc_t jit_runtime<Measurement>::trace_successor_pc(jit_cache_entry value) const {
+typename jit_runtime<Measurement>::chain_exit_successor_view
+jit_runtime<Measurement>::chain_exit_successor(jit_cache_entry value,
+                                               [[maybe_unused]] std::uint32_t exit) const {
+  // Exit 0 is the only exit until a second exit is added.
+  assert(exit == 0);
   jit_wasm_block storage{};
   const auto *metadata = block_metadata_for_trace(*trace_header(value), storage);
-  return metadata == nullptr ? jit_invalid_pc : metadata->next_pc;
+  if (metadata == nullptr) {
+    return {jit_invalid_pc, jit_invalid_block_index};
+  }
+  return {metadata->next_pc, metadata->next_block_index};
 }
 
 template <jit_measurement_policy Measurement>
-block_index_t jit_runtime<Measurement>::trace_successor_block_index(jit_cache_entry value) const {
-  jit_wasm_block storage{};
-  const auto *metadata = block_metadata_for_trace(*trace_header(value), storage);
-  return metadata == nullptr ? jit_invalid_block_index : metadata->next_block_index;
+std::uintptr_t jit_runtime<Measurement>::chain_exit_target(jit_cache_entry value,
+                                                           [[maybe_unused]] std::uint32_t exit) const {
+  // Exit 0 keeps its link in the trace header.
+  assert(exit == 0);
+  return trace_header(value)->chain_target_address;
+}
+
+template <jit_measurement_policy Measurement>
+code_offset_t jit_runtime<Measurement>::chain_exit_slot(jit_cache_entry value,
+                                                        [[maybe_unused]] std::uint32_t exit) const {
+  // The link of exit 0 is stored at the trace header.
+  assert(exit == 0);
+  return value.code_offset;
 }
 
 static bool chain_terminator_is_unsupported(const jit_trace_header *header,
@@ -557,8 +577,8 @@ bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
   if (header->exit_kind != FB_NATIVE_JIT_TRACE_NORMAL) {
     return false;
   }
-  const auto successor = trace_successor_pc(value);
-  const auto successor_index = trace_successor_block_index(value);
+  const auto successor = chain_exit_successor(value, 0).pc;
+  const auto successor_index = chain_exit_successor(value, 0).block_index;
   if (successor == jit_invalid_pc || successor_index == jit_invalid_block_index) {
     return false;
   }
@@ -579,7 +599,7 @@ bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
 template <jit_measurement_policy Measurement>
 bool jit_runtime<Measurement>::can_chain_to(jit_cache_entry value, jit_cache_entry target) const {
   assert(value.resident() && target.resident());
-  if (!can_chain_from(value) || trace_successor_pc(value) != target.head_pc) {
+  if (!can_chain_from(value) || chain_exit_successor(value, 0).pc != target.head_pc) {
     return false;
   }
   // A call-terminated target exits through an Interpreter CPS handler. A chain only links
@@ -587,7 +607,7 @@ bool jit_runtime<Measurement>::can_chain_to(jit_cache_entry value, jit_cache_ent
   if (trace_header(target)->exit_kind == FB_NATIVE_JIT_TRACE_CALL_CPS) {
     return false;
   }
-  const auto successor_index = trace_successor_block_index(value);
+  const auto successor_index = chain_exit_successor(value, 0).block_index;
   if (successor_index != jit_invalid_block_index &&
       successor_index != trace_header(target)->block_index) {
     return false;
@@ -690,8 +710,8 @@ template <jit_measurement_policy Measurement>
 void jit_runtime<Measurement>::record_chain_construction(jit_cache_entry source)
   requires(!std::is_void_v<Measurement>)
 {
-  const auto successor_pc = trace_successor_pc(source);
-  const auto successor_index = trace_successor_block_index(source);
+  const auto successor_pc = chain_exit_successor(source, 0).pc;
+  const auto successor_index = chain_exit_successor(source, 0).block_index;
   if (successor_pc == jit_invalid_pc || successor_index == jit_invalid_block_index) {
     return;
   }
@@ -710,7 +730,7 @@ void jit_runtime<Measurement>::record_chain_construction(jit_cache_entry source)
     } else if (!can_chain_to(source, *target.trace_entry)) {
       reason = jit_chain_reason::unsupported_control_flow;
     } else if (target.bank_id == cache.oldest_bank_id &&
-               header->chain_target_address != trace_body_address(*target.trace_entry)) {
+               chain_exit_target(source, 0) != trace_body_address(*target.trace_entry)) {
       reason = jit_chain_reason::oldest_bank;
     }
   }
@@ -733,26 +753,27 @@ jit_runtime<Measurement>::chain_target_header(const jit_trace_header &source) co
 }
 
 template <jit_measurement_policy Measurement>
-void jit_runtime<Measurement>::set_chain_target(jit_cache_entry source,
+void jit_runtime<Measurement>::set_chain_target(jit_cache_entry source, std::uint32_t exit,
                                                 const jit_cache_entry *target) {
+  assert(exit < jit_cache_state::chain_exits_per_trace);
   assert(source.resident());
   assert(target == nullptr || target->resident());
   assert(target == nullptr || can_chain_to(source, *target));
   const auto address = target == nullptr ? 0 : trace_body_address(*target);
-  if (trace_header(source)->chain_target_address == address) {
+  if (chain_exit_target(source, exit) == address) {
     return;
   }
   if constexpr (!std::is_void_v<Measurement>) {
     measurements.cache_changed();
   }
-  patch_trace_chain(&cache.code_memory, source.code_offset, address);
+  patch_trace_chain(&cache.code_memory, chain_exit_slot(source, exit), address);
 }
 
 template <jit_measurement_policy Measurement>
 void jit_runtime<Measurement>::link_resident_successor(jit_cache_entry source) {
   const auto source_can_chain = can_chain_from(source);
-  const auto successor_pc = trace_successor_pc(source);
-  const auto successor_index = trace_successor_block_index(source);
+  const auto successor_pc = chain_exit_successor(source, 0).pc;
+  const auto successor_index = chain_exit_successor(source, 0).block_index;
   const auto target =
       source_can_chain ? lookup_cached_trace(successor_index, successor_pc) : jit_trace_location{};
   const auto target_can_chain =
@@ -762,16 +783,15 @@ void jit_runtime<Measurement>::link_resident_successor(jit_cache_entry source) {
   }
   if (target.trace_entry != nullptr) {
     if (target.bank_id != cache.oldest_bank_id && target_can_chain) {
-      set_chain_target(source, target.trace_entry);
+      set_chain_target(source, 0, target.trace_entry);
     } else if (target.bank_id == cache.oldest_bank_id && target_can_chain &&
-               trace_header(source)->chain_target_address !=
-                   trace_body_address(*target.trace_entry)) {
-      set_chain_target(source, nullptr);
+               chain_exit_target(source, 0) != trace_body_address(*target.trace_entry)) {
+      set_chain_target(source, 0, nullptr);
     } else if (!target_can_chain) {
-      set_chain_target(source, nullptr);
+      set_chain_target(source, 0, nullptr);
     }
   } else {
-    set_chain_target(source, nullptr);
+    set_chain_target(source, 0, nullptr);
   }
 }
 
@@ -944,15 +964,17 @@ void jit_runtime<Measurement>::unlink_retiring_bank(std::uint32_t id) {
       continue;
     }
     const auto address = trace_body_address(target);
-    for (auto reference = cache.inbound_chain_heads[chain_bucket_for_pc(target.head_pc)];
-         reference != jit_cache_state::no_reference;
-         reference = cache.inbound_chain_next[reference]) {
+    for (auto node = cache.inbound_chain_heads[chain_bucket_for_pc(target.head_pc)];
+         node != jit_cache_state::no_reference; node = cache.inbound_chain_next[node]) {
+      const auto reference = jit_cache_state::inbound_node_reference(node);
+      const auto exit = jit_cache_state::inbound_node_exit(node);
       const auto source = cache_entry_at_reference(reference);
       // Sources in the retiring bank disappear with their targets.
       assert(source.resident());
-      if (bank_of_reference(reference) != id && trace_successor_pc(source) == target.head_pc &&
-          trace_header(source)->chain_target_address == address) {
-        set_chain_target(source, nullptr);
+      if (bank_of_reference(reference) != id &&
+          chain_exit_successor(source, exit).pc == target.head_pc &&
+          chain_exit_target(source, exit) == address) {
+        set_chain_target(source, exit, nullptr);
       }
     }
   }
@@ -1013,19 +1035,20 @@ void jit_runtime<Measurement>::install_trace(const std::uint8_t *blob, std::uint
 
   jit_cache_entry installed{pc, offset};
   link_resident_successor(installed);
-  for (auto reference = cache.inbound_chain_heads[chain_bucket_for_pc(installed.head_pc)];
-       reference != jit_cache_state::no_reference;
-       reference = cache.inbound_chain_next[reference]) {
+  for (auto node = cache.inbound_chain_heads[chain_bucket_for_pc(installed.head_pc)];
+       node != jit_cache_state::no_reference; node = cache.inbound_chain_next[node]) {
+    const auto reference = jit_cache_state::inbound_node_reference(node);
+    const auto exit = jit_cache_state::inbound_node_exit(node);
     const auto source = cache_entry_at_reference(reference);
-    if (trace_successor_pc(source) == installed.head_pc) {
+    if (chain_exit_successor(source, exit).pc == installed.head_pc) {
       if constexpr (!std::is_void_v<Measurement>) {
         record_chain_construction(source);
       }
       if (bank_of_reference(reference) != cache.oldest_bank_id &&
-          (trace_successor_block_index(source) == jit_invalid_block_index ||
-           trace_successor_block_index(source) == block_index) &&
+          (chain_exit_successor(source, exit).block_index == jit_invalid_block_index ||
+           chain_exit_successor(source, exit).block_index == block_index) &&
           can_chain_to(source, installed)) {
-        set_chain_target(source, &installed);
+        set_chain_target(source, exit, &installed);
       }
     }
   }
@@ -1275,8 +1298,13 @@ int jit_provider_adapter<Measurement>::fb_jit_runtime_flush(runtime_type *runtim
     auto &b = runtime->cache.banks[id];
     for (std::uint32_t i = 0; i < b.entry_count; ++i) {
       const auto value = b.entries[i];
-      if (value.resident() && runtime->trace_header(value)->chain_target_address != 0) {
-        runtime->set_chain_target(value, nullptr);
+      if (!value.resident()) {
+        continue;
+      }
+      for (std::uint32_t exit = 0; exit < jit_cache_state::chain_exits_per_trace; ++exit) {
+        if (runtime->chain_exit_target(value, exit) != 0) {
+          runtime->set_chain_target(value, exit, nullptr);
+        }
       }
     }
     runtime->retire_cache_bank(id);

@@ -1219,7 +1219,7 @@ handle_runtime_exit(native_dispatch_state<CollectStats, WithJit, WithExtension, 
       ++state.metrics.stats.control_handler_count;
       state.metrics.stats.control_handler_pending_trace = true;
     }
-    if (context.loop_jump_count >= context.loop_jump_threshold) {
+    if (backedge_reaches_threshold(context.loop_jump_count, context.loop_jump_threshold)) {
       state.status = kDispatchYield;
       return false;
     }

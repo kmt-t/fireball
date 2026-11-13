@@ -209,11 +209,14 @@ extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block *block, std::
   }
   const auto block_end = block->offset + block->byte_span;
   if (result.consumed_terminator) {
-    // A consumed forward br exits at the loader's resume pc, the head of the successor block, and
-    // the successor's annotations lie after this block's annotations.
+    // A consumed br exits at the loader's resume pc, the head of the successor block.
     assert(trace_body_end(result, block_end) == block->offset + (block->next_pc - block->head_pc));
-    assert(block->next_interpreter_annotation_byte_offset >
-           block->interpreter_annotation_byte_offset);
+    // A forward successor lies after this block's annotations; a backward one lies before them.
+    assert(block->next_pc <= block->head_pc
+               ? block->next_interpreter_annotation_byte_offset <=
+                     block->interpreter_annotation_byte_offset
+               : block->next_interpreter_annotation_byte_offset >
+                     block->interpreter_annotation_byte_offset);
   }
   return build_trace(body_scratch, result.body_bytes, &result, block->head_pc, block->frame_depth,
                      block->block_index, block_end, block->next_pc, block->loops_to,

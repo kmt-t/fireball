@@ -299,7 +299,7 @@ stateDiagram-v2
 
 命令列長は、後続アドレスから自分自身の先頭アドレスを引いて求めてはならない。後方分岐ブロックでは差分が負になる。その結果「短すぎる」と誤判定される。命令列長はブロック自身の命令バイト数から直接求める。
 
-`if`、`br`、`br_if`はJIT traceから除外し、trace完了後に分岐のCPS handlerが実行する。分岐先traceへnative chainしない。取得済みLOOP後方辺だけを共通contextの`loop_jump_count`で一度ずつ数える。しきい値の正本はInterpreter設定の`FB_CONF_INTERPRETER_YIELD_THRESHOLD`である。yield statusはC++ dispatcherを経てTier 2 RuntimeとSystemからCOOSへ渡る。外部呼出し、trap、関数完了は各契約の実行境界となる。
+`if`と`br_if`はJIT traceから除外し、trace完了後に分岐のCPS handlerが実行する。分岐先traceへnative chainしない。`br`は前方と後方の両方を、trace内で実行して分岐先traceへnative chainする。取得済みLOOP後方辺を共通contextの`loop_jump_count`で一度ずつ数える。後方の`br`の数えは、閾値に達するまでtraceのRuntime APIが行い、閾値に達したときはCPS handlerが行う。しきい値の正本はInterpreter設定の`FB_CONF_INTERPRETER_YIELD_THRESHOLD`である。yield statusはC++ dispatcherを経てTier 2 RuntimeとSystemからCOOSへ渡る。外部呼出し、trap、関数完了は各契約の実行境界となる。
 
 trace chainは、直線後続の常駐traceへ共通chain dispatcherからtail-jumpする経路である。分岐命令はtraceに含めず、C++ Interpreter CPS handlerが処理する。共通chain dispatcherはopcodeを判定せず、直線chainのtargetへの転送だけを担う。未接続targetは0で表す。C++ handler後にdispatcherが次traceを検索・起動する遷移はmachine-code chainではない。
 

@@ -180,10 +180,35 @@ inline bool jit_runtime_fc_memory_fill(execution_context *context, std::uint32_t
   return completed;
 }
 
+/**
+ * @brief The threshold Runtime API of a backward br inside a trace. The record holds the offset of
+ * the br's own annotation, which holds the target block. While the next count stays below the
+ * threshold, the trace counts the backedge (the handler's record_loop_backedge) and continues. At
+ * the threshold nothing is counted: the CPS exit at the br's position hands it to the Interpreter
+ * handler (runtime_br), which counts it once and yields.
+ */
+inline bool jit_runtime_backedge(execution_context *context, [[maybe_unused]] std::uint32_t *&sp,
+                                 [[maybe_unused]] std::uint32_t *&local_base,
+                                 const std::uint8_t *rel) {
+  assert(rel != nullptr);
+  const auto &function = *active_frame(*context).function_view;
+  const auto annotation_offset = load_jit_value<annotation_offset_t>(rel);
+  assert(annotation_offset < function.interpreter_annotation_byte_count);
+  assert(function.interpreter_annotation_pool != nullptr);
+  const std::uint8_t *annotation = function.interpreter_annotation_pool + annotation_offset;
+  const auto target_block = load_jit_value<std::uint16_t>(annotation);
+  const auto source_ip = context->ip;
+  if (count_jit_backedge(*context, source_ip, target_block)) {
+    return true;
+  }
+  return cps_exit_at(*context, source_ip, annotation, kBlockBoundary);
+}
+
 constexpr auto make_opcode_jit_runtime_api_table() {
   std::array<jit_runtime_api_pointer, 256> apis{};
   apis[0x00] = &jit_runtime_unreachable;
   apis[0x01] = &jit_runtime_api_passthrough<&runtime_nop>;
+  apis[0x0C] = &jit_runtime_backedge;
   apis[0x0E] = &jit_runtime_api_annotated<&runtime_br_table<false>>;
   apis[0x0F] = &jit_runtime_api_passthrough<&runtime_return<false>>;
   apis[0x1A] = &jit_runtime_api_passthrough<&runtime_drop>;

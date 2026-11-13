@@ -29,6 +29,12 @@ def build_model(*, guards: bool = True) -> Kripke:
         "yield_lost",
         "untaken_counted",
         "dangling_link",
+        "br_pending",
+        "br_counted_by_trace",
+        "br_refused_by_trace",
+        "br_counted_by_handler",
+        "br_yielded",
+        "br_double_counted",
     ]
     transitions = [
         ("cycle_start", "cycle_second"),
@@ -37,6 +43,14 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("cycle_done", "loop_start"),
         ("loop_start", "loop_not_taken"),
         ("loop_start", "loop_one_edge"),
+        ("loop_start", "br_pending"),
+        ("br_pending", "br_counted_by_trace"),
+        ("br_pending", "br_refused_by_trace"),
+        ("br_counted_by_trace", "loop_exited"),
+        ("br_refused_by_trace", "br_counted_by_handler"),
+        ("br_counted_by_handler", "br_yielded"),
+        ("br_yielded", "br_yielded"),
+        ("br_double_counted", "br_double_counted"),
         ("loop_not_taken", "loop_exited"),
         ("loop_one_edge", "loop_exited"),
         ("loop_one_edge", "loop_threshold"),
@@ -58,6 +72,7 @@ def build_model(*, guards: bool = True) -> Kripke:
                 ("loop_threshold", "yield_lost"),
                 ("loop_start", "untaken_counted"),
                 ("retire_target", "dangling_link"),
+                ("br_refused_by_trace", "br_double_counted"),
             ]
         )
     labels = {
@@ -77,6 +92,14 @@ def build_model(*, guards: bool = True) -> Kripke:
         "yield_lost": {"threshold_reached", "yield_lost"},
         "untaken_counted": {"not_taken", "one_taken_edge", "untaken_counted"},
         "dangling_link": {"dangling_link"},
+        # A backward br at the threshold: the trace counts below it, and the handler counts at it.
+        "br_pending": {"backedge_pending"},
+        "br_counted_by_trace": {"backedge_counted", "counted_by_trace"},
+        "br_refused_by_trace": {"backedge_pending", "threshold_reached"},
+        "br_counted_by_handler": {"backedge_counted", "counted_by_handler", "threshold_reached"},
+        "br_yielded": {"backedge_counted", "counted_by_handler", "yielded"},
+        "br_double_counted": {"backedge_counted", "counted_by_trace", "counted_by_handler",
+                              "double_counted"},
     }
     return Kripke(S=states, S0={"cycle_start"}, R=transitions, L=labels)
 
@@ -118,6 +141,14 @@ def properties() -> list[dict[str, object]]:
             "logic": "CTL",
             "formula": AG(Not(AtomicProposition("untaken_counted"))),
             "violation": AtomicProposition("untaken_counted"),
+            "expect": True,
+        },
+        {
+            "name": "backward_br_backedge_is_counted_at_most_once",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(AtomicProposition("double_counted"))),
+            "violation": AtomicProposition("double_counted"),
             "expect": True,
         },
         {

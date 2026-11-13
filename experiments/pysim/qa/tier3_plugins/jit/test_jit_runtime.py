@@ -6201,3 +6201,105 @@ def test_jitr_provider_carries_the_one_common_trace_entry():
     expected_entry = native_abi.RUNTIME_COMMON_TRACE_ENTRY(manager._native.pointer)
     assert expected_entry != 0
     assert provider.trace_entry_address == expected_entry
+
+
+_BACKWARD_BR_COUNT_WAT = """
+(module
+  (func (export "count") (param i32) (result i32) (local i32)
+    (block $out
+      (loop $loop
+        local.get 1
+        i32.const 1
+        i32.add
+        local.set 1
+        local.get 1
+        local.get 0
+        i32.ge_s
+        br_if $out
+        i32.const 7
+        br $loop
+      )
+    )
+    local.get 1
+  )
+)
+"""
+
+
+def _backward_br_setup(yield_threshold: int, insert_br: bool):
+    """Builds the count loop, compiles the block that ends in the backward br, and inserts it.
+
+    With insert_br False only the loop head is resident, so the backward br runs in the Interpreter.
+    Returns the engine, the interpreter, the function index, and the loop head block.
+    """
+    module = parse_standalone(wat_to_wasm(_BACKWARD_BR_COUNT_WAT))
+    function_index = module.export_func_index("count")
+    function_pc = module.function_pc_offset(function_index)
+    code = module.code_for(function_index)
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    br_block = next(
+        block
+        for block in module.blocks
+        if block.func_index == function_index
+        and block.head_pc - function_pc + block.byte_span < len(code)
+        and code[block.head_pc - function_pc + block.byte_span] == 0x0C
+        and block.next_pc is not None
+        and block.next_pc <= block.head_pc
+    )
+    loop_head = next(
+        block
+        for block in module.blocks
+        if block.func_index == function_index and block.head_pc == br_block.next_pc
+    )
+    head_trace = compile_runtime_block(engine.jit_runtime, loop_head)
+    assert head_trace is not None
+    inserted_head = engine.jit_runtime.cache.insert(head_trace)
+    assert inserted_head
+    if insert_br:
+        trace = compile_runtime_block(engine.jit_runtime, br_block)
+        assert trace is not None
+        inserted_br = engine.jit_runtime.cache.insert(trace)
+        assert inserted_br
+    interpreter = Interpreter(module, yield_threshold=yield_threshold)
+    return engine, interpreter, function_index, loop_head
+
+
+def test_jitr_136_backward_br_just_below_threshold_is_run_by_the_trace():
+    """TEST-JITR-136: below the threshold the br trace counts both backedges and no handler runs."""
+    # count(3) takes two backedges. With threshold 3, the second backedge counts to 2, which is
+    # below the threshold, so the trace counts both backedges and no yield happens.
+    engine, interpreter, function_index, _ = _backward_br_setup(3, insert_br=True)
+    call_state = interpreter.start(function_index, [3])
+    boundary = engine.run(interpreter, call_state)
+    assert not boundary.yield_requested
+    assert boundary.call_state._frame.context.loop_jump_count == 2
+    results = engine.complete_call(interpreter, boundary.call_state).unwrap()
+    assert list(results) == [3]
+    traced_handlers = engine.stat_native_control_handlers
+    traced_invocations = engine.stat_jit_invocations
+    # Without the br trace, the Interpreter handler runs for each of the two backedges.
+    engine, interpreter, function_index, _ = _backward_br_setup(3, insert_br=False)
+    call_state = interpreter.start(function_index, [3])
+    boundary = engine.run(interpreter, call_state)
+    assert not boundary.yield_requested
+    results = engine.complete_call(interpreter, boundary.call_state).unwrap()
+    assert list(results) == [3]
+    assert engine.stat_native_control_handlers - traced_handlers == 2
+    assert traced_invocations - engine.stat_jit_invocations == 2
+
+
+def test_jitr_137_backward_br_at_threshold_is_counted_once_by_the_handler_and_yields():
+    """TEST-JITR-137: at the threshold the trace leaves the br, and the handler counts it once."""
+    # With threshold 2, the first backedge counts to 1 in the trace. The second backedge would
+    # reach 2, so the trace leaves it, and the Interpreter handler counts it once and yields.
+    engine, interpreter, function_index, loop_head = _backward_br_setup(2, insert_br=True)
+    call_state = interpreter.start(function_index, [3])
+    boundary = engine.run(interpreter, call_state)
+    assert boundary.yield_requested
+    assert boundary.call_state.current_pc() == loop_head.head_pc
+    # The loop variable is the iteration count. The yield lands on the second backedge (local 1
+    # is 2), so the first backedge was counted once; a second count would yield at local 1.
+    assert boundary.call_state._frame.locals.get_i32(1) == 2
+    results = engine.complete_call(interpreter, boundary.call_state).unwrap()
+    assert list(results) == [3]

@@ -1511,21 +1511,26 @@ stencil_view branch_stack_move_stencil(std::uint8_t result_words) {
   }
 }
 
+/** @brief The opcode of br. Its backward form runs the threshold Runtime API (jit_runtime_backedge). */
+constexpr int kBrOpcode = 0x0C;
+
 /**
- * @brief Executes a forward br in the trace. The br annotation holds the target block, the target
- * stack base b, and the result words r. With d words on the stack, the r result words move to b,
- * and sp drops by d - b - r words. The trace exits at resume_ip, the loader's resume pc of the br,
- * and the metadata rel is the distance from this block's annotations to the successor's.
- * A function-end target is not consumed.
+ * @brief Executes a br in the trace when its target block is a block of this function. The br
+ * annotation holds the target block, the target stack base b, and the result words r. With d words
+ * on the stack, the r result words move to b and sp drops by d - b - r words. A backward br first
+ * runs the threshold Runtime API (jit_runtime_backedge): it counts the backedge, or it leaves the br
+ * to the Interpreter handler at the threshold. The trace then exits at resume_ip, the loader's
+ * resume pc of the br. The metadata rel is the distance from this block's annotations to the
+ * successor's. A function-end target is not consumed.
  * @return 1 with consumed = true, 1 with consumed = false for the function end, -1 when malformed.
  */
-int consume_forward_br(trace_builder &builder, stack_model &stack,
-                       const std::uint8_t *interpreter_annotations,
-                       annotation_offset_t interpreter_annotation_byte_count,
-                       annotation_offset_t interpreter_annotation_byte_offset,
-                       annotation_offset_t next_annotation_byte_offset,
-                       annotation_offset_t &interpreter_rel_bytes, code_ip_t resume_ip,
-                       bool &consumed, code_ip_t &terminal_end_ip) {
+int consume_branch_br(trace_builder &builder, stack_model &stack, bool backward,
+                      code_ip_t source_ip, const std::uint8_t *interpreter_annotations,
+                      annotation_offset_t interpreter_annotation_byte_count,
+                      annotation_offset_t interpreter_annotation_byte_offset,
+                      annotation_offset_t next_annotation_byte_offset,
+                      annotation_offset_t &interpreter_rel_bytes, code_ip_t resume_ip,
+                      bool &consumed, code_ip_t &terminal_end_ip) {
   consumed = false;
   if (interpreter_annotations == nullptr) {
     return -1;
@@ -1535,7 +1540,8 @@ int consume_forward_br(trace_builder &builder, stack_model &stack,
   if (annotation_offset_64 > interpreter_annotation_byte_count) {
     return -1;
   }
-  const std::uint8_t *cursor = interpreter_annotations + static_cast<std::size_t>(annotation_offset_64);
+  const std::uint8_t *cursor =
+      interpreter_annotations + static_cast<std::size_t>(annotation_offset_64);
   const std::uint8_t *limit = interpreter_annotations + interpreter_annotation_byte_count;
   std::uint16_t target_block = 0;
   std::uint8_t target_base = 0;
@@ -1548,6 +1554,16 @@ int consume_forward_br(trace_builder &builder, stack_model &stack,
   if (target_block == 0xFFFFu) {
     return 1;
   }
+  if (backward) {
+    // The record holds the offset of the br's own annotation. The threshold API runs before any
+    // stack move, so a refusal sees the original stack.
+    std::uint8_t api_slot = 0;
+    if (!runtime_api_slot(kBrOpcode, api_slot) ||
+        !builder.append_runtime_api(api_slot, source_ip, nullptr, nullptr, 0,
+                                    static_cast<annotation_offset_t>(annotation_offset_64))) {
+      return -1;
+    }
+  }
   assert(result_words <= 2);
   assert(target_base + result_words <= stack.word_count);
   const auto drop = static_cast<std::uint32_t>(stack.word_count - target_base - result_words);
@@ -1556,11 +1572,12 @@ int consume_forward_br(trace_builder &builder, stack_model &stack,
     builder.append_patched(branch_stack_move_stencil(result_words),
                            static_cast<std::uint64_t>(drop) * 4, 4);
   }
-  // The successor's annotations start after this block's annotations by the distance below. The
-  // Interpreter reads the successor's rel as this block's start plus this distance.
-  assert(next_annotation_byte_offset > interpreter_annotation_byte_offset);
-  interpreter_rel_bytes =
-      static_cast<annotation_offset_t>(next_annotation_byte_offset - interpreter_annotation_byte_offset);
+  // The successor's annotations start at next_annotation_byte_offset. The Interpreter reads the
+  // successor's rel as this block's start plus the distance (unsigned, so a backward distance wraps).
+  assert(backward ? next_annotation_byte_offset <= interpreter_annotation_byte_offset
+                  : next_annotation_byte_offset > interpreter_annotation_byte_offset);
+  interpreter_rel_bytes = static_cast<annotation_offset_t>(next_annotation_byte_offset -
+                                                          interpreter_annotation_byte_offset);
   terminal_end_ip = resume_ip;
   consumed = true;
   return 1;
@@ -1586,15 +1603,16 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
   if (!fireball::opcode_has_attribute(opcode, fireball::kOpcodeTraceTerminator)) {
     return 1;
   }
-  if (opcode == 0x0C && has_next_pc && next_pc > head_pc) {
-    // A forward br runs inside the trace. Its successor is the loader's resume pc, which lies at
-    // the block head offset plus the pc distance.
-    assert(next_pc - head_pc <= code_bytes);
-    const auto resume_ip = static_cast<code_ip_t>(trace_start_ip + (next_pc - head_pc));
-    return consume_forward_br(builder, stack, interpreter_annotations,
-                              interpreter_annotation_byte_count, interpreter_annotation_byte_offset,
-                              next_annotation_offset, interpreter_rel_bytes, resume_ip, consumed,
-                              terminal_end_ip);
+  if (opcode == kBrOpcode && has_next_pc) {
+    // A br runs inside the trace. Its successor is the loader's resume pc: the block head offset
+    // plus the pc distance, which is negative for a backward br.
+    const auto resume = static_cast<std::int64_t>(trace_start_ip) +
+                        static_cast<std::int64_t>(next_pc) - static_cast<std::int64_t>(head_pc);
+    assert(resume >= 0 && resume < static_cast<std::int64_t>(code_bytes));
+    return consume_branch_br(builder, stack, next_pc <= head_pc, source_ip, interpreter_annotations,
+                             interpreter_annotation_byte_count, interpreter_annotation_byte_offset,
+                             next_annotation_offset, interpreter_rel_bytes,
+                             static_cast<code_ip_t>(resume), consumed, terminal_end_ip);
   }
   if (opcode == 0x04 || opcode == 0x0C || opcode == 0x0D) {
     // Branch instructions remain unexecuted trace exits handled by Interpreter CPS.

@@ -144,6 +144,18 @@ bool finish_current_function(execution_context &current, std::uint32_t *&local_b
 bool is_requested_block_boundary(const execution_context &current, code_ip_t ip);
 /** @brief `record_loop_backedge`に対応する実行状態または値を求める。 */
 bool record_loop_backedge(execution_context &current, code_ip_t source_ip, code_ip_t target_ip);
+/** @brief The one loop threshold rule: a counted backedge yields once the count reaches the threshold. */
+bool backedge_reaches_threshold(std::uint64_t count, std::uint32_t threshold);
+/** @brief Counts a backward br for a JIT trace (the same record_loop_backedge as the handler), or
+ * reports that the next count reaches the threshold; then nothing is counted and the handler counts
+ * the br once. Returns true when the br was counted. */
+bool count_jit_backedge(execution_context &current, code_ip_t source_ip,
+                        block_index_t target_block_index);
+/** @brief Records a CPS exit of the given kind at ip with the cursor rel and returns false. The
+ * dispatch loop reads the kind: kRuntimeApiBoundary returns to the host, while kBlockBoundary runs
+ * the Interpreter handler in the same loop. */
+bool cps_exit_at(execution_context &current, code_ip_t ip, const std::uint8_t *rel,
+                 std::uint32_t kind);
 
 struct local_value_span {
   frame_word_offset_t offset;

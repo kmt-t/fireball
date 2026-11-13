@@ -83,8 +83,9 @@ const std::uint8_t *interpreter_rel_after_jit_trace(const fireball_call_frame_na
   const auto block_offset = module.blocks[block_index].interpreter_annotation_byte_offset;
   assert(block_offset != kSentinel);
   assert(block_offset <= function.interpreter_annotation_byte_count);
-  assert(consumed_bytes <= function.interpreter_annotation_byte_count - block_offset);
-  const auto byte_offset = block_offset + consumed_bytes;
+  // A backward successor is a negative distance, which wraps; the sum is the successor's offset.
+  const auto byte_offset = static_cast<annotation_offset_t>(block_offset + consumed_bytes);
+  assert(byte_offset <= function.interpreter_annotation_byte_count);
   return annotation_rel_at(function, byte_offset);
 }
 
@@ -270,14 +271,19 @@ bool cps_exit_pending(const execution_context &current) {
 
 void clear_cps_exit(execution_context &current) { current.runtime_flags &= ~kCpsExitMask; }
 
-bool runtime_api_boundary(execution_context &current, code_ip_t ip, const std::uint8_t *rel) {
+bool cps_exit_at(execution_context &current, code_ip_t ip, const std::uint8_t *rel,
+                 std::uint32_t kind) {
   current.ip = ip;
   current.rel = rel;
   current.runtime_flags &= ~kPendingBlockHeadFlag;
   current.runtime_flags |= kRelCursorReadyFlag;
   current.trap_code = 0;
-  record_cps_exit(current, kRuntimeApiBoundary);
+  record_cps_exit(current, kind);
   return false;
+}
+
+bool runtime_api_boundary(execution_context &current, code_ip_t ip, const std::uint8_t *rel) {
+  return cps_exit_at(current, ip, rel, kRuntimeApiBoundary);
 }
 
 code_ip_t code_ip_for_block_index(const execution_context &current, block_index_t block_index) {
@@ -337,7 +343,7 @@ bool transfer_to_block(execution_context &current, code_ip_t ip, block_index_t b
     return block_boundary(current, ip, block_index, rel);
   } else {
     set_block_cursor(current, ip, block_index, rel);
-    if (backedge && current.loop_jump_count >= current.loop_jump_threshold) {
+    if (backedge && backedge_reaches_threshold(current.loop_jump_count, current.loop_jump_threshold)) {
       exit_block_boundary(current);
       return false;
     }
@@ -515,6 +521,20 @@ bool record_loop_backedge(execution_context &current, code_ip_t source_ip, code_
   assert(current.loop_jump_count < UINT32_MAX);
   ++current.loop_jump_count;
   return true;
+}
+
+bool backedge_reaches_threshold(std::uint64_t count, std::uint32_t threshold) {
+  return count >= threshold;
+}
+
+bool count_jit_backedge(execution_context &current, code_ip_t source_ip,
+                        block_index_t target_block_index) {
+  const auto target_ip = code_ip_for_block_index(current, target_block_index);
+  if (backedge_reaches_threshold(static_cast<std::uint64_t>(current.loop_jump_count) + 1,
+                                 current.loop_jump_threshold)) {
+    return false;
+  }
+  return record_loop_backedge(current, source_ip, target_ip);
 }
 
 local_value_span local_span(const fireball_call_frame_native &frame, local_count_t index) {

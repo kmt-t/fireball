@@ -745,6 +745,11 @@ class JitRuntimeBoundary:
         """Return the shared trace entry that snapshot callables use."""
         return int(native_abi.RUNTIME_COMMON_TRACE_ENTRY(self._native.pointer))
 
+    @property
+    def provider_address(self) -> int:
+        """Return the runtime's provider, which names the slot tables and admission records."""
+        return int(native_abi.RUNTIME_PROVIDER(self._native.pointer))
+
     def build_snapshot(self, entries: ctypes.Array) -> int:
         count = int(native_abi.RUNTIME_SNAPSHOT(self._native.pointer, entries, len(entries)))
         assert count >= 0

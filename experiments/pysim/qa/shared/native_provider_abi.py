@@ -12,17 +12,21 @@ import ctypes
 class NativeJitProvider(ctypes.Structure):
     _fields_ = (
         ("owner", ctypes.c_size_t),
-        ("lookup", ctypes.c_void_p),
         ("observe_block", ctypes.c_void_p),
         ("finish_boundary", ctypes.c_void_p),
         ("trace_entry_address", ctypes.c_size_t),
+        ("code_base", ctypes.c_size_t),
+        ("trace_offsets", ctypes.c_void_p),
+        ("admission_records", ctypes.c_void_p),
     )
 
 
 FIELD_NAMES = (
     "owner",
-    "lookup",
     "observe_block",
     "finish_boundary",
     "trace_entry_address",
+    "code_base",
+    "trace_offsets",
+    "admission_records",
 )

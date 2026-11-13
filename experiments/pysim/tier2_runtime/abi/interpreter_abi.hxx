@@ -52,6 +52,8 @@ typedef struct fireball_execution_context_native {
   const uint8_t *rel;
   block_index_t current_block_index;
   uint16_t reserved0;
+  // Copied from the JIT provider at each native dispatch. The common trace entry counts root entries here.
+  uint8_t *admission_records;
 } fireball_execution_context_native;
 
 struct fireball_wasm_module_execution_view_native;
@@ -252,7 +254,7 @@ static_assert(sizeof(jit_body_count_t) == 1);
 static_assert(sizeof(card_index_t) == 4);
 
 #if FB_NATIVE_POINTER_BYTES == 8
-static_assert(sizeof(execution_context_native) == 144);
+static_assert(sizeof(execution_context_native) == 152);
 static_assert(offsetof(execution_context_native, ip) == 0x00);
 static_assert(offsetof(execution_context_native, stack_base) == 0x08);
 static_assert(offsetof(execution_context_native, stack_pointer) == 0x10);
@@ -273,9 +275,10 @@ static_assert(offsetof(execution_context_native, trap_code) == 0x70);
 static_assert(offsetof(execution_context_native, local_base) == 0x78);
 static_assert(offsetof(execution_context_native, rel) == 0x80);
 static_assert(offsetof(execution_context_native, current_block_index) == 0x88);
-static_assert(sizeof(execution_context_native) == 0x90);
+static_assert(offsetof(execution_context_native, admission_records) == 0x90);
+static_assert(sizeof(execution_context_native) == 0x98);
 #else
-static_assert(sizeof(execution_context_native) == 88);
+static_assert(sizeof(execution_context_native) == 92);
 static_assert(offsetof(execution_context_native, ip) == 0x00);
 static_assert(offsetof(execution_context_native, stack_base) == 0x04);
 static_assert(offsetof(execution_context_native, stack_pointer) == 0x08);
@@ -296,7 +299,8 @@ static_assert(offsetof(execution_context_native, trap_code) == 0x48);
 static_assert(offsetof(execution_context_native, local_base) == 0x4C);
 static_assert(offsetof(execution_context_native, rel) == 0x50);
 static_assert(offsetof(execution_context_native, current_block_index) == 0x54);
-static_assert(sizeof(execution_context_native) == 0x58);
+static_assert(offsetof(execution_context_native, admission_records) == 0x58);
+static_assert(sizeof(execution_context_native) == 0x5C);
 #endif
 static_assert(sizeof(wasm_function_type_execution_view_native) == 16);
 #if FB_NATIVE_POINTER_BYTES == 8

@@ -416,6 +416,8 @@ void jit_runtime<Measurement>::rebuild_cache_indices() {
       }
       const auto reference = static_cast<std::uint8_t>(bank_id * jit_cache_bank_entry_capacity + i);
       cache.pc_index[cache.pc_index_count++] = reference;
+      assert(source.entries[i].code_offset <= UINT16_MAX);
+      cache.trace_offsets[reference] = static_cast<std::uint16_t>(source.entries[i].code_offset);
       const auto successor = trace_successor_pc(source.entries[i]);
       if (successor != jit_invalid_pc) {
         const auto bucket = chain_bucket_for_pc(successor);
@@ -869,16 +871,6 @@ template <jit_measurement_policy Measurement> int jit_runtime<Measurement>::deca
 }
 
 template <jit_measurement_policy Measurement>
-void jit_runtime<Measurement>::count_root_entry(block_index_t block_index) {
-  assert(block_index < module_view->block_count && hotspots.admission_records != nullptr);
-  auto &record = hotspots.admission_records[block_index];
-  const auto lifetime = static_cast<std::uint8_t>(record & kAdmissionLifetimeMask);
-  if (lifetime != kAdmissionLifetimeMax) {
-    record = static_cast<std::uint8_t>((record & ~kAdmissionLifetimeMask) | (lifetime + 1));
-  }
-}
-
-template <jit_measurement_policy Measurement>
 void jit_runtime<Measurement>::record_install(block_index_t block_index) {
   assert(block_index < module_view->block_count && hotspots.admission_records != nullptr);
   auto &record = hotspots.admission_records[block_index];
@@ -1062,6 +1054,12 @@ void jit_runtime<Measurement>::install_trace(const std::uint8_t *blob, std::uint
   }
   mark_trace_card_compiled(pc);
   if constexpr (!std::is_void_v<Measurement>) {
+    // The Interpreter reads a slot only in a COMPILED card (the check of the former lookup). The
+    // record of a slot is written before the card is marked, so the check runs after the mark.
+    for (std::uint32_t i = 0; i < cache.pc_index_count; ++i) {
+      const auto resident = cache_entry_at_reference(cache.pc_index[i]);
+      assert(card_state(resident.head_pc >> FB_CONF_JIT_CARD_SHIFT) == 3);
+    }
     measurements.trace_inserted(pc);
     measurements.trace_installed(block_index, bytes);
     measurements.cache_changed();
@@ -1402,35 +1400,12 @@ void jit_provider_adapter<Measurement>::fb_jit_runtime_close(runtime_type *runti
 }
 
 template <jit_measurement_policy Measurement>
-const fb_native_jit_trace_header *
-jit_provider_adapter<Measurement>::lookup_runtime_trace(std::uintptr_t owner,
-                                                        block_index_t block_index, wasm_pc_t pc) {
-  assert(owner != 0);
-  auto &runtime = *reinterpret_cast<runtime_type *>(owner);
-  if constexpr (!std::is_void_v<Measurement>) {
-    runtime.record_runtime_transition(block_index, pc);
-  }
-  assert(runtime.hotspots.card_states != nullptr && FB_CONF_JIT_CARD_SHIFT < 32);
-  [[maybe_unused]] const auto card = pc >> FB_CONF_JIT_CARD_SHIFT;
-  assert(card < runtime.hotspots.card_count);
-  assert(runtime.card_state(card) == 3);
-  const auto start_location = runtime.lookup_cached_trace(block_index, pc);
-  // The caller reads the record only when it holds a resident trace reference (see
-  // jit_abi.md), so the lookup always finds a trace.
-  auto *start = start_location.trace_entry;
-  assert(start != nullptr);
-  runtime.count_root_entry(block_index);
-  if constexpr (!std::is_void_v<Measurement>) {
-    runtime.measurements.count_root_entry();
-  }
-  const auto *start_header = runtime.trace_header(*start);
-  assert(start_header->const_rel_offset >= fireball::kTraceBoundaryMetadataBytes);
-  assert(start_header->const_rel_offset <= start_header->blob_bytes);
-  assert(start_header->chain_body_count != 0);
-  if constexpr (!std::is_void_v<Measurement>) {
-    runtime.measurements.trace_entered(block_index);
-  }
-  return start_header;
+void jit_runtime<Measurement>::record_judged_trace(block_index_t block_index, wasm_pc_t pc)
+  requires(!std::is_void_v<Measurement>)
+{
+  record_runtime_transition(block_index, pc);
+  measurements.count_root_entry();
+  measurements.trace_entered(block_index);
 }
 
 template <jit_measurement_policy Measurement>
@@ -1502,16 +1477,20 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
     runtime->measurements.owns_memory = false;
   }
   runtime->provider = {reinterpret_cast<std::uintptr_t>(runtime),
-                       lookup_runtime_trace,
                        observe_runtime_block,
                        finish_runtime_boundary,
-                       0};
+                       0,
+                       0,
+                       nullptr,
+                       nullptr};
   fireball::borrow_executable_region(&runtime->cache.code_memory, region + data_region_size(view),
                                      FB_CONF_JIT_CACHE_REGION_BYTES);
   auto *workspace = region + sizeof(runtime_type);
   const auto *function_table = jit_api::initialize_runtime_function_table(workspace, call_handlers);
   fireball::initialize_common_code(&runtime->cache.code_memory, function_table);
   runtime->provider.trace_entry_address = runtime->common_trace_entry_address();
+  runtime->provider.code_base = runtime->cache.code_memory.base;
+  runtime->provider.trace_offsets = runtime->cache.trace_offsets.data();
   fb_jit_memory_commit(&runtime->cache.code_memory);
   constexpr code_offset_t offsets[] = {FB_CONF_JIT_CACHE_ACTIVE_OFFSET_BYTES,
                                        FB_CONF_JIT_CACHE_WARM_OFFSET_BYTES,
@@ -1533,6 +1512,7 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
   auto *admission_records = card_workspace + card_workspace_size;
   std::memset(admission_records, kAdmissionNoHistory << kAdmissionStrikeShift, view->block_count);
   runtime->hotspots.admission_records = admission_records;
+  runtime->provider.admission_records = admission_records;
   auto *dirty = card_workspace + state_bytes;
   auto *mask = dirty + mask_bytes;
   typename runtime_type::profile_type profile{};

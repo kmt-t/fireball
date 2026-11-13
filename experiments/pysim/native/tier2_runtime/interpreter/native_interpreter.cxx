@@ -1095,18 +1095,32 @@ inline void prepare_native_dispatch(
   context.code = function.code;
   context.code_size = function.code_size;
   context.local_base = frame.local_base;
+  if constexpr (WithJit) {
+    // The common trace entry counts root entries in this record array (jit_runtime.md 8.2).
+    context.admission_records = state.jit_provider->admission_records;
+  }
 }
 
 template <bool CollectStats, bool WithExtension, typename ResultType>
 inline std::uint32_t
 execute_jit_trace(native_dispatch_state<CollectStats, true, WithExtension, ResultType> &state,
                   fireball_call_frame_native &frame, block_index_t block_index, wasm_pc_t pc,
-                  const std::uint8_t *&dispatch_rel) {
+                  std::uint8_t reference, const std::uint8_t *&dispatch_rel) {
   auto &context = state.context;
-  // The Interpreter calls lookup only for a block whose record holds a resident trace reference,
-  // so the lookup always returns that trace (jit_abi.md, the lookup contract).
-  const auto *header = state.jit_provider->lookup(state.jit_provider->owner, block_index, pc);
-  assert(header != nullptr);
+  // The block record holds a resident slot (jit_abi.md). The header lies at the slot's offset from
+  // the code region, so the Interpreter reads no cache structure.
+  assert(reference < FB_NATIVE_JIT_NO_TRACE_UNOBSERVED);
+  const auto &provider = *state.jit_provider;
+  assert(provider.code_base != 0 && provider.trace_offsets != nullptr);
+  if constexpr (WithExtension) {
+    state.extension->trace_judged(&state.input, block_index, pc);
+  }
+  const auto *header = reinterpret_cast<const fb_native_jit_trace_header *>(
+      provider.code_base + provider.trace_offsets[reference]);
+  assert(header->head_pc == pc && header->block_index == block_index);
+  assert(header->const_rel_offset >= sizeof(fb_native_jit_trace_exit) &&
+         header->const_rel_offset <= header->blob_bytes);
+  assert(header->chain_body_count != 0);
   const auto entry = state.jit_provider->trace_entry_address;
   const auto *rel = reinterpret_cast<const std::uint8_t *>(header) + header->const_rel_offset;
   const auto body_count = header->chain_body_count;
@@ -1271,8 +1285,9 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
   const auto *jit_provider = call.jit_provider;
   if constexpr (WithJit) {
     assert(jit_provider != nullptr && jit_provider->owner != 0);
-    assert(jit_provider->lookup != nullptr && jit_provider->observe_block != nullptr &&
-           jit_provider->finish_boundary != nullptr && jit_provider->trace_entry_address != 0);
+    assert(jit_provider->observe_block != nullptr && jit_provider->finish_boundary != nullptr &&
+           jit_provider->trace_entry_address != 0 && jit_provider->code_base != 0 &&
+           jit_provider->trace_offsets != nullptr && jit_provider->admission_records != nullptr);
   } else {
     assert(jit_provider == nullptr);
   }
@@ -1324,7 +1339,7 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
               block_reference != FB_NATIVE_JIT_NO_TRACE_UNOBSERVED) {
             assert(opcode_is_block_body(context.code[ip]));
             executed_bodies = execute_jit_trace<CollectStats, WithExtension, ResultType>(
-                state, frame, block_index, pc, dispatch_rel);
+                state, frame, block_index, pc, block_reference, dispatch_rel);
           }
         }
       }

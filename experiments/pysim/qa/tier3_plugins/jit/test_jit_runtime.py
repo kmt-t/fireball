@@ -59,6 +59,7 @@ from qa.shared.helpers import wat_to_wasm
 from qa.shared.jit_abi import (
     NativeBlockVisitHistory,
     NativeDispatchSnapshot,
+    attach_admission_records,
     make_qa_jit_dispatch_entry,
 )
 from qa.shared.jit_cache import (
@@ -337,6 +338,7 @@ def test_hotspot_04_3bank_cache_hits_preserve_residency():
     # A hit runs the trace's own code: the block writes local 0 to 7 in every bank.
     for trace in (t1, t2, t3):
         context = ExecutionContext()
+        attach_admission_records(context)
         extended = context.local_stack.extend((0,))
         assert extended
         context.local_base = context.local_stack.value_ptr(0).value
@@ -646,6 +648,7 @@ _SIDE_EFFECT_BODY = "(block i32.const 7 local.set 0) "
 def _run_for_local0(trace: JITTrace) -> int:
     """Execute a trace's own code and return local 0, which the block writes."""
     context = ExecutionContext()
+    attach_admission_records(context)
     extended = context.local_stack.extend((0,))
     assert extended
     context.local_base = context.local_stack.value_ptr(0).value
@@ -719,6 +722,7 @@ def test_jitr_chained_successor_trap_stops_at_its_body_after_the_source_ran():
 
     code = bytes(module.source)
     context = ExecutionContext()
+    attach_admission_records(context)
     extended_locals = context.local_stack.extend((0,))
     assert extended_locals
     context.local_base = context.local_stack.value_ptr(0).value
@@ -1028,6 +1032,7 @@ def test_jitr_native_header_chain_executes_successor_body_once(entry_name: str):
     assert raw_target == target.raw_addr
 
     context = ExecutionContext()
+    attach_admission_records(context)
     assert_result_14 = context.local_stack.extend((0,))
     assert assert_result_14
     if entry_name == "execute":
@@ -3762,6 +3767,7 @@ def _chain_stress_run(cache: JitRuntimeBoundary, module, start: JITTrace) -> Non
         assert successor is not None
         walked = successor
     context = ExecutionContext()
+    attach_admission_records(context)
     assert_result_24 = context.local_stack.extend((0,))
     assert assert_result_24
     context.local_base = context.local_stack.value_ptr(0).value

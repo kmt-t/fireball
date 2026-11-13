@@ -22,6 +22,8 @@ struct fb_native_execution_extension {
   std::uintptr_t owner;
   bool (*observe)(const fb_native_dispatch_call *, wasm_pc_t);
   void (*trace_executed)(const fb_native_dispatch_call *, std::uintptr_t);
+  // Called before a resident root trace of the block runs. Only the QA extension sets it.
+  void (*trace_judged)(const fb_native_dispatch_call *, block_index_t, wasm_pc_t);
 };
 
 // Metadata published through execution_context.rel after a JIT trace reaches
@@ -76,20 +78,18 @@ static_assert(sizeof(fb_native_jit_trace_header) == 32);
 /** @brief Interpreterが借用するJIT接続。callbackの契約違反は呼出し直後でassertする。 */
 struct fb_native_jit_provider {
   std::uintptr_t owner;
-  // Returns the header of the resident root trace of the block. The Interpreter calls lookup
-  // only when the BasicBlock's jit_cache_reference holds a resident trace (the card is then
-  // COMPILED), so the result is never nullptr. The result does
-  // not describe the chain endpoint. On normal completion, the terminal chain
-  // dispatcher sets execution_context.ip and publishes exit metadata through
-  // execution_context.rel before the trace entry returns true.
-  const fb_native_jit_trace_header *(*lookup)(std::uintptr_t owner, block_index_t block_index,
-                                              wasm_pc_t pc);
   /** @brief 解決済みブロックを観測する。記録した場合は1、対象外は0を返す。 */
   int (*observe_block)(std::uintptr_t owner, block_index_t block_index, wasm_pc_t pc);
   /** @brief 境界の履歴と候補処理を実行し、完了を示す1を返す。 */
   int (*finish_boundary)(std::uintptr_t owner, std::uint32_t status);
   // The common trace entry is shared by every trace; the Interpreter calls it for each root entry.
   std::uintptr_t trace_entry_address;
+  // Start of the code region. A block record holds a cache slot number; the trace header of the
+  // slot lies at code_base + trace_offsets[slot]. The table is written only by the JIT.
+  std::uintptr_t code_base;
+  const std::uint16_t *trace_offsets;
+  // Per-block root-entry counts (5 bits, saturating). The common trace entry counts each root entry.
+  std::uint8_t *admission_records;
 };
 
 struct fb_native_dispatch_call {

@@ -45,6 +45,15 @@
 #ifndef FB_TRACE_BLOCK_INDEX_OFFSET
 #error "FB_TRACE_BLOCK_INDEX_OFFSET must come from the production C++ ABI probe"
 #endif
+#ifndef FB_CONTEXT_ADMISSION_OFFSET
+#error "FB_CONTEXT_ADMISSION_OFFSET must come from the production C++ ABI probe"
+#endif
+#ifndef FB_ADMISSION_LIFETIME_MASK
+#error "FB_ADMISSION_LIFETIME_MASK must come from the admission record layout"
+#endif
+#ifndef FB_ADMISSION_LIFETIME_MAX
+#error "FB_ADMISSION_LIFETIME_MAX must come from the admission record layout"
+#endif
 
 .intel_syntax noprefix
 .text
@@ -105,6 +114,22 @@ fb_common_trace_entry:
   sub rsp, 8
   mov r12, FB_ENTRY_CTX_REG
   mov qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET], FB_REL_REG
+  /* Only a root entry reaches this prologue: a chain edge enters at fb_common_trace_call. The
+   * block's admission lifetime counts the entry, and the 5-bit count saturates at its maximum. */
+  push r13
+  movsxd rax, dword ptr [FB_REL_REG]
+  lea rax, [FB_REL_REG + rax]
+  movzx r11d, word ptr [rax + FB_TRACE_BLOCK_INDEX_OFFSET]
+  mov r10, qword ptr [FB_CTX_REG + FB_CONTEXT_ADMISSION_OFFSET]
+  movzx eax, byte ptr [r10 + r11]
+  mov r13d, eax
+  and r13d, FB_ADMISSION_LIFETIME_MASK
+  cmp r13d, FB_ADMISSION_LIFETIME_MAX
+  je .Ladmission_saturated
+  add eax, 1
+.Ladmission_saturated:
+  mov byte ptr [r10 + r11], al
+  pop r13
   movsxd rax, dword ptr [FB_REL_REG]
   lea rax, [FB_REL_REG + rax + FB_TRACE_HEADER_BYTES]
   add FB_REL_REG, 4

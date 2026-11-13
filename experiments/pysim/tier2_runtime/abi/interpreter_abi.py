@@ -28,7 +28,8 @@ else:
 
 FunctionTypeExecutionViewNative = FuncTypeRecord
 
-EXECUTION_CONTEXT_SIZE_BYTES = 144
+EXECUTION_CONTEXT_SIZE_BYTES = 152
+EXECUTION_CONTEXT_ADMISSION_RECORDS_OFFSET_BYTES = 0x90
 EXECUTION_CONTEXT_LOOP_JUMP_COUNT_OFFSET_BYTES = 0x58
 EXECUTION_CONTEXT_LOOP_JUMP_THRESHOLD_OFFSET_BYTES = 0x5C
 NATIVE_VALUE_STACK_CAPACITY = 128
@@ -66,6 +67,7 @@ class ExecutionContextABI(ctypes.Structure):
         ("rel", ctypes.c_void_p),
         ("current_block_index", ctypes.c_uint16),
         ("reserved0", ctypes.c_uint16),
+        ("admission_records", ctypes.c_void_p),
     )
 
 
@@ -571,6 +573,7 @@ class NativeValueStack:
 
 assert ctypes.sizeof(ctypes.c_void_p) == 8
 assert ctypes.sizeof(ExecutionContextABI) == EXECUTION_CONTEXT_SIZE_BYTES
+assert ExecutionContextABI.admission_records.offset == EXECUTION_CONTEXT_ADMISSION_RECORDS_OFFSET_BYTES
 assert ExecutionContextABI.ip.offset == 0x00
 assert ExecutionContextABI.stack_base.offset == 0x08
 assert ExecutionContextABI.stack_pointer.offset == 0x10

@@ -172,6 +172,7 @@ def role_definitions(role: str, abi: tuple[int, ...], config_path: Path) -> dict
         context_rel,
         context_current_block_index,
         trace_block_index,
+        context_admission_records,
     ) = abi
     config = runpy.run_path(str(config_path))
     api_table_pointer_offset = (
@@ -208,6 +209,10 @@ def role_definitions(role: str, abi: tuple[int, ...], config_path: Path) -> dict
             "FB_CONTEXT_REL_OFFSET": context_rel,
             "FB_CONTEXT_CURRENT_BLOCK_INDEX_OFFSET": context_current_block_index,
             "FB_TRACE_BLOCK_INDEX_OFFSET": trace_block_index,
+            "FB_CONTEXT_ADMISSION_OFFSET": context_admission_records,
+            # The admission record layout (jit_runtime.hxx): 3 strike bits above 5 lifetime bits.
+            "FB_ADMISSION_LIFETIME_MASK": 0x1F,
+            "FB_ADMISSION_LIFETIME_MAX": 31,
             "FB_CONTEXT_TRAP_CODE_OFFSET": trap_code,
             "FB_CONTEXT_RUNTIME_FLAGS_OFFSET": context_flags,
             "FB_CPS_EXIT_MASK": 0xF00,
@@ -217,11 +222,11 @@ def role_definitions(role: str, abi: tuple[int, ...], config_path: Path) -> dict
 
 
 ABI_SECTION = ".fb_abi"
-ABI_FIELD_COUNT = 13
+ABI_FIELD_COUNT = 14
 
 
 def compile_abi_probe(clang: str, target: str | None, directory: Path) -> tuple[int, ...]:
-    """Compile the production C++ ABI probe and return its 13 ABI words."""
+    """Compile the production C++ ABI probe and return its 14 ABI words."""
     source = repo_root() / "tools/jit_stencil_gen/abi_probe.cxx"
     object_path = directory / "jit_abi_probe.o"
     command = [clang, "-std=c++23", "-O0", "-c", str(source), "-o", str(object_path)]

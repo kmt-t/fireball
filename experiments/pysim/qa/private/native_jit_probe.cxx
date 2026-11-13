@@ -20,6 +20,13 @@ static bool qa_runtime_observe([[maybe_unused]] const fb_native_dispatch_call *i
   return false;
 }
 
+static void qa_runtime_judged(const fb_native_dispatch_call *input, block_index_t block_index,
+                              wasm_pc_t pc) {
+  assert(input != nullptr && input->jit_provider != nullptr && input->jit_provider->owner != 0);
+  auto &runtime = *reinterpret_cast<qa_jit_runtime *>(input->jit_provider->owner);
+  runtime.record_judged_trace(block_index, pc);
+}
+
 static void qa_runtime_trace_executed(const fb_native_dispatch_call *input,
                                       std::uintptr_t trace_cookie) {
   if (input == nullptr || input->context == nullptr || input->jit_provider == nullptr ||
@@ -53,7 +60,7 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_runtime_dispatch(
     return 0;
   }
   const fb_native_execution_extension extension{input->jit_provider->owner, qa_runtime_observe,
-                                                qa_runtime_trace_executed};
+                                                qa_runtime_trace_executed, qa_runtime_judged};
   const fb_native_dispatch_extension_call extension_call{*input, &extension};
   auto &runtime = *reinterpret_cast<qa_jit_runtime *>(input->jit_provider->owner);
   auto &measurements = runtime.measurements;
@@ -364,6 +371,9 @@ struct qa_dispatch_buffers {
   std::uint64_t history_bytes;
   // The shared trace entry: the callable of every trace in `entries`.
   std::uintptr_t common_trace_entry;
+  // The runtime's provider: its code base, offset table, and admission records are the ones the
+  // block records name.
+  const fb_native_jit_provider *runtime_provider;
 };
 struct qa_dispatch_owner {
   const qa_dispatch_buffers &buffers;
@@ -379,28 +389,14 @@ static const fb_native_trace_descriptor *qa_find(const qa_dispatch_buffers &b, w
   return nullptr;
 }
 
-static const fireball::jit_trace_header *
-qa_lookup_trace(std::uintptr_t owner, [[maybe_unused]] block_index_t block_index, wasm_pc_t pc) {
-  assert(owner != 0);
-  const auto &b = reinterpret_cast<qa_dispatch_owner *>(owner)->buffers;
-  const auto *start = qa_find(b, pc);
-  if (start == nullptr) {
-    return nullptr;
-  }
-  assert(start->entry_address != 0 && start->entry_address >= FB_CONF_JIT_X64_TRACE_HEADER_BYTES);
-  const auto *header = reinterpret_cast<const fireball::jit_trace_header *>(
-      start->entry_address - FB_CONF_JIT_X64_TRACE_HEADER_BYTES);
-  assert(header->blob_bytes >= FB_CONF_JIT_X64_TRACE_HEADER_BYTES);
-  assert(header->const_rel_offset <= header->blob_bytes && start->chain_body_count != 0);
-  assert(b.common_trace_entry != 0);
-  return header;
-}
-
 static int qa_observe_block(std::uintptr_t owner, block_index_t, wasm_pc_t) {
   return owner == 0 ? -1 : 1;
 }
 
 static int qa_finish_boundary(std::uintptr_t owner, std::uint32_t) { return owner == 0 ? 0 : 1; }
+
+// The harness counts its root entries in the snapshot, not in the runtime's measurements.
+static void qa_harness_judged(const fb_native_dispatch_call *, block_index_t, wasm_pc_t) {}
 
 static qa_dispatch_owner *qa_owner(const fb_native_dispatch_call *input) {
   if (input == nullptr) {
@@ -455,7 +451,7 @@ fb_qa_dispatch(int (*dispatch)(const fb_native_dispatch_extension_call *, fb_nat
                const qa_dispatch_buffers *buffers, const fb_native_dispatch_call *input,
                fb_native_result *result) {
   if (dispatch == nullptr || buffers == nullptr || input == nullptr || result == nullptr ||
-      buffers->shift >= 32 || buffers->mask_bytes < (buffers->cards + 7u) / 8u ||
+      buffers->runtime_provider == nullptr || buffers->shift >= 32 || buffers->mask_bytes < (buffers->cards + 7u) / 8u ||
       buffers->history_bytes < sizeof(std::uint32_t) || buffers->history == nullptr ||
       buffers->history_bytes % sizeof(std::uint32_t) != 0 ||
       (buffers->cards != 0 && buffers->mask == nullptr) ||
@@ -465,10 +461,16 @@ fb_qa_dispatch(int (*dispatch)(const fb_native_dispatch_extension_call *, fb_nat
   auto call = *input;
   qa_dispatch_owner owner{*buffers};
   const auto owner_address = reinterpret_cast<std::uintptr_t>(&owner);
-  const fb_native_jit_provider provider{owner_address, qa_lookup_trace, qa_observe_block,
-                                        qa_finish_boundary, buffers->common_trace_entry};
+  // The block records name slots of the runtime, so the code base, the offset table, and the
+  // admission records are the runtime's. The harness replaces only its callbacks.
+  fb_native_jit_provider provider = *buffers->runtime_provider;
+  provider.owner = owner_address;
+  provider.observe_block = qa_observe_block;
+  provider.finish_boundary = qa_finish_boundary;
+  provider.trace_entry_address = buffers->common_trace_entry;
   call.jit_provider = &provider;
-  fb_native_execution_extension extension{owner_address, qa_observe, qa_trace_executed};
+  fb_native_execution_extension extension{owner_address, qa_observe, qa_trace_executed,
+                                          qa_harness_judged};
   fb_native_dispatch_extension_call extension_call{call, &extension};
   return dispatch(&extension_call, result);
 }
@@ -479,10 +481,12 @@ extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_native_provider_layout(std::uint32_t *
   assert(output != nullptr);
   output[0] = static_cast<std::uint32_t>(sizeof(fb_native_jit_provider));
   output[1] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, owner));
-  output[2] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, lookup));
-  output[3] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, observe_block));
-  output[4] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, finish_boundary));
-  output[5] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, trace_entry_address));
+  output[2] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, observe_block));
+  output[3] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, finish_boundary));
+  output[4] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, trace_entry_address));
+  output[5] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, code_base));
+  output[6] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, trace_offsets));
+  output[7] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, admission_records));
 }
 
 // Block-record marks as the native code defines them; the QA test checks the Python mirror.

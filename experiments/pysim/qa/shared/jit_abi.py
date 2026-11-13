@@ -69,6 +69,7 @@ class NativeDispatchSnapshot:
         "common_trace_entry",
         "entries",
         "entry_count",
+        "runtime_provider",
         "trackable_card_count",
         "trackable_mask",
         "trackable_shift",
@@ -91,6 +92,7 @@ class NativeDispatchSnapshot:
         allocator: BumpAllocator | None = None,
         trackable_shift: int = 0,
         common_trace_entry: int = 0,
+        runtime_provider: int = 0,
     ) -> None:
         assert 0 <= entry_count <= len(entries)
         assert 0 <= common_trace_entry or entry_count == 0
@@ -103,6 +105,8 @@ class NativeDispatchSnapshot:
         self.trackable_shift = trackable_shift
         # The callable of every snapshot trace: the shared entry in the common area.
         self.common_trace_entry = common_trace_entry
+        # The runtime's provider: the harness takes the slot tables and the admission records from it.
+        self.runtime_provider = runtime_provider
         self.block_history = NativeBlockVisitHistory(block_history)
         self._allocator = allocator
         self._arena_offset: int | None = None
@@ -174,6 +178,7 @@ class _DispatchBuffers(ctypes.Structure):
         ("history", ctypes.c_void_p),
         ("history_bytes", ctypes.c_uint64),
         ("common_trace_entry", ctypes.c_uint64),
+        ("runtime_provider", ctypes.c_void_p),
     )
 
 
@@ -195,6 +200,7 @@ def dispatch_for_test(interpreter, call_state, snapshot, execution_count, native
         snapshot.block_history.native_address,
         snapshot.block_history.native_bytes,
         snapshot.common_trace_entry,
+        snapshot.runtime_provider,
     )
     snapshot.block_history.clear()
     entry = partial(wrapper, ctypes.cast(native_dispatcher, ctypes.c_void_p), ctypes.byref(buffers))
@@ -252,6 +258,7 @@ def make_qa_jit_dispatch_entry(manager: _NativeSnapshotProvider, collect_stats: 
             snapshot.block_history.native_address,
             snapshot.block_history.native_bytes,
             snapshot.common_trace_entry,
+            snapshot.runtime_provider,
         )
         status = qa_dispatch(
             ctypes.cast(dispatch, ctypes.c_void_p),
@@ -279,3 +286,18 @@ def make_qa_runtime_dispatch_entry(collect_stats: bool) -> CFuncPtr:
         return int(qa_dispatch(ctypes.cast(dispatch, ctypes.c_void_p), call, result))
 
     return callback_type(invoke)
+
+
+_ADMISSION_HOLDERS: list[object] = []
+
+
+def attach_admission_records(context) -> None:
+    """Give a QA-built context the admission record array that the common trace entry counts into.
+
+    A native dispatch copies the provider's array into the context. A test that calls a trace
+    entry directly has no provider, so it attaches its own array of 256 records (block indices of
+    the QA modules stay below 256).
+    """
+    records = (ctypes.c_uint8 * 256)()
+    _ADMISSION_HOLDERS.append(records)
+    context.admission_records = ctypes.addressof(records)

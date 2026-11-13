@@ -89,6 +89,9 @@ struct jit_cache_state {
   std::array<jit_cache_bank, jit_cache_bank_count> banks{};
   std::array<std::uint8_t, jit_cache_total_entry_capacity> pc_index{};
   std::array<std::uint8_t, inbound_bucket_count> inbound_chain_heads{};
+  // Header offset from code_memory.base of each cache slot. Written only by rebuild_cache_indices;
+  // the Interpreter reads it through the provider.
+  std::array<std::uint16_t, jit_cache_total_entry_capacity> trace_offsets{};
   std::array<std::uint8_t, jit_cache_total_entry_capacity> inbound_chain_next{};
   std::uint32_t pc_index_count = 0;
   std::uint32_t active_bank_id = 0, warm_bank_id = 1, oldest_bank_id = 2;
@@ -101,6 +104,8 @@ struct jit_cache_state {
 inline constexpr std::uint8_t kAdmissionStrikeShift = 5;
 inline constexpr std::uint8_t kAdmissionLifetimeMask = (1u << kAdmissionStrikeShift) - 1u;
 inline constexpr std::uint8_t kAdmissionLifetimeMax = kAdmissionLifetimeMask;
+// The stencil counts root entries with these values (lir/x64/common.S and build_inputs.py).
+static_assert(kAdmissionStrikeShift == 5 && kAdmissionLifetimeMask == 0x1F && kAdmissionLifetimeMax == 31);
 // Strike values above the strikes are the markers of the record (jit_runtime.md 8.2).
 inline constexpr std::uint8_t kAdmissionNoHistory = 5;
 inline constexpr std::uint8_t kAdmissionStageRejected = 6;
@@ -255,6 +260,9 @@ public:
   /** @brief QA計測で実際に解釈器へ戻った後続辺を分類する。 */
   void record_runtime_transition(block_index_t target_block_index, wasm_pc_t target_pc)
     requires(!std::is_void_v<Measurement>);
+  /** @brief QA計測で、dispatchが判定した常駐traceの入口を分類し、計数する。 */
+  void record_judged_trace(block_index_t block_index, wasm_pc_t pc)
+    requires(!std::is_void_v<Measurement>);
   /** @brief QA計測で常駐先へのチェイン構築判定を記録する。 */
   void record_chain_construction(jit_cache_entry source)
     requires(!std::is_void_v<Measurement>);
@@ -264,8 +272,6 @@ public:
   void set_chain_target(jit_cache_entry source, const jit_cache_entry *target);
   /** @brief Active/Warmの後続へ連結する。Oldestへは既存の連結だけを維持する。 */
   void link_resident_successor(jit_cache_entry source);
-  /** @brief 根の入口を1回数える。計数は5 bitで飽和する。 */
-  void count_root_entry(block_index_t block_index);
   /** @brief 設置の時点で、block の計数を0に戻す。 */
   void record_install(block_index_t block_index);
   /** @brief 破棄の時点で、寿命からストライクを更新し、破棄数を数える。 */
@@ -326,9 +332,6 @@ template <jit_measurement_policy Measurement> struct jit_provider_adapter {
   static int finish_boundary(runtime_type *runtime, int yielded);
   /** @brief 配置されたランタイムの寿命を終了する。 */
   static void fb_jit_runtime_close(runtime_type *runtime);
-  /** @brief Interpreterへ常駐トレースの実行情報を渡す。 */
-  static const fb_native_jit_trace_header *
-  lookup_runtime_trace(std::uintptr_t owner, block_index_t block_index, wasm_pc_t pc);
   /** @brief 対象ブロックの実行履歴を記録する。 */
   static int observe_runtime_block(std::uintptr_t owner, block_index_t block_index, wasm_pc_t pc);
   /** @brief Interpreterの終了状態をJITの境界処理へ変換する。 */

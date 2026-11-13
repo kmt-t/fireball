@@ -317,45 +317,37 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     from tier2_runtime.wasm.module import NO_TRACE_OBSERVED, NO_TRACE_UNOBSERVED
     from tier2_runtime.wasm.reader import parse_standalone
 
-    # lookup returns the trace header (NULL on a miss); the entry address lives in the provider.
-    JitLookup = ctypes.CFUNCTYPE(
-        ctypes.c_void_p,
-        ctypes.c_size_t,
-        ctypes.c_uint32,
-        ctypes.c_uint32,
-    )
     JitObserve = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_uint32)
     JitFinish = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_size_t, ctypes.c_uint32)
-    callbacks = [0, 0, 0]
-
-    def lookup(owner, block_index, pc):
-        assert owner == 123
-        callbacks[0] += 1
-        return None
+    callbacks = [0, 0]
 
     def observe(owner, block_index, pc):
         assert owner == 123
-        callbacks[1] += 1
+        callbacks[0] += 1
         return 1
 
     def finish_boundary(owner, status):
         assert owner == 123
-        callbacks[2] += 1
+        callbacks[1] += 1
         return 1
 
-    lookup_callback = JitLookup(lookup)
     observe_callback = JitObserve(observe)
     finish_callback = JitFinish(finish_boundary)
 
-    # The fake lookup never hits, so this entry is never called; the provider still needs a non-null one.
+    # No block record names a slot, so the trace entry, the offset table, and the admission records
+    # are never read; the provider still carries non-null ones.
     trace_entry_byte = ctypes.c_uint8(0xC3)
     trace_entry_address = ctypes.addressof(trace_entry_byte)
+    offsets = (ctypes.c_uint16 * 1)()
+    admission = (ctypes.c_uint8 * 1)()
     provider = NativeJitProvider(
         owner=123,
-        lookup=ctypes.cast(lookup_callback, ctypes.c_void_p),
         observe_block=ctypes.cast(observe_callback, ctypes.c_void_p),
         finish_boundary=ctypes.cast(finish_callback, ctypes.c_void_p),
         trace_entry_address=trace_entry_address,
+        code_base=trace_entry_address,
+        trace_offsets=ctypes.addressof(offsets),
+        admission_records=ctypes.addressof(admission),
     )
     provider_address = ctypes.addressof(provider)
 
@@ -369,8 +361,8 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         def bind_execution(self, execution):
             assert execution.module is self.module
             # The block records select what the Interpreter calls: an OBSERVED marker reaches
-            # observe, and UNOBSERVED reaches neither. A resident trace reference would reach lookup,
-            # which must return a real trace; that path is tested by test_jit_runtime (TEST-JITR-130).
+            # observe, and UNOBSERVED reaches neither. A resident trace reference reads the offset
+            # table; that path is tested by test_jit_runtime (TEST-JITR-130).
             marker = {"unobserved": NO_TRACE_UNOBSERVED, "observed": NO_TRACE_OBSERVED}[record]
             for block in execution.module.blocks:
                 block.jit_cache_reference = marker
@@ -407,10 +399,10 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         assert engine.call(interpreter, 0, [9]).unwrap() == [0]
     assert len(plugin.bindings) == 1
     if record == "observed":
-        assert callbacks[0] == 0 and callbacks[1] >= 8
+        assert callbacks[0] >= 8
     else:
-        assert callbacks[0] == 0 and callbacks[1] == 0
-    assert callbacks[2] > 0
+        assert callbacks[0] == 0
+    assert callbacks[1] > 0
     assert engine.stat_jit_invocations == 0
     assert (engine.stat_interp_steps > 0) == collect_stats
     engine.reset_stats()

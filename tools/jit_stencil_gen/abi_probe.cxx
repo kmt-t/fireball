@@ -52,4 +52,5 @@ extern "C" __attribute__((used, section(".fb_abi"))) const std::uint32_t
             offsetof(fireball::jit_trace_header, block_index)),
         static_cast<std::uint32_t>(offsetof(
             fireball_execution_context_native, admission_records)),
+        static_cast<std::uint32_t>(fireball::kAdmissionLifetimeMask),
 };

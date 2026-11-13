@@ -66,5 +66,11 @@ struct jit_profile {
   std::uint32_t history_capacity, queue_capacity;
 };
 
+// The admission record of a block is one byte: the upper three bits hold the strike value and the
+// lower five bits hold the lifetime count. jit_runtime.md 8.2 defines the uses of the count by
+// time. The production ABI probe exports the mask, and lir/x64/common.S counts with it.
+inline constexpr std::uint8_t kAdmissionStrikeShift = 5;
+inline constexpr std::uint8_t kAdmissionLifetimeMask = (1u << kAdmissionStrikeShift) - 1u;
+
 } // namespace fireball
 #endif

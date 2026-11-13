@@ -101,11 +101,7 @@ struct jit_cache_state {
 // The admission record of a block is one byte: the upper three bits hold the strike value and the
 // lower five bits hold the lifetime count. jit_runtime.md 8.2 defines the uses of the count by
 // time.
-inline constexpr std::uint8_t kAdmissionStrikeShift = 5;
-inline constexpr std::uint8_t kAdmissionLifetimeMask = (1u << kAdmissionStrikeShift) - 1u;
 inline constexpr std::uint8_t kAdmissionLifetimeMax = kAdmissionLifetimeMask;
-// The stencil counts root entries with these values (lir/x64/common.S and build_inputs.py).
-static_assert(kAdmissionStrikeShift == 5 && kAdmissionLifetimeMask == 0x1F && kAdmissionLifetimeMax == 31);
 // Strike values above the strikes are the markers of the record (jit_runtime.md 8.2).
 inline constexpr std::uint8_t kAdmissionNoHistory = 5;
 inline constexpr std::uint8_t kAdmissionStageRejected = 6;

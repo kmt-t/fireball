@@ -5838,6 +5838,22 @@ def _admission_window(manager) -> tuple[int, int, int]:
     return output[0], output[1], output[2]
 
 
+def test_jitr_134_lifetime_saturates_at_its_maximum_without_a_carry_into_the_strikes():
+    """TEST-JITR-134: the stencil counts root entries in 5 bits, and the count stops at 31.
+
+    Forty root entries after the install take the lifetime to 31 and keep the strike value. A carry
+    out of the lifetime bits would clear the lifetime and raise the strike to the stage-rejection
+    value, so the strike check tells the two cases apart.
+    """
+    engine, module, manager, index, block = _admission_engine()
+    _make_resident(engine, module, manager, block)
+    strikes = _strikes(_admission_record(manager, index))
+    _call_admission(engine, module, 40)
+    record = _admission_record(manager, index)
+    assert _lifetime(record) == 31
+    assert _strikes(record) == strikes
+
+
 def test_jitr_109_eviction_takes_a_strike_below_the_short_lifetime_and_resets_above_it():
     """TEST-JITR-109: a short lifetime takes a strike, and a lifetime of K or more resets it.
 

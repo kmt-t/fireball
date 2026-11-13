@@ -86,31 +86,17 @@ concept jit_measurement_policy =
 struct jit_cache_state {
   static constexpr std::uint32_t inbound_bucket_count = 64;
   static constexpr std::uint8_t no_reference = 0xFFu;
-  // Each trace exit is one inbound node. A trace has one exit (its header) for now.
-  static constexpr std::uint32_t chain_exits_per_trace = 1;
-  /** @brief Returns the cache reference of an inbound node. */
-  static constexpr std::uint32_t inbound_node_reference(std::uint32_t node) {
-    return node / chain_exits_per_trace;
-  }
-  /** @brief Returns the exit index of an inbound node. */
-  static constexpr std::uint32_t inbound_node_exit(std::uint32_t node) {
-    return node % chain_exits_per_trace;
-  }
   std::array<jit_cache_bank, jit_cache_bank_count> banks{};
   std::array<std::uint8_t, jit_cache_total_entry_capacity> pc_index{};
   std::array<std::uint8_t, inbound_bucket_count> inbound_chain_heads{};
   // Header offset from code_memory.base of each cache slot. Written only by rebuild_cache_indices;
   // the Interpreter reads it through the provider.
   std::array<std::uint16_t, jit_cache_total_entry_capacity> trace_offsets{};
-  std::array<std::uint8_t, jit_cache_total_entry_capacity * chain_exits_per_trace>
-      inbound_chain_next{};
+  std::array<std::uint8_t, jit_cache_total_entry_capacity> inbound_chain_next{};
   std::uint32_t pc_index_count = 0;
   std::uint32_t active_bank_id = 0, warm_bank_id = 1, oldest_bank_id = 2;
   executable_memory code_memory{};
 };
-// An inbound node is one byte, and no_reference is the node value that means "none".
-static_assert(jit_cache_total_entry_capacity * jit_cache_state::chain_exits_per_trace <
-              jit_cache_state::no_reference);
 
 // The admission record of a block is one byte: the upper three bits hold the strike value and the
 // lower five bits hold the lifetime count. jit_runtime.md 8.2 defines the uses of the count by
@@ -257,17 +243,9 @@ public:
   /** @brief 常駐トレースの実行エントリアドレスを返す。 */
   std::uintptr_t trace_body_address(jit_cache_entry value) const;
   std::uintptr_t common_trace_entry_address() const;
-  /** @brief The successor of one trace exit, as the loader resolved it. */
-  struct chain_exit_successor_view {
-    wasm_pc_t pc;
-    block_index_t block_index;
-  };
-  /** @brief Returns the successor of exit `exit`. Exit 0 is the trace header exit. */
-  chain_exit_successor_view chain_exit_successor(jit_cache_entry value, std::uint32_t exit) const;
-  /** @brief Returns the body address connected to exit `exit`, or 0 when it is not connected. */
-  std::uintptr_t chain_exit_target(jit_cache_entry value, std::uint32_t exit) const;
-  /** @brief Returns the code offset of the header that stores the link of exit `exit`. */
-  code_offset_t chain_exit_slot(jit_cache_entry value, std::uint32_t exit) const;
+  /** @brief Loaderが解決した後続PCを返す。 */
+  wasm_pc_t trace_successor_pc(jit_cache_entry value) const;
+  block_index_t trace_successor_block_index(jit_cache_entry value) const;
   /** @brief 静的な前方チェイニングが可能なソースかを判定する。 */
   bool can_chain_from(jit_cache_entry value) const;
   /** @brief 後続PCとフレーム境界が連結可能かを判定する。 */
@@ -287,8 +265,7 @@ public:
   /** @brief 既存の連結先を参照する。未連結ならnullptrを返す。 */
   const jit_trace_header *chain_target_header(const jit_trace_header &source) const;
   /** @brief 連結先が変わる場合だけコードヘッダを書き換える。 */
-  void set_chain_target(jit_cache_entry source, std::uint32_t exit,
-                        const jit_cache_entry *target);
+  void set_chain_target(jit_cache_entry source, const jit_cache_entry *target);
   /** @brief Active/Warmの後続へ連結する。Oldestへは既存の連結だけを維持する。 */
   void link_resident_successor(jit_cache_entry source);
   /** @brief 設置の時点で、block の計数を0に戻す。 */

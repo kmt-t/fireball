@@ -173,9 +173,10 @@ struct jit_measurements {
     return true;
   }
 
-  // Root entries (lookups that start a trace), classified by the Interpreter events before them in the
-  // same native dispatch. A kind is decided at the lookup from the last event: a trace end (the pending
-  // source) and where the lookup lands, or the start of the dispatch, or Interpreter activity.
+  // Root entries (lookups that start a trace). A trace end is the transfer from a trace exit to the
+  // next block that the dispatch judges; Interpreter blocks may lie between them (TEST-JITR-133).
+  // A kind is decided at the lookup from the pending trace exit, or the start of the dispatch, or
+  // Interpreter activity without a pending exit.
   static constexpr std::size_t root_entry_kind_count = 6;
   static constexpr std::array<std::string_view, root_entry_kind_count> root_entry_kind_names{
       "dispatch_start", "trace_end_next", "trace_end_loop", "trace_end_other", "interpreter",

@@ -4433,6 +4433,57 @@ def test_jitr_127_trace_end_before_an_interpreted_successor_is_unobserved(monkey
     assert counts["jit.chain_runtime_unclassified"] == 0
 
 
+_CARRY_EXIT_WAT = """
+(module (func (export "f") (result i32) (local $i i32)
+  (block i32.const 1 i32.const 2 i32.add drop)
+  i32.const 7 drop
+  (loop $l
+    (local.set $i (i32.add (local.get $i) (i32.const 1)))
+    (br_if $l (i32.lt_s (local.get $i) (i32.const 3))))
+  (local.get $i)))
+"""
+
+
+def test_jitr_133_trace_end_is_counted_at_the_next_judged_block_across_an_interpreted_block(
+    monkeypatch,
+):
+    """TEST-JITR-133: a trace end counts at the next block the dispatch judges, even after an
+    interpreted block.
+
+    The definition (counter semantics): a trace end is the transfer from the trace exit to the next
+    block that the dispatch judges. The transfer may pass interpreted blocks in between. Block 0 is
+    a resident trace, block 1 runs only in the Interpreter, and the loop head (block 2) is a resident
+    trace that the dispatch judges. The loop head's root entry is therefore one trace end of block 0,
+    with the opcode of block 0's terminator (end), and it is not an interpreter entry.
+    """
+    _route_stats_through_qa_extension(monkeypatch)
+    module = parse_standalone(wat_to_wasm(_CARRY_EXIT_WAT))
+    engine = make_runtime_engine()
+    engine.register_module_blocks(module)
+    manager = engine.jit_runtime
+    first = min(module.blocks, key=lambda block: block.head_pc)
+    loop_head = next(block for block in module.blocks if block.loops_to == block.head_pc)
+    for block in (first, loop_head):
+        trace = compile_module_block(TraceCompiler(), module, block)
+        assert trace is not None
+        inserted = manager.cache.insert(trace)
+        assert inserted
+    interpreter = Interpreter(module)
+    function_index = module.export_func_index("f")
+    assert list(engine.call(interpreter, function_index, []).unwrap()) == [3]
+    counts = _runtime_chain_counts(manager)
+    assert counts.get("jit.root_entry.dispatch_start", 0) == 1
+    assert counts.get("jit.root_entry.trace_end_other", 0) == 1
+    assert counts.get("jit.root_entry_op.trace_end_other.end", 0) == 1
+    assert counts.get("jit.root_entry.interpreter", 0) == 0
+    # The loop head is judged three times: once after block 1, then after each taken back edge
+    # (the third pass falls through and is not judged).
+    assert counts.get("jit.root_entry.trace_end_loop", 0) == 2
+    assert counts.get("jit.chain_runtime_transitions", 0) == 3
+    # The last loop-head trace exit falls through to the function end: no block is judged after it.
+    assert counts.get("jit.chain_runtime_unobserved_trace_exits", 0) == 1
+
+
 def test_jitr_128_chained_body_is_not_a_root_entry_and_its_end_is_unobserved(monkeypatch):
     """TEST-JITR-128: a linked successor runs inside the chain, and the chain end is unobserved.
 

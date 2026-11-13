@@ -517,14 +517,14 @@ block_index_t jit_runtime<Measurement>::trace_successor_block_index(jit_cache_en
 
 static bool chain_terminator_is_unsupported(const jit_trace_header *header,
                                             const jit_wasm_block &source) {
-  if (header != nullptr && header->exit_kind == FB_NATIVE_JIT_TRACE_CALL_CPS) {
+  if (header != nullptr && header->exit_kind != FB_NATIVE_JIT_TRACE_NORMAL) {
     return true;
   }
   assert(source.code.data != nullptr);
   const auto terminator = source.offset + source.byte_span;
   return terminator < source.code.bytes &&
          fireball::opcode_has_attribute(source.code.data[terminator],
-                                        fireball::kOpcodeNotChainable);
+                                        fireball::kOpcodeDynamicTarget);
 }
 
 [[maybe_unused]] static jit_chain_reason
@@ -550,7 +550,8 @@ chain_source_rejection_reason(const jit_trace_header &header, const jit_wasm_blo
 template <jit_measurement_policy Measurement>
 bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
   const auto *header = trace_header(value);
-  if (header->exit_kind == FB_NATIVE_JIT_TRACE_CALL_CPS) {
+  // A trace that ends in an Interpreter CPS handler (a call, a pending terminator) never chains.
+  if (header->exit_kind != FB_NATIVE_JIT_TRACE_NORMAL) {
     return false;
   }
   const auto successor = trace_successor_pc(value);
@@ -567,11 +568,9 @@ bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
   // A block ends before a terminator instruction inside its function body, which ends in `end`.
   const auto terminator = source->offset + source->byte_span;
   assert(terminator < source->code.bytes);
-  // Terminators that exit through the Interpreter CPS or a call are not chain sources. Syntax
-  // delimiters (02, 03, 05, 0B) and the other opcodes are chainable: loader metadata links past
-  // them.
+  // The successor of a DynamicTarget terminator (0E, 0F) is known only at run time.
   return !fireball::opcode_has_attribute(source->code.data[terminator],
-                                         fireball::kOpcodeNotChainable);
+                                         fireball::kOpcodeDynamicTarget);
 }
 
 template <jit_measurement_policy Measurement>

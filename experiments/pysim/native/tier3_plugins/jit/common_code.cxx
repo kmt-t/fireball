@@ -128,8 +128,8 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
                           const fireball::jit_compile_result *r, wasm_pc_t head_pc,
                           frame_depth_t frame_depth, block_index_t block_index,
                           code_ip_t body_end_ip, wasm_pc_t next_pc, wasm_pc_t loops_to,
-                          block_index_t next_block_index, bool interpreter_terminator_pending,
-                          std::uint8_t *output, code_offset_t capacity) {
+                          block_index_t next_block_index, std::uint8_t *output,
+                          code_offset_t capacity) {
   using namespace fireball;
   if (body == nullptr || r == nullptr || output == nullptr ||
       capacity < header_bytes + kTraceBoundaryMetadataBytes || bytes > capacity - header_bytes) {
@@ -182,7 +182,7 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
       r->interpreter_rel_bytes,
       next_block_index,
       frame_depth,
-      static_cast<std::uint8_t>(interpreter_terminator_pending)};
+      static_cast<std::uint8_t>(r->exit_kind == FB_NATIVE_JIT_TRACE_TERMINATOR_PENDING)};
   std::memcpy(output + metadata_offset, &boundary_metadata, sizeof(boundary_metadata));
   return 1;
 }
@@ -209,14 +209,9 @@ extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block *block, std::
     return status;
   }
   const auto block_end = block->offset + block->byte_span;
-  const auto exit_ip = trace_body_end(result, block_end);
-  const auto terminator_pending =
-      exit_ip < block->code.bytes &&
-      fireball::opcode_has_attribute(block->code.data[exit_ip],
-                                     fireball::kOpcodeInterpreterAfterTrace);
   return build_trace(body_scratch, result.body_bytes, &result, block->head_pc, block->frame_depth,
                      block->block_index, block_end, block->next_pc, block->loops_to,
-                     block->next_block_index, terminator_pending, output, capacity)
+                     block->next_block_index, output, capacity)
              ? 1
              : -1;
 }

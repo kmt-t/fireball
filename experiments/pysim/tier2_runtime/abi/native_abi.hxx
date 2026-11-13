@@ -36,14 +36,21 @@ struct fb_native_jit_trace_exit {
   // Loader-resolved block index for next_pc; invalid when no successor exists.
   block_index_t block_index;
   frame_depth_t frame_depth;
-  // 1 when the Interpreter executes the opcode at body_end_ip after this trace (if, br, br_if,
-  // call, call_indirect). Decided at compile time from that opcode.
+  // 1 when the Interpreter executes the opcode at body_end_ip after this trace. Written only by
+  // build_trace from exit_kind. A chained trace reaches the Interpreter through this record of
+  // the last trace, and its header is not reachable from the Interpreter, so the flag is kept here.
   std::uint8_t interpreter_terminator_pending;
 };
 
+// How a trace ends. The compiler decides it, and the Interpreter reads it from the header.
 enum fb_native_jit_trace_exit_kind : std::uint8_t {
+  // The trace returns normally, and the Interpreter continues at the successor block.
   FB_NATIVE_JIT_TRACE_NORMAL = 0,
+  // The call handler is entered from the trace entry (CPS).
   FB_NATIVE_JIT_TRACE_CALL_CPS = 1,
+  // The trace returns, and the Interpreter executes the unexecuted opcode at body_end_ip
+  // (if, br, br_if, or a backward br) through its CPS handler.
+  FB_NATIVE_JIT_TRACE_TERMINATOR_PENDING = 2,
 };
 
 static_assert(sizeof(fb_native_jit_trace_exit) == 20);

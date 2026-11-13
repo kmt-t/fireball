@@ -54,6 +54,6 @@ int build_trace(const std::uint8_t *body, code_offset_t body_bytes,
                 const fireball::jit_compile_result *result, wasm_pc_t head_pc,
                 frame_depth_t frame_depth, block_index_t block_index, code_ip_t body_end_ip,
                 wasm_pc_t next_pc, wasm_pc_t loops_to, block_index_t next_block_index,
-                bool interpreter_terminator_pending, std::uint8_t *output, code_offset_t capacity);
+                std::uint8_t *output, code_offset_t capacity);
 } // namespace fireball
 #endif

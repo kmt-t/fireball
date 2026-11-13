@@ -1910,6 +1910,11 @@ int fireball::compile_wasm_trace(
     }
     if (call_exit || terminal_end_ip != trace_end) {
       result->exit_kind = FB_NATIVE_JIT_TRACE_CALL_CPS;
+    } else if (trace_end < code_bytes &&
+               fireball::opcode_has_attribute(code[trace_end],
+                                              fireball::kOpcodeInterpreterAfterTrace)) {
+      // The Interpreter executes the unexecuted opcode at the block end after the trace returns.
+      result->exit_kind = FB_NATIVE_JIT_TRACE_TERMINATOR_PENDING;
     }
   }
   return status;

@@ -4042,8 +4042,8 @@ def test_jitr_117_trace_exit_flags_an_interpreter_terminator(
 ):
     """TEST-JITR-117: the trace exit record says whether the Interpreter handles the next opcode.
 
-    The flag is decided at compile time from the opcode at the exit point. The Interpreter reads
-    the flag and does not compare the code bytes after the trace returns.
+    The exit kind is decided at compile time from the opcode at the exit point. The Interpreter
+    reads the header exit kind and does not compare the code bytes after the trace returns.
     """
     empty_view = native_abi.NativeByteView(0, 0)
     code_storage = ctypes.create_string_buffer(code_bytes)
@@ -4063,6 +4063,9 @@ def test_jitr_117_trace_exit_flags_an_interpreter_terminator(
     header = native_abi.NativeTraceHeader.from_buffer_copy(trace.code_blob)
     exit_offset = header.const_rel_offset - ctypes.sizeof(native_abi.NativeTraceExit)
     trace_exit = native_abi.NativeTraceExit.from_buffer_copy(trace.code_blob, exit_offset)
+    # exit_kind 2 is FB_NATIVE_JIT_TRACE_TERMINATOR_PENDING; 0 is NORMAL. The metadata copy
+    # is written from the same compile decision.
+    assert header.exit_kind == (2 if expected_pending else 0)
     assert trace_exit.interpreter_terminator_pending == expected_pending
 
 

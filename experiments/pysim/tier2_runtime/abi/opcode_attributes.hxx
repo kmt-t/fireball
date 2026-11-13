@@ -12,8 +12,8 @@ inline constexpr std::uint8_t kOpcodeBlockBoundary = 1u << 0;
 inline constexpr std::uint8_t kOpcodeTraceTerminator = 1u << 1;
 /** @brief The Interpreter CPS executes the opcode after a trace ends before it (pending). */
 inline constexpr std::uint8_t kOpcodeInterpreterAfterTrace = 1u << 2;
-/** @brief A block that ends with the opcode is never a chain source. */
-inline constexpr std::uint8_t kOpcodeNotChainable = 1u << 3;
+/** @brief The successor of a block that ends with the opcode is decided at run time. */
+inline constexpr std::uint8_t kOpcodeDynamicTarget = 1u << 3;
 /** @brief The opcode is a block body member even though it is a block boundary or a prefix. */
 inline constexpr std::uint8_t kOpcodeAlwaysBlockBody = 1u << 4;
 
@@ -31,8 +31,8 @@ inline constexpr std::array<std::uint8_t, 256> make_opcode_attributes() {
   for (const auto opcode : {0x04u, 0x0Cu, 0x0Du, 0x10u, 0x11u}) {
     attributes[opcode] |= kOpcodeInterpreterAfterTrace;
   }
-  for (const auto opcode : {0x04u, 0x0Cu, 0x0Du, 0x0Eu, 0x0Fu, 0x10u, 0x11u}) {
-    attributes[opcode] |= kOpcodeNotChainable;
+  for (const auto opcode : {0x0Eu, 0x0Fu}) {
+    attributes[opcode] |= kOpcodeDynamicTarget;
   }
   for (const auto opcode : {0x02u, 0xFCu}) {
     attributes[opcode] |= kOpcodeAlwaysBlockBody;

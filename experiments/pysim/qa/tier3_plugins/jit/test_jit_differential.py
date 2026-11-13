@@ -17,6 +17,8 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
+import pytest
+
 _TEST_FILE = Path(__file__).resolve()
 _TESTS_DIR = _TEST_FILE.parents[2]
 _PYSIM_DIR = _TESTS_DIR.parent
@@ -514,8 +516,8 @@ def test_jitr_61_terminal_call_preserves_stack_overflow_trap_in_cps():
     assert engine.stat_jit_invocations > 0, "the caller's terminal call trace never executed"
 
 
-def test_jitr_69_forward_br_returns_through_cps_preserving_static_nesting_metadata():
-    """A forward branch leaves JIT and preserves static nesting for Interpreter CPS."""
+def test_jitr_69_forward_br_chains_preserving_static_nesting_metadata():
+    """A forward br runs in the trace and chains to its resident successor, with static nesting."""
     wat = """
     (module
       (func (export "main") (result i32) (local $i i32) (local $x i32)
@@ -554,8 +556,9 @@ def test_jitr_69_forward_br_returns_through_cps_preserving_static_nesting_metada
     assert source_trace is not None and target_trace is not None
     assert source_trace.header._native.frame_depth == branch_source.frame_depth
     assert target_trace.header._native.frame_depth == branch_target.frame_depth
-    assert source_trace.chain_next is None
-    assert source_trace.header.chain_target_addr == 0
+    # The forward br is executed in the trace and links to the resident successor trace.
+    assert source_trace.chain_next is not None
+    assert source_trace.header.chain_target_addr != 0
 
 
 # ---------------------------------------------------------------------------
@@ -910,3 +913,33 @@ def test_jit_locals_beyond_the_disp8_range_match_wasmtime():
     result, engine = _tier3(wasm, "f", [3000])
     assert result == expected
     assert engine.stat_jit_invocations > 0
+
+
+# Forward br shapes: each block leaves its operands for the trace to move down to the target base.
+FORWARD_BR_STACK_BODIES = {
+    "drop_two_no_result": "(block (i32.const 1) (i32.const 2) (br 0)) (i32.add (local.get 0) (i32.const 3))",
+    "one_result_base_zero": "(block (result i32) (i32.const 7) (local.get 0) (br 0))",
+    "one_result_above_operand": (
+        "(i32.const 100) (block (result i32) (i32.const 7) (local.get 0) (i32.const 9) (br 0))"
+        " (i32.add)"
+    ),
+    "no_result_empty_block": "(block (br 0)) (local.get 0)",
+    "result_over_mixed_operands": (
+        "(i32.const 5) (i32.const 6) (block (result i32) (i32.const 7) (local.get 0)"
+        " (i32.const 9) (i32.const 8) (br 0)) (i32.add) (i32.add)"
+    ),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(FORWARD_BR_STACK_BODIES))
+def test_jitr_135_forward_br_moves_the_stack_and_matches_the_interpreter(shape):
+    """TEST-JITR-135: a forward br moves its result words to the target base in the trace."""
+    body = FORWARD_BR_STACK_BODIES[shape]
+    wat = (
+        "(module (func (param i32) (result i32) " + body + ") "
+        '(func (export "main") (param i32) (result i32) (local i32 i32) '
+        "(block (loop (br_if 1 (i32.ge_s (local.get 1) (local.get 0))) "
+        "(local.set 2 (i32.add (local.get 2) (call 0 (local.get 1)))) "
+        "(local.set 1 (i32.add (local.get 1) (i32.const 1))) (br 0))) (local.get 2)))"
+    )
+    _assert_jit_ran(_check_three_ways(wat, "main", [400]))

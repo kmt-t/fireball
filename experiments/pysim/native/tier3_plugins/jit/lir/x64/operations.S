@@ -371,3 +371,39 @@ FB_STENCIL_BEGIN fb_stencil_cps_call
   jmp rax
 FB_STENCIL_END fb_stencil_cps_call
 
+
+/* Forward br, stack move. A stack word is one 32-bit slot. The top result words move to the target
+   stack base, and sp drops by the patched byte count d - b - r words. Each stencil has one patch
+   slot, the byte count. */
+#if defined(_WIN32)
+#define FB_SP_SUB_IMM32 .byte 0x49, 0x81, 0xe8
+#else
+#define FB_SP_SUB_IMM32 .byte 0x48, 0x81, 0xea
+#endif
+
+FB_STENCIL_BEGIN fb_stencil_br_stack_move_0
+  FB_SP_SUB_IMM32
+  FB_PATCH_SLOT_4 fb_stencil_br_stack_move_0
+FB_STENCIL_END fb_stencil_br_stack_move_0
+
+FB_STENCIL_BEGIN fb_stencil_br_stack_move_1
+  .byte 0xb8
+  FB_PATCH_SLOT_4 fb_stencil_br_stack_move_1
+  mov r11, FB_SP_REG
+  sub r11, rax
+  mov eax, dword ptr [FB_SP_REG - 4]
+  mov dword ptr [r11 - 4], eax
+  mov FB_SP_REG, r11
+FB_STENCIL_END fb_stencil_br_stack_move_1
+
+FB_STENCIL_BEGIN fb_stencil_br_stack_move_2
+  .byte 0xb8
+  FB_PATCH_SLOT_4 fb_stencil_br_stack_move_2
+  mov r11, FB_SP_REG
+  sub r11, rax
+  mov eax, dword ptr [FB_SP_REG - 8]
+  mov dword ptr [r11 - 8], eax
+  mov eax, dword ptr [FB_SP_REG - 4]
+  mov dword ptr [r11 - 4], eax
+  mov FB_SP_REG, r11
+FB_STENCIL_END fb_stencil_br_stack_move_2

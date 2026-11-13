@@ -111,6 +111,9 @@ jit_runtime<Measurement>::make_compiler_block_view(block_index_t index,
             b.loops_to_block_index,
             {f.interpreter_annotation_pool, f.interpreter_annotation_byte_count},
             b.interpreter_annotation_byte_offset,
+            b.next_block_index == jit_invalid_block_index
+                ? annotation_offset_t{0}
+                : module_view->blocks[b.next_block_index].interpreter_annotation_byte_offset,
             b.entry_stack_words,
             {module_view->global_widths, module_view->global_count}};
   return &output;

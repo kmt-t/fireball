@@ -1495,6 +1495,77 @@ bool take_annotation_field(const std::uint8_t *&cursor, const std::uint8_t *limi
   return true;
 }
 
+/** @brief The stencil that moves the top result words of a forward br to the target base. */
+stencil_view branch_stack_move_stencil(std::uint8_t result_words) {
+  switch (result_words) {
+  case 0:
+    return get_stencil(asm_generated::br_stack_move_0);
+  case 1:
+    return get_stencil(asm_generated::br_stack_move_1);
+  case 2:
+    return get_stencil(asm_generated::br_stack_move_2);
+  default:
+    // WASM validation and the branch annotation allow at most two result words here.
+    assert(false);
+    return {};
+  }
+}
+
+/**
+ * @brief Executes a forward br in the trace. The br annotation holds the target block, the target
+ * stack base b, and the result words r. With d words on the stack, the r result words move to b,
+ * and sp drops by d - b - r words. The trace exits at resume_ip, the loader's resume pc of the br,
+ * and the metadata rel is the distance from this block's annotations to the successor's.
+ * A function-end target is not consumed.
+ * @return 1 with consumed = true, 1 with consumed = false for the function end, -1 when malformed.
+ */
+int consume_forward_br(trace_builder &builder, stack_model &stack,
+                       const std::uint8_t *interpreter_annotations,
+                       annotation_offset_t interpreter_annotation_byte_count,
+                       annotation_offset_t interpreter_annotation_byte_offset,
+                       annotation_offset_t next_annotation_byte_offset,
+                       annotation_offset_t &interpreter_rel_bytes, code_ip_t resume_ip,
+                       bool &consumed, code_ip_t &terminal_end_ip) {
+  consumed = false;
+  if (interpreter_annotations == nullptr) {
+    return -1;
+  }
+  const auto annotation_offset_64 =
+      static_cast<std::uint64_t>(interpreter_annotation_byte_offset) + interpreter_rel_bytes;
+  if (annotation_offset_64 > interpreter_annotation_byte_count) {
+    return -1;
+  }
+  const std::uint8_t *cursor = interpreter_annotations + static_cast<std::size_t>(annotation_offset_64);
+  const std::uint8_t *limit = interpreter_annotations + interpreter_annotation_byte_count;
+  std::uint16_t target_block = 0;
+  std::uint8_t target_base = 0;
+  std::uint8_t result_words = 0;
+  if (!take_annotation_field(cursor, limit, target_block) ||
+      !take_annotation_field(cursor, limit, target_base) ||
+      !take_annotation_field(cursor, limit, result_words)) {
+    return -1;
+  }
+  if (target_block == 0xFFFFu) {
+    return 1;
+  }
+  assert(result_words <= 2);
+  assert(target_base + result_words <= stack.word_count);
+  const auto drop = static_cast<std::uint32_t>(stack.word_count - target_base - result_words);
+  if (drop != 0) {
+    // A stack word is one 32-bit slot (sp is a uint32 pointer). The patch value is the byte count.
+    builder.append_patched(branch_stack_move_stencil(result_words),
+                           static_cast<std::uint64_t>(drop) * 4, 4);
+  }
+  // The successor's annotations start after this block's annotations by the distance below. The
+  // Interpreter reads the successor's rel as this block's start plus this distance.
+  assert(next_annotation_byte_offset > interpreter_annotation_byte_offset);
+  interpreter_rel_bytes =
+      static_cast<annotation_offset_t>(next_annotation_byte_offset - interpreter_annotation_byte_offset);
+  terminal_end_ip = resume_ip;
+  consumed = true;
+  return 1;
+}
+
 int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8_t *code,
                                         code_offset_t code_bytes, code_ip_t source_ip,
                                         code_ip_t trace_start_ip,
@@ -1502,7 +1573,9 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
                                         annotation_offset_t interpreter_annotation_byte_count,
                                         annotation_offset_t interpreter_annotation_byte_offset,
                                         annotation_offset_t &interpreter_rel_bytes,
-                                        code_ip_t &terminal_end_ip) {
+                                        stack_model &stack, wasm_pc_t head_pc, bool has_next_pc,
+                                        wasm_pc_t next_pc, annotation_offset_t next_annotation_offset,
+                                        bool &consumed, code_ip_t &terminal_end_ip) {
   terminal_end_ip = source_ip;
   if (source_ip >= code_bytes) {
     return 1;
@@ -1512,6 +1585,16 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
   const auto opcode = code[cursor++];
   if (!fireball::opcode_has_attribute(opcode, fireball::kOpcodeTraceTerminator)) {
     return 1;
+  }
+  if (opcode == 0x0C && has_next_pc && next_pc > head_pc) {
+    // A forward br runs inside the trace. Its successor is the loader's resume pc, which lies at
+    // the block head offset plus the pc distance.
+    assert(next_pc - head_pc <= code_bytes);
+    const auto resume_ip = static_cast<code_ip_t>(trace_start_ip + (next_pc - head_pc));
+    return consume_forward_br(builder, stack, interpreter_annotations,
+                              interpreter_annotation_byte_count, interpreter_annotation_byte_offset,
+                              next_annotation_offset, interpreter_rel_bytes, resume_ip, consumed,
+                              terminal_end_ip);
   }
   if (opcode == 0x04 || opcode == 0x0C || opcode == 0x0D) {
     // Branch instructions remain unexecuted trace exits handled by Interpreter CPS.
@@ -1645,14 +1728,13 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
 int fireball::compile_wasm_trace(
     const std::uint8_t *code, code_offset_t code_bytes, code_offset_t code_offset,
     code_offset_t byte_span, std::uint32_t has_next_pc, wasm_pc_t next_pc,
-    std::uint32_t has_loops_to, wasm_pc_t loops_to, const std::uint8_t *interpreter_annotations,
+    std::uint32_t has_loops_to, wasm_pc_t loops_to, wasm_pc_t head_pc,
+    annotation_offset_t next_annotation_byte_offset, const std::uint8_t *interpreter_annotations,
     annotation_offset_t interpreter_annotation_byte_count,
     annotation_offset_t interpreter_annotation_byte_offset, const jit_byte_view &global_widths,
     jit_stack_words_t entry_stack_words, const frame_word_offset_t *local_offsets,
     const std::uint8_t *local_types, local_count_t local_count, local_count_t local_slot_count,
     std::uint8_t *output, code_offset_t output_capacity, fireball::jit_compile_result *result) {
-  static_cast<void>(has_next_pc);
-  static_cast<void>(next_pc);
   static_cast<void>(has_loops_to);
   static_cast<void>(loops_to);
   assert(code != nullptr && byte_span != 0 && code_offset <= code_bytes &&
@@ -1895,9 +1977,11 @@ int fireball::compile_wasm_trace(
     return 0;
   }
   code_ip_t terminal_end_ip = trace_end;
+  bool consumed = false;
   const auto terminator_status = append_trace_terminator_runtime_api(
       builder, code, code_bytes, trace_end, code_offset, interpreter_annotations,
       interpreter_annotation_byte_count, interpreter_annotation_byte_offset, interpreter_rel_bytes,
+      stack, head_pc, has_next_pc != 0, next_pc, next_annotation_byte_offset, consumed,
       terminal_end_ip);
   if (terminator_status != 1) {
     return terminator_status;
@@ -1905,10 +1989,14 @@ int fireball::compile_wasm_trace(
   const auto status = finish_trace(builder, stack, result);
   if (status == 1) {
     result->interpreter_rel_bytes = interpreter_rel_bytes;
+    result->consumed_terminator = consumed;
     if (call_exit || terminal_end_ip != trace_end) {
       result->body_end_ip = terminal_end_ip;
     }
-    if (call_exit || terminal_end_ip != trace_end) {
+    if (consumed) {
+      // The consumed br returns normally to its successor.
+      result->exit_kind = FB_NATIVE_JIT_TRACE_NORMAL;
+    } else if (call_exit || terminal_end_ip != trace_end) {
       result->exit_kind = FB_NATIVE_JIT_TRACE_CALL_CPS;
     } else if (trace_end < code_bytes &&
                fireball::opcode_has_attribute(code[trace_end],
@@ -1920,24 +2008,3 @@ int fireball::compile_wasm_trace(
   return status;
 }
 
-std::int64_t fireball::chain_successor(std::uintptr_t code_address, code_offset_t code_bytes,
-                                       code_offset_t offset, code_offset_t span,
-                                       wasm_pc_t next_pc) {
-  assert(code_address != 0 && offset <= code_bytes && span <= code_bytes - offset);
-  const auto *code = reinterpret_cast<const std::uint8_t *>(code_address);
-  const auto end = offset + span;
-  const auto terminator = end < code_bytes ? code[end] : 0x0B;
-  switch (terminator) {
-  case 0x04:
-  case 0x0C:
-  case 0x0D:
-  case 0x0E:
-  case 0x0F:
-  case 0x10:
-  case 0x11:
-  case 0xFC:
-    return UINT32_MAX;
-  default:
-    return next_pc;
-  }
-}

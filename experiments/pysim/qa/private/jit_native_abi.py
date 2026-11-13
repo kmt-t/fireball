@@ -55,6 +55,8 @@ class WasmBlock:
     loops_to_block_index: int | None = None
     interpreter_annotations: NativeByteView = NativeByteView(0, 0)
     interpreter_annotation_byte_offset: int = 0
+    # Annotation start of the successor block (next_block_index); 0 when there is none.
+    next_interpreter_annotation_byte_offset: int = 0
     # Module global value widths in words, one byte per global; byte_length is the global count.
     global_widths: NativeByteView = NativeByteView(0, 0)
     # Operand stack words when control reaches this block; fixed by WASM validation.
@@ -197,6 +199,7 @@ class _NativeWasmBlock(ctypes.Structure):
         ("loops_to_block_index", ctypes.c_uint16),
         ("interpreter_annotations", _NativeByteView),
         ("interpreter_annotation_byte_offset", ctypes.c_uint32),
+        ("next_interpreter_annotation_byte_offset", ctypes.c_uint32),
         ("entry_stack_words", ctypes.c_uint16),
         ("global_widths", _NativeByteView),
     )
@@ -209,9 +212,10 @@ assert _NativeWasmBlock.locals.offset == 40
 assert _NativeWasmBlock.block_index.offset == 80
 assert _NativeWasmBlock.interpreter_annotations.offset == 88
 assert _NativeWasmBlock.interpreter_annotation_byte_offset.offset == 104
-assert _NativeWasmBlock.entry_stack_words.offset == 108
-assert _NativeWasmBlock.global_widths.offset == 112
-assert ctypes.sizeof(_NativeWasmBlock) == 128
+assert _NativeWasmBlock.next_interpreter_annotation_byte_offset.offset == 108
+assert _NativeWasmBlock.entry_stack_words.offset == 112
+assert _NativeWasmBlock.global_widths.offset == 120
+assert ctypes.sizeof(_NativeWasmBlock) == 136
 
 
 RUNTIME_SIZE = _NATIVE_LIBRARY.fb_jit_runtime_size
@@ -780,6 +784,7 @@ def marshal_block(block: WasmBlock) -> _NativeWasmBlock:
             block.interpreter_annotations.byte_length,
         ),
         block.interpreter_annotation_byte_offset,
+        block.next_interpreter_annotation_byte_offset,
         block.entry_stack_words,
         _NativeByteView(block.global_widths.address, block.global_widths.byte_length),
     )

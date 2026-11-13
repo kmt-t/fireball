@@ -283,7 +283,7 @@ line/branch coverageは、抜けた経路を探す診断情報として記録す
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-IDLE-01 | scheduler idle時のJIT候補一括コンパイル | 3関数を登録し、最初の2つをHOTにしてコンパイル待ちへ積む | yield後にSystem schedulerをidleまで実行する | 待ち列が空になり、先に登録した2 traceがLIFO順でコンパイルされ、両カードが`COMPILED`となりtraceが常駐する | `test_vsoc.py::test_idle_01_jit_batch_compilation_on_idle` |
 | TEST-TIER-02 | Interpreter warm-up後のJIT trace実行 | 反復するfactorial loopを含むWASM関数 | 関数を実行し、結果、Interpreter/JIT実行数、loopカードとtrace常駐を確認する | 結果は120、Interpreter stepは3以上、JIT invocationは2となり、loopカードは`COMPILED`でtraceが常駐する | `test_vsoc.py::test_tier_02_interpreter_to_jit_trace_transition` |
-| TEST-TIER-03 | 分岐trace間のInterpreter CPS遷移 | 入れ子blockと複数のbranchを持つ関数、事前に常駐させたtrace | Interpreterから関数を実行し、chain有無、結果、JIT invocation、Interpreter stepを確認する | source traceはchainされず、結果は160、JIT invocationは2以上、Interpreter stepは1以上となる | `test_vsoc.py::test_tier_03_branch_transitions_use_interpreter_cps` |
+| TEST-TIER-03 | 前方brの連結と分岐trace間のInterpreter CPS遷移 | 入れ子blockと複数のbranchを持つ関数、事前に常駐させたtrace | Interpreterから関数を実行し、chain有無、結果、JIT invocation、Interpreter stepを確認する | 前方brを持つsource traceは常駐のsuccessorへchainされ、結果は160、JIT invocationは2以上、Interpreter stepは0となる | `test_vsoc.py::test_tier_03_branch_transitions_use_interpreter_cps` |
 
 ## 3. テスト検証実績と網羅状況
 

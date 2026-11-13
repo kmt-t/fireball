@@ -234,8 +234,8 @@ def test_trace_compiler_bitwise_and_shifts_pic():
     assert ctx.local_stack[3] == (0x0F << 2)
 
 
-def test_branch_traces_return_through_interpreter_cps():
-    """A branch terminator returns to the Interpreter CPS handler."""
+def test_forward_branch_traces_chain_to_the_resident_successor():
+    """A forward br runs in the trace and chains to the resident successor trace."""
     wat = """
     (module
       (func (export "f") (param i32) (result i32)
@@ -259,17 +259,16 @@ def test_branch_traces_return_through_interpreter_cps():
     engine = make_runtime_engine()
     mod = engine.load_wasm(wasm_bytes)
     block_a, block_b = instruction_blocks(mod)[:2]
-    # Compile trace B first, then A. A branch terminator still leaves JIT unchained.
+    # Compile trace B first, then A. The forward br of A links to the resident trace of B.
     trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
     engine.jit_runtime.cache.insert(trace_b)
     trace_a = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_a)
     engine.jit_runtime.cache.insert(trace_a)
-    assert trace_a.chain_next is None
-    assert trace_a.header.chain_target_addr == 0
+    assert trace_a.chain_next is not None
+    assert trace_a.header.chain_target_addr != 0
     results = engine.call(Interpreter(mod), 0, [10]).unwrap()
     assert results[0] == 30
     assert engine.stat_jit_invocations >= 2
-    assert engine.stat_native_control_handlers > 0
 
 
 def test_hybrid_interpreter_to_jit_trace_elevation():

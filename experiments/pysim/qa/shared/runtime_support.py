@@ -86,6 +86,11 @@ def compile_module_block(
                 0 if annotations is None else len(annotations),
             ),
             interpreter_annotation_byte_offset=block.interpreter_annotation_byte_offset,
+            next_interpreter_annotation_byte_offset=(
+                0
+                if block.next_block_index is None
+                else module.blocks[block.next_block_index].interpreter_annotation_byte_offset
+            ),
             entry_stack_words=block.entry_stack_words,
             global_widths=native_abi.NativeByteView(
                 module.global_widths_address, len(module.globals)

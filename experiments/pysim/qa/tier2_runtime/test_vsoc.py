@@ -819,7 +819,7 @@ def test_runtime_yield_services_jit_while_only_guest_task_is_ready(
 
 
 def test_tier_03_branch_transitions_use_interpreter_cps():
-    """TEST-TIER-03: Branch transitions use Interpreter CPS between resident traces."""
+    """TEST-TIER-03: A forward br chains to a resident successor trace."""
     wat = """
     (module
       (func (export "f") (param i32) (result i32)
@@ -850,16 +850,17 @@ def test_tier_03_branch_transitions_use_interpreter_cps():
     engine = make_runtime_engine()
     mod = engine.load_wasm(wasm_bytes)
     block_a, block_b = instruction_blocks(mod)[:2]
-    # Compile B first, then A. The branch terminator returns through Interpreter CPS.
+    # Compile B first, then A. The forward br of A links to the resident trace of B.
     trace_b = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_b)
     engine.jit_runtime.cache.insert(trace_b)
     trace_a = compile_module_block(engine.jit_runtime.jit_compiler, mod, block_a)
     engine.jit_runtime.cache.insert(trace_a)
-    assert trace_a.chain_next is None
+    assert trace_a.chain_next is not None
     results = engine.call(make_native_interpreter(mod), 0, [100]).unwrap()
     assert results[0] == 160
     assert engine.stat_jit_invocations >= 2
-    assert engine.stat_interp_steps >= 1
+    # Both forward br terminators run inside the traces, so no Interpreter step is needed.
+    assert engine.stat_interp_steps == 0
 
 
 # ===========================================================================

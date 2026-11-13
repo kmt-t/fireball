@@ -172,7 +172,9 @@ int fireball::build_trace(const std::uint8_t *body, code_offset_t bytes,
     std::memset(output + header_bytes + bytes, 0, metadata_offset - header_bytes - bytes);
   }
   const auto trace_body_end_ip = trace_body_end(*r, body_end_ip);
-  if (trace_body_end_ip > body_end_ip && r->exit_kind != FB_NATIVE_JIT_TRACE_CALL_CPS) {
+  // A consumed forward br exits at its resume pc, which fb_jit_compile_block checks.
+  if (!r->consumed_terminator && trace_body_end_ip > body_end_ip &&
+      r->exit_kind != FB_NATIVE_JIT_TRACE_CALL_CPS) {
     return 0;
   }
   const jit_trace_boundary_metadata boundary_metadata{
@@ -193,22 +195,26 @@ extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block *block, std::
   assert(block != nullptr && output != nullptr && capacity > header_bytes &&
          body_scratch != nullptr &&
          capacity <= header_bytes + kMaxBodyBytes + trace_blob_overhead_bytes);
-  const auto next =
-      chain_successor(reinterpret_cast<std::uintptr_t>(block->code.data), block->code.bytes,
-                      block->offset, block->byte_span, block->next_pc);
-  assert(next >= 0);
   fireball::jit_compile_result result{};
+  const auto has_next_pc = block->next_pc != std::numeric_limits<wasm_pc_t>::max();
   const auto status = compile_wasm_trace(
-      block->code.data, block->code.bytes, block->offset, block->byte_span, next != UINT32_MAX,
-      static_cast<std::uint32_t>(next), 0, 0, block->interpreter_annotations.data,
-      block->interpreter_annotations.bytes, block->interpreter_annotation_byte_offset,
-      block->global_widths, block->entry_stack_words,
+      block->code.data, block->code.bytes, block->offset, block->byte_span, has_next_pc,
+      block->next_pc, 0, 0, block->head_pc, block->next_interpreter_annotation_byte_offset,
+      block->interpreter_annotations.data, block->interpreter_annotations.bytes,
+      block->interpreter_annotation_byte_offset, block->global_widths, block->entry_stack_words,
       reinterpret_cast<const std::uint16_t *>(block->locals.offsets.data), block->locals.types.data,
       block->locals.count, block->locals.total_words, body_scratch, kMaxBodyBytes, &result);
   if (status != 1) {
     return status;
   }
   const auto block_end = block->offset + block->byte_span;
+  if (result.consumed_terminator) {
+    // A consumed forward br exits at the loader's resume pc, the head of the successor block, and
+    // the successor's annotations lie after this block's annotations.
+    assert(trace_body_end(result, block_end) == block->offset + (block->next_pc - block->head_pc));
+    assert(block->next_interpreter_annotation_byte_offset >
+           block->interpreter_annotation_byte_offset);
+  }
   return build_trace(body_scratch, result.body_bytes, &result, block->head_pc, block->frame_depth,
                      block->block_index, block_end, block->next_pc, block->loops_to,
                      block->next_block_index, output, capacity)

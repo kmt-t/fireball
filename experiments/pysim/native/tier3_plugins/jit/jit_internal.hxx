@@ -28,6 +28,8 @@ struct jit_compile_result {
   annotation_offset_t interpreter_rel_bytes;
   code_ip_t body_end_ip = kNoTraceExitIp;
   fb_native_jit_trace_exit_kind exit_kind = FB_NATIVE_JIT_TRACE_NORMAL;
+  // The trace executed the block's forward br itself. Its exit is the br's resume pc.
+  bool consumed_terminator = false;
 };
 
 /** @brief The exit ip of a trace: the block end unless the compiler ended the body earlier. */
@@ -38,7 +40,9 @@ inline code_ip_t trace_body_end(const jit_compile_result &result, code_ip_t bloc
 int compile_wasm_trace(const std::uint8_t *code, code_offset_t code_bytes,
                        code_offset_t code_offset, code_offset_t byte_span,
                        std::uint32_t has_next_pc, wasm_pc_t next_pc, std::uint32_t has_loops_to,
-                       wasm_pc_t loops_to, const std::uint8_t *interpreter_annotations,
+                       wasm_pc_t loops_to, wasm_pc_t head_pc,
+                       annotation_offset_t next_annotation_byte_offset,
+                       const std::uint8_t *interpreter_annotations,
                        annotation_offset_t interpreter_annotation_byte_count,
                        annotation_offset_t interpreter_annotation_byte_offset,
                        const jit_byte_view &global_widths, jit_stack_words_t entry_stack_words,
@@ -46,8 +50,6 @@ int compile_wasm_trace(const std::uint8_t *code, code_offset_t code_bytes,
                        local_count_t local_count, local_count_t local_slot_count,
                        std::uint8_t *output, code_offset_t output_capacity,
                        fireball::jit_compile_result *result);
-std::int64_t chain_successor(std::uintptr_t address, code_offset_t bytes, code_offset_t offset,
-                             code_offset_t span, wasm_pc_t next_pc);
 int initialize_common_code(executable_memory *memory, const void *function_table);
 int patch_trace_chain(executable_memory *memory, code_offset_t offset, std::uint64_t target);
 int build_trace(const std::uint8_t *body, code_offset_t body_bytes,

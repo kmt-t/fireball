@@ -4,6 +4,7 @@
  */
 #include "jit_runtime.hxx"
 #include "jit_runtime_apis.hxx"
+#include "../../../tier2_runtime/abi/opcode_attributes.hxx"
 #include <algorithm>
 #include <bit>
 #include <cassert>
@@ -521,21 +522,9 @@ static bool chain_terminator_is_unsupported(const jit_trace_header *header,
   }
   assert(source.code.data != nullptr);
   const auto terminator = source.offset + source.byte_span;
-  if (terminator < source.code.bytes) {
-    switch (source.code.data[terminator]) {
-    case 0x04: // if remains an Interpreter CPS boundary.
-    case 0x0C: // br remains an Interpreter CPS boundary.
-    case 0x0D: // br_if remains an Interpreter CPS boundary.
-    case 0x0E: // br_table
-    case 0x0F: // return
-    case 0x10: // call
-    case 0x11: // call_indirect remains an Interpreter CPS boundary.
-      return true;
-    default:
-      break;
-    }
-  }
-  return false;
+  return terminator < source.code.bytes &&
+         fireball::opcode_has_attribute(source.code.data[terminator],
+                                        fireball::kOpcodeNotChainable);
 }
 
 [[maybe_unused]] static jit_chain_reason
@@ -578,25 +567,11 @@ bool jit_runtime<Measurement>::can_chain_from(jit_cache_entry value) const {
   // A block ends before a terminator instruction inside its function body, which ends in `end`.
   const auto terminator = source->offset + source->byte_span;
   assert(terminator < source->code.bytes);
-  const auto opcode = source->code.data[terminator];
-  switch (opcode) {
-  case 0x02: // Syntax delimiters have no emitted operation; loader metadata links past them.
-  case 0x03:
-  case 0x05:
-  case 0x0B:
-    return true;
-  case 0x0E: // br_table
-  case 0x0F: // return
-  case 0x10: // call is executed by Interpreter CPS.
-  case 0x11: // call_indirect is executed by Interpreter CPS.
-    return false;
-  case 0x04: // if returns through Interpreter CPS.
-  case 0x0C: // br returns through Interpreter CPS.
-  case 0x0D: // br_if returns through Interpreter CPS.
-    return false;
-  default:
-    return true;
-  }
+  // Terminators that exit through the Interpreter CPS or a call are not chain sources. Syntax
+  // delimiters (02, 03, 05, 0B) and the other opcodes are chainable: loader metadata links past
+  // them.
+  return !fireball::opcode_has_attribute(source->code.data[terminator],
+                                         fireball::kOpcodeNotChainable);
 }
 
 template <jit_measurement_policy Measurement>

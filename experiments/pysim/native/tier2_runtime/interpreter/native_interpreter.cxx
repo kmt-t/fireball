@@ -4,6 +4,7 @@
  */
 #include "../../../tier2_runtime/abi/interpreter_abi.hxx"
 #include "../../../tier2_runtime/abi/native_abi.hxx"
+#include "../../../tier2_runtime/abi/opcode_attributes.hxx"
 
 #include <algorithm>
 #include <array>
@@ -98,28 +99,6 @@ inline FIREBALL_CPS_CALL void h_unreachable(execution_context *context,
   return;
 }
 
-constexpr std::uint8_t kOpcodeControlInstruction = 1u << 0;
-
-inline constexpr auto make_opcode_attributes() {
-  std::array<std::uint8_t, 256> attributes{};
-  for (const auto opcode :
-       {0x02u, 0x03u, 0x04u, 0x05u, 0x0Bu, 0x0Cu, 0x0Du, 0x0Eu, 0x0Fu, 0x10u, 0x11u}) {
-    attributes[opcode] |= kOpcodeControlInstruction;
-  }
-  return attributes;
-}
-
-constexpr auto kOpcodeAttributes = make_opcode_attributes();
-
-inline bool opcode_is_control_instruction(std::uint8_t opcode) {
-  return (kOpcodeAttributes[opcode] & kOpcodeControlInstruction) != 0;
-}
-
-inline bool opcode_is_block_body(std::uint8_t opcode) {
-  // BLOCK and 0xFC are part of a body when a block begins at either opcode.
-  // Their annotations and operations are consumed by the JIT trace compiler.
-  return opcode == 0x02u || opcode == 0xFCu || !opcode_is_control_instruction(opcode);
-}
 
 template <typename Debugger>
 inline FIREBALL_CPS_CALL void
@@ -1337,7 +1316,7 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
           block_reference = frame.function_view->module_view->blocks[block_index].jit_cache_reference;
           if (block_reference != FB_NATIVE_JIT_NO_TRACE_OBSERVED &&
               block_reference != FB_NATIVE_JIT_NO_TRACE_UNOBSERVED) {
-            assert(opcode_is_block_body(context.code[ip]));
+            assert(fireball::opcode_is_block_body(context.code[ip]));
             executed_bodies = execute_jit_trace<CollectStats, WithExtension, ResultType>(
                 state, frame, block_index, pc, block_reference, dispatch_rel);
           }
@@ -1361,7 +1340,7 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
       [[maybe_unused]] bool observed_interpreter_body = false;
       if constexpr (WithExtension || WithJit) {
         observed_interpreter_body = block_head && executed_bodies == 0 &&
-                                    opcode_is_block_body(context.code[interpreter_ip]);
+                                    fireball::opcode_is_block_body(context.code[interpreter_ip]);
       }
       const std::uint8_t *rel = dispatch_rel;
       if (executed_bodies == 0) {

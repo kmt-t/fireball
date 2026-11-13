@@ -1,6 +1,7 @@
 #ifndef FIREBALL_PYSIM_JIT_INTERNAL_HXX
 #define FIREBALL_PYSIM_JIT_INTERNAL_HXX
 #include "../../../tier2_runtime/abi/interpreter_abi.hxx"
+#include "../../../tier2_runtime/abi/opcode_attributes.hxx"
 #include "executable_memory_abi.hxx"
 #include "jit_types.hxx"
 #include "trace_compiler_abi.hxx"
@@ -32,12 +33,6 @@ struct jit_compile_result {
 /** @brief The exit ip of a trace: the block end unless the compiler ended the body earlier. */
 inline code_ip_t trace_body_end(const jit_compile_result &result, code_ip_t block_end) {
   return result.body_end_ip == kNoTraceExitIp ? block_end : result.body_end_ip;
-}
-
-/** @brief Opcodes the Interpreter's CPS handlers execute after a trace: if, br, br_if, call,
- * call_indirect. */
-inline bool opcode_is_interpreter_terminator(std::uint8_t opcode) {
-  return opcode == 0x04 || opcode == 0x0C || opcode == 0x0D || opcode == 0x10 || opcode == 0x11;
 }
 
 int compile_wasm_trace(const std::uint8_t *code, code_offset_t code_bytes,

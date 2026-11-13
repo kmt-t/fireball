@@ -211,7 +211,9 @@ extern "C" int fb_jit_compile_block(const fireball::jit_wasm_block *block, std::
   const auto block_end = block->offset + block->byte_span;
   const auto exit_ip = trace_body_end(result, block_end);
   const auto terminator_pending =
-      exit_ip < block->code.bytes && opcode_is_interpreter_terminator(block->code.data[exit_ip]);
+      exit_ip < block->code.bytes &&
+      fireball::opcode_has_attribute(block->code.data[exit_ip],
+                                     fireball::kOpcodeInterpreterAfterTrace);
   return build_trace(body_scratch, result.body_bytes, &result, block->head_pc, block->frame_depth,
                      block->block_index, block_end, block->next_pc, block->loops_to,
                      block->next_block_index, terminator_pending, output, capacity)

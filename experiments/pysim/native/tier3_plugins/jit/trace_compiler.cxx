@@ -9,6 +9,7 @@
 #include <limits>
 #include <utility>
 
+#include "../../../tier2_runtime/abi/opcode_attributes.hxx"
 #include "../../tier2_runtime/interpreter/annotation_read.hxx"
 #include "common_code_abi.hxx"
 #include "jit_internal.hxx"
@@ -1482,22 +1483,6 @@ bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_i
                                     interpreter_rel_after);
 }
 
-bool is_trace_terminator_opcode(std::uint8_t opcode) {
-  switch (opcode) {
-  case 0x00: // unreachable
-  case 0x04: // if
-  case 0x0C: // br
-  case 0x0D: // br_if
-  case 0x0E: // br_table
-  case 0x0F: // return
-  case 0x10: // call exits to Interpreter CPS before execution
-  case 0x11: // call_indirect exits to Interpreter CPS before execution
-    return true;
-  default:
-    return false;
-  }
-}
-
 // Reads one field of the Interpreter annotation pool and advances the cursor past it. The readers
 // are the Interpreter's own (annotation_read.hxx), so the cursor follows the handler's rel exactly.
 template <typename T>
@@ -1525,7 +1510,7 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
 
   auto cursor = source_ip;
   const auto opcode = code[cursor++];
-  if (!is_trace_terminator_opcode(opcode)) {
+  if (!fireball::opcode_has_attribute(opcode, fireball::kOpcodeTraceTerminator)) {
     return 1;
   }
   if (opcode == 0x04 || opcode == 0x0C || opcode == 0x0D) {

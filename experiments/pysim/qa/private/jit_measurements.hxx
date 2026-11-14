@@ -59,7 +59,6 @@ struct jit_measurements {
   std::array<std::uint8_t, per_block_capacity> last_lifetime{};
   std::array<std::uint64_t, admission_stage_count * admission_rank_buckets> admission_rank_hist{};
   std::array<std::uint64_t, admission_stage_count * admission_use_levels> admission_use_hist{};
-  std::uint64_t lookup_calls = 0;
   std::uint64_t interpreter_block_entries = 0;
   // history_visits: visits recorded from the history analysis; history_overwritten: the overwritten
   // records at the last analysis; last_overwritten: the value before the last analysis.
@@ -109,7 +108,6 @@ struct jit_measurements {
            printk_u64(writer, "jit.interpreter_block_entries", interpreter_block_entries) &&
            printk_u64(writer, "jit.history_overwritten", history_overwritten) &&
            printk_u64(writer, "jit.history_dropped", history_dropped) &&
-           printk_u64(writer, "jit.lookup_calls", lookup_calls) &&
            printk_u64(writer, "jit.trackable_generation", trackable_generation) &&
            write_chain_measurements(writer) && write_root_entries(writer);
   }
@@ -322,7 +320,6 @@ struct jit_measurements {
       compilation_order[compilation_count++] = pc;
     }
   }
-  void lookup_called() { ++lookup_calls; }
   // Every observed interpreter block head. The Interpreter observes only trackable heads.
   void interpreter_block_entered() { ++interpreter_block_entries; }
   void trace_evicted(block_index_t index) {

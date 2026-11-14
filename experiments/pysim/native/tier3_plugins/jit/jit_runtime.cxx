@@ -1049,9 +1049,6 @@ template <jit_measurement_policy Measurement>
 jit_trace_location jit_runtime<Measurement>::lookup_cached_trace(block_index_t block_index,
                                                                  [[maybe_unused]] wasm_pc_t pc) {
   assert(pc != jit_invalid_pc);
-  if constexpr (!std::is_void_v<Measurement>) {
-    measurements.lookup_called();
-  }
   assert(block_index < module_view->block_count && module_view->blocks[block_index].head_pc == pc);
   const auto &basic_block = module_view->blocks[block_index];
   if (basic_block.jit_cache_reference >= jit_cache_total_entry_capacity) {

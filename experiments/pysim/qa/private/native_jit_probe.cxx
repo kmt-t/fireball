@@ -175,7 +175,6 @@ enum class cache_field : std::uint32_t {
   aging_ns = 22,
   compile_attempts = 23,
   compile_ns = 24,
-  lookup_calls = 25,
 };
 }
 extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_jit_runtime_scalar(const qa_jit_runtime *runtime,
@@ -234,8 +233,6 @@ extern "C" FB_PYSIM_ABI_EXPORT std::uint64_t fb_jit_runtime_scalar(const qa_jit_
     return runtime->measurements.compile_attempts;
   case fireball::cache_field::compile_ns:
     return runtime->measurements.compile_ns;
-  case fireball::cache_field::lookup_calls:
-    return runtime->measurements.lookup_calls;
   default:
     return 0;
   }

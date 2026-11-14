@@ -83,7 +83,6 @@ class CacheField(IntEnum):
     AGING_NS = 22
     COMPILE_ATTEMPTS = 23
     COMPILE_NS = 24
-    LOOKUP_CALLS = 25
 
 
 class NativeTraceHeader(ctypes.Structure):

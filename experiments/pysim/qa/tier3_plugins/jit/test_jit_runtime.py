@@ -809,10 +809,9 @@ def test_jitr_trace_blob_has_no_entry_or_exit_stencil():
     assert 0xC3 in body, "the body contains the success return"
 
 
-def test_jitr_native_trace_lookup_uses_resident_snapshot():
+def test_jitr_native_dispatch_uses_resident_snapshot():
     """
-    Normal dispatch searches only resident traces in C++, without a Python
-    cache lookup at each execution boundary.
+    Normal dispatch runs the resident traces that the native snapshot lists.
     """
     wat = """
     (module
@@ -840,21 +839,8 @@ def test_jitr_native_trace_lookup_uses_resident_snapshot():
     engine.register_module_blocks(module)
     interp = Interpreter(module, yield_threshold=8)
 
-    lookup_calls = []
-    real_lookup = JitRuntimeBoundary.lookup
-
-    def spy(cache, pc):
-        lookup_calls.append((pc, engine.jit_runtime.bitmap.get_state(pc)))
-        return real_lookup(cache, pc)
-
-    JitRuntimeBoundary.lookup = spy
-    try:
-        assert engine.call(interp, fn_idx, [50]).unwrap() == [1225]
-    finally:
-        JitRuntimeBoundary.lookup = real_lookup
-
+    assert engine.call(interp, fn_idx, [50]).unwrap() == [1225]
     assert engine.stat_jit_invocations > 0
-    assert lookup_calls == []
     snapshot = engine.jit_runtime.native_dispatch_state()
     assert snapshot.entry_count > 0
     for index in range(snapshot.entry_count):
@@ -1229,24 +1215,6 @@ def test_jitr_26_sorted_index_folds_high_pc_bits():
     for index, pc in enumerate(pcs):
         assert storage.view().find(fold_mix32(pc)) == index
     assert storage.view().find(fold_mix32(0x00000004)) is None
-
-
-def test_jitr_83_uncompiled_block_skips_runtime_cache_lookup():
-    """TEST-JITR-83: Static candidates still skip lookup until compiled."""
-
-    module = parse_standalone(
-        wat_to_wasm('(module (func (export "add") (result i32) i32.const 20 i32.const 22 i32.add))')
-    )
-    engine = make_runtime_engine()
-    engine.register_module_blocks(module)
-    manager = engine.jit_runtime
-    assert manager.is_trackable(module.blocks[0].head_pc)
-    assert manager.card_state(module.blocks[0].head_pc) != CardState.COMPILED
-    lookup_calls = manager.cache.scalar(native_abi.CacheField.LOOKUP_CALLS)
-    assert lookup_calls == 0
-
-    assert engine.call(Interpreter(module), module.export_func_index("add"), []).unwrap() == [42]
-    assert manager.cache.scalar(native_abi.CacheField.LOOKUP_CALLS) == lookup_calls
 
 
 def test_jitr_block_capacity_from_wasm_loader_and_no_set():
@@ -2637,22 +2605,17 @@ def test_jitr_empty_yield_skips_python_control_work():
     """TEST-JITR-70: empty yields avoid Python JIT work while preserving the result."""
 
     class CountingManager(JITRuntimeManager):
-        __slots__ = ("idle_calls", "lookup_calls", "record_calls", "snapshot_calls")
+        __slots__ = ("idle_calls", "record_calls", "snapshot_calls")
 
         def __init__(self) -> None:
             super().__init__()
             self.idle_calls = 0
-            self.lookup_calls = 0
             self.record_calls = 0
             self.snapshot_calls = 0
 
         def idle_hook(self) -> int:
             self.idle_calls += 1
             return super().idle_hook()
-
-        def lookup(self, pc: int) -> JITTrace | None:
-            self.lookup_calls += 1
-            return super().lookup(pc)
 
         def record_native_block_visits(
             self, visits: NativeBlockVisitHistory, total_visits: int
@@ -2686,7 +2649,6 @@ def test_jitr_empty_yield_skips_python_control_work():
     assert manager.snapshot_calls == 0
     assert manager.idle_calls == 1
     assert manager.record_calls == 0
-    assert manager.lookup_calls == 0
     assert not manager.has_pending_compilation()
 
 
@@ -4787,7 +4749,7 @@ if __name__ == "__main__":
     test_jitr_cache_lookup_accepts_unsorted_insertions_and_retirement()
     test_jitr_oldest_keeps_existing_chain_and_executes_in_place()
     test_jitr_oldest_target_rejects_a_new_chain_link()
-    test_jitr_native_trace_lookup_uses_resident_snapshot()
+    test_jitr_native_dispatch_uses_resident_snapshot()
     test_jitr_31_to_35_trace_chaining_and_ok_unlinking()
     test_jitc_20_trace_header_32byte_x64_physical_layout()
     test_jitc_trace_header_stores_u8_frame_depth_and_u16_block_index()

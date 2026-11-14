@@ -1108,92 +1108,93 @@ void jit_runtime<Measurement>::refresh_chain_requirements() {
 namespace fireball {
 constexpr std::int8_t opcode_benefit_value(std::uint8_t op) {
   switch (op) {
-  case 0x6a:
-  case 0x6b:
-  case 0x71:
-  case 0x72:
-  case 0x73:
-  case 0x74:
-  case 0x75:
-  case 0x76:
+  case kI32Add:
+  case kI32Sub:
+  case kI32And:
+  case kI32Or:
+  case kI32Xor:
+  case kI32Shl:
+  case kI32ShrS:
+  case kI32ShrU:
     return 7;
-  case 0x6c:
-  case 0x45:
-  case 0x46:
-  case 0x47:
-  case 0x48:
-  case 0x49:
-  case 0x4a:
-  case 0x4b:
-  case 0x4c:
-  case 0x4d:
-  case 0x4e:
-  case 0x4f:
-  case 0x67:
-  case 0x68:
-  case 0x41:
-  case 0x42:
-  case 0x43:
-  case 0x44:
-  case 0x20:
-  case 0x21:
-  case 0x22:
+  case kI32Mul:
+  case kI32Eqz:
+  case kI32Eq:
+  case kI32Ne:
+  case kI32LtS:
+  case kI32LtU:
+  case kI32GtS:
+  case kI32GtU:
+  case kI32LeS:
+  case kI32LeU:
+  case kI32GeS:
+  case kI32GeU:
+  case kI32Clz:
+  case kI32Ctz:
+  case kI32Const:
+  case kI64Const:
+  case kF32Const:
+  case kF64Const:
+  case kLocalGet:
+  case kLocalSet:
+  case kLocalTee:
     return 6;
-  case 0x6d:
-  case 0x6e:
-  case 0x1a:
-  case 0x1b:
-  case 0x01:
+  case kI32DivS:
+  case kI32DivU:
+  case kDrop:
+  case kSelect:
+  case kNop:
     return 4;
-  case 0x23:
-  case 0x24:
-  case 0x3f:
+  case kGlobalGet:
+  case kGlobalSet:
+  case kMemorySize:
     return 4;
-  case 0x6f: // i32.rem_s
-  case 0x70: // i32.rem_u
-  case 0x77: // i32.rotl, Runtime API path
-  case 0x78: // i32.rotr, Runtime API path
+  case kI32RemS: // i32.rem_s
+  case kI32RemU: // i32.rem_u
+  case kI32Rotl: // i32.rotl, Runtime API path
+  case kI32Rotr: // i32.rotr, Runtime API path
     return 5;
-  case 0x28:
-  case 0x2c:
-  case 0x2d:
-  case 0x2e:
-  case 0x2f:
-  case 0x36:
-  case 0x3a:
-  case 0x3b:
+  case kI32Load:
+  case kI32Load8S:
+  case kI32Load8U:
+  case kI32Load16S:
+  case kI32Load16U:
+  case kI32Store:
+  case kI32Store8:
+  case kI32Store16:
     return 5;
-  case 0x7c:
-  case 0x7d:
-  case 0x7e:
-  case 0x92:
-  case 0x93:
-  case 0x94:
-  case 0x95:
-  case 0xa0:
-  case 0xa1:
-  case 0xa2:
-  case 0xa3:
+  case kI64Add:
+  case kI64Sub:
+  case kI64Mul:
+  case kF32Add:
+  case kF32Sub:
+  case kF32Mul:
+  case kF32Div:
+  case kF64Add:
+  case kF64Sub:
+  case kF64Mul:
+  case kF64Div:
     return 3;
-  case 0x02:
-  case 0x03:
-  case 0x05:
-  case 0x0b:
+  case kBlock:
+  case kLoop:
+  case kElse:
+  case kEnd:
     return 0;
-  case 0x10:
+  case kCall:
     return -1;
-  case 0x40:
+  case kMemoryGrow:
     return -2;
-  case 0x00:
+  case kUnreachable:
     return -8;
-  case 0xfc:
+  case kFcPrefix:
     return -2;
   default:
     break;
   }
-  if ((op >= 0x28 && op <= 0x3e) || (op >= 0x50 && op <= 0x66) || op == 0x69 ||
-      (op >= 0x79 && op <= 0x7b) || (op >= 0x7f && op <= 0x91) || (op >= 0x96 && op <= 0x9f) ||
-      (op >= 0xa4 && op <= 0xc4)) {
+  if ((op >= kI32Load && op <= kI64Store32) || (op >= kI64Eqz && op <= kF64Ge) ||
+      op == kI32Popcnt || (op >= kI64Clz && op <= kI64Popcnt) ||
+      (op >= kI64DivS && op <= kF32Sqrt) || (op >= kF32Min && op <= kF64Sqrt) ||
+      (op >= kF64Min && op <= kI64Extend32S)) {
     return 3;
   }
   return -8;
@@ -1233,15 +1234,14 @@ std::int64_t score_block(const jit_wasm_block &block) {
     const auto opcode = block.code.data[offset++];
     const auto benefit = (opcode_benefit_table[opcode / 2] >> (4 * (opcode % 2))) & 15;
     score += benefit < 8 ? benefit : benefit - 16;
-    if (opcode == 0x02 || opcode == 0x03 || opcode == 0x10 || (opcode >= 0x20 && opcode <= 0x24) ||
-        opcode == 0x41 || opcode == 0x42 || opcode == 0x3f || opcode == 0x40) {
+    if (opcode_has_attribute(opcode, kOpcodeScoreOperand)) {
       read_score_operand(block.code.data, end, offset);
-    } else if (opcode >= 0x28 && opcode <= 0x3e) {
+    } else if (opcode_has_attribute(opcode, kOpcodeMemoryAccess)) {
       read_score_operand(block.code.data, end, offset);
       read_score_operand(block.code.data, end, offset);
-    } else if (opcode == 0x43 || opcode == 0x44) {
-      offset += opcode == 0x43 ? 4 : 8;
-    } else if (opcode == 0xfc) {
+    } else if (opcode == kF32Const || opcode == kF64Const) {
+      offset += opcode == kF32Const ? 4 : 8;
+    } else if (opcode == kFcPrefix) {
       const auto subopcode = read_score_operand(block.code.data, end, offset);
       assert(subopcode <= 7 || subopcode == 10 || subopcode == 11);
       if (subopcode == 10) {

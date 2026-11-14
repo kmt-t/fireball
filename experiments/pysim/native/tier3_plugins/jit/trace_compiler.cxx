@@ -18,6 +18,7 @@
 #include "trace_compiler_abi.hxx"
 
 using namespace fireball::pysim::jit;
+using namespace fireball;
 using fireball::kMaxBodyBytes;
 using fireball::kMaxRelocationConstants;
 using fireball::kMaxRuntimeApiImmediates;
@@ -42,56 +43,26 @@ constexpr std::size_t kX64Rel32SlotBytes = 5;
 constexpr std::size_t kMaxOperationStencilBytes = 512;
 constexpr auto kNoLinkSlot = generated::no_link_slot;
 
-constexpr std::uint8_t kWasmI32 = 0x7F;
-constexpr std::uint8_t kWasmI64 = 0x7E;
-constexpr std::uint8_t kWasmF32 = 0x7D;
-constexpr std::uint8_t kWasmF64 = 0x7C;
-
-constexpr int kDrop = 0x1A;
-constexpr int kSelect = 0x1B;
-constexpr int kLocalGet = 0x20;
-constexpr int kLocalSet = 0x21;
-constexpr int kLocalTee = 0x22;
-constexpr int kI32Const = 0x41;
-constexpr int kI64Const = 0x42;
-constexpr int kF32Const = 0x43;
-constexpr int kF64Const = 0x44;
-constexpr int kI32Eqz = 0x45;
-constexpr int kI32Eq = 0x46;
-constexpr int kI32Ne = 0x47;
-constexpr int kI32LtS = 0x48;
-constexpr int kI32LtU = 0x49;
-constexpr int kI32GtS = 0x4A;
-constexpr int kI32GtU = 0x4B;
-constexpr int kI32LeS = 0x4C;
-constexpr int kI32LeU = 0x4D;
-constexpr int kI32GeS = 0x4E;
-constexpr int kI32GeU = 0x4F;
-constexpr int kI32Add = 0x6A;
-constexpr int kI32Sub = 0x6B;
-constexpr int kI32Mul = 0x6C;
-constexpr int kI32DivS = 0x6D;
-constexpr int kI32DivU = 0x6E;
-constexpr int kI32RemS = 0x6F;
-constexpr int kI32RemU = 0x70;
-constexpr int kI32And = 0x71;
-constexpr int kI32Or = 0x72;
-constexpr int kI32Xor = 0x73;
-constexpr int kI32Shl = 0x74;
-constexpr int kI32ShrS = 0x75;
-constexpr int kI32ShrU = 0x76;
-constexpr int kI64Add = 0x7C;
-constexpr int kI64Sub = 0x7D;
-constexpr int kI64Mul = 0x7E;
-constexpr int kF32Add = 0x92;
-constexpr int kF32Sub = 0x93;
-constexpr int kF32Mul = 0x94;
-constexpr int kF32Div = 0x95;
-constexpr int kF64Add = 0xA0;
-constexpr int kF64Sub = 0xA1;
-constexpr int kF64Mul = 0xA2;
-constexpr int kF64Div = 0xA3;
-constexpr int kFcPrefix = 0xFC;
+// x86-64 instruction bytes used by the stencil patcher. These are machine code, not WebAssembly
+// opcodes.
+constexpr std::uint8_t kX86JccShortMin = 0x70;
+constexpr std::uint8_t kX86JccShortMax = 0x7F;
+constexpr std::uint8_t kX86JccShortToNearBias = 0x10;
+constexpr std::uint8_t kX86JccNearMin = 0x80;
+constexpr std::uint8_t kX86JccNearMax = 0x8F;
+constexpr std::uint8_t kX86TwoByteEscape = 0x0F;
+constexpr std::uint8_t kX86JmpShort = 0xEB;
+constexpr std::uint8_t kX86JmpNear = 0xE9;
+constexpr std::uint8_t kX86RexB = 0x41;
+constexpr std::uint8_t kX86RexWB = 0x49;
+constexpr std::uint8_t kX86MovLoad = 0x8B;
+constexpr std::uint8_t kX86MovStore = 0x89;
+constexpr std::uint8_t kX86ModRmDisp8 = 0x43;
+constexpr std::uint8_t kX86ModRmDisp32 = 0x83;
+constexpr std::uint8_t kWasmI32 = 0x7F; // value type i32
+constexpr std::uint8_t kWasmI64 = 0x7E; // value type i64
+constexpr std::uint8_t kWasmF32 = 0x7D; // value type f32
+constexpr std::uint8_t kWasmF64 = 0x7C; // value type f64
 
 bool read_unsigned_leb(const std::uint8_t *code, code_ip_t &cursor, code_ip_t end,
                        std::uint32_t &value) {
@@ -162,20 +133,21 @@ std::size_t widened_branch_size(const std::uint8_t *stencil_code,
                                 const stencil_branch_fixup_view &branch) {
   if (branch.instruction_size == 2) {
     const auto opcode = stencil_code[branch.instruction_offset];
-    if (opcode >= 0x70 && opcode <= 0x7f) {
+    if (opcode >= kX86JccShortMin && opcode <= kX86JccShortMax) {
       return 6;
     }
-    if (opcode == 0xeb) {
+    if (opcode == kX86JmpShort) {
       return 5;
     }
     return 0;
   }
-  if (branch.instruction_size == 5 && stencil_code[branch.instruction_offset] == 0xe9) {
+  if (branch.instruction_size == 5 && stencil_code[branch.instruction_offset] == kX86JmpNear) {
     return 5;
   }
-  if (branch.instruction_size == 6 && stencil_code[branch.instruction_offset] == 0x0f &&
-      stencil_code[branch.instruction_offset + 1] >= 0x80 &&
-      stencil_code[branch.instruction_offset + 1] <= 0x8f) {
+  if (branch.instruction_size == 6 &&
+      stencil_code[branch.instruction_offset] == kX86TwoByteEscape &&
+      stencil_code[branch.instruction_offset + 1] >= kX86JccNearMin &&
+      stencil_code[branch.instruction_offset + 1] <= kX86JccNearMax) {
     return 6;
   }
   return 0;
@@ -296,12 +268,12 @@ bool expand_stencil_branches(const stencil_view &stencil, const std::uint8_t *st
       return false;
     }
     const auto opcode = stencil_code[branch.instruction_offset];
-    if (branch.instruction_size == 2 && opcode >= 0x70 && opcode <= 0x7f) {
-      expanded_code[output_cursor] = 0x0f;
-      expanded_code[output_cursor + 1] = static_cast<std::uint8_t>(opcode + 0x10);
+    if (branch.instruction_size == 2 && opcode >= kX86JccShortMin && opcode <= kX86JccShortMax) {
+      expanded_code[output_cursor] = kX86TwoByteEscape;
+      expanded_code[output_cursor + 1] = static_cast<std::uint8_t>(opcode + kX86JccShortToNearBias);
       std::fill(expanded_code + output_cursor + 2, expanded_code + output_cursor + widened_size, 0);
-    } else if (branch.instruction_size == 2 && opcode == 0xeb) {
-      expanded_code[output_cursor] = 0xe9;
+    } else if (branch.instruction_size == 2 && opcode == kX86JmpShort) {
+      expanded_code[output_cursor] = kX86JmpNear;
       std::fill(expanded_code + output_cursor + 1, expanded_code + output_cursor + widened_size, 0);
     } else {
       std::copy_n(stencil_code + branch.instruction_offset, widened_size,
@@ -340,26 +312,26 @@ void encode_local_memory_instruction(local_memory_operation operation, std::uint
   std::uint8_t opcode = 0;
   switch (operation) {
   case local_memory_operation::load_narrow:
-    rex = 0x41, opcode = 0x8b;
+    rex = kX86RexB, opcode = kX86MovLoad;
     break;
   case local_memory_operation::load_wide:
-    rex = 0x49, opcode = 0x8b;
+    rex = kX86RexWB, opcode = kX86MovLoad;
     break;
   case local_memory_operation::store_narrow:
-    rex = 0x41, opcode = 0x89;
+    rex = kX86RexB, opcode = kX86MovStore;
     break;
   case local_memory_operation::store_wide:
-    rex = 0x49, opcode = 0x89;
+    rex = kX86RexWB, opcode = kX86MovStore;
     break;
   }
   encoded = {};
   encoded[0] = rex;
   encoded[1] = opcode;
   if (slot_width == 4) {
-    encoded[2] = 0x43; // [r11 + disp8]
+    encoded[2] = kX86ModRmDisp8; // [r11 + disp8]
     encoded[3] = static_cast<std::uint8_t>(byte_offset);
   } else {
-    encoded[2] = 0x83; // [r11 + disp32]
+    encoded[2] = kX86ModRmDisp32; // [r11 + disp32]
     for (std::size_t index = 0; index < 4; ++index) {
       encoded[3 + index] = static_cast<std::uint8_t>(byte_offset >> (8 * index));
     }
@@ -535,7 +507,7 @@ struct trace_builder {
              kX64Rel32SlotBytes <= stencil.size - stencil.next_slot_offset &&
              stencil.image_start != nullptr);
       const auto *stencil_code = stencil.image_start + stencil.code_offset;
-      assert(stencil_code[stencil.next_slot_offset] == 0xe9);
+      assert(stencil_code[stencil.next_slot_offset] == kX86JmpNear);
       build_branch_prefix(stencil, stencil_code, branch_prefix);
       if (!expand_stencil_branches(stencil, stencil_code, stencil_scratch.data(),
                                    stencil_scratch.size(), operation_size)) {
@@ -579,7 +551,7 @@ struct trace_builder {
       if (stencil.abort_slot_offset != kNoLinkSlot) {
         assert(stencil.abort_slot_offset <= stencil.size &&
                kX64Rel32SlotBytes <= stencil.size - stencil.abort_slot_offset &&
-               stencil_code[stencil.abort_slot_offset] == 0xe9);
+               stencil_code[stencil.abort_slot_offset] == kX86JmpNear);
         abort_slot = map_stencil_offset(stencil.abort_slot_offset, stencil, branch_prefix);
         assert(abort_slot <= operation_size && kX64Rel32SlotBytes <= operation_size - abort_slot);
       }
@@ -679,8 +651,9 @@ struct trace_builder {
         const auto linked_target = map_linked_offset(target_offset, next_slot, downstream_size);
         [[maybe_unused]] const auto instruction_size = widened_branch_size(stencil_code, branch);
         const auto opcode = stencil_code[branch.instruction_offset];
-        const auto displacement_offset =
-            branch.instruction_size == 2 ? (opcode == 0xeb ? 1u : 2u) : (opcode == 0xe9 ? 1u : 2u);
+        const auto displacement_offset = branch.instruction_size == 2
+                                             ? (opcode == kX86JmpShort ? 1u : 2u)
+                                             : (opcode == kX86JmpNear ? 1u : 2u);
         const auto source = operation_starts[index] + linked_source;
         const auto target = operation_starts[index] + linked_target;
         // The branch lies inside its linked operation, and the operations lie inside the sequence.
@@ -720,7 +693,7 @@ struct trace_builder {
         const auto slot_offset = abort_slots[index];
         assert(slot_offset <= total_body_size &&
                kX64Rel32SlotBytes <= total_body_size - slot_offset);
-        assert(body[slot_offset] == 0xe9);
+        assert(body[slot_offset] == kX86JmpNear);
         write_rel32(body, total_body_size, slot_offset + 1, abort_target);
       }
     }
@@ -1097,7 +1070,7 @@ bool emit_runtime_api(trace_builder &builder, stack_model &stack, int op, code_i
                       std::uint8_t global_width);
 std::uint8_t global_value_width(int op, std::uint64_t operand,
                                 const fireball::jit_byte_view &global_widths) {
-  if (op != 0x23 && op != 0x24) {
+  if (op != kGlobalGet && op != kGlobalSet) {
     return 0;
   }
   assert(operand < global_widths.bytes);
@@ -1123,12 +1096,12 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
     const auto op = static_cast<int>(instruction.opcode);
     [[maybe_unused]] const bool has_operand = instruction.has_operand != 0;
 
-    if (op == 0x02 || op == 0x03 || op == 0x05 || op == 0x0B) {
+    if (op <= 0xFF && opcode_has_attribute(static_cast<std::uint8_t>(op), kOpcodeStructural)) {
       ++index;
       continue;
     }
     // nop has no effect on the stack, locals, memory or control, so it emits no operation.
-    if (op == 0x01) {
+    if (op == kNop) {
       ++index;
       continue;
     }
@@ -1208,7 +1181,7 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       ++index;
       continue;
     }
-    if (op == 0x00) {
+    if (op == kUnreachable) {
       const auto source_ip = source_offsets != nullptr ? source_offsets[index] : 0u;
       const auto interpreter_rel_after = interpreter_rel_after_offsets == nullptr
                                              ? std::numeric_limits<annotation_offset_t>::max()
@@ -1219,17 +1192,18 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
       }
       return true;
     }
-    const bool wasm_memory_operation = op >= 0x28 && op <= 0x3E;
+    const bool wasm_memory_operation =
+        op <= 0xFF && opcode_has_attribute(static_cast<std::uint8_t>(op), kOpcodeMemoryAccess);
     const bool wasm_fc_operation =
         (op & 0xFF00) == 0xFC00 &&
-        (((op & 0xFF) <= 7) || (op & 0xFF) == 0x0A || (op & 0xFF) == 0x0B);
+        (((op & 0xFF) <= 7) || (op & 0xFF) == kFcMemoryCopy || (op & 0xFF) == kFcMemoryFill);
     if (source_offsets != nullptr && source_end_offsets != nullptr &&
         (wasm_memory_operation || wasm_fc_operation)) {
       const auto subopcode = static_cast<std::uint32_t>(op & 0xFF);
       const auto packed_memory_indices = instruction.operand;
       // The loader accepts only memory index 0 for memory.copy and memory.fill.
-      assert(!(wasm_fc_operation && subopcode == 0x0A && packed_memory_indices != 0));
-      assert(!(wasm_fc_operation && subopcode == 0x0B &&
+      assert(!(wasm_fc_operation && subopcode == kFcMemoryCopy && packed_memory_indices != 0));
+      assert(!(wasm_fc_operation && subopcode == kFcMemoryFill &&
                static_cast<std::uint32_t>(packed_memory_indices) != 0));
       const auto instruction_width =
           static_cast<std::uint8_t>(source_end_offsets[index] - source_offsets[index]);
@@ -1238,7 +1212,8 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
                                                ? static_cast<std::uint32_t>(instruction.operand)
                                                : static_cast<std::uint32_t>(packed_memory_indices)};
       const std::uint8_t immediate_widths[2] = {1, 4};
-      const auto immediate_count = wasm_memory_operation ? 2u : (subopcode >= 0x0A ? 1u : 0u);
+      const auto immediate_count =
+          wasm_memory_operation ? 2u : (subopcode >= kFcMemoryCopy ? 1u : 0u);
       const auto interpreter_rel_after = interpreter_rel_after_offsets == nullptr
                                              ? std::numeric_limits<annotation_offset_t>::max()
                                              : interpreter_rel_after_offsets[index];
@@ -1258,12 +1233,12 @@ bool compile_instructions(trace_builder &builder, const fireball::jit_instructio
     std::array<std::uint8_t, 2> runtime_rel_widths{};
     std::uint32_t runtime_rel_count = 0;
     const auto instruction_width = source_end_offsets[index] - source_offsets[index];
-    if (op == 0x23 || op == 0x24) {
+    if (op == kGlobalGet || op == kGlobalSet) {
       runtime_rel[runtime_rel_count] = instruction_width;
       runtime_rel_widths[runtime_rel_count++] = 1;
       runtime_rel[runtime_rel_count] = static_cast<std::uint32_t>(instruction.operand);
       runtime_rel_widths[runtime_rel_count++] = 2;
-    } else if (op != 0x3F && op != 0x40) {
+    } else if (op != kMemorySize && op != kMemoryGrow) {
       runtime_rel[runtime_rel_count] = instruction_width;
       runtime_rel_widths[runtime_rel_count++] = 1;
     }
@@ -1304,14 +1279,14 @@ void pop_values(stack_model &stack, std::uint32_t count, std::uint8_t width) {
 }
 
 void apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_model &stack) {
-  if (op == 0x00) {
+  if (op == kUnreachable) {
     return;
   }
-  if (op == 0x23) {
+  if (op == kGlobalGet) {
     stack.push(global_width);
     return;
   }
-  if (op == 0x24) {
+  if (op == kGlobalSet) {
     stack.pop(global_width);
     return;
   }
@@ -1324,140 +1299,142 @@ void apply_runtime_api_stack_effect(int op, std::uint8_t global_width, stack_mod
       stack.unary(static_cast<std::uint8_t>(input_width), static_cast<std::uint8_t>(output_width));
       return;
     }
-    assert(subopcode == 0x0A || subopcode == 0x0B);
+    assert(subopcode == kFcMemoryCopy || subopcode == kFcMemoryFill);
     pop_values(stack, 3, 1);
     return;
   }
 
-  if (op >= 0x28 && op <= 0x35) {
+  if (op >= kI32Load && op <= kI64Load32U) {
     // i64.load, f64.load and the i64 narrow loads push two words.
-    const auto result_width = (op == 0x29 || op == 0x2B || (op >= 0x30 && op <= 0x35)) ? 2u : 1u;
+    const auto result_width =
+        (op == kI64Load || op == kF64Load || (op >= kI64Load8S && op <= kI64Load32U)) ? 2u : 1u;
     stack.unary(1, static_cast<std::uint8_t>(result_width));
     return;
   }
-  if (op >= 0x36 && op <= 0x3E) {
+  if (op >= kI32Store && op <= kI64Store32) {
     // i64.store, f64.store and the i64 narrow stores pop two words.
-    const auto value_width = (op == 0x37 || op == 0x39 || (op >= 0x3C && op <= 0x3E)) ? 2u : 1u;
+    const auto value_width =
+        (op == kI64Store || op == kF64Store || (op >= kI64Store8 && op <= kI64Store32)) ? 2u : 1u;
     stack.pop(static_cast<std::uint8_t>(value_width));
     stack.pop(1);
     return;
   }
-  if (op == 0x3F) {
+  if (op == kMemorySize) {
     stack.push(1);
     return;
   }
-  if (op == 0x40) {
+  if (op == kMemoryGrow) {
     stack.unary(1, 1);
     return;
   }
-  if (op >= 0x67 && op <= 0x69) {
+  if (op >= kI32Clz && op <= kI32Popcnt) {
     stack.unary(1, 1);
     return;
   }
-  if (op == 0x77 || op == 0x78) {
+  if (op == kI32Rotl || op == kI32Rotr) {
     // i32.rotl and i32.rotr have no direct stencil; they pop two i32 and push one.
     stack.binary(1);
     return;
   }
-  if (op == 0x50) {
+  if (op == kI64Eqz) {
     stack.unary(2, 1);
     return;
   }
-  if (op >= 0x51 && op <= 0x5A) {
+  if (op >= kI64Eq && op <= kI64GeU) {
     stack.binary_to(2, 1);
     return;
   }
-  if (op >= 0x5B && op <= 0x60) {
+  if (op >= kF32Eq && op <= kF32Ge) {
     stack.binary_to(1, 1);
     return;
   }
-  if (op >= 0x61 && op <= 0x66) {
+  if (op >= kF64Eq && op <= kF64Ge) {
     stack.binary_to(2, 1);
     return;
   }
-  if (op >= 0x79 && op <= 0x7B) {
+  if (op >= kI64Clz && op <= kI64Popcnt) {
     stack.unary(2, 2);
     return;
   }
-  if (op >= 0x7C && op <= 0x8A) {
+  if (op >= kI64Add && op <= kI64Rotr) {
     stack.binary_to(2, 2);
     return;
   }
-  if (op >= 0x8B && op <= 0x91) {
+  if (op >= kF32Abs && op <= kF32Sqrt) {
     stack.unary(1, 1);
     return;
   }
-  if (op >= 0x92 && op <= 0x98) {
+  if (op >= kF32Add && op <= kF32Copysign) {
     stack.binary_to(1, 1);
     return;
   }
-  if (op >= 0x99 && op <= 0x9F) {
+  if (op >= kF64Abs && op <= kF64Sqrt) {
     stack.unary(2, 2);
     return;
   }
-  if (op >= 0xA0 && op <= 0xA6) {
+  if (op >= kF64Add && op <= kF64Copysign) {
     stack.binary_to(2, 2);
     return;
   }
   switch (op) {
-  case 0xA7:
+  case kI32WrapI64:
     stack.unary(2, 1);
     return;
-  case 0xA8:
-  case 0xA9:
+  case kI32TruncF32S:
+  case kI32TruncF32U:
     stack.unary(1, 1);
     return;
-  case 0xAA:
-  case 0xAB:
+  case kI32TruncF64S:
+  case kI32TruncF64U:
     stack.unary(2, 1);
     return;
-  case 0xAC:
-  case 0xAD:
+  case kI64ExtendI32S:
+  case kI64ExtendI32U:
     stack.unary(1, 2);
     return;
-  case 0xAE:
-  case 0xAF:
+  case kI64TruncF32S:
+  case kI64TruncF32U:
     stack.unary(1, 2);
     return;
-  case 0xB0:
-  case 0xB1:
+  case kI64TruncF64S:
+  case kI64TruncF64U:
     stack.unary(2, 2);
     return;
-  case 0xB2:
-  case 0xB3:
+  case kF32ConvertI32S:
+  case kF32ConvertI32U:
     stack.unary(1, 1);
     return;
-  case 0xB4:
-  case 0xB5:
-  case 0xB6:
+  case kF32ConvertI64S:
+  case kF32ConvertI64U:
+  case kF32DemoteF64:
     stack.unary(2, 1);
     return;
-  case 0xB7:
-  case 0xB8:
+  case kF64ConvertI32S:
+  case kF64ConvertI32U:
     stack.unary(1, 2);
     return;
-  case 0xB9:
-  case 0xBA:
+  case kF64ConvertI64S:
+  case kF64ConvertI64U:
     stack.unary(2, 2);
     return;
-  case 0xBB:
+  case kF64PromoteF32:
     stack.unary(1, 2);
     return;
-  case 0xBC:
-  case 0xBE:
+  case kI32ReinterpretF32:
+  case kF32ReinterpretI32:
     stack.unary(1, 1);
     return;
-  case 0xBD:
-  case 0xBF:
+  case kI64ReinterpretF64:
+  case kF64ReinterpretI64:
     stack.unary(2, 2);
     return;
-  case 0xC0:
-  case 0xC1:
+  case kI32Extend8S:
+  case kI32Extend16S:
     stack.unary(1, 1);
     return;
-  case 0xC2:
-  case 0xC3:
-  case 0xC4:
+  case kI64Extend8S:
+  case kI64Extend16S:
+  case kI64Extend32S:
     stack.unary(2, 2);
     return;
   default:
@@ -1512,7 +1489,6 @@ stencil_view branch_stack_move_stencil(std::uint8_t result_words) {
 }
 
 /** @brief The opcode of br. Its backward form runs the threshold Runtime API (jit_runtime_backedge). */
-constexpr int kBrOpcode = 0x0C;
 
 /**
  * @brief Executes a br in the trace when its target block is a block of this function. The br
@@ -1558,7 +1534,7 @@ int consume_branch_br(trace_builder &builder, stack_model &stack, bool backward,
     // The record holds the offset of the br's own annotation. The threshold API runs before any
     // stack move, so a refusal sees the original stack.
     std::uint8_t api_slot = 0;
-    if (!runtime_api_slot(kBrOpcode, api_slot) ||
+    if (!runtime_api_slot(kBr, api_slot) ||
         !builder.append_runtime_api(api_slot, source_ip, nullptr, nullptr, 0,
                                     static_cast<annotation_offset_t>(annotation_offset_64))) {
       return -1;
@@ -1603,7 +1579,7 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
   if (!fireball::opcode_has_attribute(opcode, fireball::kOpcodeTraceTerminator)) {
     return 1;
   }
-  if (opcode == kBrOpcode && has_next_pc) {
+  if (opcode == kBr && has_next_pc) {
     // A br runs inside the trace. Its successor is the loader's resume pc: the block head offset
     // plus the pc distance, which is negative for a backward br.
     const auto resume = static_cast<std::int64_t>(trace_start_ip) +
@@ -1614,16 +1590,16 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
                              next_annotation_offset, interpreter_rel_bytes,
                              static_cast<code_ip_t>(resume), consumed, terminal_end_ip);
   }
-  if (opcode == 0x04 || opcode == 0x0C || opcode == 0x0D) {
+  if (opcode == kIf || opcode == kBr || opcode == kBrIf) {
     // Branch instructions remain unexecuted trace exits handled by Interpreter CPS.
     return 1;
   }
-  if (opcode == 0x10 || opcode == 0x11) {
+  if (opcode == kCall || opcode == kCallIndirect) {
     std::uint32_t operand = 0;
     if (!read_unsigned_leb(code, cursor, code_bytes, operand)) {
       return -1;
     }
-    if (opcode == 0x11) {
+    if (opcode == kCallIndirect) {
       std::uint32_t table_index = 0;
       if (!read_unsigned_leb(code, cursor, code_bytes, table_index)) {
         return -1;
@@ -1670,7 +1646,7 @@ int append_trace_terminator_runtime_api(trace_builder &builder, const std::uint8
 
   std::uint32_t annotation_bytes = 0;
   switch (opcode) {
-  case 0x0E: {
+  case kBrTable: {
     std::uint32_t case_count = 0;
     if (!read_unsigned_leb(code, cursor, code_bytes, case_count)) {
       return -1;
@@ -1792,18 +1768,18 @@ int fireball::compile_wasm_trace(
   while (cursor < end) {
     const auto instruction_ip = cursor;
     const auto opcode = code[cursor++];
-    if (opcode == 0x10 || opcode == 0x11) {
+    if (opcode == kCall || opcode == kCallIndirect) {
       // Keep the call itself and the remainder of this block for Interpreter CPS.
       trace_end = instruction_ip;
       call_exit = true;
       break;
     }
-    if (opcode == 0x02 || opcode == 0x03) {
+    if (opcode == kBlock || opcode == kLoop) {
       [[maybe_unused]] std::uint64_t block_type = 0;
       if (!read_signed_leb(code, cursor, end, block_type, 33u)) {
         return -1;
       }
-      if (opcode == 0x03) {
+      if (opcode == kLoop) {
         std::uint16_t loop_block_field = 0;
         if (!take_annotation_field(annotation_cursor, annotation_limit, loop_block_field)) {
           return -1;
@@ -1812,7 +1788,7 @@ int fireball::compile_wasm_trace(
       }
       continue;
     }
-    if (opcode == 0x05 || opcode == 0x0B) {
+    if (opcode == kElse || opcode == kEnd) {
       std::uint16_t structural_field = 0;
       if (!take_annotation_field(annotation_cursor, annotation_limit, structural_field)) {
         return -1;
@@ -1846,7 +1822,7 @@ int fireball::compile_wasm_trace(
         return -1;
       }
       // The loader rejects every other 0xFC subopcode before the trace compiler sees the code.
-      assert(subopcode <= 7 || subopcode == 0x0A || subopcode == 0x0B);
+      assert(subopcode <= 7 || subopcode == kFcMemoryCopy || subopcode == kFcMemoryFill);
       instruction.opcode = 0xFC00u | subopcode;
       std::uint8_t fc_width_field = 0;
       std::uint8_t fc_subopcode_field = 0;
@@ -1855,7 +1831,7 @@ int fireball::compile_wasm_trace(
         return -1;
       }
       sync_annotation_rel();
-      if (subopcode == 0x0A) {
+      if (subopcode == kFcMemoryCopy) {
         std::uint32_t destination_memory = 0;
         std::uint32_t source_memory = 0;
         if (!read_unsigned_leb(code, cursor, end, destination_memory) ||
@@ -1864,7 +1840,7 @@ int fireball::compile_wasm_trace(
         }
         instruction.operand = static_cast<std::uint64_t>(destination_memory) |
                               (static_cast<std::uint64_t>(source_memory) << 32);
-      } else if (subopcode == 0x0B) {
+      } else if (subopcode == kFcMemoryFill) {
         std::uint32_t memory_index = 0;
         if (!read_unsigned_leb(code, cursor, end, memory_index)) {
           return -1;
@@ -1902,13 +1878,13 @@ int fireball::compile_wasm_trace(
       sync_annotation_rel();
       instruction.has_operand = 1;
       instruction.operand = operand;
-    } else if (opcode == 0x23 || opcode == 0x24 || opcode == 0x25 || opcode == 0x26 ||
-               opcode == 0x3F || opcode == 0x40) {
+    } else if (opcode == kGlobalGet || opcode == kGlobalSet || opcode == kTableGet ||
+               opcode == kTableSet || opcode == kMemorySize || opcode == kMemoryGrow) {
       std::uint32_t operand = 0;
       if (!read_unsigned_leb(code, cursor, end, operand)) {
         return -1;
       }
-      if (opcode == 0x23 || opcode == 0x24) {
+      if (opcode == kGlobalGet || opcode == kGlobalSet) {
         std::uint8_t global_width_field = 0;
         std::uint16_t global_index_field = 0;
         if (!take_annotation_field(annotation_cursor, annotation_limit, global_width_field) ||
@@ -1918,7 +1894,7 @@ int fireball::compile_wasm_trace(
         sync_annotation_rel();
       }
       instruction.operand = operand;
-    } else if (opcode >= 0x28 && opcode <= 0x3E) {
+    } else if (opcode >= kI32Load && opcode <= kI64Store32) {
       std::uint32_t alignment = 0;
       std::uint32_t offset = 0;
       if (!read_unsigned_leb(code, cursor, end, alignment) ||

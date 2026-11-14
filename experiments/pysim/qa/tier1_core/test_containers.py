@@ -29,7 +29,6 @@ from system_containers import (
     ReadOnlyRadixBinaryTreeView,
     StaticVector,
     bswap32,
-    lookup_jit_entry,
 )
 
 
@@ -186,25 +185,6 @@ def test_cont_08_radix_binary_tree_view_coarse_radix_lookup() -> None:
         entries.read_indices.clear()
         assert tree.find(key) is None
         assert entries.read_indices == []
-
-
-def test_cont_09_jit_entry_lookup_card_table_prefilter() -> None:
-    """TEST-CONT-09: COMPILED以外と表外PCでは疎マップにアクセスしない。"""
-    card_table = MutableBitStorage(count=16, bits=2).view()
-    entries = CountedEntries(((16, 160), (20, 200)))
-    view = ReadOnlyFlatMapView(entries)
-    for state in (0, 1, 2):
-        card_table.put(2, state)
-        entries.read_indices.clear()
-        assert lookup_jit_entry(view, card_table, pc=16, card_shift=3) is None
-        assert entries.read_indices == []
-    card_table.put(2, 3)
-    assert lookup_jit_entry(view, card_table, pc=16, card_shift=3) == 160
-    # 同じCOMPILEDカードに含まれても、未登録PCを返してはならない。
-    assert lookup_jit_entry(view, card_table, pc=18, card_shift=3) is None
-    entries.read_indices.clear()
-    assert lookup_jit_entry(view, card_table, pc=128, card_shift=3) is None
-    assert entries.read_indices == []
 
 
 def test_cont_10_container_type_separation():

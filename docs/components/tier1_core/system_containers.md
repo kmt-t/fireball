@@ -375,8 +375,8 @@ sequenceDiagram
 
 ### 6.1 性能制約と方策
 <!-- traceability: {META_BinarySearch} {FlatViewNarrowing} {PackedBitView} {LowLatencyLookup} -->
-- **目標**: クリティカルパス（インタープリタ実行ループ内の JIT エントリ検索、カード状態判定、ブレークポイント判定）での参照コストを最小化する。
-- **方策**: 大規模なWASMローダ索引ではRadixで候補区間を狭めてから二分探索し、局所性を保つ。少数のJITエントリはRadix表を設けず、ソート済み固定容量配列を二分探索する。カード状態の判定は密な`bit_view`で探索せず、単一のロードとシフト・マスクで完了する。
+- **目標**: クリティカルパス（インタープリタ実行ループ内のブレークポイント判定）での参照コストを最小化する。
+- **方策**: 大規模なWASMローダ索引ではRadixで候補区間を狭めてから二分探索し、局所性を保つ。少数のJITエントリはRadix表を設けず、ソート済み固定容量配列を二分探索する。
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {GLOBAL_Policy_Memory} {META_NoStdVector} {GLOBAL_StrictMemoryLimit} {GLOBAL_StaticScalability} -->

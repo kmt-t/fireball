@@ -160,7 +160,7 @@ block を切る命令（`if`・`br`・`br_if`・`br_table`・`return`・`call_in
 
 
 1. **実行コンテキストのBasicBlock index参照 ($O(1)$)**: Loaderが関数入口と制御辺についてindexを前計算し、Interpreterは`current_block_index`へ現在indexを保持する。分岐と通常継続は注釈済みindexからBasicBlock metadataと`rel`開始位置を直接得る。呼出しと復帰のindexは[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)の契約に従う。境界停止のPC比較を除き、dispatch中にPCからindexを検索しない。
-2. **カード状態によるJIT検索抑止 ($O(1)$)**: BasicBlock解決後にカード状態を読む。状態が`COMPILED`でなければJIT providerを呼ばず、キャッシュ参照も変更せずInterpreter命令を実行する。状態が`COMPILED`でもカード内の別ブロックだけがコンパイル済みの場合があるため、正確なPCはBasicBlock参照またはJIT索引で照合する。
+2. **記録の印による検索抑止 ($O(1)$)**: BasicBlock解決後に`jit_cache_reference`を読む。常駐traceの参照がなければJIT拡張を呼ばず、キャッシュ参照も変更せずInterpreter命令を実行する。カード状態は検索の可否の判定に使わない。
 3. **BasicBlock内キャッシュ参照 ($O(1)$)**: `jit_cache_reference`が常駐traceの参照を示すなら、値が指す常駐エントリを使う（trace がない値の定義は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)）。キャッシュ配列の並べ替え・削除・破棄時は参照をresident entryへ更新し、residentでないentryへの参照を残さない。Runtime領域の解放前にも、借用しているBasicBlockの常駐参照を無効化する。
 4. **キャッシュ更新用PC索引 ($O(n \log n)$)**: キャッシュ更新時に全バンク合計 `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下の参照を`head_pc`順に並べ、BasicBlock参照の再構築とchain metadataの後方再計算に使う。通常の実行とchain successor解決では索引を検索しない。QA計測のPC入口だけが`lower_bound`でブロック索引を引く。JIT用Radix表や製品実行時のグローバルPC→trace検索経路は設けない。
 5. **ホットスポット昇格判定**:

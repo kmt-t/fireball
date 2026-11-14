@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from typing import Generic, Never, Protocol, Self, TypeVar, cast
 
 from bump_allocator import BumpAllocator
-from config import JIT_CARD_SHIFT
 
 ResultValueT = TypeVar("ResultValueT", covariant=True)
 ResultErrorT = TypeVar("ResultErrorT", covariant=True)
@@ -1243,26 +1242,6 @@ class MutableRadixBinaryTreeStorage(SequenceView[tuple[int, ValT]], Generic[ValT
             radix_shift=self.radix_shift,
             key_transform=self.key_transform,
         )
-
-
-def _card_compiled(card_table: BitView, pc: int, card_shift: int) -> bool:
-    """O(1) card marking pre-filter: True only once card state == 3 (COMPILED)."""
-    card_idx = pc >> card_shift
-    return card_idx < card_table.size() and card_table.at(card_idx) == 3
-
-
-def lookup_jit_entry(
-    view: ReadOnlyFlatMapView[int, ValT],
-    card_table: BitView,
-    pc: int,
-    card_shift: int = JIT_CARD_SHIFT,
-) -> ValT | None:
-    """
-    Sparse JIT entry lookup: O(1) card prefilter followed by binary search.
-    """
-    if not _card_compiled(card_table, pc, card_shift):
-        return None
-    return view.find(pc)
 
 
 # ---------------------------------------------------------------------------

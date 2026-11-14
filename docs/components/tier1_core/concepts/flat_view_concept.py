@@ -257,19 +257,6 @@ class RadixBinaryTreeView(Generic[ValT]):
         return self.map_view.slice(first, last).find(key)
 
 
-def lookup_jit_entry(
-    view: FlatMapView[int, ValT],
-    card_table: BitView,
-    pc: int,
-    card_shift: int,
-) -> ValT | None:
-    """JIT entry lookup: O(1) card prefilter, then sparse-key binary search."""
-    card_idx = pc >> card_shift
-    if card_idx >= card_table.size() or card_table.at(card_idx) != 3:  # 3 = COMPILED
-        return None
-    return view.find(pc)
-
-
 def card_marking_table(storage: bytearray, card_count: int) -> BitView:
     """
     The 2-bit per-card state table: 4 cards per byte instead of one.
@@ -369,19 +356,6 @@ def test_set_view_answers_membership_without_any_value_storage() -> None:
     assert window.contains(0x300) is False, "a key outside the window must not be found"
 
 
-def test_card_marking_prefilter_and_sparse_jit_entry_lookup() -> None:
-    """The card table filters misses in O(1), then sparse entries use bsearch."""
-    view = _map_fixture()
-    card_table = card_marking_table(bytearray(2), card_count=8)
-    # card_shift=3 (8 bytes/card):
-    # pc=30 -> card_idx = 30 >> 3 = 3
-    # pc=60 -> card_idx = 60 >> 3 = 7
-    card_table.put(3, 3)  # card 3 (covers pc 24-31) -> 3: COMPILED
-    card_table.put(7, 3)  # card 7 (covers pc 56-63) -> 3: COMPILED
-    assert lookup_jit_entry(view, card_table, pc=30, card_shift=3) == 3
-    assert lookup_jit_entry(view, card_table, pc=60, card_shift=3) == 6
-    assert lookup_jit_entry(view, card_table, pc=99, card_shift=3) is None
-
 
 def test_bits_must_divide_a_byte() -> None:
     """3-bit elements would straddle bytes and force a two-load read, which the
@@ -444,7 +418,6 @@ if __name__ == "__main__":
     test_bit_view_offers_no_search()
     test_narrowing_only_ever_shrinks_and_composes()
     test_set_view_answers_membership_without_any_value_storage()
-    test_card_marking_prefilter_and_sparse_jit_entry_lookup()
     test_radix_binary_tree_view()
     test_bits_must_divide_a_byte()
     test_static_flat_map_operations()

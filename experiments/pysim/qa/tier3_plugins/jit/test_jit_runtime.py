@@ -4275,7 +4275,7 @@ def test_jitr_129_root_entry_at_dispatch_start_is_classified(monkeypatch):
     """TEST-JITR-129: a root entry that starts a native dispatch is a dispatch-start entry.
 
     Block 0 is resident and its successor runs in the Interpreter inside the same dispatch, so each
-    of the five calls has one root lookup, at the start of its dispatch, and no other root entry.
+    of the five calls has one root entry, at the start of its dispatch, and no other root entry.
     """
     _route_stats_through_qa_extension(monkeypatch)
     module = parse_standalone(wat_to_wasm(_CHAIN_EXIT_WAT))
@@ -4300,9 +4300,7 @@ def test_jitr_129_root_entry_at_dispatch_start_is_classified(monkeypatch):
 def test_jitr_130_root_entry_after_a_taken_backedge_is_a_loop_trace_end(monkeypatch):
     """TEST-JITR-130: a backedge taken after br_if is a trace end into the loop head.
 
-    The loop body is resident. One call of sum(5) runs five iterations. The first lookup starts the
-    dispatch. The trace ends before br_if; the four taken backedges go back to the loop head through a
-    lookup, and the fifth br_if falls through without a lookup. So the loop entries are four.
+    The loop body is resident. One call of sum(5) runs five iterations. The first root entry starts the dispatch. The trace ends before br_if; the four taken backedges go back to the loop head through a root entry, and the fifth br_if falls through without one. So the loop entries are four.
     """
     _route_stats_through_qa_extension(monkeypatch)
     module = parse_standalone(wat_to_wasm(_ROOT_LOOP_WAT))
@@ -4416,9 +4414,8 @@ def test_jitr_127_trace_end_before_an_interpreted_successor_is_unobserved(monkey
     """TEST-JITR-127: a completed trace whose successor the Interpreter runs in the same dispatch.
 
     Block 0 is compiled and resident; its straight-line successor is never compiled and runs in the
-    Interpreter inside the same native dispatch. No lookup or observation follows the trace end, so
-    each of the five calls is one unobserved trace exit and no transition. The root lookup of each
-    call is one root entry.
+    Interpreter inside the same native dispatch. No root entry or observation follows the trace end, so
+    each of the five calls is one unobserved trace exit and no transition. Each call has one root entry.
     """
     _route_stats_through_qa_extension(monkeypatch)
     module = parse_standalone(wat_to_wasm(_CHAIN_EXIT_WAT))
@@ -4496,8 +4493,7 @@ def test_jitr_133_trace_end_is_counted_at_the_next_judged_block_across_an_interp
 def test_jitr_128_chained_body_is_not_a_root_entry_and_its_end_is_unobserved(monkeypatch):
     """TEST-JITR-128: a linked successor runs inside the chain, and the chain end is unobserved.
 
-    Block 0 is linked to block 1 by the install, so each of the five calls takes one root lookup for
-    block 0 and runs block 1 through the chain without a lookup. The Interpreter then runs block 2 in
+    Block 0 is linked to block 1 by the install, so each of the five calls takes one root entry for block 0 and runs block 1 through the chain without a root entry. The Interpreter then runs block 2 in
     the same dispatch, so the end of block 1 is one unobserved trace exit per call.
     """
     _route_stats_through_qa_extension(monkeypatch)
@@ -5810,10 +5806,9 @@ def _call_admission(engine, module, count: int) -> None:
 
 
 def test_jitr_108_root_entries_count_once_per_lookup_and_no_history_is_the_initial_record():
-    """TEST-JITR-108: the record starts without history, and each root lookup counts one entry.
+    """TEST-JITR-108: the record starts without history, and each root entry counts one entry.
 
-    The lifetime count is the entries since the current install. It rises by one per root
-    lookup, and the record keeps the no-history strike until the first eviction.
+    The lifetime count is the entries since the current install. It rises by one per root entry, and the record keeps the no-history strike until the first eviction.
     """
     engine, module, manager, index, block = _admission_engine()
     assert _admission_record(manager, index) == _ADMISSION_NO_HISTORY

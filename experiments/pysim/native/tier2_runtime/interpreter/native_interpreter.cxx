@@ -1309,9 +1309,10 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
     if constexpr (std::is_void_v<Debugger>) {
       if constexpr (WithJit) {
         if (block_head) {
-          // A trace reference in the block record exists only in a COMPILED card (lookup asserts
-          // it), so the record alone decides whether a lookup can hit. A control-first block is
-          // never profiled, so its record never holds a reference (see observed_interpreter_body).
+          // A trace reference in the block record exists only in a COMPILED card (the JIT writes
+          // it at install), so the record alone decides whether a trace is entered. A control-first
+          // block is never profiled, so its record never holds a reference (see
+          // observed_interpreter_body).
           const auto pc = frame.function_view->code_pc_offset + ip;
           block_reference = frame.function_view->module_view->blocks[block_index].jit_cache_reference;
           if (block_reference != FB_NATIVE_JIT_NO_TRACE_OBSERVED &&

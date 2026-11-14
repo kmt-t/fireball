@@ -55,7 +55,7 @@ enum fb_native_jit_trace_exit_kind : std::uint8_t {
 
 static_assert(sizeof(fb_native_jit_trace_exit) == 20);
 
-// Header at the start of every resident trace blob, read by the Interpreter after a lookup hit.
+// Header at the start of every resident trace blob, read by the Interpreter when a block record names its slot.
 // Its layout is fixed by the JIT compiler (jit_trace_header is an alias of this struct).
 struct fb_native_jit_trace_header {
   std::uint64_t chain_target_address;

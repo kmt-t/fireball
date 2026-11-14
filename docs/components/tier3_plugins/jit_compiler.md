@@ -297,7 +297,7 @@ flowchart TD
 <!-- traceability: {JIT_LazyChaining} {JIT_ReverseCompilationOrder} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} -->
 ```mermaid
 stateDiagram-v2
-    state "Block record check and resident lookup" as Lookup
+    state "Block record check and resident slot read" as Lookup
     state "x64 trace body" as Trace
     state "C++ Interpreter handler" as Handler
     state "Common-code chain dispatcher" as Chain
@@ -323,7 +323,6 @@ sequenceDiagram
     autonumber
     participant R as RuntimeEngine
     participant I as Interpreter C++ dispatcher
-    participant C as Cache
     participant T as x64 trace body
     participant D as Common-code chain dispatcher
     participant H as C++ Interpreter handler
@@ -331,8 +330,7 @@ sequenceDiagram
 
     I->>I: read current BasicBlock jit_cache_reference
     alt Resident trace reference
-        I->>C: lookup trace by block index and PC
-        C-->>I: trace entry
+        I->>I: read slot from block record, header = code_base + trace_offsets[slot]
         I->>T: enter trace
         T->>D: transfer for eligible straight-line successor
         D->>T: tail-jump to target body

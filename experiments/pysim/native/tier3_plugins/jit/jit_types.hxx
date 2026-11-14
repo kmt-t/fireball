@@ -59,7 +59,7 @@ struct jit_common_layout {
 };
 // The only per-trace runtime data lives beside its code. Runtime indexes keep
 // a PC and a region-relative code offset; they never own a second descriptor.
-// The trace header is the ABI struct the Interpreter reads after a lookup hit.
+// The trace header is the ABI struct the Interpreter reads when a block record names its slot.
 using jit_trace_header = fb_native_jit_trace_header;
 
 struct jit_profile {

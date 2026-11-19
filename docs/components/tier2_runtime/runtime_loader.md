@@ -36,12 +36,13 @@ ROM 上の索引構築（ModuleView）も担当する。
 - **`code_section_payload_file_offset`**: `ModuleView` が保持するCode section payloadの先頭ファイル位置（section IDとpayload lengthの後）。命令のファイル位置からこの値を引いた差分をCode section相対PC（`{WasmCodeSectionPC}`）とする。 <!-- definition: {WasmCodeSectionPC} -->
 - **`entity_offset_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
 - **`import_storage` / `export_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
-- **`module.blocks`と`block_storage`**: `module.blocks`はコード順の全BasicBlock metadataを保持する。Python参照実装の`block_storage`と`Module.get_block()`はPython側からのPC検索に使う。Native ModuleExecutionViewにはPC→block検索行とradix表を転送しない。Native dispatchは現在のblock indexとLoader注釈の次block indexで遷移し、indexを使う境界でPC一致をassertする。BasicBlockは`br`・`br_if`・`br_table`・`return`で分割する。`call`・`call_indirect`は復帰継続位置から次のBasicBlockを始める。`if`・`else`の各本体は、それぞれの命令の次から始める。`loop`命令の制御ブロックから本体先頭へ遷移する。`block`・`if`の`end`で分割する。`block`の開始命令と`0xFC`接頭辞命令では分割しない。`loop`の`end`は同じBasicBlock内で実行する。関数末尾の`end`は関数終了境界とする。`0xFC`命令がRuntimeへ処理を引き渡す場合は、命令を消費した位置から同じBasicBlock内で再開する。各BasicBlockの`entry_stack_words`（u16、値は u8 の範囲）は、そのブロックの先頭で制御が届くときのオペランドスタックの語数である。WASMの検証規則が語数を静的に定めるため、ローダーの型解析（`stack_words_before_instructions`）が各ブロック先頭の値として確定する。値の幅は記録しない。入口の値を消費する命令は、自分の幅（演算は opcode、local は局所の型、global は`global_widths`、drop・select は注釈）で語を消費する。デバッガのブロック単位ステップ実行は、`is_requested_block_boundary`が指定停止PCと実行中PCを比較して停止位置を決める。JIT trace境界metadataはblock indexとPCを保持する。
+- **`module.blocks` と `block_storage`（`{Loader_BasicBlockIndex}`, `{GOTCHA-LOAD-04}`）**: <!-- definition: {Loader_BasicBlockIndex} --> <!-- definition: {GOTCHA-LOAD-04} -->
+  - **基本ブロック分割規則**: `br`・`br_if`・`br_table`・`return`・`block`/`if` の `end` で分割する。`call`・`call_indirect` は復帰継続位置から次ブロックを始め、`if`・`else` の各本体も命令の次から始める。`loop` の `end`、および `0xFC` プレフィックス命令では分割しない。
+  - **メタデータと可変参照**: 各ブロックは `head_pc`、`next_pc`（Code section payload 相対）、`entry_stack_words`（u16）、注釈プール開始オフセットを不変メタデータとして持つ。`jit_cache_reference`（8bit）のみ可変ヒントとして保持し、Loader は `FB_NATIVE_JIT_NO_TRACE_UNOBSERVED` で初期化する（値定義は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) 正本）。
+  - **Native 遷移と Python 参照**: Native 実行は `current_block_index` と注釈プールの遷移先 index を直接使い、PC→block 検索表や JIT 用 Radix 表を持たない（index 遷移時は PC 一致を検証）。Python 参照実装は `Module.get_block()` で `block_storage` を使う。
+- **`control_map`**: Python 参照経路が使う疎な制御メタデータを保持する。Native 側は同じ遷移情報を [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) の注釈プールから読む。
 
-`head_pc`と`next_pc`はCode section payload内の命令先頭オフセットである。PCはsection IDとpayload lengthの直後を0として数え、payload内の関数数・body size・locals宣言を含む。各エントリは関数所有情報と関数先頭PCを持つ。`BasicBlock`はデコード済み命令列を持たず、ローダーは各ブロックのコード範囲を個別にパースする。Loaderは各ブロックの導出値を関数所有の注釈プール領域へブロック順に連結する。注釈の値の種類と幅は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)の注釈プールの記述を正本とする。各ブロックはプール先頭からのbyte offsetを開始位置として保持する。`jit_cache_reference`はJITキャッシュ上の位置を示す8bitの可変ヒントであり、trace がない値の意味は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)の正本に従い、Loader は未観測の値で初期化する。JITキャッシュの挿入・昇格・退避・flushで参照を更新または無効化する。その他のブロック境界・制御情報はロード後不変である。Native実行は現在のblock indexと注釈に保持した遷移先indexを使い、PC→block検索表を持たない。Python参照実装は`block_storage`を`Module.get_block()`で使う。indexで遷移する際はPCも照合する。JITのcache keyもPCのままとし、境界metadataではblock indexとPCを照合する。JIT常駐エントリ索引は独立した `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下のソート配列であり、JIT用Radix表は設けない。 `{Loader_BasicBlockIndex}` <!-- definition: {Loader_BasicBlockIndex} --> `{GOTCHA-LOAD-04}` <!-- definition: {GOTCHA-LOAD-04} -->
-- **`control_map`**: Python参照経路が使う疎な制御delimiter、else継続先、branch edgeとstack復元値をロード時に保持する。Native側は同じ制御遷移を注釈poolから実行し、dense per-byte `NativeControlMapEntry`を確保しない。
-
-スタック型検証のopcode対応表は、実装に属する読み取り専用の表である。Python参照実装は構築完了時に不変列へ凍結し、可変の登録表を残さない。WASM原本のコード、型バイト列と名前は原本への借用範囲とする。ロード時に計算するローカル配置とデコード済み定数はモジュールのメタデータアリーナへ確保し、実行中の可変スタックやJIT参照と責務を分ける。 <!-- traceability: {ROMParsing} {META_BumpAllocator} -->
+スタック型検証の opcode 対応表は読み取り専用の固定表とする。WASM 原本コード・型・名前は借用参照とし、ローカル配置と定数はメタデータアリーナへ確保して実行時状態と分離する。 <!-- traceability: {ROMParsing} {META_BumpAllocator} -->
 
 ### 3.2 内部ブロック図
 <!-- traceability: {META_BumpAllocator} {Runtime_BumpAllocator} -->
@@ -153,15 +154,11 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
     - `load`は同じセクションを再走査し、Elementの関数番号をテーブルへ書き込み、Dataのバイト範囲をリニアメモリへコピーする。各エントリは適用callbackへ直接渡す。
     - `global.get`を使うオフセットは、`prepare`で参照先の制約を検証し、`load`で確定したグローバル値を用いて解決する。
 - **パースイベントと保持領域の分離**: セクションパーサはROMの読み取りと形式検証を担当し、定義の登録・保持方法はパースイベントコールバックへ分離する。通常の固定長メタデータは2パスで確定した容量へ登録し、Element/Dataの初期化定義はイベントとしてストリーミングする。
-- **ランタイム所有アリーナへの2パス割り当て (`{Runtime_BumpAllocator}`)**: <!-- definition: {Runtime_BumpAllocator} --> ローダは親ランタイムが所有する専用 `bump_allocator` を借用する。第1パスで各セクションの件数を読み、第2パスでその件数と同じ容量の `StaticVector` をアリーナから確保して定義を登録する。エクスポート件数には独立した上限を設けず、全メタデータの合計がアリーナに収まる範囲で受理する。確保に失敗したロードだけを開始時の watermark までロールバックする。成功したモジュールのメタデータはランタイム破棄まで保持し、個別アンロードは提供しない。
-- **シンボル検索とハッシュ衝突完全排除 (`GOTCHA-LOAD-01`, `META_BinarySearch`)**: {GOTCHA-LOAD-01} <!-- definition: {GOTCHA-LOAD-01} -->
-  シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_storage`から借用した`radix_binary_tree_view`を、粗索引 $O(1)$ と狭い区間の二分探索 $O(\log n)$ の組み合わせで探索する。候補が得られた後はROM上の元の名前を照合するため、照合込みの worst-case は $O(1) + O(\log n) + O(L)$（$L$ は名前長）である。
-  **設計理由と不変条件**: 32-bit ハッシュ値による探索のみで関数解決を完了させると、万一のハッシュ衝突発生時に誤った関数がディスパッチされ、壊滅的な誤動作を引き起こす。そのため、ハッシュ探索で候補エントリがヒットした際は必ず ROM 上の元のシンボル名文字列と 1 回完全一致照合を行い、ハッシュ衝突によるシンボル誤認を完全に排除する。
-- **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値で対象モジュールの `export_storage`から借用した`radix_binary_tree_view`を探索する。候補区間の索引探索は $O(1) + O(\log n)$、ROM上の元文字列による衝突照合を含む worst-case は $O(1) + O(\log n) + O(L)$ であり、照合後に依存関係を解決してモジュールを実行可能状態へ遷移させる。
-- **ファイル位置逆引き (lookup_by_file_offset)**: 任意のファイル内バイトオフセットから `entity_offset_storage`の借用`radix_binary_tree_view`を検索し、そのオフセットを包含するデコード済みエンティティ（セクション、関数、データ等）を即座に特定・返却する。
-- **メモリセクション検証**: Memory Sectionをパースし、論理ページサイズ（`FB_CONF_WASM_PAGE_SIZE`単位）と初期ページ数を取得する。初期ページ数を`FB_CONF_MAX_WASM_PAGES`と照合する。WASMリニアメモリの物理バック方式とARMv8-Mの容量対応はTBDとする。
-- **ランタイム単位のメモリ寿命 (`OneRuntimeOneGuest`, `{Runtime_BumpAllocator}`)**:
-  各ランタイムは専用バンプアロケータアリーナを所有し、ロードした全モジュールのメタデータをそこへ保持する。モジュール単位のアリーナ巻き戻しやアンロードはサポートしない。モジュール終了後もメタデータはランタイム破棄まで有効であり、破棄時にアリーナ全体を $O(1)$ でリセット・返却する。ロード中に検証または確保が失敗した場合に限り、そのロード開始時の watermark へロールバックする。
+- **ランタイム所有アリーナへの 2 パス割り当て（`{Runtime_BumpAllocator}`）**: <!-- definition: {Runtime_BumpAllocator} --> 第 1 パスで各セクション件数を数え、第 2 パスで親ランタイムの `bump_allocator` から必要容量の `StaticVector` を確保して登録する。確保失敗時は開始時 watermark までロールバックし、成功したモジュールはランタイム破棄まで保持する。
+- **シンボル検索と衝突排除（`{GOTCHA-LOAD-01}`, `META_BinarySearch`）**: <!-- definition: {GOTCHA-LOAD-01} --> FNV-1a 32-bit ハッシュをキーに `export_storage` の `radix_binary_tree_view` を探索（$O(1) + O(\log n)$）し、ヒット後は ROM 上の元文字列と完全一致照合して衝突誤認を完全に防ぐ（最悪 $O(1) + O(\log n) + O(L)$）。
+- **インポート解決とファイル位置逆引き**: `resolve_imports` は同じハッシュ＋元文字列照合で依存関係を解決し、`lookup_by_file_offset` は `entity_offset_storage` からファイル位置に対応するエンティティを $O(1) + O(\log n)$ で特定する。
+- **メモリセクション検証**: 論理ページ数と `FB_CONF_MAX_WASM_PAGES` を照合する（ARMv8-M の物理配置は TBD）。
+- **ランタイム単位のメモリ寿命（`OneRuntimeOneGuest`）**: モジュール単位のアンロードは提供せず、ランタイム破棄時にアリーナ全体を $O(1)$ で一括解放する。
 JIT の候補選択と命令別利得評価は Tier 3 の [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が定める。Loader はコードと基本ブロックの範囲・制御対象だけを保持する。
 
 #### 関数本体の検証と実行索引の構築
@@ -259,7 +256,10 @@ stateDiagram-v2
     Parsing --> Error: parse_fail
 ```
 
-`Ready` になったモジュールはランタイムの寿命中保持される。ランタイム破棄はローダ状態遷移ではなく、親ランタイムが所有アリーナとローダをまとめて破棄する。形式検証モデルの状態との対応は、`Idle` = `s_rom_unparsed`、`Parsing` = `s_parsing`/`s_parsed_unverified`、`Verifying` = `s_verifying`、`Ready` = `s_verified_ok`/`s_executable`、`Error` = `s_verified_bad`/`s_rollback_done` である。`s_executing_unverified`、`s_stuck_verifying`、`s_leaked_bump` は `guards=False` でのみ到達する違反状態として、図の正常系には含めない。
+`Ready` になったモジュールはランタイムの寿命中保持され、破棄は親ランタイムが所有アリーナごと一括で行う。
+
+- **形式検証モデルとの状態対応**: `Idle` = `s_rom_unparsed`、`Parsing` = `s_parsing`/`s_parsed_unverified`、`Verifying` = `s_verifying`、`Ready` = `s_verified_ok`/`s_executable`、`Error` = `s_verified_bad`/`s_rollback_done`。
+- **違反状態**: `s_executing_unverified`、`s_stuck_verifying`、`s_leaked_bump` は `guards=False` 変異でのみ到達するため正常図には含めない。
 
 ### 4.5 内部シーケンス
 <!-- traceability: {META_AccessDictionary} {META_ConfigurableSystem} -->

@@ -1,6 +1,6 @@
 ---
 name: coding-standards-python
-description: Python コーディング標準（pysim、コンセプトコード、形式検証、テストコード共通: typing.Any 完全禁止、Gotchas同期、変異検査義務化）
+description: "Python コーディング標準（pysim、コンセプトコード、形式検証、テストコード共通: typing.Any 完全禁止、Gotchas同期、変異検査義務化）"
 globs: ["experiments/**", "docs/**/concepts/**", "docs/**/formal/**", "tools/**", "tests/**/*.py"]
 scope: GLOBAL
 ---

@@ -9,44 +9,38 @@
 
 ## 1. コンセプト
 <!-- traceability: {PositionIndependentCode} -->
-JIT Compilerは、Tier 2 Interpreterの任意拡張としてWASM命令列をネイティブコードへ変換するTier 3コンポーネントである。
-x64では操作・共通trace入口・共通chain dispatcherをPICアセンブリで構築し、ビルド時に`.text`とsymbol/分岐metadataをC++配列へ抽出する（`{JIT_AssemblyStencilCodegen}`）。 <!-- definition: {JIT_AssemblyStencilCodegen} -->
 
-実行時のC++コンパイラはWASM命令をデコードして操作ステンシルを選び、成功接続slotを後続ステンシル本体で置き換えて、命令間に転送命令のないflatなtrace bodyへ合成する。trap経路はtrace共通のabort出口へ分岐し、状態復帰とexit処理はtrace単位で行う。Runtime API操作は共通コード領域の借用参照から読み取り専用API tableを引いてAPIを呼び、通常継続なら後続stencilへ進む。
+JIT Compiler は、Tier 2 Interpreter の任意拡張として WASM 命令列をネイティブ機械語へ変換する Tier 3 コンポーネントである。
 
-現行のx64 trace compilerは数値即値とlocal offsetを命令へ直接エンコードし、trace末尾の定数領域にはtraceごとのheader相対参照とRuntime API record（実行後Interpreter annotation offsetを含む）だけを置く。WASM値は共有オペランドスタックに保持する。直接stencilを持たない有効opcodeはRuntime API stencilへlowerし、不正命令はLoaderが拒否する。Tier 2にJIT専用APIを追加しない。ARMv8-Mの実装と資源予算はTBDである。
+- **ビルド時ステンシル生成（`{JIT_AssemblyStencilCodegen}`）**: <!-- definition: {JIT_AssemblyStencilCodegen} --> x64 の操作・共通 trace 入口・共通 chain dispatcher を PIC アセンブリで定義し、ビルド時に `.text` の機械語バイト列と symbol・分岐メタデータを C++ 配列へ抽出する。
+- **実行時トレース合成**: C++ コンパイラが WASM 命令をデコードして操作ステンシルを選び、成功接続スロットを後続ステンシル本体で置き換えて、命令間の分岐やエピローグがない flat な trace body へ連結する。
+- **即値・ローカル・定数プール**: 数値即値とローカル変数のフレームオフセットは命令列へ直接埋め込む。trace 末尾の定数領域には header 相対参照と Runtime API レコード（実行後 Interpreter 注釈オフセットを含む）だけを置く。
+- **Tier 2 境界の維持**: WASM 値は共有オペランドスタックに保持し、直接ステンシルを持たない有効 opcode は Runtime API ステンシルへ lower する。不正命令は Loader が拒否し、Tier 2 に JIT 専用 API を追加しない。
+- **対象アーキテクチャ**: 現行実装は x64（SysV AMD64 / Windows x64）を対象とし、ARMv8-M の実装と資源予算は TBD とする。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 3 Plugin 内の詳細リーフコンポーネント (Leaf Component)** である。Tier 2 Runtime / Interpreterへ任意接続するJIT pluginのうち、build-time stencil生成とtrace単位のネイティブコード構築を担当する。ホットスポット状態とキャッシュ管理は同じplugin内の [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が担当する。
+
+本コンポーネントは **Tier 3 Plugin 内の詳細リーフコンポーネント (Leaf Component)** である。ビルド時ステンシル生成とトレース単位の機械語構築を担当し、ホットスポット監視とキャッシュ管理は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が担当する。
 
 ### 2.1 JIT サブシステムのデコンポジション
 <!-- traceability: {JIT_MultiBuffer_Cache} -->
-JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
 
-- **[jit_compiler.md](docs/components/tier3_plugins/jit_compiler.md)**: C++のtrace構築と、ビルド時にアセンブルした機械語ステンシルの連結を担当する。
-- **[jit_runtime.md](docs/components/tier3_plugins/jit_runtime.md)**: 実行履歴監視・ホットスポット判定、PC-アドレス変換検索、および 3面キャッシュローテーションを担当する。
+- **[jit_compiler.md](docs/components/tier3_plugins/jit_compiler.md)**: C++ のトレース構築と、ビルド済み機械語ステンシルの連結を担当する。
+- **[jit_runtime.md](docs/components/tier3_plugins/jit_runtime.md)**: 実行履歴監視、ホットスポット判定、キャッシュ管理・ローテーションを担当する。
 
 ## 3. 静的モデル
 
-### 3.1 データ構造
-- **`trace_compiler.cxx`**: C++フロントエンドがWASM命令をデコードし、選択したステンシル本体を接続slotで連結して固定長traceへ合成する。成功経路は命令間の転送命令なしでfall-throughする。直接stencilを持たない有効opcodeはRuntime API stencilへlowerする。定数poolはtraceごとに一つの4-byte header相対参照、実行後Interpreter annotation offsetを持つRuntime API record、終端Runtime API record内の4-byte Interpreter annotation offsetで構成する。即値は命令型に応じた幅で保持し、Interpreter注釈bytesは複製しない。WASM検証違反はLoaderが拒否し、ABI不整合は構成時に検出する。
-- **`JIT_AssemblyStencilCodegen`**: アセンブリsourceから操作、共通trace入口、terminal result、共通chain dispatcherをビルド時にraw binaryとmetadataへ変換する責務を表す。実行時trace builderは生成済みraw binaryを固定長bufferへ組み立てる。
-- **共通コード領域**: x64 JIT領域には`lir/x64/common.S`から生成したchain dispatcherを配置する。配置offsetはTier 1構成から渡し、C++ ABI probeから得た構造体offsetをassembly macroへ反映する。共通chain dispatcherはopcodeを判定しない。x64の領域サイズとoffsetは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) および [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) を正本とする。ARMv8-Mのサイズと配置はTBDである。 `{JIT_MultiBuffer_Cache}`
-- **操作ステンシル (`lir/x64/operations.S`)**: 算術、local操作、Runtime API呼出しをアセンブリで定義する。生成器はPIC raw binaryとsymbol・分岐・即値・命令slot metadataを出力する。実行時trace builderは操作コードを連結し、即値slotを埋め、local memory instructionをエンコードする。ARMv8-Mの物理仕様はTBD。
-- **JIT トレースヘッダ (`jit_trace_header`)**: 各ネイティブtraceの先頭に配置する実行時ヘッダである。x64では32バイトで、chain target、chain dispatcherへの相対値、配置サイズ、stack境界値、frame depth、exit種別、u16基本ブロック番号、定数領域offsetを保持する。bodyはヘッダ直後の`+0x20`から始まる。exit種別は既存reserved byteを用いてcall CPS終端operationを識別し、そのtraceを通常のnative chainから除外する。定数領域の先頭4 byteにheader相対参照をtraceごとに一つ置き、その後にRuntime API recordを使用順に並べる。pool footerやノードごとのheader参照は置かない。chain先ではtarget headerのpool anchorからrecord先頭へ`rel`を初期化する。
-- **トレース境界metadata (`jit_trace_boundary_metadata`)**: JIT exitでInterpreterへ返す20バイトrecordである。`body_end_ip`、`next_pc`、`loops_to`、注釈消費byte数をu32で保持し、offset 16にu16の次BasicBlock index、offset 18にu8の制御深度、offset 19にu8の`interpreter_terminator_pending`を置く。その値は、Interpreterが`body_end_ip`の命令を続けて実行するなら1、しないなら0である。`block_index`はLoaderから渡された`next_block_index`を格納し、Interpreterはindexと`next_pc`の一致を検証する。
+### 3.1 構成要素
+<!-- traceability: {JIT_MultiBuffer_Cache} {META_ContractImplSplit} -->
 
-#### コンパイラ入口
-<!-- traceability: {META_ContractImplSplit} -->
-JitRuntimeはLoader所有のWASMコードと関数実行metadataから適格な基本ブロックを選ぶ。
-C++フロントエンドは命令をデコードし、ステンシルと定数を固定長作業領域へ記録する。
-trace builderは各operationの成功link slotを除去して、次の操作本体を同じ位置へ配置する。
-slotはbuild artifact上の接続markerであり、実行traceには残らない。
-operation本体にreturnやスタック復元を置かず、成功経路を次の操作本体へ直接fall-throughさせる。
-共通trace入口のABI prologueとtrace単位のterminal resultだけが外部呼出し境界を持つ。
-Runtime API引数は定数領域へ配置し、数値即値とlocal offsetはコードslotへ焼き込んで完成したtraceをJIT cacheへ登録する。
-単体コンパイラ入力と状態検査はQA専用ライブラリで扱う。
+| 構成要素 | 役割と配置 | 正本・補足 |
+| :--- | :--- | :--- |
+| **トレースコンパイラ (`trace_compiler.cxx`)** | 適格な基本ブロックをデコードし、ステンシル本体と定数プールを固定長出力バッファへ合成する。 | 単体入力と状態検査は QA 専用ライブラリで扱う。 |
+| **操作ステンシル (`lir/x64/operations.S`)** | 算術、ローカル操作、Runtime API 呼出しを PIC アセンブリで定義する。 | ビルド時に raw binary と再配置メタデータへ変換する。 |
+| **共通コード領域 (`lir/x64/common.S`)** | 共通 trace 入口と共通 chain dispatcher、および Runtime API 関数テーブルへの借用ポインタを配置する。 | サイズとオフセットは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) と [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) を正本とする。 |
+| **JIT トレースヘッダ (`jit_trace_header`)** | 各常駐 trace 先頭に置く 32 バイトヘッダ（x64）。body は `+0x20` から開始する。 | 詳細レイアウトは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を正本とする。 |
+| **境界メタデータ (`jit_trace_boundary_metadata`)** | 未接続 chain 終端から Interpreter へ復帰する際に渡す 20 バイト構造体。 | `body_end_ip`、`next_pc`、`loops_to`、注釈消費量（各 u32）、`block_index`（u16）、`frame_depth`（u8）、`interpreter_terminator_pending`（u8）を保持する。 |
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -68,205 +62,84 @@ flowchart TD
     Pipeline -->|register entry| Runtime
 ```
 
-### 3.3 主要なクラス・構造体・定数
+### 3.3 コンパイル対象と命令 lower 規則
 
 #### コンパイル単位とインタープリタ協調方針
 <!-- traceability: {JIT_RuntimeAPI} {PositionIndependentCode} {JIT_BackedgeYield} -->
-- **関数/モジュール一括コンパイルの禁止**: 関数全体やモジュール全体の事前一括コンパイルは行わない。
- - **ベーシックブロック/トレース単位コンパイル**: カードマーキング表で HOT（`10`）に達した直線命令列（基本ブロック / トレース）のみを対象とする。スケジューラのidle時等にC++ trace builderがbuild済みstencilを組み立てる。
-- **制御フロー境界**: `block`、`loop`、`else`、`end`はLoaderが静的制御フローmetadataとして解決する構文デリミタであり、trace本体に機械語操作を生成しない。`if`、`br_if`はtrace終端として残し、trace compilerはopcodeをコードまたはRuntime APIへ含めない。trace完了後にC++ Interpreter dispatcherがCPS handlerで命令を処理する。`if`、`br_if`は分岐先へnative traceをchainしない。`br`は、trace内で値の移しを行い、遷移先の常駐traceへchainする。後方の`br`は、閾値のRuntime APIで閾値に達していないことを確かめて1回数えてからchainする。閾値に達した後方の`br`は数えずにCPS handlerへ戻し、handlerが1回数えてyieldする。Interpreterは分岐先のBasicBlockを選んだ後、そのハンドラ内でJIT入口を判定する。実行時制御フレームは保持しない。取得済みLOOP後方辺は`loop_jump_count`へ一度だけ加算し、yieldしきい値はInterpreter境界で判定する。`br_table`と`return`は各々の命令契約に従う。
 
-`call`、`call_indirect`を含む基本ブロックはJITコンパイル対象である。trace compilerは呼出しopcodeを最後のoperationとして生成し、終端位置を呼出し命令の直後に記録する。x64 stencilは共通コード領域の借用table pointerを通じ、Runtime API function pointer tableの添字からTier 2 CPS handlerへ直接tail-callする。trace内に関数の絶対アドレスを持たない。呼出しの意味論は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とし、終端handoffのABIは[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)に従う。
-- **実行ABI**: 4引数ABI（`ctx`, `ip*`, `sp*`, `rel*`）、プールアンカー、戻り値の意味論、およびローカル基点の取得規約は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)を正本とする。
+- **基本ブロック／トレース単位**: 関数やモジュールの一括事前コンパイルは行わず、カードマーキングで HOT に達した基本ブロックのみをコンパイルする。
+- **4引数実行 ABI**: Interpreter と JIT trace entry の 4 引数（`ctx`, `ip*`, `sp*`, `rel*`）およびレジスタ規約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を正本とする。
+- **命令の lower 経路**:
 
-##### 3.3.1 制御命令処理とchain dispatcher
-<!-- traceability: {JIT_LazyChaining} {PositionIndependentCode} -->
-
-JITの制御命令境界は、Interpreter単独実行と同じ条件値、結果値、遷移先を保つ。`if`、`br`、`br_if`はnative traceから除外し、未実行の終端opcodeとして共有状態を同期してC++ Interpreter dispatcherへ返す。Interpreter CPS handlerがそのopcodeを一度だけ実行する。
-
-Loaderは構造化制御フローを静的metadataへ解決する。trace compilerは構文デリミタを操作列から読み飛ばし、これらのopcodeに機械語を割り当てない。
-
-| 構文デリミタ | WASM opcode | Loader metadata | trace本体 |
-| :--- | :--- | :--- | :--- |
-| `block` | `0x02` | block typeと分岐先を静的に記録する | 操作なし（0 byte） |
-| `loop` | `0x03` | loop typeと後方分岐先を静的に記録する | 操作なし（0 byte） |
-| `else` | `0x05` | `if`のelse側の継続先を静的に記録する | 操作なし（0 byte） |
-| `end` | `0x0B` | 制御構造の終了と継続先を静的に記録する | 操作なし（0 byte） |
-
-`if`、`br`、`br_if`は構文デリミタではない。traceはそれらのopcode直前で終了し、opcodeを実行しない。終了位置が`if`、`br`、`br_if`、`call`、`call_indirect`なら、headerの`exit_kind`と境界metadataの`interpreter_terminator_pending`（`1`）を同じコンパイル結果から書き、C++ Interpreterの再開判定に使う。前方`br`はtrace内で静的stack移しを行い遷移先へnative chainし、後方`br`は`loop_jump_count`閾値判定の後に移しと計数を行って連結する（閾値到達時は`br`位置でCPS exitする）。`if`と`br_if`はnative chainしない。yieldしきい値とexit契約は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)と[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とする。
-
-trace chainは、直線後続の常駐traceへ共通コード領域のchain dispatcherからtail-jumpする経路である。連結可否は制御の形だけで決め、スタックの語数では決めない。call CPSで終わるtraceは連結しない（{JIT_LazyChaining}: C++ Interpreter handler実行後のdispatcher遷移はchainに含めない）。未接続chain targetでは終端dispatcherが境界metadataと再開PCをInterpreterへ渡す。
-
-##### 3.3.2 ARMv8-Mの物理仕様（TBD）
-
-ARMv8-M向け命令Stencil、ABI、Trace header、共通コード領域とchain dispatcher、メモリ保護方式はすべてTBDとする。未確定項目は [`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) に集約する。
-
-##### 3.3.3 Runtime API ステンシル
-<!-- traceability: {JIT_RuntimeAPI} -->
-
-C++ trace compilerは操作を直接実行するassembly stencilか、共通コード領域の借用参照から読み取り専用Runtime API tableを呼ぶ`runtime_api` stencilへlowerする。Runtime API呼出しもJIT trace bodyの一操作であり、インタープリタへ処理を渡すフォールバックではない。
-
-APIを呼ぶ操作では、コンパイラがopcodeに対応するu8 API table slot、u8 immediate個数、u8 immediate byte span、元の命令位置を表すu32 `code_ip_t`、型付きimmediate payloadをpoolへ出力する。header相対参照、slot/count/span、source IPの各値は固定幅である。immediate payloadは命令に応じてu8/u16/u32/u64を使い、数値即値やlocal offsetのtrace内注釈複製を作らない。終端API recordはInterpreterへ戻るための関数注釈pool byte offsetを一つ持ち、API wrapperは関数viewから注釈poolを参照する。`operations.S`の`runtime_api` stencilは共通コード領域の借用参照から読み取り専用表を引いてAPIを呼び出す。ローカル操作はRuntime APIを呼ばない。WASM型とcompact byte offsetから型・操作別の単一テンプレートを選び、x64命令エンコーダがローカルbase registerと`disp8`をtraceへ直接書く。どちらもtraceへコンパイルされ、`ctx.ip`を進めない。Runtime APIを呼ぶ操作では、APIがtrapやruntime境界を記録しなければstencilは後続の合成済みoperationへfall-throughする。APIがCPS exitを記録した場合だけtrace共通abort経路へ移り、C++ dispatcherがそのexit種別を処理する。
-
-Runtime API 記録の形の正本は [jit_abi.md](docs/components/tier2_runtime/jit_abi.md) の trace 末尾の節である。この節には定義を書かない。
-
-Interpreterでも同じRuntime APIを使う。Interpreter側のopcode handlerは統一された`(ctx, instruction_ip, sp, rel)` prototypeを持ち、テンプレート`h_runtime_api`がopcode固有のRuntime APIを呼んでからCPS継続へ渡す。JIT stencilから呼ぶAPIはCPSを実行せず、次のoperationを選択しない。
-
-| 命令経路 | 実行方法 | 次の処理 |
+| 命令分類 | lower 方針 | 継続・終了動作 |
 | :--- | :--- | :--- |
-| 直接assembly variantがある | 型・offsetに対応するstencilをtraceへ合成する | 次のstencilへfall-throughする |
-| ローカル操作 | 型・操作別テンプレートを合成し、x64命令エンコーダがmemory instructionを書き込む。byte offset 127 以下は`disp8`、128 以上は`disp32`の版のstencilを選ぶ | 次のstencilへfall-throughする |
-| `nop` | 何も合成しない。stackとlocalを変えず、traceのoperationを増やさない | 次の命令へ進む |
-| 直接assembly variantがない有効opcode | `runtime_api` stencilが共通API tableから対応するAPIを呼ぶ | 通常継続なら同じJIT traceの次のstencilへ進む。trapまたは境界exitならtraceを終了する |
-| `call`、`call_indirect` | 呼出しopcodeを最後のoperationとしてtraceへ含め、x64用handler slotとInterpreter annotation offsetを記録する | 共通コード領域の借用table pointerを経由し、handler slotの添字でTier 2 CPS handlerへtail-callする。traceに関数の絶対アドレスを埋め込まない |
+| **構文デリミタ**（`block`, `loop`, `else`, `end`） | 機械語を生成しない（0 バイト）。 | Loader の静的メタデータで解決する。 |
+| **条件分岐**（`if`, `br_if`） | trace に含めず直前で終了する。 | `exit_kind` と `interpreter_terminator_pending = 1` を設定し、Interpreter CPS ハンドラへ委譲する（直接 chain しない）。 |
+| **無条件分岐**（`br`） | trace 内で静的スタック移しを行う。 | 前方 `br` は遷移先へ chain し、後方 `br` は `loop_jump_count` 閾値未満なら chain、到達時は `br` 位置で CPS exit する。 |
+| **関数呼出し**（`call`, `call_indirect`） | 最後の operation として出力し、直後を終端位置に記録する。 | 共通コード領域の借用テーブル経由で Tier 2 CPS ハンドラへ tail-call する（絶対アドレスを埋め込まない、chain しない）。 |
+| **直接ステンシル対象命令** | 型・操作別の PIC ステンシルを選択・連結する。 | 成功接続スロットを後続ステンシルで置換し fall-through する。 |
+| **ローカル操作**（`local.get/set/tee`） | Loader 確定のワードオフセットを命令へ直接書き込む。 | バイトオフセット `127` 以下は `disp8`（4B）、`128` 以上は `disp32`（7B）のステンシルを使う（`i64`/`f64` は 2 ワード）。 |
+| **`nop`** | 何も出力しない。 | スタック・ローカル・命令数を増やさず次命令へ進む。 |
+| **その他の有効 opcode** | `runtime_api` ステンシルと定数プールレコードへ lower する。 | 通常継続なら次のステンシルへ進み、trap または境界 exit なら共通 abort 出口へ分岐する。 |
 
-call opcode以外の適格なopcodeは直接assembly variant、直接生成経路、またはJIT Runtime API tableのいずれかでtraceへlowerする。`call`と`call_indirect`は通常のJIT Runtime API wrapperではなく、共通関数表の専用CPS handler slotを使う。関数pointerの絶対アドレスをtraceへ埋め込まない。`0xFC`の対応サブオペコード集合は [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md) が定め、集合外はWASM命令セットの非対応機能としてLoaderが拒否する（{WasmFCSubset}）。
+`0xFC` プレフィックス命令の対応サブオペコード集合は [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md) に従う（`{WasmFCSubset}`）。
 
-**ABI 規約と境界チェック (`GOTCHA-JITC-01`, `03`, `05`)**:
-- **スタック状態**: すべてのWASM値を共有オペランド領域へ命令ごとに確定する。基本ブロック終端、API境界、トラップ時に別の値キャッシュを書き戻す処理は設けない。 `{ExecutionContext_Layout}`
-- **呼出し境界 ({GOTCHA-JITC-01}, `03`)**: Interpreter handlerとJIT trace entryは`ctx`, `ip`, `sp`, `rel`の4引数を受け取る。`rel`は定数プールポインタである。assembly sourceはSysV AMD64とWindows x64の引数レジスタを明示し、ABI probeが関数型と構造体offsetを照合する。ARMv8-MのABIはTBDとする。 <!-- definition: {GOTCHA-JITC-01} -->
-- **Runtime API呼出し**: opcodeからJIT Runtime API wrapperへの対応表と共通function pointer tableはTier 3 JITが所有する。通常API entryはJIT Runtime APIを指し、`call`と`call_indirect`用entryはTier 2 Interpreterの既存CPS handlerを指す。handler addressは初期化時にtableへ渡し、traceには添字だけを埋め込む。JIT stencilは共通コード領域の借用table pointerを通じてentryを呼ぶ。通常APIは次のoperationを選ばない。共通コード領域にはtableへの参照とchain dispatcherを置き、CPS handler本体はTier 2 Interpreterが所有する。共通コード領域にInterpreterの全opcode handler表を複製しない。
-- **継続先と境界検証 (`GOTCHA-JITC-05`)**: trace chain先はtrace headerの`chain_target_addr`で表す。trace builderは操作本体の成功link slotを後続operationのbytesで置き換える。成功経路のslot命令は完成traceから除かれ、operationごとのreturnやエピローグはない。abort slotだけをtrace共通abort resultへ接続する。trace末尾poolには操作間deltaを置かない。コンパイラは出力範囲のoffsetとサイズ、操作内分岐の再配置を検証する。ARMv8-Mの配置方式はTBDとする。 {GOTCHA-JITC-05} <!-- definition: {GOTCHA-JITC-05} -->
+#### ABI 規約と境界チェック
+<!-- traceability: {JIT_LazyChaining} {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {PositionIndependentCode} -->
 
-#### ABIと共有値
-<!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {PositionIndependentCode} -->
-Interpreter opcode handlerとJIT trace entryは`ctx`, `ip`, `sp`, `rel`の4引数を使う。先頭3引数が実行状態、`rel`が定数プールポインタである。Interpreter handlerは`void`を返し、JIT trace entryは`bool`を返す。正常完了時は未接続chain targetに到達した終端dispatcherだけがmetadata pointerを一時的に`ctx.rel`へ渡し、`body_end_ip`を`ctx.ip`へ設定する。x64の関数型と構造体配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を正本とする。assembly sourceはSysV AMD64とWindows x64の引数レジスタへ直接合わせる。ARMv8-MのABIはTBDとする。
+- **共有スタック同期**: すべての WASM 値は共有オペランドスタックへ命令ごとに確定し、別の値キャッシュを持たない（`{ExecutionContext_Layout}`）。
+- **呼出し境界（`{GOTCHA-JITC-01}`）**: <!-- definition: {GOTCHA-JITC-01} --> Interpreter ハンドラと JIT trace entry は `ctx`, `ip`, `sp`, `rel` の 4 引数を使う。x64 アセンブリは SysV AMD64 / Windows x64 の引数レジスタに従い、ABI probe が型と構造体オフセットを照合する。
+- **Runtime API テーブル**: opcode から Runtime API ラッパーへの対応表と関数ポインタ表は Tier 3 JIT が所有し、trace にはテーブル添字のみを埋め込む。共通コード領域にはテーブルへの借用ポインタだけを置き、Tier 2 ハンドラ表を複製しない。
+- **スロット置換と局所分岐再配置（`{GOTCHA-JITC-05}`）**: <!-- definition: {GOTCHA-JITC-05} --> trace builder は各操作の成功 link slot を後続本体で置き換え、abort slot のみを trace 共通 abort 出口へ接続する。操作内の局所分岐は `.fb_branch_records` に基づき合成後の位置へ再配置し、各ステンシルは操作単位の `ret` やエピローグを持たない。
 
-実行状態の3論理引数はInterpreterとJIT traceで `ctx`, `ip`, `sp` の順に共通し、各native entryの第4引数は定数領域ポインタ`rel`である。assembly sourceは対象x64 ABIの物理引数配置を明示し、callを含むRuntime API stencilは対象ABIの保存規則に従う。
-
-| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
-| :--- | :--- | :--- | :--- |
-| operation symbol | trace compile時に命令の型・offsetで選択するステンシル名 | fixed array entry | build時にraw binary化したステンシル本体をtraceへ連結する |
-| trace link metadata | 各stencilの成功slot、abort slot、局所分岐 | build artifact | 成功slotを次の操作本体で置き換え、必要な局所分岐を再配置する |
-| operation source | x64操作、共通trace入口、共通chain dispatcherのアセンブリ定義 | build-time source | 共有ライブラリへ埋め込まず、ビルド時にraw binaryへ変換する |
-| 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | x64ではプロセス絶対アドレスを命令列へ埋め込まず、トレースヘッダ、共通領域オフセット、基底相対アドレス、`rel32` 分岐を用いる。ARMv8-Mの方式はTBD |
-
-##### 操作状態の受け渡し
-<!-- traceability: {JIT_RegisterMapping} {CPS_3Args} -->
-JIT trace entryは`ctx`, `ip`, `sp`, `rel`を受け取る。
-InterpreterはWASM値を共有オペランドスタックに保持する。
-各操作stencilは`ctx`, `ip`, `sp`, `rel`を対象ABIの引数レジスタから受け取り、次のstencilへ同じレジスタでstateを渡す。
-アセンブリ操作の一時値と役割レジスタの保存規則は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)の「x64 継続引数と assembly ABI」に従う。
-trace builderは各成功link slotを除いて後続operationを配置するため、合成後の成功経路に操作間call/jumpはない。
-生成器は各operation stencilに`ret`、スタック操作、Runtime API stencil以外のcallがないことを検査し、操作単位のエピローグ生成を拒否する。
-trapを検出したoperationはabort link slotから一つのtrace共通terminal resultへ移る。
-共通trace入口は、trace bodyの実行結果を、`execution_context` の終了状態（trap 状態と CPS 終了状態）から判定する。未接続chain targetに到達した場合だけ終端dispatcherが末尾境界metadata pointerを`ctx.rel`へ置き、`body_end_ip`を`ctx.ip`に設定して`true`を返す。trap/CPS exitではtrace entryが`false`を返す。戻り値の内部表現（レジスタの使い方）は規定しない。Interpreter dispatcherは正常復帰後にmetadataから実行状態を確定し、未実行の終端命令と次BasicBlockを処理する。
-ARMv8-MのABIはTBDである。
-
-#### トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)
+#### トレース境界不変条件（`{TraceBoundaryInvariant}`, `{GOTCHA-JITC-03}`）
 <!-- traceability: {PositionIndependentCode} {JIT_RuntimeAPI} -->
-JIT トレースとインタープリタが共有オペランド領域上で相互運用するため、トレース境界不変条件（`{TraceBoundaryInvariant}`）を含む以下の4つの不変条件を厳格に保持する。JITからC++ Interpreter handlerへ戻る境界では共有オペランド領域と実行コンテキストを同期する（{GOTCHA-JITC-03}）。 <!-- definition: {TraceBoundaryInvariant} --> <!-- definition: {GOTCHA-JITC-03} -->
 
-1. **基本ブロック入口の共有スタック契約**:
-   - トレース入口の`sp`はBasicBlock開始時点の共有オペランドスタック位置を指す。WASM検証で有効なBasicBlock入口値は、トレースの先行命令で生成された値と同じく有効な入力である。
-   - コンパイラは相対stack effectを追跡する。入口以前から存在する値を消費する操作で相対深さが負になっても、コンパイル拒否の理由にしない。読み書き位置は入口`sp`と現在の相対深さから生成し、結果の`sp`を共有領域へ反映する。
-   - 直接stencilを持たない有効opcodeはRuntime API stencilから処理する。
-2. **トレース境界でのメモリ同期不変条件 (Memory Synchronization at Trace Boundary)**:
-- x64では、後続traceが共通コード領域のchain dispatcher経由で実行される場合、現在traceが確定した共有状態を次traceが引き継ぐ。C++ Interpreter handlerへ戻る境界では共有オペランド領域と実行コンテキストを同期する。ARMv8-Mの値保持方法と同期手順はTBDである。
-3. **制御フロー・コール境界の状態整合不変条件**:
-   - 制御命令を処理する経路は、条件値の消費、結果値の保持、スタック巻き戻し、フレーム更新、遷移先決定を一度だけ行う。JIT生成コード、JIT Runtime API、Interpreter handlerの各経路に同じWASM意味論を適用する。
-   - 分岐opcodeはtraceから除外する。Interpreter CPS handlerが共有状態とLoaderのblock indexを更新し、分岐先traceへの直接chainは行わない。
-   - Interpreterへ戻る境界では、実行済みの処理と未実行の命令位置を区別する。復帰後に制御命令を二重実行しない。
-   - 取得済みLOOP後方辺を共通`loop_jump_count`へ一度だけ加算し、Interpreter境界でしきい値を判定する。
-   - 単独実行とHybrid JITは同じ `FB_CONF_INTERPRETER_YIELD_THRESHOLD` を使う。
-   - 分岐は、JIT入口のときだけInterpreter CPSへ戻る。yieldしきい値到達時はyield statusをC++ dispatcherへ返す。
-   - トラップ、外部呼出し、関数完了は各契約の実行境界としてRuntimeEngineへ返す。
-4. **共有スタック範囲不変条件 (Shared Stack Range Invariant)**:
-   - Interpreterは全WASM値を共有オペランド領域に保持する。生存する値は共有オペランド領域に置く。
-   - コンパイラは、トレースが実際に使用する最大スタックワード数を `stack_words` としてヘッダに記録する。Runtime API operationが要求する入力・結果の領域も含める。
-   - 入口以前から存在する値へのアクセスはWASM検証済みのstack shapeに基づき、トレース中に追加で確保する領域は共有スタック上限内へ書き込む。
+JIT トレースとインタープリタが共有オペランド領域上で相互運用するため、以下の不変条件（`{TraceBoundaryInvariant}`）を保持し、C++ Interpreter 復帰境界で共有状態を同期する（`{GOTCHA-JITC-03}`）。 <!-- definition: {TraceBoundaryInvariant} --> <!-- definition: {GOTCHA-JITC-03} -->
 
-#### JIT トレース物理メモリレイアウト (`jit_trace_header`)
-<!-- traceability: {JIT_LazyChaining} {PositionIndependentCode} -->
-物理配置は対象ごとのABI契約へ委譲する。x64のtrace header配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) に定義し、ARMv8-Mの物理配置と命令列はTBDである。これらの配置を一つの共通ヘッダとして扱ってはならない。
+1. **基本ブロック入口の共有スタック契約**: 入口 `sp` は BasicBlock 開始時の共有スタック位置を指す。コンパイラは相対 stack effect を追跡し、入口以前から存在する値を消費しても負の相対深さで拒否しない。
+2. **境界での状態同期**: chain 先の trace は現在 trace が確定した共有状態を引き継ぐ。Interpreter へ戻る境界では `execution_context` と共有オペランドスタックを同期する。
+3. **二重実行の防止**: 制御状態・条件値・スタック巻き戻しは処理経路側で一度だけ実行し、復帰後に制御命令を再実行しない。取得済み LOOP 後方辺は `loop_jump_count` へ一度だけ加算する。
+4. **共有スタック範囲不変条件**: コンパイラはトレースが使用する最大ワード数を `stack_words` としてヘッダに記録し、予約済み関数最大高の範囲内で書き込む。
 
-#### ネイティブトレースコンパイラ (`trace_compiler.cxx`)
-<!-- traceability: {META_ZeroCostAbstraction} {JIT_MultiBuffer_Cache} {Runtime_BumpAllocator} -->
-本実装はClang 17以降でビルドするx64 trace builderである。
-`generate_assembly.py`は本番C++ ABI probeから構造体offsetを得て、`operations.S`、`trace.S`、`common.S`をPIC objectへ変換する。
-生成器はELFを読み（pyelftools）、`.text`を抽出し、GOT参照と予期しないrelocationを検査する。
-実行時のC++ trace builderはraw binaryのentry/exit/resultと選択済みステンシルを固定長出力へ連結する。
-operationの成功link slotを次のstencil本体で置き換え、slotの命令自体を完成traceから除く。
-operation stencil内の条件分岐は、マクロが`.fb_branch_records` sectionへ出す分岐記録を使い、合成後の位置に合わせて再配置する。
-現行実装は数値即値を生成slotへtrace compile時に書き込む。
-local offsetは固定長instruction slotへx64 memory instructionとしてエンコードする。
-`rel` poolを使うのはtrace単位のheader相対参照とRuntime API引数recordである。終端record内のannotation offsetからInterpreter注釈を読み、trace側に注釈bytesを複製しない。
-数値即値を`rel`から読む方式は現行trace compilerにない。
-追加する場合は、コードサイズと実行時のロード・カーソル更新コストを代表traceで比較する。
-traceは次opcodeをfetchせず、次操作を間接dispatchしない。
-JIT共有ライブラリはbuild時に生成したassembly byte arrayとC++ runtimeだけで動作する。
-Clang integrated assemblerはx64操作、共通trace入口、common dispatcherのraw binary生成にbuild時だけ使う。
-実行時trace compilerはWASMをdecodeしてoperation templateを選び、埋め込みraw binaryの即値slotを埋め、local instructionをエンコードして固定長traceへ組み立てる。
+#### 容量上限とコンパイル失敗要因
+<!-- traceability: {META_ZeroCostAbstraction} {Runtime_BumpAllocator} -->
 
-即値ごとに異なるx64ステンシルvariantは作らない。
-即値は単一ステンシル内のpatch slotへtrace compile時に書き込むため、実行時に`rel`から読まない。
-operation間に接続用jump/callは置かない。成功link slotを次のstencil bytesで置き換え、連続配置した本体へfall-throughする。
+- **トレース上限**: 1 トレースの上限は `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS` 命令、body＋定数プール合計 `FB_CONF_JIT_MAX_BODY_BYTES` バイト、共有スタック深さ `2 × FB_CONF_MAX_VALUE_STACK` ワードとする。
+- **blob 配置**: `jit_trace_header` → trace body → 境界メタデータ（アラインメント調整含む）→ 定数プールの順に配置する。
+- **一時作業領域**: C++ フロントエンドは固定長配列（操作用 `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS + 1` 件、再配置記録用 `8 × FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS + 1` 件）を用いる。
+- **失敗要因（表外は `assert` 対象）**:
 
-`local.get`、`local.set`、`local.tee`はoperationとWASM値型に対応するstencilへlowerする。trace compilerはLoaderが確定したcompact word offsetを命令エンコーダへ渡し、エンコーダがlocal memory instructionへ直接書き込む。offsetごとのstencil variantは作らない。
-局所のbyte offsetが127以下なら`disp8`の版（4 byte の命令スロット）を使い、128以上なら`disp32`の版（7 byte の命令スロット）を使う。各版は型と操作ごとに1つのstencilである。
-エンコーダはWASM local indexをLoaderのcompact offsetへ変換し、offsetをlocal memory instructionへ直接書き込む。
-local indexやoffsetを実行時に`rel`から読み出さず、local Runtime APIやopcode dispatchも使わない。
-i64/f64は2 word幅として処理する。
-C++ local get/set/tee Runtime API経路は設けない。
+| 要因 | 条件 | 制約対象 | 根拠 |
+| :--- | :--- | :--- | :--- |
+| **命令数上限** | trace 内の命令数が `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS`（64）を超える | 走査用固定作業領域 | `jit_internal.hxx` |
+| **本体バイト上限** | body と定数プールの合計が `FB_CONF_JIT_MAX_BODY_BYTES`（1536）を超える | 出力バッファ容量 | `system_config.md` |
 
-1トレースは `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS` WASM命令、`FB_CONF_JIT_MAX_BODY_BYTES` のbodyと末尾定数pool、共有stack深さ `2 × FB_CONF_MAX_VALUE_STACK` wordを上限とする。WASM数値即値とlocal offsetはtrace codeに直接埋め込む。定数領域は先頭のheader相対参照4 byte、Runtime API argument record、終端recordのInterpreter annotation offsetを保持する。各recordのslot、immediate count、immediate byte spanはそれぞれu8であり、API最大 `FB_CONF_JIT_RUNTIME_API_MAX_IMMEDIATES` immediateのpayloadは値の型幅で格納する。ヘッダは定数領域の先頭offsetだけを保持し、slot数fieldを持たない。C++フロントエンドのoperation用固定長配列は `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS + 1` 件、再配置record用配列は `8 × FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS + 1` 件を保持する。
+- 到達不能ブロックは観測されずキューに入らない（`TEST-JITR-106`）。命令が 0 件のブロックもキューに入らず、コンパイラ入口は命令 1 件以上（呼出し終端を除く）を `assert` する（`TEST-JITR-103`）。
 
-native trace blobはheader、trace body、境界metadata前のalignment padding、境界metadata、定数poolの順に配置する。bodyと定数poolの合計は `FB_CONF_JIT_MAX_BODY_BYTES` に収める。trace compilerはheaderとbody末尾を定数poolのalignmentにそろえる。現行x64配置ではmetadata前のpaddingは増分を持たない。最大blob容量は `FB_CONF_JIT_X64_TRACE_HEADER_BYTES + FB_CONF_JIT_MAX_BODY_BYTES + 境界metadataのサイズ` で導く。
-
-トレースのコンパイルでは、生成コード、ローカルアクセス命令、即値、およびRuntime API用定数を有界な一時領域へ構成する。WASM入力と実行メタデータの借用期間を守り、実行コード領域とロード用領域を別々に計上する。
-
-trace単位コード生成はx64実装に限って定義する。ARMv8-M向けLIR、ABI、trace配置、relocation形式はTBDである。
-
-#### コンパイル失敗の要因
-
-コンパイラが失敗を返してよい要因は、次の表に列挙したものだけとする。表の外の経路は、ローダーが確かめた事柄の再確認なら assert とし、実装の誤りなら直す。
-
-| 要因 | 条件 | 縛るもの | 根拠 | 状態 |
-| :--- | :--- | :--- | :--- | :--- |
-| 命令数の上限 | trace に含める命令が `kMaxTraceInstructions`（64）を超える | 命令列の走査用の作業域の大きさ | `jit_internal.hxx` の `kMaxTraceInstructions` | 確定 |
-| 本体の byte 上限 | trace の本体と末尾定数 pool の合計が `FB_CONF_JIT_MAX_BODY_BYTES`（1536）を超える | 出力領域の大きさ | {JIT_AssemblyStencilCodegen}（`requirement_list.md:40`）、`system_config.md:97` | 確定 |
-
-コンパイラが受け取るのは実行された block だけである。ローダーは到達不能のコードの型と積み値を確かめない。到達不能の block は観測されないため、待ち列に入らず、トレースの入力にもならない（TEST-JITR-106）。
-
-- 命令が 0 件の block は、点数が 0 であり候補のしきい値に届かない。候補の頭にならないため、採否の判定に届かず、コンパイラに渡らない（判定の前提は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) 8.2）。コンパイラは入口で命令 1 件以上（呼出しの終端を除く）を assert する（TEST-JITR-103）。候補のしきい値の値は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が正本である。
+#### ARMv8-M の物理仕様（TBD）
+ARMv8-M 向け命令ステンシル、ABI、Trace header、共通コード領域と chain dispatcher、メモリ保護方式はすべて TBD とし、未確定項目は [`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) に集約する。
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {JIT_RuntimeAPI} -->
- 1. **トレース解析とコード生成**: Tier 3 JIT拡張はLoader所有WASMコードと関数metadataを内部C++コンパイラへ渡す。C++コンパイラは命令列を復号し、operation LIR symbolと即値を選ぶ。Clang integrated assemblerがbuild時に生成したstencilをC++ trace builderが連結する。成功link slotを次のstencil本体に置換し、命令間に転送命令のないfall-through列を作る。
-   - ローカル操作はoperationとWASM型に対応するステンシルを選び、WASM数値即値とlocal offsetを命令へ埋め込む。byte offset 127 以下は`disp8`、128 以上は`disp32`とする。
-   - 直接stencilを持たない有効opcodeは対応するRuntime API stencilへlowerする。trace形成上限と定数pool容量は対応する命令列を収容する。
-2. **キャッシュ配置と定数pool**: JIT runtimeがtrace header、native stencil body、trace末尾定数領域をcacheへ配置する。WASM数値即値とlocal offsetはコードへ直接埋め込み、poolにはtrace単位のheader相対参照、各Runtime APIの実行後Interpreter annotation offset、終端record内のInterpreter annotation offsetを置く。注釈bytesを複製せず、操作間継続deltaやAPI recordごとのheader参照を生成しない。chain targetだけを実行時trace targetとしてheaderへ記録する。
-3. **実行可能メモリの確定**: x64の実行可能バッファは初期化時にRWXを設定する。パッチ確定時には命令キャッシュを同期し、権限は切り替えない。ARMv8-Mの権限機構、命令キャッシュ同期、バリア命令はTBDである。
-4. **制御命令の処理**: `if`と`br_if`はtraceへ含めず、終端opcodeをC++ Interpreter dispatcherへ渡す（条件評価・stack復元・遷移先はInterpreter CPS handlerが確定し、直接chainしない）。`br`はtrace内で静的なstack移しを行い遷移先へチェインする（後方`br`は`loop_jump_count`閾値到達時にCPS exitする）。
-5. **trace chain**: 直線後続のtraceが常駐する場合、共通chain dispatcherがtarget bodyへtail-jumpする。分岐命令を越える接続は行わない。C++ Interpreter handler後にdispatcherが別traceを選ぶ遷移はmachine-code chainではない。
+<!-- traceability: {JIT_RuntimeAPI} {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} {JIT_LazyChaining} -->
 
-#### JIT トレース検索 & 3面キャッシュ代謝オーケストレーション
-<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} -->
-3段JIT検索および連続 `FB_CONF_JIT_CACHE_SIZE` キャッシュ領域の管理は[`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md)を正本とする。コンパイラコアは生成したトレースの登録と命令同期を同コンポーネントへ委譲する。
+1. **トレース解析とコード生成**: Tier 3 JIT 拡張が渡した WASM コードとメタデータを復号し、操作ステンシル（または Runtime API ステンシル）を固定出力バッファへ連結する。
+2. **キャッシュ配置と実行可能化**: `jit_runtime` がヘッダ・body・境界メタデータ・定数プールをコードキャッシュへ配置し、命令キャッシュを同期する。x64 参照構成では領域初期化時に RWX を設定し、パッチごとに権限を切り替えない。
+3. **トレース・チェイニング**: 直線後続の trace が常駐する場合、共通 chain dispatcher が target ヘッダの `const_rel_offset` から `rel` を初期化し、target body へ tail-jumpする（prologue を重複実行しない）。未接続時は境界メタデータと `body_end_ip` を設定して `true` で Interpreter へ戻る。
 
-#### トレース・チェイニング（共通コード領域のchain dispatcher経由）
-<!-- traceability: {JIT_LazyChaining} {JIT_RuntimeAPI} -->
-Interpreter dispatcherは最初のJIT traceを通常の4引数C ABIで呼び出す。遷移先のtraceが常駐する場合、命令処理後の共有状態から共通chain dispatcherへ進む。dispatcherは接続済みtargetのpool anchorを`ctx.rel`へ置き、先頭4-byte header参照を飛ばした位置からtarget bodyを開始する。未接続targetでは境界metadataと再開PCをInterpreterへ渡す。Interpreter dispatcherは`false`をtrap/CPS exitとして扱い、`true`の後にmetadataから共有実行状態を確定する。
-
-分岐opcodeのhandler実行とC++ dispatcher内で次の常駐traceを選ぶ遷移は、このmachine-code chainとは別である。共通chain dispatcherはopcodeを検査せず、命令ごとの条件評価とhandler呼出しを集約しない。chain回数を数える指標は共通chain dispatcherからtarget bodyへ移った回数とし、C++ handler後のdispatcher遷移を含めない。
-
-#### ホットスポット検出とコンパイル待ち列
-ホットスポット記録、しきい値、コンパイル待ち列、コンパイル時期、キャッシュ登録は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が正本である。本コンポーネントは受け取った適格なtraceをx64機械語へ変換し、登録情報を返す。
-
-#### トレース生成と登録
-<!-- traceability: {GOTCHA-JITC-01} {JIT_LazyChaining} -->
+キャッシュ検索・ホットスポット検出・3面ローテーションの詳細は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) を正本とする。
 
 ```mermaid
 flowchart TD
     Start(["HOT trace request"]) --> Scan["C++ x64 compiler scans WASM trace"]
-    Scan --> Supported{"All instructions supported?"}
-    Supported -- "No" --> Fallback["Exclude candidate and release its trackable bit; keep interpreter execution"]
-    Supported -- "Yes" --> Emit["Emit x64 header and body"]
+    Scan --> Supported{"Within instruction & byte limits?"}
+    Supported -- "No" --> Fallback["Exclude candidate and release trackable bit"]
+    Supported -- "Yes" --> Emit["Emit x64 header, body, and constant pool"]
     Emit --> Register["Runtime registers body and resolves chain targets"]
-    Register --> Protect["x64 executable buffer commits code"]
-    Protect --> Ready(["Trace can be entered by C++ dispatcher"])
+    Register --> Protect["Commit code to executable buffer"]
+    Protect --> Ready(["Trace ready for C++ dispatcher"])
 ```
 
 ### 4.2 状態遷移図
@@ -293,7 +166,6 @@ stateDiagram-v2
 
 ### 4.3 内部シーケンス
 <!-- traceability: {JIT_LazyChaining} {JIT_RuntimeAPI} -->
-#### 現行x64参照実装のtrace実行とInterpreter復帰
 ```mermaid
 sequenceDiagram
     autonumber
@@ -323,83 +195,66 @@ sequenceDiagram
 
 ### 5.1 公開API
 <!-- traceability: {TraceBoundaryInvariant} {PositionIndependentCode} {ExecutionContext_Layout} {GOTCHA-JITC-03} {JIT_MultiBuffer_Cache} -->
-本コンポーネントの公開境界は、Tier 3 JIT 拡張から既存C++コンパイラ入口へ渡すWASMコード範囲と出力領域である。ABIは [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を正本とする。
+
+本コンポーネントの公開境界は、Tier 3 JIT 拡張から C++ コンパイラ入口へ渡す WASM コード範囲と出力領域である。ABI は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を正本とする。
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 適格なWASM命令列からraw stencilを連結し、trace単位のネイティブ命令列を生成する。 |
-| 入力 | ローダ所有WASMコードのアドレス・範囲と、ロード時に確定した型・フレーム情報。 |
-| 出力 | 生成コードと、JIT拡張のキャッシュ登録に必要なトレース情報。 |
-| 事前条件 | 入力WASMがLoaderの検証を通過し、呼出しABIと固定作業領域が有効であること。入口stack値を消費するopcodeや直接stencilを持たない有効opcodeもAPI経路を含めてtraceへlowerする。 |
-| 事後条件 | 対象ABIに従うコードと、トレース境界で共有状態を同期する情報を返す。 |
-| エラー時の挙動 | WASM検証違反はLoaderが拒否する。ABI不整合は構成時に検出する。 |
+| **機能概要** | 適格な WASM 命令列からステンシルを連結し、trace 単位のネイティブコードを生成する。 |
+| **入力** | Loader 所有の WASM コード範囲と、ロード時に確定した型・フレーム情報。 |
+| **出力** | 生成コードと、JIT 拡張のキャッシュ登録に必要なトレースメタデータ。 |
+| **事前条件** | 入力 WASM が Loader 検証を通過済みであり、呼出し ABI と固定作業領域が有効であること。 |
+| **事後条件** | 対象 ABI に従うコードと境界同期情報を返す。 |
+| **エラー時の挙動** | WASM 検証違反は Loader、ABI 不整合は構成時に検出する。 |
 
-キャッシュの初期化、エントリ検索、カード状態、コンパイル待ち列、およびコンパイル時期はJIT拡張が所有する。これらをC++コンパイラへ公開する管理APIは定義しない。
+キャッシュ管理・カード状態・コンパイル待ち列は JIT 拡張が所有し、C++ コンパイラへ管理 API は公開しない。
 
 ### 5.2 URI/IPCインターフェース
 <!-- traceability: {META_ConfigurableSystem} -->
-本コンポーネントは vSoC の内部ライブラリであり、直接のIPCインターフェースは持たない。
+
+本コンポーネントは vSoC の内部ライブラリであり、直接の IPC インターフェースは持たない。
 
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
 <!-- traceability: {JIT_RegisterMapping} {JIT_MultiBuffer_Cache} -->
-- **目標**: コンパイルレイテンシを最小化し、WAMRインタープリタを上回る実行速度を実現。
-- **方策**:
-     - **trace単位native composition**: C++はcompile時だけopcodeを復号してLIR variantを選ぶ。操作ごとのreturn/エピローグを生成せず、成功slotを後続のraw stencil本体で置換する。完成traceはoperation間call/jump、次opcode fetch、indirect dispatchを持たない。
-    - **レジスタ割り当て**: assembly sourceは対象ABIの引数レジスタを明示し、Runtime API stencilは対象ABIの呼出し保存規則を守る。
-    - **実行時検索との分離**: コード生成後の検索方式とキャッシュ管理は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) に従う。
+
+- **コンパイルレイテンシ最小化**: ビルド済み raw ステンシルを連結し、成功スロットを置換して操作間の間接ディスパッチやエピローグを排除する。
+- **レジスタ規約遵守**: アセンブリ操作は対象 ABI の引数レジスタと caller-save 保存規則に従う。
 
 ### 6.2 安全性制約と方策
 <!-- traceability: {PositionIndependentCode} {MemoryBoundaryCheck} {FastAddressCheck} -->
-- **目標**: 生成コードの配置範囲と実行結果を検証する。ARMv8-Mのメモリ保護方式は対象確定後に定める。
-- **方策**:
-    - **位置独立コード**: 生成コードを位置独立とし、配置場所の自由度を確保。
-    - `Cache Capacity Check`: コード生成時にキャッシュ溢れを厳密にチェックし、溢れた場合は 3面リングローテーションにより Oldest バンクを破棄して再利用する。これはキャッシュ容量管理であり、（ゲストメモリアクセスの隔離）とは別の関心事である。
-    - **メモリ境界検査 ({GOTCHA-JITC-04})**: <!-- definition: {GOTCHA-JITC-04} --> x64の対応済みゲストメモリアクセス命令は、load/store前に幅を含めた境界を検査し、範囲外をWASM trapへ変換する。拒否時はメモリと演算対象の値を変更しない。アドレスをマスク等で巡回させて継続すると境界外アクセスを隠すため、Wrappingによる継続は禁止する。生成命令列の検証証拠はx64実装テストを参照する。ARMv8-Mの命令列と検査方式はTBDである。
-    - **x64コード領域**: 領域確保または借用時にRWXを一度設定する。パッチ区間外の書込みはAPI契約で拒否する。ARMv8-Mの保護機構、属性遷移、命令キャッシュ同期はTBDである。形式モデル `formal/jit_cache_model.py` の抽象W^X状態遷移はx64実装への適合を主張しない。
+
+- **位置独立コード (PIC)**: プロセス絶対アドレスを命令列へ埋め込まず、任意のキャッシュバンクで再配置不要とする。
+- **キャッシュ容量検査**: 生成時にキャッシュ溢れを検査し、溢れた場合は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) のローテーションで領域を回収する。
+- **メモリ境界検査 (`{GOTCHA-JITC-04}`)**: <!-- definition: {GOTCHA-JITC-04} --> ゲストメモリアクセス命令は load/store 前にアクセス幅を含めて境界を検査し、範囲外は WASM trap へ変換する。アドレスのラップアラウンド継続は禁止し、拒否時はメモリと演算対象を変更しない。
+- **x64 コード領域保護**: 領域確保時に RWX を設定し、パッチ区間外の書込みを API 契約で拒否する。ARMv8-M の保護機構（W^X 等）は TBD とする（形式モデル `formal/jit_cache_model.py` は抽象 W^X 遷移を検証する）。
 
 ## 7. 形式検証・テスト仕様との対応
 
-独立コンセプト層は、検証因子・成果物マトリクスの責務判定に従って対象外とする。
-生成x64コードの演算結果と命令列は、C++ native compilerを通す実行テストで検証する。キャッシュ状態とチェイン寿命の抽象不変条件は形式モデルで検証する。形式モデルのW^X状態はx64実装とは別の保護方策を表す。
-ARMv8-Mのコンパイラと実機検証はTBDである。
+独立コンセプト層は検証マトリクスの責務判定に従って対象外とする。生成コードの演算結果と命令列は実行テストで検証し、キャッシュ寿命やチェインの抽象不変条件は形式モデルで検証する。ARMv8-M の実機検証は TBD とする。
 
 ### 7.1 検証対象の不変条件
-- **位置独立性 (PIC)**: x64コードが任意のキャッシュバンクで再コンパイル不要で動作すること。ARMv8-Mの位置独立性と分岐範囲はTBD（`TEST-INT-40`, `TEST-JITC-40`）。
-    - **トレース境界状態**: 命令の後も生存するWASM値は共有オペランドスタックに保持する。x64ではchain先も同じスタック状態を引き継ぐ。ARMv8-Mのポインタ配置とスタック位置の更新はTBDである（`TEST-INT-41`, `TEST-JITC-52`）。
-- **x64実行可能メモリ**: OSが公開する権限が初期化からRWXで変わらないことを確認する。パッチ区間外のAPI書込み拒否と、パッチ確定後のコード実行を別々に確認する。ARMv8-Mの物理実装と実機検証はTBDである。
+
+- **位置独立性 (PIC)**: x64 コードが任意のキャッシュバンクで再コンパイル不要で動作すること（`TEST-INT-40`, `TEST-JITC-40`）。
+- **トレース境界状態**: 生存する WASM 値が共有オペランドスタックで引き継がれること（`TEST-INT-41`, `TEST-JITC-52`）。
+- **x64 実行可能メモリ**: パッチ区間外の書込み拒否とコード実行が成立すること。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントの単体テストケースは [`jit_compiler_test_spec.md`](docs/qa/tier3_plugins/jit_compiler_test_spec.md) を正本として定義する。3面キャッシュの直交表は [`jit_runtime_test_spec.md`](docs/qa/tier3_plugins/jit_runtime_test_spec.md) を正本とする。
+
+単体テスト仕様は [`jit_compiler_test_spec.md`](docs/qa/tier3_plugins/jit_compiler_test_spec.md) を、キャッシュ代謝の直交表は [`jit_runtime_test_spec.md`](docs/qa/tier3_plugins/jit_runtime_test_spec.md) を正本とする。
 
 ### 7.4 既知の制限・未検証範囲
 
-現行x64参照実装は直線後続の常駐traceを直接chainする。`if`、`br`、`br_if`はtraceへ含めず、Interpreter CPS handlerへ戻す。分岐先への直接chainは行わない。`br_table`、`return`、関数境界のその他経路も各Interpreter復帰契約に従う。連結は直線後続の常駐traceにだけ張るので、連結の列は循環しない。chain更新時のbody数とstack要件は、連結の列を根から終端まで一度ずつ辿って求め、辿る回数が `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件を超えないことをassertする。
-
-次の機能をテストで検証する。
-
-- 直線chainの集計、退役時のリンク解除、QA計測: `TEST-JITR-35`, `TEST-JITR-76`, `TEST-JITR-77`。
-- 分岐opcodeのtrace除外、Interpreter CPS処理、LOOP後方辺のyield判定: `TEST-JITR-63`, `TEST-JITR-67`, `TEST-JITR-69`, `TEST-JITR-73`、対応するInterpreter試験。
-
-形式モデルはキャッシュ寿命とyield到達時の復帰を抽象検証する。条件評価、スタック巻き戻し、関数呼出しの生成コードは対象に含まない。
+- 直線後続と前方/後方 `br` のみをネイティブ chain 対象とし、`if`/`br_if` は Interpreter CPS へ戻すため連結の列は循環しない。
+- chain 更新時の body 数・スタック要件は根から終端まで辿って求め、`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 以下であることを `assert` する。
+- 関連検証: 直線 chain・計測（`TEST-JITR-35`, `TEST-JITR-76`, `TEST-JITR-77`）、制御境界・後方辺 yield（`TEST-JITR-63`, `TEST-JITR-67`, `TEST-JITR-69`, `TEST-JITR-73`）。
 
 ## 8. 設計判断と参考実装
 
-### 8.1 設計判断 (ADR)
+### 8.1 境界値返却とオフセット表現
 <!-- traceability: {JIT_LazyChaining} -->
 
-**Trace境界の値返却 (`{GOTCHA-JITC-07}`)**: <!-- definition: {GOTCHA-JITC-07} -->
-WASM値は共有オペランドスタックに残し、JIT traceの`bool`戻り値には使わない。`bool`戻り値の判定は、`execution_context` の終了状態で行い、値の受け渡しに戻り値の内部表現を使わない。通常完了では未接続chain targetの終端dispatcherだけが境界metadata pointerを`ctx.rel`へ置き、`body_end_ip`を`ctx.ip`に設定して`true`を返す。trapまたはCPS exitでは`false`を返すため、Interpreter dispatcherは状態判定を先に行う。共通chain dispatcher経由では同じ共有スタックを引き継ぎ、entry保存処理を重ねない。
-
-- **決定事項**:
-  - **背景**: 現行x64参照構成のコードキャッシュは `FB_CONF_JIT_CACHE_SIZE` である。生成コードは可変長であり、すべてのtraceの開始位置が一定の命令アライメントを満たす保証はない。
-  - **選択肢**:
-    - 案1: バイト単位のオフセットを保持する。現行キャッシュ容量と任意のtrace開始位置を表現できる。
-    - 案2: 一定アライメントを前提にシフトして圧縮する。現行の可変長配置には追加の整列が必要になる。
-  - **結論**: 現行構成では案1を採用する。
-  - **適用範囲**: 64KBを超えるキャッシュへの拡張表現とARMv8-Mの物理配置はTBDとする。現行構成の決定からシフト圧縮や512KB対応を保証しない。
-- **決定事項**:
-  - **背景**: ホットスポット検出で同一PCのコンパイル要求が重複すると、固定キューの容量を消費する。
-  - **結論**: 未処理の同一PCを二重登録しない。通常は固定キューへ登録してInterpreterで実行し、コンパイル時期はJIT Runtimeの契約に従う。
-  - **適用範囲**: 現行のevictionではカードを`UNEXECUTED`へ戻し、再度hot判定を得る。これは暫定方策である。未使用traceの再コンパイルを抑止する条件と回復条件は未決とする。キュー満杯時の同期処理はJIT Runtimeの待ち列契約に従う。
+- **Trace 境界の値返却 (`{GOTCHA-JITC-07}`)**: <!-- definition: {GOTCHA-JITC-07} --> WASM 値は共有オペランドスタックに残し、trace entry の `bool` 戻り値は完了種別の通知にのみ用いる。`true` 時は終端 dispatcher が境界メタデータと `body_end_ip` を設定し、`false` 時は `execution_context` の trap/CPS exit 状態に従って Interpreter dispatcher が処理する。
+- **バイト単位オフセット管理**: 生成コードは可変長であるため、キャッシュ内位置は一定アラインメントのシフト圧縮ではなくバイト単位オフセットで保持する（64KB 超の拡張や ARMv8-M の配置方式は TBD）。
+- **重複要求の抑止**: 同一 PC のコンパイル要求は固定キューへ二重登録しない。キュー管理・置換・回復方策は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) に従う。

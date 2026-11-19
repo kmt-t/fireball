@@ -8,7 +8,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {COOS_Deterministic} {CSPCommunication} {LowOverheadSwitch} -->
-COOSスケジューラは、協調型OS COOS（[`os_coos.md`](docs/components/tier1_core/os_coos.md)）におけるタスクディスパッチとREADYキューの制御を司る実行制御モジュールである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。タスク間のCSPチャネル通信に伴うサスペンド・再開制御と連動し、コンテキストスイッチには C++20 コルーチンの**対称遷移（Symmetric Transfer）** を採用する。全汎用レジスタのメモリスタック退避・復帰を排除してフレームポインタとPCのみの交換に最小化することで、数サイクルでの極低オーバーヘッドなタスク遷移を達成する。
+COOSスケジューラは、協調型OS COOS（[`os_coos.md`](docs/components/tier1_core/os_coos.md)）におけるタスクディスパッチとREADYキューの制御を司る実行制御モジュールである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する（`{COOS_Scheduling_Refine}`）。 <!-- definition: {COOS_Scheduling_Refine} --> タスク間のCSPチャネル通信に伴うサスペンド・再開制御と連動し、コンテキストスイッチには C++20 コルーチンの**対称遷移（Symmetric Transfer）**（`{DirectContextSwitch}`）を採用する。 <!-- definition: {DirectContextSwitch} --> 全汎用レジスタのメモリスタック退避・復帰を排除してフレームポインタとPCのみの交換に最小化することで、数サイクルでの極低オーバーヘッドなタスク遷移を達成する。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
@@ -17,7 +17,7 @@ COOSスケジューラは、協調型OS COOS（[`os_coos.md`](docs/components/ti
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {COOS_Transparent} {ADR_InterruptRescheduleGeneration} -->
+<!-- traceability: {COOS_Transparent} -->
 - **`Scheduler`**: タスクのREADYキュー管理、実行順序制御、およびコルーチン実行をカプセル化した主要クラス。各タスクの実行状態を外部から可視化・検査するための監査用インターフェースを提供する。
 - **`task_context`**: 各タスクの実行状態（READY/BLOCKED/RUNNING等の待機状態）、スタック境界、コルーチンハンドル、および最後に観測した再スケジュール要求世代を集約したデータ構造。
 - **`scheduler_config`**: 最大タスク数、タイマー待機の確認間隔、および各タスクの割り当てリソース制限からなる不変の静的設定。
@@ -25,7 +25,7 @@ COOSスケジューラは、協調型OS COOS（[`os_coos.md`](docs/components/ti
 - **`next_timer_deadline_ns`**: 待機中タスクのうち最も早い期限。アイドル時の確認間隔ではタスク表を走査せず、期限到達後だけ期限待ちタスクを再評価する。
 - **`reschedule_generation`**: 割り込み通知を契機に更新する単調増加の要求世代。要求が保留中の間に到着した追加イベントは同じ世代へ集約し、イベント本体は固定長ロックフリーFIFOで個別に保持する。
 - **`reschedule_pending`**: 未完了の協調再スケジュール要求を示す原子的な状態。要求世代の一巡完了とロックフリーFIFOの空を確認するまで解除しない。
-- **`round_target_mask`**: 協調再スケジュール開始時点で実行対象となるRUNNINGおよびREADYタスクを示す固定長ビットマップ。新規生成タスクは現在の一巡の対象に含めない。
+- **`round_target_mask`**: 協調再スケジュール開始時点で実行対象となるRUNNINGおよびREADYタスク集合を示す対象ビット集合。新規生成タスクは現在の一巡の対象に含めない。
 
 ### 3.2 内部ブロック図
 <!-- traceability: {COOS_Transparent} -->
@@ -50,7 +50,7 @@ flowchart TD
 ```
 
 ### 3.3 主要なデータ定義
-<!-- traceability: {COOS_Transparent} {ADR_InterruptRescheduleGeneration} -->
+<!-- traceability: {COOS_Transparent} -->
 
 #### スケジューラクラス（Scheduler）
 依存関係（割り込み制御等）とタスクキューをカプセル化する。
@@ -63,18 +63,18 @@ flowchart TD
 | 次回期限 | タイマー待機中タスクの最小期限 | `u64` | `next_timer_deadline_ns` |
 | タイマー待機確認間隔 | 外部イベントも確認するアイドル待機の上限間隔 | `u32` | `FB_CONF_TIMER_IDLE_POLL_SLICE_NS` |
 | 現在のタスク | 現在CPUコアを占有しているタスク | 構造体への参照 | `task_context` (NULL許容) |
-| 再スケジュール要求 | 割り込み通知の保留状態、要求世代、および一巡対象マスク | 原子状態と固定長ビットマップ | `reschedule_pending`, `reschedule_generation`, `round_target_mask` |
+| 再スケジュール要求 | 割り込み通知の保留状態、要求世代、および一巡対象集合 | 原子状態と対象ビット集合 | `reschedule_pending`, `reschedule_generation`, `round_target_mask` |
 | 実行区間ログ閾値 | yield協調境界で記録対象を判定する設定値 | `u64` | `FB_CONF_TASK_SLICE_LOG_THRESHOLD_NS`。計測値は保持しない |
-| 状態可視化API | 外部から全タスクの待機・実行状態を安全に監視するためのメソッド群。ロックフリーな読み取り専用構造（Double Buffering）を採用し、実行中タスクをブロックせずに O(1) で状態を即座に取得可能。 | 関数オブジェクト | `Scheduler::get_task_states` (読み取り専用) |
+| 状態可視化API | 外部から全タスクの待機・実行状態を取得するための読み取り専用メソッド。実行中タスクの進行に影響を与えず $O(1)$ で状態スナップショットを返す。 | 関数オブジェクト | `Scheduler::get_task_states` (読み取り専用) |
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {GLOBAL_IdleDetection} {GLOBAL_PeriodicTask} {GLOBAL_InterruptWakeup} {Challenge_CspHandoffStarvation} {CSP_Handoff} -->
+<!-- traceability: {GLOBAL_IdleDetection} {GLOBAL_PeriodicTask} {GLOBAL_InterruptWakeup} -->
 - **スケジューリング**: ラウンドロビン方式。
     - スケジューラ・コンテキスト内の「実行可能タスク列」を固定容量の侵入型循環双方向リストで管理する。末尾・先頭への追加、先頭からの取り出し、既知タスクの除去を定数時間 $O(1)$ で行う。
 - **連続直接ハンドオフ上限とメインループ復帰 (`GOTCHA-SCHED-01`)**:
-    - CSP通信のランデブー成立時、呼び出し元と呼び出し先は C++20 コルーチンの対称遷移（Symmetric Transfer）によりスケジューラをバイパスして直接遷移を行う。
+    - CSP通信のランデブー成立時、呼び出し元と呼び出し先は C++20 コルーチンの対称遷移（Symmetric Transfer）によりスケジューラをバイパスして直接遷移を行う（`{CSP_Handoff}`）。 <!-- definition: {CSP_Handoff} -->
     - **背景**: 直接ハンドオフを無制限に許可すると、タスク間のピンポン通信がスケジューラへの復帰を遅らせ続ける可能性がある。
     - **動作**: スケジューラは連続直接遷移カウンタ（`consecutive_handoffs`）を保持する。上限（ビルド時定数 `FB_CONF_MAX_CONSECUTIVE_HANDOFFS`）到達後のランデブーでは、直接遷移を行わず相手タスクを READY キュー末尾へ投入する。その後 `YIELD` を返し、スケジューラのメイン巡回ループへ制御を戻す。
     - **保証範囲**: この上限は連続直接ハンドオフ回数と、上限到達後にスケジューラへ制御が戻ることを制限する。協調型スケジューラは実行中タスクを強制プリエンプトしないため、全タスクの公平性や有界な実時間応答は保証しない。
@@ -85,15 +85,14 @@ flowchart TD
 - **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED/BLOCKED_TIMER/SUSPENDED_CSP）」となった場合にアイドル・ハンドラ（Periodic Task、ログフラッシュ、JITバッチコンパイル等）を実行する。
 - **割り込み処理**: HALからの原因付き`interrupt-event`通知（`notify_interrupt(event)`）を受信し、固定長FIFOから回収する。`vector_id`に対応するvSoCランタイム待機タスクへイベント本体を引き渡したうえで、そのタスクをREADYキュー末尾に追加する。COOSはvIRQ階層の評価やゲスト関数呼出しを行わない。
 - **割り込み時の協調再スケジュール (`ADR_InterruptRescheduleGeneration`)**:
-    - ISRは`interrupt-event`を固定長ロックフリーFIFOへ投入し、要求が保留されていない場合だけ`reschedule_generation`を一世代進める。ISRはタスク状態、READYキュー、および`round_target_mask`を変更しない。FIFO操作はmutexやスピンロックを取得しない。
+    - ISRは`interrupt-event`を固定長ロックフリーFIFOへ投入し、要求が保留されていない場合だけ`reschedule_generation`を一世代進める（`{TaskPollInterruptEvent}`）。 <!-- definition: {TaskPollInterruptEvent} --> ISRはタスク状態、READYキュー、および`round_target_mask`を変更しない。FIFO操作はmutexやスピンロックを取得しない。
     - スケジューラは最初の協調境界でFIFOをドレインし、イベント本体を対象タスクの保留割り込みスロットへ移してから、割り込みで起床したタスクをREADYキューへ追加する。その後、RUNNINGおよびREADYタスクを`round_target_mask`へ記録する。
     - タスクがディスパッチまたは許可された直接ハンドオフで実行を開始したとき、`task_context.last_seen_generation`が現在世代と異なる場合は現在世代へ更新し、直ちに協調的な`YIELD`へ遷移する。タスクごとの更新は一世代につき一回だけ行う。
     - `round_target_mask`に含まれる全タスクが現在世代を観測した時点で一巡を完了する。完了時に新しい割り込み要求が保留されている場合は、要求を消去せず次の世代の一巡へ移行する。要求を解除する場合は、対象世代と現在世代が一致し、かつFIFOが空であることを原子的に確認する。
     - BLOCKEDまたは終了したタスクは現在の対象から除外し、新規生成タスクは次の世代から対象とする。タスクが協調境界へ到達しない場合、この機構だけでは強制プリエンプションを行わない。
 
-
 #### 連続直接ハンドオフ上限判定とメインループ復帰手順（手順アクティビティ図）
-<!-- traceability: {GOTCHA-SCHED-01} {Challenge_CspHandoffStarvation} {CSP_Handoff} {ADR_InterruptRescheduleGeneration} -->
+<!-- traceability: {GOTCHA-SCHED-01} -->
 連続直接ハンドオフの上限到達後にスケジューラへ制御が戻る手順を示す。この上限は全タスクの公平性や実時間の応答上限を保証しない。
 
 ```mermaid
@@ -113,7 +112,7 @@ flowchart TD
 ```
 
 #### 割り込み要求世代の一巡手順（手順アクティビティ図）
-<!-- traceability: {ADR_InterruptRescheduleGeneration} {GLOBAL_InterruptWakeup} {TaskPollInterruptEvent} {GOTCHA-SCHED-02} -->
+<!-- traceability: {GLOBAL_InterruptWakeup} {TaskPollInterruptEvent} {GOTCHA-SCHED-02} -->
 割り込み要求を検知した後、要求世代を対象タスクが一度ずつ観測するまで協調的に再スケジュールする手順を示す。
 
 ```mermaid
@@ -136,7 +135,7 @@ flowchart TD
 ```
 
 #### スケジューラの概念コード
-<!-- traceability: {ADR_IntrusiveTcbList} {CooperativeMultitasking} -->
+<!-- traceability: {CooperativeMultitasking} -->
 実行可能な参考モデルは [`scheduler_concept.py`](docs/components/tier1_core/concepts/scheduler_concept.py) を参照する。タスク状態、READY列の操作、および協調実行の検証は同ファイルに置く。侵入型TCB列の設計判断は本書に従う。
 
 ### 4.2 状態遷移図 (SysML SMD: Scheduler 視点)
@@ -175,8 +174,8 @@ stateDiagram-v2
 | init → READY | spawn(task) | 静的TCBスロットの空きあり | 静的プールからTCBを割り当て、タスクコンテキスト初期化 | READY |
 | READY → RUNNING | schedule() | READYキュー非空 | `head_task.resume()` 直接呼び出し | RUNNING |
 | RUNNING → READY | yield() | (常に可) | 実行可能列末尾へ push、実行権をスケジューラに戻す | READY |
-| RUNNING → CSPWait | send(ch) | 受信側未待機 (`{ADR_RendezvousChannel}`) | 送信側としてチャネルスロットに登録しサスペンド、実行権をスケジューラに戻す | CSPWait |
-| RUNNING → CSPWait | recv(ch) | 送信側未待機 (`{ADR_RendezvousChannel}`) | 受信側としてチャネルスロットに登録しサスペンド、実行権をスケジューラに戻す | CSPWait |
+| RUNNING → CSPWait | send(ch) | 受信側未待機 | 送信側としてチャネルスロットに登録しサスペンド、実行権をスケジューラに戻す | CSPWait |
+| RUNNING → CSPWait | recv(ch) | 送信側未待機 | 受信側としてチャネルスロットに登録しサスペンド、実行権をスケジューラに戻す | CSPWait |
 | CSPWait → RUNNING | **CSP Handoff** | 相手タスク待機中 (Rendezvous成立) | **対称遷移スイッチ: `await_suspend` から `opposite_task.coroutine_handle` 返却（スケジューラ迂回 $O(1)$ スイッチ）** `{CSP_Handoff}` | RUNNING |
 | CSPWait → READY | [opposite not ready] | 相手タスク未待機 (Rendezvous不成立) | 相手タスクを起床させREADYキュー末尾へ投入、自身もREADYキューへ復帰 | READY |
 | RUNNING → EventWait | wait_event(id) | (常に可) | イベントID登録、スケジューラに制御戻す | EventWait |
@@ -190,7 +189,6 @@ stateDiagram-v2
 **注記:**
 - 割り込みハンドラ（ISR）は直接タスク状態を変更しない。代わりに INT イベントをイベントキューに投入する。
 - **CSP Handoff の特徴**: スケジューラを介さず、C++20 コルーチンの対称遷移（Symmetric Transfer）によりコールスタックを消費せずに相手タスクへ直接ジャンプする。超低レイテンシかつスタック深度 $O(1)$ を保証。
-
 
 ## 5. インターフェース定義
 
@@ -285,7 +283,7 @@ stateDiagram-v2
 | 設計注記 | 割り込み通知は原因情報を保持したままイベント化され、SPSCロックフリーFIFOへ公開される。ISRはmutex・スピンロックを取得せず、イベント投入、要求世代の更新、およびドロップカウンタの更新だけを行う。スケジューラは協調境界でFIFOをドレインし、タスク状態とREADYキューを変更する。 |
 
 ##### 再スケジュール世代の観測（内部契約）
-<!-- traceability: {ADR_InterruptRescheduleGeneration} {TaskPollInterruptEvent} -->
+<!-- traceability: {TaskPollInterruptEvent} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -307,17 +305,15 @@ stateDiagram-v2
 ##### タスク状態可視化（get_task_states）
 | 項目 | 内容 | 型分類 |
 | :--- | :--- | :--- |
-| 機能概要 | 外部から全タスクの待機・実行状態を安全に監視するためのメソッド。ロックフリーな読み取り専用構造（Double Buffering）を採用し、実行中タスクをブロックせずに $O(1)$ で状態スナップショットを取得可能。 | 操作定義 |
+| 機能概要 | 外部から全タスクの待機・実行状態を取得するための読み取り専用メソッド。実行中タスクの進行に影響を与えず $O(1)$ で状態スナップショットを返す。 | 操作定義 |
 | シグネチャ | `auto get_task_states() const noexcept -> task_state_snapshot_t` | 関数プロトタイプ |
 | 戻り値 | 全タスクの状態スナップショット配列（`std::array<os_task_state_t, FB_CONF_MAX_TASKS>`） | 結果型 |
 | 事前条件 | スケジューラが初期化済みであること。 | 条件 |
 | 事後条件 | 実行中タスクの進行に影響を与えない。 | 状態変化 |
 
-
 ## 6. 制約達成の方策
 
 タスク数は固定上限内で管理し、優先度制御や強制プリエンプションは行わない。READYタスクがある間は時刻待機タスクよりREADYタスクを先に実行する。アイドル中の外部イベント確認間隔は`FB_CONF_TIMER_IDLE_POLL_SLICE_NS`以下とし、全タスクの公平性や実時間応答上限は保証しない。
-
 
 ## 7. 形式検証・テスト仕様との対応
 
@@ -335,11 +331,10 @@ stateDiagram-v2
 
 タスクIDはタスクの生存期間内だけ有効とし、終了登録、待機登録、および所有資源を解放した後に再利用できる。終了済みIDの使用は契約違反である。形式モデルが扱う固定タスクの遷移から、ID再利用や終了時の所有資源解放を推定しない。
 
-
 ## 8. 設計判断と参考実装
 
 ### 8.1 設計判断 (ADR)
-<!-- traceability: {ADR_CoosPureRoundRobin} {ADR_EventDrivenWakeQueue} {ADR_IntrusiveTcbList} {ADR_TaskIdLifetime} {NotRTOS} -->
+<!-- traceability: {NotRTOS} -->
 
 このコンポーネントの ADR は、全体アーキテクチャから `{ADR_*}` キーワードで参照される。詳細な背景・選択肢の比較検討は以下に記録する。
 
@@ -370,7 +365,7 @@ stateDiagram-v2
   - **適用範囲**: この決定は `{COOS_Scheduling_Refine}` が要求する継続的改善を妨げない。ここでは現時点のベースラインを定める。
 
 - **決定事項**:
-  - **背景**: `BLOCKED` タスクリストの管理コストとリアルタイム性のトレードオフ（`{Challenge_CoosBlockedList}`）が課題として提起されていた。起床待ちタスクの探索方式を決定する必要がある。
+ - **背景**: `BLOCKED` タスクリストの管理コストとリアルタイム性のトレードオフが課題として提起されていた。起床待ちタスクの探索方式を決定する必要がある。
   - **選択肢と評価**:
     - 案1: 線形スキャン。毎スケジューリングサイクルで BLOCKED リスト全体を走査し、起床条件を満たすタスクを探す。実装は単純だが、タスク数の増加に対して走査コストが $O(n)$ となり、最悪応答時間の予測が困難になる。
     - 案2: タイムアウトホイール（階層化タイマ）。時間経過による起床（sleep等）には強いが、`notify_interrupt` のような非同期イベントによる起床には別経路が必要になり、二系統の起床経路を維持する複雑さを持ち込む。
@@ -378,7 +373,7 @@ stateDiagram-v2
   - **結論**: 案3を採用する。
   - **採用理由**: 待ちタスクを定期的にポーリングすると、組み込み環境のCPUサイクルを浪費する。ポーリング間隔によっては起床レイテンシも予測しにくくなる。
   - **動作特性**: `notify_interrupt` 等の通知を契機に対象タスクを起床キューへ追加する。通常のスケジューリングサイクルでは BLOCKED タスクを走査しない。
-  - **性能特性**: READYリングキューのpush/popは、タスク数に依存しない $O(1)$ とする。割り込みイベントの待機者検索は配送経路に属し、計算量と応答時間を別途評価する。 `{Challenge_CoosBlockedList}`
+ - **性能特性**: READYリングキューのpush/popは、タスク数に依存しない $O(1)$ とする。割り込みイベントの待機者検索は配送経路に属し、計算量と応答時間を別途評価する。
 
 - **決定事項**:
   - **背景**: 割り込み通知後に実行中タスクのCPU占有が続くと、READYタスクおよび割り込み起床タスクの実行開始が遅延する。強制プリエンプションを導入せず、協調型スケジューラの決定論を維持したまま再スケジュール要求を伝播する必要がある。
@@ -386,6 +381,6 @@ stateDiagram-v2
     - 案1: 共有Booleanフラグを設定し、任意のタスクがフラグを解除する。実装は小さいが、複数割り込みの統合、要求の消失防止、および一巡完了の判定を表現できない。
     - 案2: 割り込みごとに全タスクへ要求状態を複製する。要求の観測は明確だが、固定TCBに不要な状態と更新処理を追加する。
     - 案3: COOS全体の要求世代と、TCBごとの最終観測世代を保持する。要求対象のスナップショットを固定長ビットマップで管理し、タスクごとの観測を一世代一回に制限する。
-  - **結論**: 案3を採用する。 `{ADR_InterruptRescheduleGeneration}`
+ - **結論**: 案3を採用する。
   - **採用理由**: ISR側の処理をイベント投函と世代更新に限定し、タスク側の観測を既存の協調境界へ統合できる。世代比較により、同一要求に対する重複yieldと要求の消失を防止する。
   - **制約**: 本方式は協調的再スケジュールであり、協調境界へ到達しないタスクを強制停止しない。IPCの直接ハンドオフは、ランデブー成立に必要な遷移だけを要求中に許可し、遷移先の世代観測後に追加連鎖を停止する。 {GOTCHA-SCHED-02} <!-- definition: {GOTCHA-SCHED-02} -->

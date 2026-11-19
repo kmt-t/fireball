@@ -20,7 +20,6 @@
 - 同じスイートでTEST-WIT-14のホスト側module/field解決と、TEST-WIT-15のHAL world宣言も検査する。
 実行コマンドを示す。
 
-
 - TEST-WIT-10, TEST-WIT-14はWITから生成したbindingをobjectと静的archiveへ変換し、コンパイル済みguestを実NativeInterpreterとCOOSで実行する。
 - 最終guestのimport集合と型、0〜6引数の順序・0補完、専用入口、u32上位bitおよびguestが書いた戻り値を確認する。
 - archiveなしのリンク失敗と未対応WIT契約の生成失敗も確認する。world前の空interfaceをworldへimportする有効な宣言配置も、対応範囲外として拒否する。

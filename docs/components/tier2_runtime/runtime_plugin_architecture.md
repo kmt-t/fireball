@@ -5,7 +5,7 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {META_StaticDI} {GLOBAL_ComponentHarness} {RuntimeEventSink} {ZeroRuntimeOverhead} -->
+<!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {META_StaticDI} {GLOBAL_ComponentHarness} {RuntimeEventSink} -->
 本コンポーネントは、WASM ランタイムを構成する実行エンジンと補助エンジンの交換契約を定義する。System は不変な構成情報を保持する。Runtime は構成情報から実装を静的に合成する。Tier 3 のプラグインは個別の実行方式、観測方式、物理接続を実装する。
 
 本契約は、Interpreter、Debugger、Guest Profiler、WASIバックエンドをRuntimeへ必要に応じて結線する。JIT拡張はInterpreterの任意プラグインであり、Runtimeの独立スロットにしない。無効な機能はNullオブジェクトとして実行時に保持せず、Interpreter構成時に除外する。
@@ -78,8 +78,7 @@ Runtime Event Sinkは独立した型スロットで選択する。JIT拡張の�
 `runtime_harness<Configuration>`は選択済みコンポーネントへの参照だけを保持する。
 `runtime_composer<Configuration>`はそのハーネスを値として保持する。
 構成にはJIT拡張なしのInterpreter、JIT拡張付きInterpreter、Debugger/Profiler付きInterpreter、イベント有効・無効などがある。
-これらは同一プログラム内で別々にインスタンス化できる。
-各インスタンスの実行経路に構成選択分岐を置かない。
+各構成の実行経路に構成選択分岐を置かない。
 
 ## 4. 動的モデル
 
@@ -170,7 +169,7 @@ RuntimeEngineはInterpreterを一度進め、scheduler境界の結果をSystem�
 | エラー時の挙動 | 終了処理の失敗は最初の失敗理由を保持し、後続プラグインの終了を継続する。 |
 
 ## 6. 制約達成の方策
-<!-- traceability: {GLOBAL_Policy_Memory} {ZeroRuntimeOverhead} {META_StaticDI} -->
+<!-- traceability: {GLOBAL_Policy_Memory} {META_StaticDI} -->
 
 ### 6.1 性能制約と方策
 - RuntimeComposer は静的 DI で実装を合成する。実行ホットパスのプラグイン選択を実行時に行ってはならない。
@@ -178,7 +177,7 @@ RuntimeEngineはInterpreterを一度進め、scheduler境界の結果をSystem�
 - Interpreterとネイティブ実行拡張の選択は構成時に完了する。命令ホットパスへ拡張の有無を判定する条件を置かない。
 - 実行中の文字列検索、動的レジストリ検索、仮想関数による全称ディスパッチを要求しない。
 - weave 箇所は `constexpr` 条件で特殊化する。条件が偽のアスペクトでは、フック本体だけでなく呼出し、引数評価、ペイロード構築、状態領域を除去する。
-- RuntimeComposer は選択された実装をインスタンスへ静的に結線し、他スロットの状態や呼出しをそのインスタンスへ含めない。別構成のハーネスが同じプログラム内で使われる場合、その構成の実装も同時に存在できる。
+- RuntimeComposer は選択された実装をインスタンスへ静的に結線し、他スロットの状態や呼出しをそのインスタンスへ含めない。
 
 ### 6.2 メモリ制約と方策
 - 全プラグインの状態容量、イベントリング容量、JIT コード領域、デバッガバッファを `SystemConfig` の予算へ登録する。
@@ -189,7 +188,6 @@ RuntimeEngineはInterpreterを一度進め、scheduler境界の結果をSystem�
 - Plugin は自分のスロットに対応する状態だけを変更する。
 - Debugger の状態変更は `ExecutionControl` へ限定し、Profiler と観測イベントを介して実行状態を変更できないようにする。
 - JIT のコード領域、Runtime のデータ領域、外部ログの搬送領域を物理的に分離する。
-
 
 ## 7. 形式検証・テスト仕様との対応
 
@@ -210,6 +208,5 @@ RuntimeEngineはInterpreterを一度進め、scheduler境界の結果をSystem�
 
 ### 8.1 設計上の未決事項
 - 各プラグインの固定容量は `SystemConfig` の資源予算で確定する。
-
 
 特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

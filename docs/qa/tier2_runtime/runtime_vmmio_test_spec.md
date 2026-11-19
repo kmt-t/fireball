@@ -121,7 +121,6 @@ Bit31によるRAM/vMMIO高速分岐、`FB_CONF_VMMIO_MAX_PTES`件のFlatMap PTE 
 2026-10-01にLinux・CPython 3.14.6・uv環境で局所スイートを実行した。
 実行コマンドを示す。
 
-
 25件成功、0件失敗、0件skipである。
 収集件数にはパラメータ化した容量、FC、アドレス、Revokeの水準を含む。
 隔離コピーで境界外RAMアドレスを容量マスクで折り畳む変異を作り、TEST-VMMIO-03の4水準が失敗することも確認した。

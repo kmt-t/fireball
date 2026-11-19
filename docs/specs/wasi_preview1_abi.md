@@ -10,7 +10,7 @@
 ネイティブ実行基盤の WASI 0.3p / Component Model は、汎用機構で実現する。専用の WIT リソース型は使わず、URI Resolver、HAL バッファプール、IPC コマンド ID を組み合わせる。公開契約は Tier 3 の [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) を正本とする。HAL 操作は Tier 2 の [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)、ゲスト側変換は Tier 3 の `libfireball` 仕様を正本とする。
 
 ## 1. 概要と基本思想
-<!-- traceability: {Type_Vocabulary} {TypeSafeMessaging} {META_ZeroCostAbstraction} -->
+<!-- traceability: {TypeSafeMessaging} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Hypervisor が WASM ゲストアプリケーションに対して提供するインターフェースの正本である。
 対象は **WASI Preview 1 (`wasi_snapshot_preview1`, WASI 0.1p)** である。
 物理 ABI マッピング、サポート API セット、およびエラーコード規約を定義する。
@@ -20,7 +20,7 @@ Fireball ではネイティブなシステム基盤として **WASI 0.3 Preview 
 ---
 
 ## 2. WASI 型定義と物理レイアウト (WASI Type Vocabulary)
-<!-- traceability: {Type_Vocabulary} {Wasm32Only} -->
+<!-- traceability: {Wasm32Only} -->
 
 WASI 32-bit (wasm32) における物理データ型およびメモリレイアウト：
 
@@ -83,7 +83,7 @@ WASI 32-bit (wasm32) における物理データ型およびメモリレイア�
 ---
 
 ### 3.3 プロセス制御 & 乱数 & スケジューラ API (Process, Random & Scheduler)
-<!-- traceability: {ADR_RendezvousChannel} {CSP_Handoff} -->
+<!-- traceability: {CSP_Handoff} -->
 
 | API 名 | シグネチャ | 物理実装・ルーティング | 戻り値 / エラー |
 | :--- | :--- | :--- | :--- |

@@ -265,7 +265,6 @@ LoggerはTier 2 RuntimeとTier 3プラグインが利用する診断APIであり
 
 形式モデルのフラッシュと割り込み経路は、同期書込み完了後の協調復帰を抽象化する。書込み途中の中断や実時間応答上限を検証しない。概念コードの`MockHALTransport`にあるDMA・busyの記述は、Tier 1 `printk`の同期出力境界へ未追従である。現行の出力経路は本書の同期書込み契約に従い、検証観点は[runtime_logging_test_spec.md](docs/qa/tier2_runtime/runtime_logging_test_spec.md)に置く。
 
-
 ## 8. 設計判断と参考実装
 
 特記すべき独立したADRはない。採用方針は本書の各契約節に記載する。

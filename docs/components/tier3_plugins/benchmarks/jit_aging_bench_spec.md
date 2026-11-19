@@ -1,7 +1,7 @@
 # JIT カードエイジング ベンチマーク仕様書 (JIT Card Aging Benchmark Specification)
 
 ## 1. 目的と対象範囲
-<!-- traceability: {JIT_CardAgingSweep} {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} {LowLatencyJIT} -->
+<!-- traceability: {JIT_CardAgingSweep} {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} -->
 
 正本: [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md)（エイジングスイープ）
 参考実装: [`bench_jit_aging.py`](experiments/pysim/benchmarks/jit/bench_jit_aging.py)

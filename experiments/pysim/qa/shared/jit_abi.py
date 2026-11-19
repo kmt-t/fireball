@@ -286,18 +286,3 @@ def make_qa_runtime_dispatch_entry(collect_stats: bool) -> CFuncPtr:
         return int(qa_dispatch(ctypes.cast(dispatch, ctypes.c_void_p), call, result))
 
     return callback_type(invoke)
-
-
-_ADMISSION_HOLDERS: list[object] = []
-
-
-def attach_admission_records(context) -> None:
-    """Give a QA-built context the admission record array that the common trace entry counts into.
-
-    A native dispatch copies the provider's array into the context. A test that calls a trace
-    entry directly has no provider, so it attaches its own array of 256 records (block indices of
-    the QA modules stay below 256).
-    """
-    records = (ctypes.c_uint8 * 256)()
-    _ADMISSION_HOLDERS.append(records)
-    context.admission_records = ctypes.addressof(records)

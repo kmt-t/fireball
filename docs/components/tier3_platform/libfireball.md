@@ -7,7 +7,6 @@
 
 本書はゲスト側 `libfireball` の設計目標を定義する。汎用host-callの引数配置、専用vIRQ/vDMA port転送、およびWASI Preview1の標準出力・標準エラー変換を扱う。
 
-
 ## 1. コンセプト
 
 ### 1.1 責務と依存方向
@@ -20,7 +19,6 @@
 6. 物理レジスタ、IPC ロール、COOS タスク、HAL ドライバの内部構造を知らない。
 
 依存方向は `libfireball` → `runtime_syscall` / `hal_dispatch` → COOS・IPC Router・`platform_driver` とする。Tier 2 の仕様書は、`libfireball` の内部実装や Preview1 の呼び出し順序を定義しない。
-
 
 ## 2. アーキテクチャ分類
 
@@ -43,11 +41,9 @@ graph LR
 
 `libfireball` はゲストアドレス空間に配置されるライブラリであり、サービスレジストリや COOS のタスクスロットには登録しない。
 
-
 ## 4. 動的モデル
 
 本コンポーネントはゲスト側のABI変換契約を定義し、独立した常駐状態や非同期状態機械を持たない。処理手順の正本は [runtime_syscall.md](docs/components/tier2_runtime/runtime_syscall.md) とWASI ABI仕様である。
-
 
 ## 5. インターフェース定義
 
@@ -160,7 +156,6 @@ sequenceDiagram
 
 このシーケンスで、ISRは`R`を直接呼び出さない。`HANDLED`はそのノードで終了し、`PASS_THROUGH`だけが静的な子ノードへ進み、`REJECT`は診断処理で終了する。REJECTからFAULTノードへ再帰的に配送することも、WASIポーリングを起動することもない。
 
-
 ## 6. 制約達成の方策
 
 ### 6.1 制約
@@ -170,7 +165,6 @@ sequenceDiagram
 - Tier 2 の契約にない URI、コマンド ID、物理アドレスを独自に定義しない。
 - vIRQページのアドレス、原因源表、親子関係、関数シグネチャ検証を独自に再実装しない。ゲストからvMMIO固定スロットへ直接storeしてはならない。
 - 実機のbinding生成方式は固定しない。raw Core Wasm参照実装の生成器は明示的な4 import写像を対象とする。
-
 
 ## 7. 形式検証・テスト仕様との対応
 

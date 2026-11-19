@@ -16,8 +16,8 @@
 
 ## 1. コンセプト
 <!-- traceability: TEST-INTP-89 TEST-INTP-90 TEST-INTP-91 -->
-<!-- traceability: {ThreadedInterpreter} {LowLatencyJIT} {InterpreterContextStackless} {RuntimeHotspotProfiler} {RuntimeEventSink} -->
-Interpreter は、WASM命令をスレッドインタープリタ方式で実行する。低レイテンシと小フットプリントを設計目標とする。本コンポーネントは Execution Engine (`executor`) の一部として設計する。JITと実行状態を共有する。実行環境は `execution_context` の論理フィールドとして参照する。独立した `vsoc_runtime* env` 引数は設けない。
+<!-- traceability: {InterpreterContextStackless} {RuntimeEventSink} -->
+Interpreter は、WASM命令をスレッドインタープリタ方式で実行する。低レイテンシと小フットプリントを設計目標とする。本コンポーネントは Execution Engine (`executor`) の一部として設計する。JITと実行状態を共有する。実行環境は `execution_context` の論理フィールド（`{EnvironmentPointer}`）として参照する。 <!-- definition: {EnvironmentPointer} --> 独立した `vsoc_runtime* env` 引数は設けない。
 
 組み込み環境の極小メモリ制約（`{GLOBAL_Policy_Memory}`）を遵守する。WASM opcodeはFlashやROM上の関数コードビューから直接フェッチする。中間命令オブジェクト（`Instr`）は生成しない。opcodeから命令オブジェクトを引く表も設けない。これを {DirectBytecodeExecution} と定義する。 <!-- definition: {DirectBytecodeExecution} -->
 
@@ -173,7 +173,7 @@ function view、ローカル・オペランド基点、復帰位置、境界停�
 **ローカルレイアウト表 (`{GOTCHA-INTP-22}`)**: <!-- definition: {GOTCHA-INTP-22} -->
 Loaderは関数の全ローカルについて、引数を先頭に含むワードオフセットとワード数を一度だけ計算する。ローカルは連続配置し、i32/f32は1ワード、i64/f64は2ワードを占有する。同一フレーム内でサイズを混在できる。
 オフセット表はローカルあたり16bitで保持する。幅は保持済みlocal typeから決定する。`local_slot_count` は全ローカルのワード数の合計である。
-Interpreterはローカルindexから事前計算済みword offsetとlocal typeを参照し、幅を型から決定する。JITコンパイラは16ローカル以下を対象とし、`local.get`、`local.set`、`local.tee`を操作・型別のステンシルへlowerする。local indexはtrace compile時にword offsetへ解決し、命令エンコーダがそのoffsetをtrace codeへ直接書き込む。offset別のステンシルvariantやRuntime API経路は設けない。17ローカル以上のtraceはcompile refusalとなる。
+Interpreterはローカルindexから事前計算済みword offsetとlocal typeを参照し、幅を型から決定する。JITコンパイラも同様に`local.get`、`local.set`、`local.tee`を操作・型別のステンシルへlowerし、trace compile時に解決したword offsetを命令へ直接書き込む。offset別のステンシルvariantやRuntime API経路は設けない。
 **設計理由**: 32bitローカルだけのフレームの使用量を保ち、wide localがある場合も他のローカルへ余分なslotを割り当てない。RAM追加分はロード時offset表の2バイト/ローカルである。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -181,10 +181,10 @@ Interpreterはローカルindexから事前計算済みword offsetとlocal type�
 | 関数実行view (`function_view`) | コード、ローカル配置、型、引数・結果情報をまとめた不変メタデータ | 非所有ポインタ | 関数ロード時のviewを共有 (`+0x00`) |
 | ローカル値領域基点 (`local_base`) | 当該関数のローカル値の先頭 | ポインタ | 固定長ローカル配列内の非所有位置 (`+0x08`) |
 | オペランドスタック基点 (`operand_stack_base`) | 当該関数のbranch stack base | ポインタ | 8バイト (`+0x10`) |
-| 復帰PC (`return_ip`) | 呼出し元で再開する関数内オフセット | 32bit符号なし | `+0x1C` |
+| 復帰PC (`return_ip`) | 呼出し元で再開する関数内オフセット | 32bit符号なし | `+0x18` |
+| JIT境界の次PC (`boundary_next_pc`) | 現在のJIT境界に対応する静的後続PC | 32bit符号なし | dispatch中のみ有効 (`+0x1C`) |
+| JIT境界のloop先 (`boundary_loops_to`) | 現在のJIT境界に対応するloop後方PC | 32bit符号なし | dispatch中のみ有効 (`+0x20`) |
 | 復帰BasicBlock index (`return_block_index`) | 呼出し元で再開するBasicBlockの自然順index | `block_index_t`（u16、`0xFFFF`は無効値） | `+0x24` |
-| JIT境界の次PC (`boundary_next_pc`) | 現在のJIT境界に対応する静的後続PC | 32bit符号なし | dispatch中のみ有効 (`+0x20`) |
-| JIT境界のloop先 (`boundary_loops_to`) | 現在のJIT境界に対応するloop後方PC | 32bit符号なし | dispatch中のみ有効 (`+0x24`) |
 
 CallFrameには呼出しごとに変わるポインタと復帰情報だけを置く。コード参照・コードサイズ・制御表・ローカル表と個数・引数数・結果アリティは`function_view`にあるため複製しない。関数番号も共有function viewに一度だけ置く。`rel`はCallFrameに保持しない。制御を移すRuntime APIが遷移先のBasicBlock metadataから注釈開始offsetを選び、`rel`へ設定する。関数復帰Runtime APIも保存した復帰indexから呼出し元BasicBlock metadataを参照し、復帰先の`ip`、index、`rel`を設定する。x86-64のCallFrameは40バイト、32枠のCallStackは1288バイトである。呼出し時は呼出し先記述子を積み、引数を含むローカル値をローカル値領域の現在位置から確保する。復帰時は記述子を取り除き、保存した復帰indexから呼出し元BasicBlock metadataを直接参照して再開し、ローカル値領域を保存位置まで一括で戻す。 `{CallFrame_Layout}` <!-- definition: {CallFrame_Layout} -->
 
@@ -234,7 +234,7 @@ flowchart TD
 <!-- traceability: {JIT_RuntimeAPI} {ContextPointerRegister} {EnvironmentPointer} {JIT_RegisterMapping} {CPS_3Args} -->
 命令ハンドラとJITトレースはいずれも`ctx`, `ip*`, `sp*`, `rel*`の4引数を持ち、先頭3引数が実行状態、`rel`がInterpreter注釈プールまたはJIT trace定数プールのカーソルを表す。物理レジスタと退避規則は対象ABIで定義する。opcode属性表は処理区分を含む命令属性をフラグで保持する。独立した固定長のopcodeハンドラ表は命令ハンドラの関数ポインタを保持する（{GOTCHA-INTP-07}）。 <!-- definition: {GOTCHA-INTP-07} -->
 
-各C++命令の意味論と状態更新は命令別のRuntime APIが担当する。CPS命令ハンドラは対応するRuntime APIを呼び、正常継続ならopcodeから次のhandlerを選んで`[[clang::musttail]]`で継続する。Runtime API自身はopcodeをディスパッチしない。Tier 2のopcode handler表はInterpreter用CPS handlerだけを保持する。JIT Runtime API wrapperとopcode対応表はTier 3 JITが所有し、Interpreter handler表へ登録しない。`br`、`br_if`、`br_table`、`return`、`call`、`call_indirect`を処理するRuntime APIは遷移先の`ip`、BasicBlock index、`rel`を確定してから`false`を返す。CPS handlerは後続handlerを呼ばない。Interpreter dispatcherは確定済み状態で次のhandlerを呼び、遷移先判定と`rel`再計算をしない。`block`、`loop`、`else`の構文デリミタはCPSを終了しない。`end`は、同一BasicBlockならCPSを継続し、別BasicBlockへの遷移または関数復帰ならCPSを終了する（判断はADR-INTERP-05）。Interpreter注釈領域の`rel`は注釈値の読出しに伴って前進させる。基本ブロック内の各opcodeで属性を検査して`rel`を再同期する処理や、命令ごとのoffset表は設けない。
+各C++命令の意味論と状態更新は命令別のRuntime APIが担当する。CPS命令ハンドラは対応するRuntime APIを呼び、正常継続ならopcodeから次のhandlerを選んで`[[clang::musttail]]`で継続する。Runtime API自身はopcodeをディスパッチしない。Tier 2のopcode handler表はInterpreter用CPS handlerだけを保持する。JIT Runtime API wrapperとopcode対応表はTier 3 JITが所有し、Interpreter handler表へ登録しない。`br`、`br_if`、`br_table`、`return`、`call`、`call_indirect`を処理するRuntime APIは遷移先の`ip`、BasicBlock index、`rel`を確定してから`false`を返す。CPS handlerは後続handlerを呼ばない。Interpreter dispatcherは確定済み状態で次のhandlerを呼び、遷移先判定と`rel`再計算をしない。`block`、`loop`、`else`の構文デリミタはCPSを終了しない。`end`は、同一BasicBlockならCPSを継続し、別BasicBlockへの遷移または関数復帰ならCPSを終了する。Interpreter注釈領域の`rel`は注釈値の読出しに伴って前進させる。基本ブロック内の各opcodeで属性を検査して`rel`を再同期する処理や、命令ごとのoffset表は設けない。
 
 インタープリタハンドラは次のハンドラへ4引数`ctx`, `ip*`, `sp*`, `rel*`を末尾呼び出しで渡す（{GOTCHA-INTP-08}）。 <!-- definition: {GOTCHA-INTP-08} --> Interpreter Runtime APIとJIT Runtime APIは`bool`を返す。`true`は通常継続、`false`は、trap、CPS終端（完了、ホスト境界、yield、デバッグ停止、後方辺と関数復帰の閾値超過、JIT trace入口）を`ctx`に記録して後続実行を止めることを示す。InterpreterのCPS handlerは`false`時に次のhandlerを呼ばず、JIT stencilは`false`時にabort slotへ分岐する。CPS列の終端理由は`ctx.runtime_flags`に記録する。CPS exitの種別には関数完了（`kComplete`）も含む。制御を移すRuntime APIは`ip`、BasicBlock index、`rel`を確定する。CPS終端となる遷移だけ`false`を返す。Interpreter dispatcherは終了理由を読み、確定済みの遷移先状態をそのまま次の呼出しへ使う。終端遷移を再判定せず、`rel`を再計算しない。Interpreter handlerは`void`を返す。JIT trace entryは同じ4引数の`bool`関数である。正常完了時は未接続chain targetに到達した終端dispatcherだけがmetadata pointerを一時的に`ctx.rel`へ置き、`body_end_ip`を`ctx.ip`へ設定して`true`を返す。JIT traceはopcodeごとに次PCへ進めず、Runtime API stencilはtrap位置をAPI呼出し前に記録できる。終端dispatcherが正常完了位置を設定した後、C++ dispatcherは`ctx.ip`を上書きしない。trap/CPS exit時は`false`を返す。
 
@@ -252,13 +252,44 @@ WASM オプコードごとのスタック遷移およびハンドラ実装マト
 
 x64ではトレースが共有オペランド領域へ状態を書き戻す。ARMv8-Mのレジスタ割当とトレース境界同期はTBDである。
 
-### 3.4 RPN式注釈（REQ-097 D）
+### 3.4 Interpreter注釈プール（`interpreter_annotation_pool`）
 
-<!-- traceability: {RPN_ExpressionEvaluation} {ThreadedInterpreter} -->
+ネイティブ経路では、Loaderがロード時にWASMコードから実行時導出値を抽出し、関数単位の非アライン・リトルエンディアン8bitバイト列であるInterpreter注釈プールへ格納する。WASMバイトコード自体はFlash/ROM上の元コードをそのまま直接参照し（`{DirectBytecodeExecution}`）、最適化のためにRAM上へバイトコードの書き換えコピーを生成しない。
 
-ローダは、基本ブロック内の WASM 命令列から式（RPN式）を確定する。
-式は、一語幅の `local.get` で始まる。
-式は、次の命令を覆う。
+#### 共通構造とカーソル規約
+- **BasicBlock単位の開始位置**: 各BasicBlockは注釈プール先頭からのbyte offset（`annotation_offset_t`）を保持する。
+- **可変幅命令の先頭幅**: LEB128即値等を含む可変幅命令のみ、注釈レコード先頭に `u8 instruction_width` を格納する（256 byte以上は `ERR_WASM_UNSUPPORTED_FEATURE` で拒否）。固定幅命令の幅はopcode固有の定数とし、注釈には持たない。
+- **`f32.const` / `f64.const`**: 固定幅IEEE754ペイロードは注釈プールへ複製せず、元コードから直接読む。
+- **制御遷移と `rel` 確定**: 分岐・呼出し・関数復帰・別ブロックへの `end` は遷移先のBasicBlock metadataから注釈開始位置を確定して `execution_context.rel` へ設定する。命令ごとのPC/注釈offset変換表は持たない。
+
+#### 命令別注釈レコード形式
+
+| 命令 | 先頭幅 (`u8`) | 導出値フィールド（リトルエンディアン） | 備考 |
+| :--- | :--- | :--- | :--- |
+| `local.get` | `instruction_width` | `u16 frame_word_offset`, `u8 local_width`, `u16 rpn_ext` | `rpn_ext` は RPN 式先頭時の相対距離（非RPN時は `0`） |
+| `local.set` | `instruction_width` | `u16 frame_word_offset`, `u8 local_width`, `u16 reserved` | `reserved` は `0xFFFF` |
+| `local.tee` | `instruction_width` | `u16 frame_word_offset`, `u8 local_width` | — |
+| `drop` / `select` | なし | `u8 operand_width` | 値幅（`1` または `2` ワード） |
+| `global.get` / `global.set` | `instruction_width` | `u16 global_index` | — |
+| `i32.const` | `instruction_width` | `u32 value` | 符号拡張済み 32bit 値 |
+| `i64.const` | `instruction_width` | `u64 value` | 符号拡張済み 64bit 値 |
+| メモリロード/ストア（`memarg`） | `instruction_width` | `u32 effective_offset` | alignment は検証後に破棄し実効 offset のみ格納 |
+| `br` / `br_if` | `instruction_width` | `u16 target_block_index`, `u8 stack_base_words`, `u8 result_words` | 4バイト branch record（関数ラベルは `0xFFFF`） |
+| `br_table` | `instruction_width` | `u16 label_count`, `(label_count + 1) × 4バイト branch record` | default を末尾に含む |
+| `call` | `instruction_width` | `u16 function_index`, `u16 return_block_index` | — |
+| `call_indirect` | `instruction_width` | `u16 type_index`, `u16 return_block_index` | — |
+| `0xFC` 接頭辞命令 | `instruction_width` | `u8 subopcode` | `memory.copy` / `memory.fill` の予約定数は検証のみ |
+| `loop` | `instruction_width` | `u16 body_block_index` | loop 本体の開始 BasicBlock index |
+| `if` | `instruction_width` | `u16 then_block_index`, `u16 else_block_index` | `else` 無しは `end` 直後のブロック |
+| `else` | なし | `u16 continuation_block_index` | 対応する `end` 直後のブロック |
+| `end` | なし | `u16 continuation_block_index` | 関数末尾は `0xFFFF` |
+
+### 3.5 RPN式注釈（`{RPN_ExpressionEvaluation}`）
+
+ローダは、基本ブロック内の WASM 命令列から式（RPN式）を確定し、注釈プール末尾の式プログラム領域へ符号化する（`{RPN_ExpressionEvaluation}`）。 <!-- definition: {RPN_ExpressionEvaluation} -->
+式は、一語幅の `local.get` で始まる。この起動判定は `local.get` の注釈フィールド `rpn_ext`（非0）で行い、ROM上の元バイトコードは書き換えない。
+
+式は次の命令を覆う。
 
 - 一語幅の `local.get` と `i32.const`。
 - i32 の二項演算子 25 種（`div_s`、`div_u`、`rem_s`、`rem_u` を含む）。
@@ -332,8 +363,8 @@ END_STACK は、VM の値スタックのポインタを変えない。一時値�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {ContextPointerRegister} {ADR_LoopBackedgeYield} {ADR_InterruptRescheduleGeneration} {GOTCHA-INTP-06} {GOTCHA-INTP-15} -->
-- **Threaded Dispatch with Continuation Passing Style**:
+<!-- traceability: {JIT_RuntimeAPI} {ContextPointerRegister} {ADR_LoopBackedgeYield} {GOTCHA-INTP-06} {GOTCHA-INTP-15} -->
+- **Threaded Dispatch with Continuation Passing Style**（`{ThreadedInterpreter}`）: <!-- definition: {ThreadedInterpreter} -->
   - opcodeで固定長の関数ポインタ表を引き、命令に対応するハンドラへ継続する。
   - Interpreter handlerは`ctx`, `ip`, `sp`, `rel`の4引数で`void`を返す。JIT trace entryは同じ4引数で`bool`を返す。正常完了時はchain終端にある共通dispatcherだけがmetadata pointerを一時的に`execution_context.rel`へ格納し、`body_end_ip`を`execution_context.ip`へ設定する。先頭3引数は実行状態、`rel`はInterpreterでは注釈プール、JIT traceではtrace定数プールを指す。InterpreterとJITのRuntime APIも`bool`を返し、`true`なら通常継続、`false`なら`execution_context`に記録したtrapまたはCPS終端に従って後続実行を止める。InterpreterのCPS handlerは`true`のときだけ次のhandlerを表引きして末尾継続する。JIT stencilは`false`のときだけabort slotへ分岐する。制御移動を終える命令は遷移先の`ip`、BasicBlock index、`rel`を確定してから`false`を返す。Interpreter dispatcherは確定済み状態を使い、遷移先判定と`rel`再計算を行わない。Runtime API自身は次のhandler/opcodeをdispatchしない。
   - JIT trace entryは正常完了で`true`、trap/CPS exitで`false`を返す。Interpreter dispatcherは`true`の後にmetadataからstackとInterpreter `rel`を更新し、未実行の終端命令を処理して次BasicBlockを解決する。trace entryが`false`を返した場合はmetadataを読まず、`execution_context`の終了理由を判定する。
@@ -347,7 +378,7 @@ END_STACK は、VM の値スタックのポインタを変えない。一時値�
 - **JIT コードとの完全な呼び出し規約整合 (Low-Overhead Interop)**:
   - JIT コンパイラが生成する機械語トレース（`exec_trace`）は、`ctx`, `ip*`, `sp*`にtrace定数領域カーソル`rel*`を加えた4論理引数シグネチャに従う。物理呼出し規約は対象ABIで定める。
   - **インタープリタから JIT への遷移**: Interpreterの3論理引数にtrace定数領域先頭の`rel*`を加えた4つの論理引数を対象ABIの新規入口処理へ渡す。入口処理が必要なレジスタを退避した後にJIT本体へ進む。インタープリタから直接チェイン専用の入口へ入ってはならない。
-  - **JIT trace exit後のInterpreter dispatcher継続**: trace終端後、Interpreter dispatcherが共有状態を受け取り、制御終端handler、次BasicBlockのtrace、または通常handlerを選択して処理を続ける。trapやRuntime API境界では終了理由をRuntimeへ返す。JIT拡張はtrace bodyを呼び出さない。
+  - **JIT trace exit後のInterpreter dispatcher継続**（`{Interpreter_LazyJITSwitch}`）: <!-- definition: {Interpreter_LazyJITSwitch} --> trace終端後、Interpreter dispatcherが共有状態を受け取り、制御終端handler、次BasicBlockのtrace、または通常handlerを選択して処理を続ける。trapやRuntime API境界では終了理由をRuntimeへ返す。JIT拡張はtrace bodyを呼び出さない。
 - **WASM命令とRuntime APIの連携 (`JIT_RuntimeAPI`)**:
   - 各命令のRuntime APIはスタックボトム相対でオペランドとスタック長を更新する。正常時はRuntime APIが更新状態を継続へ渡し、終端時は実行理由をコンテキストへ記録して戻る。
   - JITは演算を直接生成するか、opcodeに対応するRuntime API stencilへlowerする。Runtime API内の数値演算loweringは対象ABIに従い、ARMv8-MのFPU構成と物理ABIはTBDとする。
@@ -394,7 +425,7 @@ Interpreterは`0xFC`の後続サブオペコードを符号なしLEB128で読み
 実行経路の統合検証は、本コンポーネントのテスト仕様書と [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) を参照する。ARMv8-Mの物理ABIとメモリ保護はTBDである。
 
 ### 4.2 状態遷移図
-<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {ADR_LoopBackedgeYield} -->
+<!-- traceability: {JIT_RuntimeAPI} {ADR_LoopBackedgeYield} -->
 ```mermaid
 stateDiagram-v2
     [*] --> Ready
@@ -407,7 +438,7 @@ stateDiagram-v2
 ```
 
 ### 4.3 内部シーケンス
-<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {ADR_LoopBackedgeYield} -->
+<!-- traceability: {JIT_RuntimeAPI} {ADR_LoopBackedgeYield} -->
 #### Interpreter 実行シーケンス
 ```mermaid
 sequenceDiagram
@@ -526,7 +557,7 @@ sequenceDiagram
 | 補足 | vSoCのCOOS協調境界における配送を補助するだけで、ゲスト関数の階層ディスパッチやWASIポーリングは担当しない。 |
 
 #### 継続渡しハンドラの実行境界
-<!-- traceability: {ThreadedInterpreter} {ContextPointerRegister} -->
+<!-- traceability: {ContextPointerRegister} -->
 
 C++命令意味論は各命令のRuntime APIに保持し、CPS命令ハンドラはそのAPIを呼んでからopcode handler表で次のhandlerを選び、末尾継続する。handler prototypeは`ctx`, `ip`, `sp`, `rel`の4引数で揃える。`rel`は第4引数の注釈領域ポインタであり、注釈から値を読む命令の読出しに伴って前進する。命令ディスパッチは独立したopcode handler表を引く。末尾呼び出しで次のhandlerへ移るため、命令ごとにC++コールスタックを積み増さない（{InterpreterContextStackless}）。未対応命令や不正な命令状態はtrapで実行を停止する。Runtime APIが所有する外部処理だけを明示的なRuntime API境界でRuntimeへ渡す。 <!-- definition: {InterpreterContextStackless} -->
 
@@ -579,12 +610,12 @@ import/host呼出し、グローバル、リニアメモリの各命令で外部
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
-<!-- traceability: {ThreadedInterpreter} -->
+
 - **目標**: WAMRインタープリタを上回る実行速度を達成する。
 - **方策**: 直接末尾呼び出しによる分岐削減と、ホットスポット検出による JIT 移行を組み合わせる。
 
 ### 6.2 メモリ制約と方策
-<!-- traceability: {ThreadedInterpreter} {GOTCHA-INTP-12} -->
+<!-- traceability: {GOTCHA-INTP-12} -->
 - **目標**: 構成で定めるメモリ上限内で動作する。ARMv8-Mの物理容量適合性はTBDとする。
 - **方策**: `execution_context` と関数呼出し記述子を最小化し、スタック領域を固定サイズ化する。
 
@@ -593,11 +624,10 @@ import/host呼出し、グローバル、リニアメモリの各命令で外部
 - **目標**: ゲストの暴走を確実に隔離する。
 - **方策**: `sp_boundary` と `memory_size` による境界チェックを実施する。不正な引数、未初期化状態、無効なフレーム、範囲外の内部状態、ホストAPI引数、設定、所有権、実装環境の前提の違反は、回復せず `assert` で停止する（{GOTCHA-INTP-17}）。`assert` で停止した契約違反は、WASM の trap として報告しない。 <!-- definition: {GOTCHA-INTP-17} --> COOS協調境界での `interrupt-event` 保留処理により安全な割り込み処理を行う。
 
-
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 形式検証 (Formal Verification)
-<!-- traceability: {ThreadedInterpreter} {InterpreterContextStackless} {PositionIndependentCode} -->
+<!-- traceability: {InterpreterContextStackless} {PositionIndependentCode} -->
 本コンポーネントのスタック整合性および実行状態遷移を、Python `pyModelChecking` を用いた形式検証モデルで検証する。モデルは抽象状態の遷移だけを検査し、実装コードやWASM値型の意味論を証明するものではない。検証対象の性質と結果を以下に示す。 `{VERIFY_FORMAL}`
 
 #### 7.1.1 スタック領域と関数復帰モデル ([`interpreter_stack_model.py`](docs/components/tier2_runtime/formal/interpreter_stack_model.py))
@@ -628,7 +658,6 @@ OSRフォールバック、即時トラップと後続命令の抑止、3論理�
 これらは[`interpreter_test_spec.md`](docs/qa/tier2_runtime/interpreter_test_spec.md)とJITの実行テストで検証する。
 物理レジスタ配置は対象ABIに従い、ARMv8-Mの境界同期と実機検証はTBDである。
 
-
 #### 7.1.4 間接呼出しの選択先型モデル ([`interpreter_indirect_call_model.py`](docs/components/tier2_runtime/formal/interpreter_indirect_call_model.py))
 
 未選択の別型要素がある場合も、適合する選択先を呼べることを検証する。
@@ -651,7 +680,7 @@ OSRフォールバック、即時トラップと後続命令の抑止、3論理�
 - **決定事項**:
   取得されたLOOP後方分岐は実行した経路が共通contextの回数を更新する。JIT生成コードと後方分岐chainにも同じ計数とyield条件を適用する。C++ dispatcherはInterpreter設定のしきい値まで常駐JIT traceまたはC++ handlerを継続実行し、到達時にyield statusを返す。RuntimeEngineはしきい値を保持せず、返されたstatusをSystemへ渡す。接続中のTier 3 JIT拡張はその実行境界で履歴とcache方針を処理し、Systemは協調境界で`co_yield`を発行する。各handler後にvSoC境界へ戻ってcacheを再判定してはならない。
 
-#### ADR-INTERP-02: 再スケジュール世代の観測境界 (`{ADR_InterruptRescheduleGeneration}`)
+#### ADR-INTERP-02: 再スケジュール世代の観測境界
 
 - **ステータス**: 承認 (Approved)
 - **決定事項**:
@@ -691,23 +720,6 @@ OSRフォールバック、即時トラップと後続命令の抑止、3論理�
   4. **メモリ予算のトレードオフ**: バッファが分かれるため個別の容量設計を要するが、安全性を優先する。
 - **影響範囲**:
   - `interpreter.md`
-
-#### ADR-INTERP-05: `end` を注釈で飛ばさない
-<!-- definition: {ADR_EndNotSkipped} -->
-
-- **ステータス**: 提案 (Proposed)
-- **コンテキスト**:
-  構文だけの命令を注釈の長さで飛ばせるかを検討した。`end`は遷移先BasicBlock indexを持つ。`br`は遷移元BasicBlockのstack情報を`current_block_index`から読む。そのため、BasicBlockを越える遷移ではindexの更新が必要である。
-  AO（96×54、1フレーム）の`end` 486,819件の内訳は、関数復帰426,292件である。直後が別BasicBlockの先頭である場合は58,146件である。BasicBlockの先頭である場合は2,381件である。同一BasicBlock内のno-opは0件である。
-- **決定事項**:
-  `{ADR_EndNotSkipped}`として、`end`は注釈で飛ばさない。遷移先BasicBlock indexは`end`自身の注釈に持つ。`end`のハンドラは、同一BasicBlockならCPSを継続し、別BasicBlockへの遷移または関数復帰ならCPSを終了する。遷移先indexを直前の命令または次の命令の注釈へ移す方式は採らない。
-- **理由**:
-  (1) 直前の命令へ移す場合、通常の命令のハンドラがすべてindexを更新する必要がある。その費用は、AO 320×180 換算で約107M件の各1命令のstoreである（仮定）。これは、飛ばしの利益（fall-throughの`end`約0.65M件、約8.7M命令。仮定）を上回る。
-  (2) 次の命令へ移す場合、BasicBlock先頭がfall-throughと分岐のどちらで入ったかを判別する処理が要る。
-- **影響**:
-  注釈の増加は0バイトである。CPSの終了の扱い（別BasicBlockへの遷移と関数復帰で終了、同一BasicBlockで継続）は変わらない。命令ごとのoffset表は設けない。固定幅命令の幅はopcodeから判定しない。既存の制約は変わらない。
-- **再検討の条件**:
-  通常の命令でindexを更新しなくてもよい設計（例: BasicBlock先頭でindexを確定する方式）が採られた場合。
 
 ### 8.2 Loader-resolved branch edge
 

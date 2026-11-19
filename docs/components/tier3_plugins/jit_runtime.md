@@ -4,7 +4,6 @@
      formal: formal/jit_cache_model.py
      formal: formal/jit_loop_chain_model.py
      formal: formal/jit_hotspot_model.py
-     formal: formal/jit_admission_model.py
      benchmark_spec: benchmarks/jit_runtime_bench_spec.md
      benchmark: ../../../experiments/pysim/benchmarks/jit/bench_jit.py
      benchmark_record: ../../../experiments/pysim/benchmarks/BENCHMARK_REPORT.md
@@ -12,26 +11,26 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {LowOverhead} {HistoryBuffer} {RuntimeHotspotProfiler} {GLOBAL_PeriodicTask} {Runtime_BumpAllocator} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} {META_AccessDictionary} {META_BinarySearch} {LowOverhead} {HistoryBuffer} {RuntimeHotspotProfiler} {GLOBAL_PeriodicTask} {Runtime_BumpAllocator} -->
 JIT ランタイム管理は、Tier 2 Interpreterへ任意に接続するTier 3プラグインの実行拡張である。JIT拡張がホットスポット履歴、カード状態、コンパイル要求、ネイティブコード検索、3面キャッシュをまとめて所有する。Runtime Event Sinkとは別の内部経路で履歴を記録する。
 
 JIT拡張はInterpreterのネイティブ実行拡張として接続する。Interpreter dispatcherが共有実行状態と解決済みBasicBlockを渡し、JIT拡張がtrace entryを検索して返す。trace関数の実行、返却metadataによる実行状態の更新、未実行の終端命令のInterpreter処理、次BasicBlockの準備はTier 2 Interpreterが担当する。JIT拡張は履歴分析とコンパイル要求も処理する。RuntimeはInterpreterの実行境界だけを受け取り、JITの選択や実行を行わない。Tier 2 RuntimeやC++ InterpreterにJIT専用の状態オブジェクトや操作API群を追加しない。
 
-JIT traceの選択は`execution_context.current_block_index`からBasicBlock metadataを直接参照して行う。現在のindexとPCはInterpreterからJIT providerへ渡し、BasicBlockの`head_pc`がPCと一致することを検証する。BasicBlock内の8bitキャッシュ参照（`jit_cache_reference`）に常駐traceの参照がないブロックは、JITエントリ検索を呼ばずInterpreterを実行する。参照の値の意味は`jit_abi.md`の記録の値を正本とする。常駐traceの参照は、そのブロックのカードが`COMPILED`のときにだけ存在する（不変条件。traceの破棄では、カード状態を`COMPILED`から戻す前に、全ブロック参照を先に消す。`retire_cache_bank`が行う）。カード状態は複数BasicBlockで共有されうるため、`COMPILED`のカードにも参照のないブロックがあり、その場合は検索しない。LoaderのRadix表はロード時の構築とその他の利用に残るが、通常dispatchのブロック解決には使わない。JIT常駐索引はPC順を維持し、JITのキーは引き続き`(module_id, pc)`である。
+JIT traceの選択は`execution_context.current_block_index`からBasicBlock metadataを直接参照して行う。現在のindexとPCはInterpreterからJIT providerへ渡し、BasicBlockの`head_pc`がPCと一致することを検証する。BasicBlock内の8bitキャッシュ参照（`jit_cache_reference`）に常駐traceの参照がないブロックは、JITエントリ検索を呼ばずInterpreterを実行する（値定義は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を正本とする）。常駐traceの参照は、そのブロックのカードが`COMPILED`のときにだけ存在する不変条件を持ち、traceの破棄時はカード状態を`COMPILED`から戻す前に`retire_cache_bank`で全ブロック参照を先に消す。カード状態は複数BasicBlockで共有されうるため、`COMPILED`のカードにも参照のないブロックがあり、その場合は検索しない。通常の製品経路では`find_cached_trace_by_pc`や[`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md)のRadix表を通常dispatchのブロック解決に使わない。JIT常駐索引はPC順を維持し、キーは`(module_id, pc)`である。
 
-InterpreterはLoader注釈プールの辺indexと`current_block_index`を使い、分岐先と通常継続先のBasicBlockを得る。call先と復帰先の解決は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とする。JIT境界metadataの`block_index`には次BasicBlock indexを入れる。chain link、候補受入れ、JIT trace exitはindexとPCの両方を照合する。terminal call stencilのhandler接続要件は[`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)と[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)に従う。通常の製品経路では`find_cached_trace_by_pc`を呼ばない。
+分岐先・通常継続先とcall先・復帰先のBasicBlock解決は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)を正本とする。JIT境界metadataの`block_index`には次BasicBlock indexを入れる。chain link、候補受入れ、JIT trace exitはindexとPCの両方を照合する。terminal call stencilのhandler接続要件は[`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)と[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)に従う。
 
 3面コードキャッシュはデータ用バンプアロケータとは別に管理する。x64参照構成は領域の確保または借用時にRWXを設定し、昇格やリンク更新のたびに権限を切り替えない。書込みAPIはパッチ区間外の変更を拒否する。ARMv8-Mの物理配置と保護方式はTBDである。
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {META_3TierSeparation} {SimpleJITArchitecture} -->
+<!-- traceability: {META_3TierSeparation} -->
 本コンポーネントは **Tier 3 Plugin** に属し、Interpreterへ任意接続するJIT pluginのBasicBlock記録の枠番号による常駐trace参照、3面コードキャッシュ管理、局所アンリンク、ホットスポット検出を担当する。コード生成コアは同plugin内の [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) が担当する。
 
 ### 2.1 JIT サブシステムのデコンポジション
-<!-- traceability: {JIT_AssemblyStencilCodegen} {SimpleJITArchitecture} -->
+<!-- traceability: {JIT_AssemblyStencilCodegen} -->
 JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
 - **[jit_compiler.md](docs/components/tier3_plugins/jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成および静的命令エンコードを担当する。
-- **[jit_runtime.md](docs/components/tier3_plugins/jit_runtime.md)**: ホットスポット履歴の記録・分析、カード更新・コンパイル要求、BasicBlock indexからのネイティブtrace参照、3面キャッシュローテーションを担当する。 `SimpleJITArchitecture` `{JIT_MultiBuffer_Cache}`
+- **[jit_runtime.md](docs/components/tier3_plugins/jit_runtime.md)**: ホットスポット履歴の記録・分析、カード更新・コンパイル要求、BasicBlock indexからのネイティブtrace参照、キャッシュローテーションを担当する。 `{JIT_MultiBuffer_Cache}`
 
 ### 2.2 実装責務と依存方向
 <!-- traceability: {META_ContractImplSplit} {META_StaticDI} {META_3TierSeparation} -->
@@ -55,18 +54,16 @@ Tier 3の`jit_runtime`はコンパイル候補の処理と常駐コード管理�
 
 共通機械語の生成、トレース再配置、およびヘッダpatchはJIT共通コード経路が担う。実行可能領域の確保・解放、初期権限設定、patch区間と命令キャッシュ同期は実行領域providerが担う。対象ごとのW^X権限切替もprovider境界に置く。カード操作、履歴、および待ち列の更新はホットスポット管理の責務である。
 
-ローテーションはC++内部でカードエイジングを1ステップ実行する。明示的なflushではエイジングを実行しない。エイジング時間、操作回数、常駐状態の診断採取はQA専用の計測型とハーネスが担当する。製品構成に計測状態や取得APIを設けない。
+ローテーション時は内部でカードエイジングを1ステップ実行し、明示的なflushではエイジングを実行しない。計測状態や診断取得はQA専用ハーネスへ分離し、製品構成に含めない。
 
-バンクの使用バイト数と次の書込み位置を分けて保持する。削除で空いた中間領域を次の書込み位置として扱わない。次の書込み位置はバンクを消去したときに先頭へ戻す。既存PCの置換は同じ位置へ収まる場合に領域を再利用し、それ以外は未使用の末尾へ配置する。末尾にも収まらない置換は常駐状態を保って失敗を返す。
+JIT拡張はInterpreterへ接続する選択可能コンポーネントである。Interpreterは共有実行状態を通じて本体実行を委譲し、コンパイラとキャッシュ内部を参照しない。JIT無効構成では履歴、コンパイラ、実行可能領域を合成しない。
 
-JIT拡張はInterpreterへ接続する選択可能コンポーネントである。Interpreterは共有実行状態を通じて本体実行を委譲する。Interpreterはコンパイラとキャッシュ内部を参照しない。JIT無効構成では履歴、コンパイラ、実行可能領域を合成しない。
-
-本コンポーネントには独立した概念モデルを置かない。実行経路はネイティブランタイム、x64機械語実装、形式モデルおよび対応するテスト仕様で確認する。
+本コンポーネントの実行経路はネイティブランタイム、形式モデルおよび対応するテスト仕様で確認する。
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {JIT_ReverseCompilationOrder} {WasmCodeSectionPC} {ADR_JitCompileScheduling} -->
+<!-- traceability: {WasmCodeSectionPC} -->
 - **WASMプログラムカウンタ (`UnifiedPC` / `wasm_pc_t`)**: 32ビットのモジュール内Code section payload相対オフセットであり、命令先頭バイトを指す。関数インデックスを上位ビットへ格納しない。Code section payload内の関数数、body size、locals宣言も座標に含む。異なるモジュール間のキーは`(module_id, pc)`とする。
 - **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付けを保持する固定状態である。`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下の`head_pc`昇順索引はキャッシュ更新とchain metadataの再計算に使う。通常実行のtrace参照は、記録の枠番号から枠表でheaderを引く。chain successor解決はBasicBlock index参照を使う。PCからブロック索引への変換はQA計測の入口に限る。
 - **カードマーキング表 (Card Marking Table)**: モジュールのCode section payload相対PC全体を 4 バイト単位のカードで分割管理する、単一の 2 ビット状態表である。カード番号は`pc >> card_shift`で求め、全関数が同じPC座標・カード領域を共有する。関数境界をまたぐカードも同じ状態を参照する。密ビュー `fireball::bit_view<2>` として参照する。
@@ -80,20 +77,20 @@ JIT拡張はInterpreterへ接続する選択可能コンポーネントである
 - **JITエントリ表と全バンク索引**: 各バンクは`head_pc`順の固定容量エントリ配列を持つ。別の固定容量参照配列を `FB_CONF_JIT_NUM_BUFFERS` 面共通で一つ持ち、常駐エントリを`head_pc`順に索引する。参照はバンク番号とエントリ位置を示す。Interpreterが現在のBasicBlock indexをJITへ渡し、その`jit_cache_reference`が有効なら索引探索を省いてエントリへ進む。参照を持たないブロックではproviderを呼ばない。連結候補とtrace exitではLoaderの辺indexを使い、PCも照合する。同じPCを複数バンクへ挿入する契約違反は挿入入口でassertする。バンク配列のシフト、挿入、削除、破棄後は全BasicBlock参照を常駐エントリに合わせて更新し、退役エントリへの参照を残さない。現行設定では最大 `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件であり、参照は8ビットで表現する。JITの検索キーは`(module_id, pc)`であり、indexはLoader metadataとの照合と直接参照に使う。JIT用Radix索引と製品実行時のPC→trace検索経路は設けない。QA計測の入口だけがPCからブロック索引を検索する。
 - **ネイティブ実行拡張の接続**: JIT拡張への本体実行と観測入口を初期化時に固定する。C++ Interpreter dispatcherは`execution_context.current_block_index`とPCからLoaderのBasicBlockを直接参照し、indexの`head_pc`がPCと一致することをassertする。判定点（ジャンプ、呼出しの入口、後方辺、関数復帰）で、飛び先のBasicBlockから注釈開始位置を得て`rel`を初期化してから、BasicBlockの`jit_cache_reference`を読む。常駐traceの参照があるときだけ、接続時に渡された表からheaderを得て、そのtraceの入口を実行する。参照がないときは表を読まずInterpreter実行を続ける。カード単位状態と正確なPC照合は区別する。観測入口は判定点で候補判定と履歴記録をまとめて行う。コンパイル候補の状態更新はJIT拡張が担当する。
   x64参照構成の記述枠は `FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY` により各バンクを上限とする。全バンクの上限は `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` である。これはRAM予算の設定値であり、既定コンストラクタ値や生成コードの平均サイズから導出しない。
-  JIT entryは全バンクの固定容量上限に従う。同一PCの常駐traceを重複生成しない。WarmまたはOldestに存在するPCを新規insertすると契約違反とする。Oldestの常駐traceは所在とコードアドレスを変えず実行する。Tier 2はキャッシュの世代を扱わない。
+  JIT entryは全バンクの固定容量上限に従う。同一PCの常駐traceを重複生成しない。WarmまたはOldestに存在するPCを新規insertすると契約違反とする。Oldestの常駐traceは所在とコードアドレスを変えず実行する（`{JIT_OldestExecuteOnly}`）。 <!-- definition: {JIT_OldestExecuteOnly} --> Tier 2はキャッシュの世代を扱わない。
   コード領域または固定長JIT entry表が満杯になれば、既存の3面ローテーションを行う。生成コードの長さは可変である。短いtraceでもentry表の上限を超えて挿入しない。
   ホットスポット候補の判定はJIT拡張が所有するTrackable Maskで行う。候補PC配列は確保しない。インタープリタ実行後に呼ぶ観測入口が候補性を判定し、適格な開始PCをJIT拡張の固定容量リングへ直接書き込む。Interpreterは、記録の印が`FB_NATIVE_JIT_NO_TRACE_OBSERVED`のブロックだけで観測入口を呼ぶ。
   同一カードの構造命令位置もbitが立つ。制御命令だけの区間では、本体検索とブロック観測を行わない。判定点を、新しいブロック候補の開始トリガーとする。そこで確定したPCを保持し、通常命令のあるブロックだけを通知する。履歴の複製・転送やLoader索引の再検索を行わない。メモリ操作のruntime委譲後は同じブロックの継続として扱う。次の制御境界まで本体検索と重複した観測を行わない。外部呼出し・prefix委譲の完了は次ブロックの開始トリガーとする。単なるRuntime復帰や通常命令の出現を、新しい先頭の判定に使わない。trap・関数完了では開始待ち状態を解除する。
   通常命令の観測は候補ブロック入口の専用dispatchに限定する。最初のbody命令を観測した後は、観測処理を持たない通常dispatchへ直接末尾呼出しで移る。候補外と観測無効の経路には通常命令ごとの観測判定を追加しない。
   JIT entry表と履歴はJIT拡張の領域内に固定長で確保する。キャッシュ更新時にも同じ領域を再利用する。
-- **x64参照コード領域**: JIT領域は `FB_CONF_JIT_CACHE_SIZE`、ページは `FB_CONF_JIT_CACHE_PAGE_SIZE` 単位で構成する。`FB_CONF_JIT_COMMON_CODE_SIZE` をassembly生成chain dispatcherとRuntime API表の参照用の非エビクション領域とし、残りは `FB_CONF_JIT_BANK_SIZE` のバンクを `FB_CONF_JIT_NUM_BUFFERS` 面割り当てる。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はTBDである。
-  共通コード領域のchain dispatcherは`0x000`から配置する。固定slotは256バイトである。Tier 3 JITが所有するJIT Runtime API function pointer tableへの借用ポインタをこの固定slotの直後に置き、操作stencilからopcode対応APIを呼び出す。Interpreter opcode handler表からRuntime API関数ポインタを取得しない。`chain_target_addr`が0の場合に限り、終端dispatcherは現在trace末尾のmetadata pointerを`execution_context.rel`へ一時保存し、`body_end_ip`を`execution_context.ip`へ設定して`true`を返す。`false`はtrap/CPS exitまたはyield境界を示す。接続済みの場合はtarget headerから`const_rel_offset`を取得し、target traceへtail-jumpする。操作間の継続deltaはtrace末尾poolに保持しない。`if`、`br`、`br_if`はtraceに含めず、完了したtraceの後にC++ Interpreter dispatcherがCPS handlerで処理する。分岐先へnative chainしない。chain dispatcherはopcodeを判定しない。`native/tier3_plugins/jit/lir/x64/common.S`を対象x64 ABIでアセンブルし、raw binaryとして共通領域へ一度だけ配置する。読み取り専用のRuntime API表はキャッシュへ複製しない。表への8バイトの借用アドレスだけをdispatcher固定slotの後ろへ初期化する。未使用の共通領域を初期化時にゼロ埋めしない。ARMv8-Mの配置方式と命令列はTBDである。
-- **オンデマンドコンパイルキュー (On-demand Compile Queue)**: Tier 3 JIT拡張内で`HOT`に達した基本ブロックindexを保持する固定容量LIFOキューである。Runtimeのidle hookは全タスクidle時と協調境界で拡張を呼び出す。拡張は待ち列が空になるまで候補を処理し、候補数による打ち切りを行わない。コンパイル失敗と既存trace等によるスキップも待ち列から取り除く。固定キューが満杯になると、その場で待ち列全体を処理する。固定容量は一度に処理する候補数を制限するが、実時間の上限は保証しない。先行ブロックより後続を先に常駐させ、直線後続chainを接続する。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
+- **x64参照コード領域**: JIT領域は `FB_CONF_JIT_CACHE_SIZE`、ページは `FB_CONF_JIT_CACHE_PAGE_SIZE` 単位で構成する（`{JIT_MultiBuffer_Cache}`）。 <!-- definition: {JIT_MultiBuffer_Cache} --> `FB_CONF_JIT_COMMON_CODE_SIZE` をassembly生成chain dispatcherとRuntime API表の参照用の非エビクション領域とし、残りは `FB_CONF_JIT_BANK_SIZE` のバンクを `FB_CONF_JIT_NUM_BUFFERS` 面割り当てる。共通コード領域はflushやバンクローテーションでも維持する。ARMv8-Mの領域容量、物理配置、保護方式、ヘッダ形式はTBDである。
+  共通コード領域のchain dispatcherは`0x000`から固定slot 256バイトで配置し、直後にJIT Runtime API function pointer tableへの8バイト借用ポインタを置く。`native/tier3_plugins/jit/lir/x64/common.S`を対象x64 ABIでアセンブルし、raw binaryとして一度だけ配置する（未使用領域はゼロ埋めしない）。dispatcherの終了種別（`chain_target_addr`、未接続時metadata、分岐opcodeのCPS処理）と`const_rel_offset`の契約は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)を正本とする。ARMv8-Mの配置方式と命令列はTBDである。
+- **オンデマンドコンパイルキュー (On-demand Compile Queue)**: Tier 3 JIT拡張内で`HOT`に達した基本ブロックindexを保持する固定容量LIFOキューである（`{JIT_ReverseCompilationOrder}`）。 <!-- definition: {JIT_ReverseCompilationOrder} --> Runtimeのidle hookは全タスクidle時と協調境界で拡張を呼び出す。拡張は待ち列が空になるまで候補を処理し、候補数による打ち切りを行わない。コンパイル失敗と既存trace等によるスキップも待ち列から取り除く。固定キューが満杯になると、その場で待ち列全体を処理する。固定容量は一度に処理する候補数を制限するが、実時間の上限は保証しない。先行ブロックより後続を先に常駐させ、直線後続chainを接続する。 `JIT_ReverseCompilationOrder` `{GLOBAL_Policy_Memory}`
 - **被チェイン逆引きテーブル (Inbound Chain Index Table)**: 常駐traceの後続PCをキーとする `FB_CONF_JIT_INBOUND_BUCKET_COUNT` バケットの固定長ハッシュ表である。各バケットの先頭参照配列は `FB_CONF_JIT_INBOUND_BUCKET_COUNT` byte、最大常駐trace参照の次配列は `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` byteで構成する。退役するtargetのPCから候補sourceを取り出し、後続PCと現在のtarget addressを照合してリンクを更新または解除する。エントリ索引を再構築するときに逆引き表も再構築する。
-- **chainメタデータ**: `chain_next_pc`は接続先PCを保持する。x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpする常駐targetを保持する。直線後続だけを接続し、分岐opcodeからのchain targetは登録しない。`chain_body_count`と`chain_words`は、連結の列を根から終端まで一度ずつ辿って求める。退役時は被chain逆引き表でリンクを解除する。接続条件は [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) §7.4に示す。
-- **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである。Interpreterが解決した基本ブロックindexと`UnifiedPC`を各8バイトレコードに保持する。Runtimeは単一moduleに束縛されるため、レコードへ`module_id`を複製しない。容量は`JIT_HISTORY_CAPACITY`以下で指定する。待ち列容量は`JIT_COMPILE_QUEUE_CAPACITY`以下で指定する。判定点で記録し、Interpreterの実行境界（yield、Runtime API境界、trap、関数完了、関数復帰の閾値超過）で履歴順に分析する。JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}`
+- **chainメタデータ**: `chain_next_pc`は接続先PCを保持する（`{JIT_LazyChaining}`）。 <!-- definition: {JIT_LazyChaining} --> x64物理ヘッダの`chain_target_addr`は共通chain dispatcherがtail-jumpする常駐targetを保持する。直線後続だけを接続し、分岐opcodeからのchain targetは登録しない。`chain_body_count`と`chain_words`は、連結の列を根から終端まで一度ずつ辿って求める。退役時は被chain逆引き表でリンクを解除する。接続条件は [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) §7.4に示す。
+- **実行履歴バッファ**: ホットスポット検出が有効なJIT拡張が所有する固定容量リングである（`{RuntimeHotspotProfiler}`）。 <!-- definition: {RuntimeHotspotProfiler} --> Interpreterが解決した基本ブロックindexと`UnifiedPC`を各8バイトレコードに保持する。Runtimeは単一moduleに束縛されるため、レコードへ`module_id`を複製しない。容量は`JIT_HISTORY_CAPACITY`以下で指定する。待ち列容量は`JIT_COMPILE_QUEUE_CAPACITY`以下で指定する。判定点で記録し、Interpreterの実行境界（yield、Runtime API境界、trap、関数完了、関数復帰の閾値超過）で履歴順に分析する。JIT trace/chainだけの区間では記録も分析もしない。 `{HistoryBuffer}` <!-- definition: {HistoryBuffer} -->
 
-トレース実行回数と退役記録はQA専用の計測構成で採取する。実行回数は、ブロックごとに、trace body を実行するたび 1 回ずつ数え、計数の領域は統計の収集が有効なQA計測構成だけに置く。{Challenge_JITCacheEfficiency} が求める trace ごとの実行回数の記録への対応は、この計数用ビルドの計数である。製品構成は実行回数の領域を持たない。計測の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は計数状態、時計、計測用の後続走査、および退役通知を持たない。履歴分析はネイティブ実行境界で完了する。
+トレース実行回数と退役記録はQA専用の計測構成で採取する。実行回数は、ブロックごとに、trace body を実行するたび 1 回ずつ数え、計数の領域は統計の収集が有効なQA計測構成だけに置く。trace ごとの実行回数の記録は、この計数用ビルドの計数で行う。製品構成は実行回数の領域を持たない。計測の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は計数状態、時計、計測用の後続走査、および退役通知を持たない。履歴分析はネイティブ実行境界で完了する。
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -156,8 +153,6 @@ block を切る命令（`if`・`br`・`br_if`・`br_table`・`return`・`call_in
 | **`-1`** | 約 -2 命令ペナルティ | 関数間callのtrace境界・dispatcher処理 | `call` (`0x10`) |
 | **`-2`** | 約 -4 命令ペナルティ | メモリ管理サービスや一括操作を含むRuntime API処理 | `memory.grow` (`0x40`), `i32/i64.trunc_sat_f32/f64_{s,u}` (`0xFC 0x00`〜`0x07`), `memory.copy` (`0xFC 0x0A`), `memory.fill` (`0xFC 0x0B`) |
 | **`-8` (MIN)** | 最大ペナルティ | 実行すると必ずtrapする命令 | `unreachable` (`0x00`) |
-
-
 
 1. **実行コンテキストのBasicBlock index参照 ($O(1)$)**: Loaderが関数入口と制御辺についてindexを前計算し、Interpreterは`current_block_index`へ現在indexを保持する。分岐と通常継続は注釈済みindexからBasicBlock metadataと`rel`開始位置を直接得る。呼出しと復帰のindexは[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)の契約に従う。境界停止のPC比較を除き、dispatch中にPCからindexを検索しない。
 2. **記録の印による検索抑止 ($O(1)$)**: BasicBlock解決後に`jit_cache_reference`を読む。常駐traceの参照がなければJIT拡張を呼ばず、キャッシュ参照も変更せずInterpreter命令を実行する。カード状態は検索の可否の判定に使わない。
@@ -227,7 +222,7 @@ flowchart TD
 ```
 
 #### BasicBlock indexによるJIT検索手順（手順アクティビティ図）
-<!-- traceability: {JIT_MultiBuffer_Cache} {LowLatencyJIT} {META_BinarySearch} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {META_BinarySearch} -->
 Interpreterが持つBasicBlock indexとPCからmetadataを直接参照し、indexのhead PCと実行PCを照合してから必要な場合だけネイティブ`exec_trace`を検索する。
 
 ```mermaid
@@ -340,10 +335,10 @@ flowchart TD
 
 - **分岐条件の扱い**: `br_if`と`if`の条件値は実行した経路が一度だけ消費する。JITで消費済みの条件値をInterpreter handlerへ再度渡さない。
 - **関数終了 (`{GOTCHA-JITR-08}`)**: JIT traceは native の`return`を生成せず、Interpreter と同じ Runtime API で関数復帰を実行し、CPS 境界で戻す。関数復帰の意味は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)に従う。 <!-- definition: {GOTCHA-JITR-08} -->
-- **分岐境界の整合 (`{GOTCHA-JITR-06}`)**: `if`、`br`、`br_if`はtraceに含めず、Interpreter CPS handlerが条件値、stack、frame、PCを一度だけ更新する。trace完了後にopcodeを処理し、実行済み命令を再実行しない。trap/CPS exitは記録済みの終了理由から処理する。trace の入口は、同じ終了理由を`execution_context`から読んで`false`を返す（戻り値の内部表現を介さない）。 <!-- definition: {GOTCHA-JITR-06} -->
+- **分岐境界の整合 (`{GOTCHA-JITR-06}`)**: `if`と`br_if`はtraceに含めず、Interpreter CPS handlerが条件値、stack、frame、PCを一度だけ更新する。`br`はtrace内で静的なstack移しを行い遷移先へチェインする（後方`br`の閾値到達時を除く）。trace完了後に未実行の終端opcodeを処理し、実行済み命令を再実行しない。trap/CPS exitは記録済みの終了理由から処理する。trace の入口は、同じ終了理由を`execution_context`から読んで`false`を返す（戻り値の内部表現を介さない）。 <!-- definition: {GOTCHA-JITR-06} -->
 - **短小判定の符号 (`{GOTCHA-JITR-07}`)**: ブロックの足切り判定は自身の命令バイト数で行う。後続アドレスとの差分で代用すると、後方分岐ブロックで差分が負になり、高頻度ブロックが永久に除外されてしまう。 <!-- definition: {GOTCHA-JITR-07} -->
 - **エイジングと常駐状態の分離 (`{GOTCHA-JITR-09}`)**: エイジングスイープは `EXECUTED` のカードだけを変更する。`COMPILED` まで戻すと、常駐トレースのカードが `UNEXECUTED` になり、実行の入口判定が常駐コードを見逃す。`HOT` まで戻すと、コンパイル待ち列の要求とカード状態が食い違う。常駐性の正本はキャッシュ、待ち列の正本は待ち列であり、スイープはどちらも書き換えない。 <!-- definition: {GOTCHA-JITR-09} -->
-- **押し出し量の入口契約**: Loaderが記録する関数の最大オペランド高を関数入口で検査する。Interpreter命令列とJIT traceの双方は、この予約済み容量内で検証済みのスタック遷移を実行する。関数途中のtrace入口ではオペランド容量を再検査しない。入口予約の安全性と拒否時の本体不実行は[interpreter_stack_model.py](docs/components/tier2_runtime/formal/interpreter_stack_model.py)で検証する。`if`、`br`、`br_if`はtraceに含めず、対応するInterpreter CPS handlerへ渡す。
+- **押し出し量の入口契約**: Loaderが記録する関数の最大オペランド高を関数入口で検査する。Interpreter命令列とJIT traceの双方は、この予約済み容量内で検証済みのスタック遷移を実行する。関数途中のtrace入口ではオペランド容量を再検査しない。入口予約の安全性と拒否時の本体不実行は[interpreter_stack_model.py](docs/components/tier2_runtime/formal/interpreter_stack_model.py)で検証する。`if`と`br_if`はtraceに含めず、対応するInterpreter CPS handlerへ渡す。
 - **連鎖の再リンク**: ローテーションの後も、非0のchain targetは常駐トレースbodyの有効なアドレスを指す。cache metadataとネイティブtrace headerの値は一致する。後続が退避された場合は`chain_target_addr`を0にし、共通chain dispatcherから現在のtrace entryへ戻す。未接続targetへ進む場合は共有状態と未実行命令位置をInterpreterへ渡す。
 
 ## 5. インターフェース定義
@@ -353,7 +348,7 @@ flowchart TD
 #### Interpreter拡張境界
 | 項目 | 内容 |
 | :--- | :--- |
-| 呼出 | Interpreterは判定点（ジャンプ、呼出しの入口、後方辺、関数復帰）で、移り先のブロック記録の`jit_cache_reference`が常駐traceの参照を持つとき、接続時に渡された表からroot traceのheaderを得る。正本は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)のprovider接続契約の段落であり、ここには写さない。trace関数は`bool`を返す。`true`の場合は終端dispatcherだけがmetadata pointerを一時的に`context.rel`へ渡し、`body_end_ip`を`context.ip`へ設定する。Interpreter dispatcherはmetadataからstackとInterpreter `rel`を更新し、未実行の終端命令の処理後に次BasicBlockを解決する。`false`ならtrap/CPS exitを処理する。`if`、`br`、`br_if`はJIT traceに含まれず、分岐のCPS handlerが一度実行する。実行時制御フレームは作らない。 |
+| 呼出 | Interpreterは判定点（ジャンプ、呼出しの入口、後方辺、関数復帰）で、移り先のブロック記録の`jit_cache_reference`が常駐traceの参照を持つとき、接続時に渡された表からroot traceのheaderを得る。正本は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)のprovider接続契約の段落であり、ここには写さない。trace関数は`bool`を返す。`true`の場合は終端dispatcherだけがmetadata pointerを一時的に`context.rel`へ渡し、`body_end_ip`を`context.ip`へ設定する。Interpreter dispatcherはmetadataからstackとInterpreter `rel`を更新し、未実行の終端命令の処理後に次BasicBlockを解決する。`false`ならtrap/CPS exitを処理する。`if`と`br_if`はJIT traceに含まれず、分岐のCPS handlerが一度実行する。実行時制御フレームは作らない。 |
 | 内部処理 | 候補選択、trace検索、履歴分析、キャッシュ更新、コンパイル要求はTier 3拡張内部に閉じる。個別のC++ Runtime操作APIを追加しない。 |
 | 拡張なし構成 | JIT拡張を結線しないInterpreter構成では、Interpreter dispatcherがCPS handlerを実行する。 |
 | 不変条件 | Tier 2 Runtimeはカード表、履歴リング、キュー、キャッシュ実装を参照しない。 |
@@ -388,7 +383,6 @@ QA専用の実行回数・退役記録の計測契約、抽象モデル、およ
 ## 8. 設計判断と参考実装
 
 ### 8.1 コンパイル時期と待ち列処理
-<!-- traceability: {ADR_JitCompileScheduling} {JIT_ReverseCompilationOrder} -->
 
 - **ステータス**: 採用。全タスクidle時と協調境界で待ち列を処理する。
 - **背景**: 全タスクidle時だけのコンパイルでは、継続的に実行可能なタスクがある構成で候補処理が進まない。固定キューの満杯時にも処理を進める必要がある。
@@ -396,26 +390,9 @@ QA専用の実行回数・退役記録の計測契約、抽象モデル、およ
 - **理由と影響**: 待ち列に入った候補を次の実行境界へ持ち越さない。固定容量は一度に処理する候補数を制限するが、コンパイル時間や実時間応答を保証しない。
 
 ### 8.2 コンパイル採否とキャッシュ代謝
-<!-- traceability: {Challenge_JITCacheEfficiency} {ADR_SafeQueuingOnHotMiss} -->
 
-- **ステータス**: 3面ローテーションとOldestのその場実行は採用。コンパイル採否は、ルール（ii）と（iii）を採用する。判定の前提は、採否の契約として後述する。
-- **採否記録**: 各 BasicBlock は 1 B の採否記録を持つ。記録は JIT 拡張が `block_count` 個分の領域として保持する。上位 3 bit の値は、0〜4 が破棄によるストライク、5 が記録なし、6 が段階の上限による却下を表す。下位 5 bit は計数である。
-- **計数の用途**: 下位 5 bit は時期ごとに次の値を表す。
-  - 設置時: 0 に戻し、以後は設置中の入口回数を数える。
-  - 入口時: 記録の参照から根の trace に入ったとき、31 で飽和する加算を行う。chain で後続に入った trace は根の入口を通らないため、数えない。
-  - 破棄時: 値はその設置の寿命（入口回数）である。ストライクの更新に使う。
-  - 採否時: 値は直前の寿命である。採否が済むまで値は変わらない。
-- **ストライク**: 履歴のない block の値は 5 とする。段階の上限による却下の値は 6 とする。破棄時、寿命が K 未満ならストライクを 1 増やし、ストライクは S で止める。寿命が K 以上ならストライクを 0 に戻す。K は 10 とする。履歴なしからの最初の破棄は、ストライク 0 から数える。
-- **段階**: 直前に終わった 8 回転の区切りで破棄された trace の数 w を用いる。f = w ÷ 8 とする。f ≥ 6 のとき S = 2、2 ≤ f < 6 のとき S = 3、f < 2 のとき S = 4 とする。
-- **採否**: 待ち列から取り出した候補ごとに、次の順で判定する。
-  - ルール（ii）: 履歴なし（ストライク 5）の場合はコンパイルする。
-  - ルール（iii）: ストライクが S 以上の場合は却下する。
-- **判定の前提（契約）**: 採否の判定に来る block の点数（score_block）は候補しきい値 `S_threshold` 以上である。根拠は次のとおり。
-  - カードを trackable にするのは、bind の候補（点数が `S_threshold` 以上、span が `min_trace_bytes` 以上）だけである。
-  - `min_trace_bytes` は 1 << `FB_CONF_JIT_CARD_SHIFT` で、カードの大きさと同じである。
-  - したがって、候補と同じカードに入る他の block の頭は、バイトを持たない構造の block だけになる。構造の block は観測されないため、待ち列に入らない。
-  - この関係は、カードの大きさの設定を変えても成り立つ。
-  - 実装は、採否の処理で点数の条件を `assert` し、bind で `min_trace_bytes` とカードの大きさの一致を `assert` する。
-- **却下**: 却下された候補は、トラッカブルマスクを解除する。解除は、コンパイル失敗と同じ経路で行う。段階の上限による却下（ルール（iii））では、ストライクの値を 6 とする。
-- **回復**: 8 回転の区切りで段階の上限が大きくなったとき（段階が緩くなったとき）、ストライクが 6 の block の候補マスクを戻し、ストライクを 0 に戻す。回復は、段階が緩くなった区切りだけで、全 block の採否記録を 1 回走査する。費用は block 数に比例する。回転のたびには走査しない。
-- **責務境界**: 記録の追加はコンパイル抑止やキャッシュ方策の採用を意味しない。Guest Profilerの変更は要求しない。
+- **方針**: キャッシュ代謝は3面ローテーションとOldestのその場実行を基本とし、コンパイル採否・スラッシング抑止（短命traceの連発抑制や再試行回復）は Tier 3 JIT 拡張内部のヒューリスティックとして閉じ込める。
+- **不変条件**:
+  - 採否判定・却下・回復の内部状態（ブロックごとの寿命記録等）は Tier 3 拡張内部で管理し、Tier 2 Runtime や Guest Profiler へ露出しない。
+  - コンパイルに失敗または却下されたブロックは、トラック対象から除外して無限の再コンパイルループを防ぐ。
+  - カード粒度（`FB_CONF_JIT_CARD_SHIFT`）や最小トレース長（`min_trace_bytes`）の具体的なしきい値・段階係数は、ターゲット構成に応じた内部調整値とし、固定のマジックナンバーを外部仕様の契約にしない。

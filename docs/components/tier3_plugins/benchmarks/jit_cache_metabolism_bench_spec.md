@@ -1,7 +1,7 @@
 # JIT キャッシュ代謝 & コーナーケース ベンチマーク仕様書 (JIT Cache Metabolism Benchmark Specification)
 
 ## 1. 目的と対象範囲
-<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} {HistoryBuffer} {SimpleJITArchitecture} {META_AccessDictionary} {LowLatencyJIT} {WasmCodeSectionPC} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} {HistoryBuffer} {META_AccessDictionary} {WasmCodeSectionPC} -->
 
 正本: [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) jit_runtime.md (Cache Ring), [`jit_cache_model.py`](docs/components/tier3_plugins/formal/jit_cache_model.py)
 参考実装: [`bench_jit_cache_metabolism.py`](experiments/pysim/benchmarks/jit/bench_jit_cache_metabolism.py)

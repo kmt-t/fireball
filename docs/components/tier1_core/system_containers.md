@@ -6,7 +6,7 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {Type_Vocabulary} {META_FlatMapIndexed} {META_BinarySearch} {META_NoStdVector} {GLOBAL_Policy_Memory} {META_ZeroCostAbstraction} {GLOBAL_StaticScalability} {FlatViewNarrowing} {PackedBitView} {System_Allocator} -->
+<!-- traceability: {META_FlatMapIndexed} {META_BinarySearch} {META_NoStdVector} {GLOBAL_Policy_Memory} {META_ZeroCostAbstraction} {GLOBAL_StaticScalability} -->
 本コンポーネントは、Fireball 全体で共有されるコンテナ語彙を定義する。複数の Tier が同じ参照パターンを必要とするため、各所で個別に説明せず本書を型定義の正本とする。
 
 検索語彙は **3 種類（Set / Map / RadixBinaryTree）× 2 世代（ReadOnly / Mutable）× Storage / View** で構成する。View は各種類に1つだけ存在し、常に読み取り専用である。Bit は検索語彙とは別の密な状態表である。
@@ -24,7 +24,7 @@
 - **探索する型と探索しない型を分ける**: `bit_view` は、疎なキー空間の探索構造ではない。密な添字空間を扱うビット詰め表である。キー列を持たない `flat_map_view` の特殊形として表すことは技術的には可能である。しかし、「`flat_*_view` は二分探索する」という期待を裏切る。カードマーキング表を探索対象と誤解させるおそれもある。**カードマーキングは探索しない。添字がそのまま問いである。**
 
 ### 非所有ビューと実体ストレージの体系化マトリクス (Storage & View Matrix)
-<!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StaticScalability} {META_NoStdVector} {OneRuntimeOneGuest} {System_Allocator} -->
+<!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StaticScalability} {META_NoStdVector} {OneRuntimeOneGuest} -->
 メモリ所有権とビューを厳格に分離し、要素の追加（`insert`）や削除（`remove`）等の変更操作はすべて **可変ストレージ（Mutable Storage）** の責務とする。非所有ビュー（View）は探索・走査に専念し、一切の変更操作を提供しない。また、下位互換用のエイリアスは全廃し、正規のクラス名のみを直接使用する。
 
 所有権は単一のストレージインスタンスだけが持つ。ストレージ所有側は同じ実体を指すviewをメンバとして二重保持せず、必要な処理の呼び出し時に借用する。別インスタンスが所有ストレージを検索する場合だけ、所有者から非所有viewを受け取る。view単独を所有型として扱ったり、同じ実体に複数の所有者を作ったりしてはならない。
@@ -40,34 +40,34 @@ Storage は実体を単独で所有し、生成時および変更時にキー順
 `BitView`、`ReadOnlyBitStorage`、`MutableBitStorage`、`RingBuffer`、`StaticVector` はこの検索コンテナ行列の対象外であり、密な状態表または順序付き逐次コンテナとして独立に定義する。
 
 **固定長配列と有効エントリカウント規約 ({GOTCHA-CONT-04})**: <!-- definition: {GOTCHA-CONT-04} -->
-- **固定長事前確保バッファ**: `mutable_*_storage` は、動的リサイズ（`std::vector` や `list.insert`/`append` 等のヒープ再確保）を完全に禁止する。インスタンス化時に `Capacity` サイズの内部バッファ（`_buffer = [None] * capacity`）を一括して事前確保する。
+- **固定長事前確保バッファ**: `mutable_*_storage` は、動的リサイズ（`std::vector` 等のヒープ再確保）を完全に禁止する。インスタンス化時に `Capacity` サイズの固定長内部バッファを一括して事前確保する。
 - **有効エントリカウンタ (`count`)**: バッファ内に格納されている有効なエントリ数を整数値で追跡する（`0 ≤ count ≤ Capacity`）。
 - **容量上限到達時の動作**: 未登録キーの `insert` 呼び出し時、`count ≥ Capacity` であればメモリ再確保を行わず即座に `false` を返却する。既存キーの更新は `count` を増加させずインプレースで上書きし `true` を返却する。
-- **インプレースシフト削除とスロットクリア**: 要素削除時はバッファ内で要素をインプレースで前方にシフトし、空いた末尾スロットは即座にゼロクリア（`None`）して `count` をデクリメントする。
+- **インプレースシフト削除とスロットクリア**: 要素削除時はバッファ内で要素をインプレースで前方にシフトし、空いた末尾スロットは即座に初期値へクリアして `count` をデクリメントする。
 - **非所有 View への動的追従**: 借用中の View は、Mutable Storage の内部固定バッファの先頭 `count` 要素（有効スパン）をゼロコピーで直接参照するため、Storage 側の追加・削除・シフトが即座に View に反映される。記憶域の再確保を許すと、借用中のViewが更新前のバッファを指し続けるおそれがある。
-- **アロケータからのメモリ供給とライフサイクル管理 (`{Runtime_BumpAllocator}`, `OneRuntimeOneGuest`, `System_Allocator`)**:
+- **アロケータからのメモリ供給とライフサイクル管理 (`OneRuntimeOneGuest`)**:
   各ストレージコンテナは、外部から渡された連続メモリ領域（`std::span` またはアロケータにより切り出されたバッファスライス）を受け取ってゼロアロケーションで初期化できる。ストレージのメモリ供給とライフサイクルは、使用する層（ゲストまたはシステム基盤）に応じて以下のように直交分離される。
-  - **ゲスト層（WASMモジュール内）**: 1ランタイム1ゲスト原則（`OneRuntimeOneGuest`）のもと、モジュールロード時に親ランタイムの専用バンプアロケータ（`{Runtime_BumpAllocator}`）から各コンテナの裏打ちストレージ（RAM/XN）が順次切り出される。モジュール破棄時は個別オブジェクトの破棄走査を行わず、アリーナごと $O(1)$ で一括解放される。
-  - **システム層（カーネル・仮想化基盤）**: COOS カーネル、vMMIO コントローラ、IPC ルータ、メモリマネージャ、デバッガ等のシステム基盤が常駐・運用するシステムコンテナの裏打ちストレージは、固定長システムヒープを管理する dlmalloc ベースのシステム用アロケータ（`System_Allocator`）から動的に切り出される。システム稼働中に発生するタスクの登録/終了、PTE マッピングの増減、チャネルの登録/破棄に対して、コンテナやエントリ単位での個別解放（`deallocate`）と断片化の自動合体・再利用を決定論的に実現する。
+  - **ゲスト層（WASMモジュール内）**: 1ランタイム1ゲスト原則（`OneRuntimeOneGuest`）のもと、モジュールロード時に親ランタイムの専用バンプアロケータから各コンテナの裏打ちストレージ（RAM/XN）が順次切り出される。モジュール破棄時は個別オブジェクトの破棄走査を行わず、アリーナごと $O(1)$ で一括解放される。
+  - **システム層（カーネル・仮想化基盤）**: COOS カーネル、vMMIO コントローラ、IPC ルータ、メモリマネージャ、デバッガ等のシステム基盤が常駐・運用するシステムコンテナの裏打ちストレージは、固定容量バッファまたは固定長システムヒープを管理するシステム用アロケータ（`System_Allocator`）から供給される。システム稼働中に発生するタスクの登録/終了、PTE マッピングの増減、チャネルの登録/破棄に対して、コンテナやエントリ単位での個別解放（`deallocate`）と再利用を決定論的に実現する。
 
 **標準の `std::flat_map` / `std::flat_set` を採用しない理由**:
 C++23 標準の `std::flat_map` / `std::flat_set` はコンテナアダプタであり、既定の下位コンテナに `std::vector` を使う。そのため、無制約な動的再確保に伴うレイテンシ揺らぎとメモリ断片化を排除する制約に抵触する。本アーキテクチャでは、用途別アロケータまたは固定長バッファと `count` の追跡による決定論的かつ安全なストレージを採用する。
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {META_3TierSeparation} {Type_Vocabulary} -->
+<!-- traceability: {META_3TierSeparation} -->
 本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属する。実行時の振る舞いも状態も持たないヘッダオンリーの型語彙（Vocabulary）であり、各 Tier（Tier 2 の vMMIO、Tier 3 の JIT エントリ検索・カードマーキング等）は本書で定義された非所有ビュー型（`flat_map_view`, `flat_set_view`, `radix_binary_tree_view`, `bit_view`）を利用して具象データを操作する。JITエントリ集合は少数の疎キーであるため`flat_map_view`を使い、Radix索引はローダ等の大規模索引に限る。本書は下位 Tier の具象データ構造や内部ヘッダには一切依存せず、純粋な型語彙の提供に専念する。
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {META_FlatMapIndexed} {META_BinarySearch} {FlatViewNarrowing} {PackedBitView} {GLOBAL_StaticScalability} -->
+<!-- traceability: {META_FlatMapIndexed} {META_BinarySearch} {GLOBAL_StaticScalability} -->
 - **`flat_map_view<Key, Value>`**: **AoS（Array of Structures）構造**を採用し、昇順ソート済みのエントリ配列（`std::span<const flat_map_entry<Key, Value>>`）の非所有ビューで構成される疎マップ。キーと値のペアを単一配列で連続保持し、C++ 標準の `std::sort`（`constexpr` 対応）や `std::lower_bound` をそのまま利用できる。保持メンバは単一スパン（ポインタと長さの計 2 ワード = 1組）のみであり、レジスタ渡しに最適化されている。
 - **`flat_set_view<Key>`**: 昇順ソート済みのキー列のみを指す非所有ビュー。所属判定を行う。
 - **`radix_binary_tree_view<Key, Value, RadixShift>`**: 基数テーブル（Radix Table / $O(1)$ スカラー開始インデックス配列：サイズ $K+1$、バケット $p$ の区間は `[table[p], table[p+1]]`）とソート済みエントリ配列の局所二分探索をカプセル化した多段索引ビュー。
 - **`bit_view<Bits>`**: 1 要素が 1 バイト未満の密なビット詰め表を指す非所有ビュー。添字で直接読み書きする。
 
 ### 3.2 内部ブロック図
-<!-- traceability: {META_FlatMapIndexed} {META_BinarySearch} {FlatViewNarrowing} {PackedBitView} -->
+<!-- traceability: {META_FlatMapIndexed} {META_BinarySearch} -->
 ```mermaid
 %% not-a-topology: Shape of the container vocabulary
 graph LR
@@ -100,7 +100,7 @@ graph LR
 ### 3.3 主要なクラス・構造体・配列・定数
 
 #### 疎マップビュー（flat_map_view）
-<!-- traceability: {META_BinarySearch} {META_ZeroCostAbstraction} {FlatViewNarrowing} {META_FlatMapIndexed} -->
+<!-- traceability: {META_BinarySearch} {META_ZeroCostAbstraction} {META_FlatMapIndexed} -->
 AoS（Array of Structures）構造に基づく、昇順ソート済みの (Key, Value) ペア配列に対する非所有ビュー。粗索引による範囲絞り込みと二分探索を合成し、$O(\log N)$ でキーを特定して対応する値を取り出す。キーと値を単一配列で連続保持するため、値の型やサイズに関わらず保持メンバは単一スパン（ポインタと長さの計2ワード）のみで済み、レジスタ渡しに最適化される。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -108,7 +108,7 @@ AoS（Array of Structures）構造に基づく、昇順ソート済みの (Key, 
 | エントリ配列区間 | 昇順ソート済みの (Key, Value) ペア配列への読み取り専用ビュー（二分探索対象） | データ範囲 | `std::span<const flat_map_entry<Key, Value>>` |
 
 #### 疎集合ビュー（flat_set_view）
-<!-- traceability: {META_BinarySearch} {META_ZeroCostAbstraction} {FlatViewNarrowing} -->
+<!-- traceability: {META_BinarySearch} {META_ZeroCostAbstraction} -->
 ソート済みキー列のみに対する非所有ビュー。値列を持たない。
 
 **型分離の設計理由と不変条件 (`GOTCHA-CONT-03`)**: {GOTCHA-CONT-03} <!-- definition: {GOTCHA-CONT-03} -->
@@ -126,7 +126,7 @@ AoS（Array of Structures）構造に基づく、昇順ソート済みの (Key, 
 - **添字の取り違えを型で防ぐ**: 生の開始・終了インデックス対を返す設計では、呼び出し側が誤った配列と組み合わせても検出できない。ビューは区間を 1 つの値として束ねるため、この誤りが表現できない。
 
 #### ビット詰めビュー（bit_view）
-<!-- traceability: {PackedBitView} {GLOBAL_StrictMemoryLimit} {META_ZeroCostAbstraction} -->
+<!-- traceability: {GLOBAL_StrictMemoryLimit} {META_ZeroCostAbstraction} -->
 1 要素が 1 バイト未満の密な状態表を指す非所有ビュー。**探索を行わない**——添字による直接参照のみであり、索引化による検索最適化の対象外である。
 
 ビューが保持する状態は、裏打ちバイト列 `storage_`、論理要素 0 のビット位置 `origin_`、および論理要素数 `count_` の3メンバである。`storage_` は `put()` を許すため可変バイト列ビューだが、ビュー自身は記憶域を所有せず、区間情報も不変である。
@@ -254,11 +254,11 @@ struct mutable_flat_map_storage {
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {META_BinarySearch} {FlatViewNarrowing} {PackedBitView} {LowLatencyLookup} {GLOBAL_StrictMemoryLimit} {META_ZeroCostAbstraction} -->
+<!-- traceability: {META_BinarySearch} {LowLatencyLookup} {GLOBAL_StrictMemoryLimit} {META_ZeroCostAbstraction} -->
 - **疎なキーの検索**: `FlatMapView` と `FlatSetView` は、現在のビューに含まれる昇順のキーを二分探索する。現在のビューの要素数を $n$ とすると、検索の計算量は $O(\log n)$ である。全件ビューでは $n=N$ となる。
-- **キー範囲による絞り込み**: `narrow(lo, hi)` は現在のビュー内で境界を二分探索し、該当する非所有サブビューを返す。返されたビューに対する検索は、そのサブビューの要素数を $n$ として $O(\log n)$ である。再度の絞り込みは現在のビュー内で行い、除外済みの要素を復元しない。
+- **キー範囲による絞り込み**: `narrow(lo, hi)` は現在のビュー内で境界を二分探索し、該当する非所有サブビューを返す（`{FlatViewNarrowing}`）。 <!-- definition: {FlatViewNarrowing} --> 返されたビューに対する検索は、そのサブビューの要素数を $n$ として $O(\log n)$ である。再度の絞り込みは現在のビュー内で行い、除外済みの要素を復元しない。
 - **Radix検索**: `RadixBinaryTreeView` は Radix Table からキーに対応する区間を $O(1)$ で求め、その区間の要素だけを二分探索する。区間の要素数を $n$ とすると検索は $O(\log n)$ であり、$n$ は全体件数 $N$ 以下である。
-- **ビット詰めアクセス**: 論理添字 $i$ に対する物理位置は `bit = origin + i * Bits` として求まり、`byte = bit >> 3`、`shift = bit & 7` となる。`Bits` が 8 の約数であるため 1 要素がバイトを跨ぐことはなく、単一バイトのロードとシフト・マスクで読み出しが完結する。
+- **ビット詰めアクセス**: 論理添字 $i$ に対する物理位置は `bit = origin + i * Bits` として求まり、`byte = bit >> 3`、`shift = bit & 7` となる（`{PackedBitView}`）。 <!-- definition: {PackedBitView} --> `Bits` が 8 の約数であるため 1 要素がバイトを跨ぐことはなく、単一バイトのロードとシフト・マスクで読み出しが完結する。
 - **AoS 標準ソートと二分探索 (Standard Sort & Binary Search)**: 自前のソート関数（連動ヒープソート等）を再実装せず、C++ 標準の `std::sort` と射影付き `std::lower_bound` を利用する。`std::sort` は C++20 の `constexpr` に対応する。
 
 - **小規模表**: 追加の索引メモリを必要としない `FlatMapView` の二分探索を用いる。データ件数だけからキャッシュライン数やキャッシュミスの有無は断定せず、Radix Table の効果とメモリコストは対象環境で測定して判断する。
@@ -266,14 +266,12 @@ struct mutable_flat_map_storage {
 
 実行可能な参照実装と検証テストは [`flat_view_concept.py`](docs/components/tier1_core/concepts/flat_view_concept.py) を参照。ビット詰めの近傍非破壊性、非バイト境界での `slice`、絞り込みの単調縮小性、集合の所属判定、JIT 検索経路をテストで固定している。
 
-
-
 ### 4.2 状態遷移図
-<!-- traceability: {Type_Vocabulary} -->
+
 本コンポーネントは値型の語彙であり、それ自体は状態遷移を持たない。ビューは区間に関して不変（immutable）であり、絞り込み操作は元のビューを変更せず新しいビューを返す。`bit_view` の `put()` は指す先の記憶域を更新するが、ビュー自身の区間は変化しない。
 
 ### 4.3 内部シーケンス
-<!-- traceability: {FlatViewNarrowing} {META_BinarySearch} -->
+<!-- traceability: {META_BinarySearch} -->
 ```mermaid
 sequenceDiagram
     participant C as Caller
@@ -295,7 +293,7 @@ sequenceDiagram
 外部コンポーネントから利用する型語彙の契約を定義する。
 
 #### キー範囲による絞り込み（narrow）
-<!-- traceability: {FlatViewNarrowing} {META_BinarySearch} -->
+<!-- traceability: {META_BinarySearch} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -308,7 +306,6 @@ sequenceDiagram
 | 不変条件 | ビューは決して広がらない。この単調性により多段絞り込みが安全に合成できる |
 
 #### 添字区間による絞り込み（slice）
-<!-- traceability: {FlatViewNarrowing} {PackedBitView} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -344,7 +341,7 @@ sequenceDiagram
 | 補足 | 値を返さないため、値列を持たない記憶域に対して使用できる。ブレークポイント判定のように「あるか否か」のみが問われる用途に用いる |
 
 #### 添字による状態参照（at / put）
-<!-- traceability: {PackedBitView} {GLOBAL_StrictMemoryLimit} -->
+<!-- traceability: {GLOBAL_StrictMemoryLimit} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -356,11 +353,11 @@ sequenceDiagram
 | 不変条件 | 隣接要素のビットを破壊しないこと。`put` は読み出し・マスク・書き戻しを 1 バイト内で完結させる |
 
 ### 5.2 URI/IPCインターフェース
-<!-- traceability: {Type_Vocabulary} -->
+
 本コンポーネントはヘッダオンリーの型語彙であり、IPCインターフェースを持たない。
 
 ### 5.3 利用箇所
-<!-- traceability: {Type_Vocabulary} {META_FlatMapIndexed} {PackedBitView} {GLOBAL_StrictMemoryLimit} -->
+<!-- traceability: {META_FlatMapIndexed} {GLOBAL_StrictMemoryLimit} -->
 
 | 利用コンポーネント | 型 | 用途 | 絞り込みに用いる粗索引 |
 | :--- | :--- | :--- | :--- |
@@ -374,7 +371,7 @@ sequenceDiagram
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
-<!-- traceability: {META_BinarySearch} {FlatViewNarrowing} {PackedBitView} {LowLatencyLookup} -->
+<!-- traceability: {META_BinarySearch} {LowLatencyLookup} -->
 - **目標**: クリティカルパス（インタープリタ実行ループ内のブレークポイント判定）での参照コストを最小化する。
 - **方策**: 大規模なWASMローダ索引ではRadixで候補区間を狭めてから二分探索し、局所性を保つ。少数のJITエントリはRadix表を設けず、ソート済み固定容量配列を二分探索する。
 
@@ -387,7 +384,6 @@ sequenceDiagram
 <!-- traceability: {META_CompileTimeValidation} {META_ZeroCostAbstraction} -->
 - **目標**: 索引の取り違え、区間外アクセス、隣接ビットの破壊を防止する。
 - **方策**: キー区間と値区間をビューとして束ねることで、両者を取り違えた組み合わせをそもそも表現できなくする。絞り込み操作の単調縮小性により、合成した絞り込みが区間外へ広がることはない。`Bits` を 8 の約数に `static_assert` で限定することで、1 要素がバイトを跨ぐ場合の部分書き込みを設計から排除する。探索を持つ型と持たない型、値を返す型と返さない型を分離することで、密な状態表を誤って探索対象として扱う設計や、存在しない値列への参照を型で阻む。
-
 
 ## 7. 形式検証・テスト仕様との対応
 
@@ -402,7 +398,6 @@ sequenceDiagram
 
 ### 7.4 既知の制限・対象外
 ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
-
 
 ## 8. 設計判断と参考実装
 

@@ -228,28 +228,8 @@ int jit_runtime<Measurement>::compile_queued_candidates() {
     if constexpr (!std::is_void_v<Measurement>) {
       measurements.admission_sample(block_index, fireball::score_block(*admission_view));
     }
-    // Contract (jit_runtime.md 8.2): only candidates reach admission, so the score is at least the
-    // candidate threshold. Only the bind marks cards, and only a candidate head gets a card with
-    // bytes, so a block below the threshold cannot be queued.
     assert(fireball::score_block(*admission_view) >=
            static_cast<std::int64_t>(hotspots.configuration.candidate_threshold));
-    // Rule (iii): a block whose strikes reach its stage limit is rejected. Rule (ii): a block
-    // without history (no-history strike) is compiled.
-    const auto strikes =
-        static_cast<std::uint8_t>(hotspots.admission_records[block_index] >> kAdmissionStrikeShift);
-    // A stage rejection is marked in the strikes, so a relaxed stage restores it
-    // (jit_runtime.md 8.2).
-    const auto reject_at_stage = [this, block_index, pc]() {
-      auto &record = hotspots.admission_records[block_index];
-      record = static_cast<std::uint8_t>((kAdmissionStageRejected << kAdmissionStrikeShift) |
-                                         (record & kAdmissionLifetimeMask));
-      exclude_compile_candidate(pc);
-    };
-    const auto stage = admission_stage_of(hotspots.admission_window.previous_evictions);
-    if (strikes != kAdmissionNoHistory && strikes >= admission_stage_limit(stage)) {
-      reject_at_stage();
-      continue;
-    }
     int status = 0;
     if constexpr (std::is_void_v<Measurement>) {
       status = compile_one_candidate(block_index, pc);
@@ -848,66 +828,6 @@ template <jit_measurement_policy Measurement> int jit_runtime<Measurement>::deca
 }
 
 template <jit_measurement_policy Measurement>
-void jit_runtime<Measurement>::record_install(block_index_t block_index) {
-  assert(block_index < module_view->block_count && hotspots.admission_records != nullptr);
-  auto &record = hotspots.admission_records[block_index];
-  record = static_cast<std::uint8_t>(record & ~kAdmissionLifetimeMask);
-}
-
-template <jit_measurement_policy Measurement>
-void jit_runtime<Measurement>::record_eviction(block_index_t block_index) {
-  assert(block_index < module_view->block_count && hotspots.admission_records != nullptr);
-  auto &record = hotspots.admission_records[block_index];
-  const auto lifetime = static_cast<std::uint8_t>(record & kAdmissionLifetimeMask);
-  const auto strikes = static_cast<std::uint8_t>(record >> kAdmissionStrikeShift);
-  const auto previous = strikes == kAdmissionNoHistory ? std::uint8_t{0} : strikes;
-  const auto limit =
-      admission_stage_limit(admission_stage_of(hotspots.admission_window.previous_evictions));
-  // A strike stops at the stage limit and never decreases when the stage tightens.
-  const auto raised = static_cast<std::uint8_t>(std::min<std::uint8_t>(previous + 1, limit));
-  const auto next = lifetime < kAdmissionShortLifetime ? std::max(raised, previous) : 0;
-  record = static_cast<std::uint8_t>((next << kAdmissionStrikeShift) | lifetime);
-  assert(hotspots.admission_window.evictions < UINT16_MAX);
-  ++hotspots.admission_window.evictions;
-}
-
-template <jit_measurement_policy Measurement>
-void jit_runtime<Measurement>::advance_admission_window() {
-  auto &window = hotspots.admission_window;
-  ++window.rotations;
-  if (window.rotations == kAdmissionRotationGroup) {
-    const auto previous_limit =
-        admission_stage_limit(admission_stage_of(window.previous_evictions));
-    window.previous_evictions = window.evictions;
-    window.evictions = 0;
-    window.rotations = 0;
-    if (admission_stage_limit(admission_stage_of(window.previous_evictions)) > previous_limit) {
-      restore_stage_rejections();
-    }
-  }
-}
-
-template <jit_measurement_policy Measurement>
-void jit_runtime<Measurement>::restore_stage_rejections() {
-  // Runs only when the stage relaxes, at most once per group of rotations. It costs one pass
-  // over the block records.
-  for (std::uint32_t index = 0; index < module_view->block_count; ++index) {
-    auto &record = hotspots.admission_records[index];
-    if ((record >> kAdmissionStrikeShift) != kAdmissionStageRejected) {
-      continue;
-    }
-    record = static_cast<std::uint8_t>(record & kAdmissionLifetimeMask);
-    const auto card = module_view->blocks[index].head_pc >> FB_CONF_JIT_CARD_SHIFT;
-    assert(card < hotspots.card_count && hotspots.configuration.trackable != nullptr);
-    hotspots.configuration.trackable[card / 8] |= static_cast<std::uint8_t>(1u << (card % 8));
-    refresh_card_markers(card);
-    if constexpr (!std::is_void_v<Measurement>) {
-      measurements.mask_changed();
-    }
-  }
-}
-
-template <jit_measurement_policy Measurement>
 void jit_runtime<Measurement>::retire_cache_bank(std::uint32_t id) {
   assert(id < jit_cache_bank_count);
   invalidate_block_cache_references();
@@ -915,7 +835,6 @@ void jit_runtime<Measurement>::retire_cache_bank(std::uint32_t id) {
   for (std::uint32_t i = 0; i < b.entry_count; ++i) {
     const auto value = b.entries[i];
     if (value.resident()) {
-      record_eviction(trace_header(value)->block_index);
       if constexpr (!std::is_void_v<Measurement>) {
         measurements.trace_evicted(trace_header(value)->block_index);
       }
@@ -967,7 +886,6 @@ template <jit_measurement_policy Measurement> void jit_runtime<Measurement>::rot
   cache.warm_bank_id = cache.active_bank_id;
   cache.active_bank_id = new_active;
   age_hotspot_cards();
-  advance_admission_window();
   if constexpr (!std::is_void_v<Measurement>) {
     measurements.cache_rotated();
   }
@@ -988,7 +906,6 @@ void jit_runtime<Measurement>::install_trace(const std::uint8_t *blob, std::uint
          cache.banks[cache.warm_bank_id].find_entry_by_pc(pc) == nullptr &&
          cache.banks[cache.oldest_bank_id].find_entry_by_pc(pc) == nullptr);
   const auto block_index = input_header->block_index;
-  record_install(block_index);
 
   patch_transaction transaction(this);
   auto &current = cache.banks[cache.active_bank_id];
@@ -1412,8 +1329,7 @@ std::size_t jit_provider_adapter<Measurement>::workspace_size(
     const fireball_wasm_module_execution_view_native *view) {
   const auto cards = jit_card_count(fireball::module_code_bytes(view), FB_CONF_JIT_CARD_SHIFT);
   assert(cards >= 0);
-  return jit_api::runtime_function_table_bytes() + (cards + 3) / 4 + 2 * ((cards + 7) / 8) +
-         view->block_count;
+  return jit_api::runtime_function_table_bytes() + (cards + 3) / 4 + 2 * ((cards + 7) / 8);
 }
 
 template <jit_measurement_policy Measurement>
@@ -1455,7 +1371,6 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
                        finish_runtime_boundary,
                        0,
                        0,
-                       nullptr,
                        nullptr};
   fireball::borrow_executable_region(&runtime->cache.code_memory, region + data_region_size(view),
                                      FB_CONF_JIT_CACHE_REGION_BYTES);
@@ -1482,11 +1397,6 @@ jit_provider_adapter<Measurement>::fb_jit_plugin_init(
   auto *card_workspace = workspace + jit_api::runtime_function_table_bytes();
   const auto card_workspace_size = (state_bytes + 2 * mask_bytes);
   std::memset(card_workspace, 0, card_workspace_size);
-  // Every block starts without history, so its record holds the no-history strike.
-  auto *admission_records = card_workspace + card_workspace_size;
-  std::memset(admission_records, kAdmissionNoHistory << kAdmissionStrikeShift, view->block_count);
-  runtime->hotspots.admission_records = admission_records;
-  runtime->provider.admission_records = admission_records;
   auto *dirty = card_workspace + state_bytes;
   auto *mask = dirty + mask_bytes;
   typename runtime_type::profile_type profile{};

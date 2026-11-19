@@ -1,7 +1,6 @@
 # JITコンパイラ (コード生成コア) テスト仕様書 (Test Specification)
 
 ## 1. 目的と対象範囲
-<!-- traceability: {ADR_ScalableCodeOffset} -->
 
 正本: [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)
 
@@ -107,7 +106,6 @@
 ### x64実行可能バッファの局所検証
 
 次のコマンドで実行可能バッファの初期権限とパッチ区間の契約を検証する。
-
 
 ## 4. 未検証・スコープ外
 

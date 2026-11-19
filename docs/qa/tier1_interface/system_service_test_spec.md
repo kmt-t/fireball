@@ -8,7 +8,7 @@
 サービス分離・障害隔離・自己再起動、およびサービス境界の振る舞いを検証する。WASI Preview1 からHAL IFへの変換はTier 3ゲストアダプタのテスト仕様の責務とする。
 
 ## 2. テストケース一覧
-<!-- traceability: {CleanArchitecture} {IPCRouter} {SelfReboot_via_Event} -->
+<!-- traceability: {IPCRouter} {SelfReboot_via_Event} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -25,9 +25,7 @@
 | TEST-SVC-11 | サービス障害の自己再起動 | サービスが異常終了 | 障害イベント通知 | TCBスロットがリセットされ、当該サービスのみ再初期化される（他サービス波及なし） | 「自己再起動」`SelfReboot_via_Event`, `service_concept.py` `` |
 | TEST-SVC-12 | 再起動による失敗要求の自動再実行禁止 | 外部副作用を伴う要求の処理中に障害を確認する | 対象を再初期化し、操作回数と応答を観測する | 初期化成功でも元要求の成功を返さず、元操作の回数を増やさない。他サービスの状態は変わらない | `{SelfReboot_via_Event}`, `.py`（再実行禁止のみ）、`service_fault_isolation_model.py`（抽象モデル） |
 
-
 ## 3. テスト検証実績と網羅状況
-
 
 ## 4. 未検証・スコープ外
 

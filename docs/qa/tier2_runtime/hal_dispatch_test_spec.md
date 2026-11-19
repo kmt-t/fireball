@@ -68,13 +68,11 @@ ClangゲストはQA専用の`fireball-qa.command`と`fireball-qa.stream`をimpor
 
 ### pysimのstream-write統合試験
 
-
 入力はoffset 0の128 byte同値パターンと、offset 17の32 byte昇順パターンの2例である。固定スロットの前後を`0xA5`で埋める。指定sliceだけが送られ、送信元スロットの全byteが保持されることを確認する。I/O後のunmapとアクセス拒否は[`platform_driver_test_spec.md`](docs/qa/tier3_platform/platform_driver_test_spec.md)のTEST-HAL-06を部分確認する。
 
 TEST-HAL-01のstream-writeルーティングとTEST-HAL-02のハンドル指定を部分確認する。全デバイス・全操作での迂回禁止や権限照合を、この2例の成功だけから推定しない。
 
 2026-10-01にLinux x64、Python 3.14.6で次のコマンドを実行し、13件PASS、FAIL 0件、SKIP 0件を確認した。この件数はHAL試験ファイルの実行結果であり、本書の全契約の完了件数ではない。
-
 
 試験プロセス内だけでstdoutの全byteを反転し、成功statusと返却byte数を維持する変異を実行した。2入力とも実stdoutとの不一致でFAILとなった。製品ソースは変更していない。
 
@@ -86,13 +84,11 @@ SDKゲストはWASI-SDK 27.0のClang 20.1.8でC23ソースから生成した。
 ビルド入口は[`build_wasi_guest.py`](tools/guest_bindings/build_wasi_guest.py)の`--driver-stub`である。
 テスト実行時にコンパイルし、最終importとコンパイラ情報を確認する。
 
-
 110件成功、失敗0件、skip 0件だった。
 固定106条件と生成試験4件を含む。
 生成履歴は各ストリーム24成功例であり、pytest件数へ加算しない。
 
 直接関連する回帰8ファイルも局所実行した。
-
 
 364件成功、失敗0件、skip 0件、所要時間3.02秒だった。
 この集計はスタブ試験110件とSDK/libc試験52件を含む。

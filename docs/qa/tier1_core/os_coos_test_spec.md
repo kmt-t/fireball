@@ -5,12 +5,12 @@
 正本: [`os_coos.md`](docs/components/tier1_core/os_coos.md)
 参考実装: [`coos_concept.py`](docs/components/tier1_core/concepts/coos_concept.py)
 
-ホーアCSPに基づく**バッファなし同期ランデブーチャネル**（`{ADR_RendezvousChannel}`）と、直接コンテキストスイッチ（CSP Handoff）、割り込みイベント駆動起床、アイドル検知の振る舞いを定義する。
+ホーアCSPに基づく**バッファなし同期ランデブーチャネル**と、直接コンテキストスイッチ（CSP Handoff）、割り込みイベント駆動起床、アイドル検知の振る舞いを定義する。
 
 ## 2. テストケース一覧
 
 ### 2.1 CSP通信と状態遷移 直交表マトリクス
-<!-- traceability: {CSP_Handoff} {ADR_RendezvousChannel} {GLOBAL_InterruptWakeup} -->
+<!-- traceability: {CSP_Handoff} {GLOBAL_InterruptWakeup} -->
 
 チャネル通信時のタスク状態とスケジューラの挙動を検証する組み合わせ直交表。チャネルは値を保持しないため、待機状態は「待機者なし / 送信待機 / 受信待機」の3種類とする。バッファ満杯の状態は存在しない。
 
@@ -26,7 +26,7 @@
 | 8 | ISR通知 | - | `SUSPENDED_CSP`/`READY` | (継続) | **INT イベント投入 → yield点でドレイン → READY 遷移** | TEST-COOS-08 |
 
 ### 2.2 テストケース詳細一覧
-<!-- traceability: {Challenge_CspHandoffStarvation} {GOTCHA-SCHED-01} {GOTCHA-SCHED-02} -->
+<!-- traceability: {GOTCHA-SCHED-01} {GOTCHA-SCHED-02} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -36,7 +36,7 @@
 | TEST-COOS-04 | 送信者到着でランデブー成立（受信側視点） | Bが受信待機中(RECV) | タスクAが`channel_send`を呼ぶ | A・B双方がREADYに遷移し、値の所有権がAからBへ移る | 直交表 ケース2 |
 | TEST-COOS-05 | 1チャネル1待機者の強制（同方向多重待機は不可能） | (1) Aが送信待機中(SEND) または<br>(2) Bが受信待機中(RECV) | (1) 別タスクCが同チャネルへ`channel_send`<br>(2) 別タスクDが同チャネルへ`channel_recv` | 到達不能ケースとして`assert`で即座に検出される（設計違反フェイルファスト） | 直交表 ケース5/6 |
 | TEST-COOS-06 | CSP Handoffは待機相手へ直接切り替える | ランデブー成立、ハンドオフ回数が上限未満 | ランデブー完了時の結果を観測 | 結果が直接切替を示し、切替先が待機相手である | `{CSP_Handoff}` |
-| TEST-COOS-07 | 連続ハンドオフ上限後のスケジューラ復帰 | `max_handoffs=2` とし、2タスク間で2回の直接ハンドオフを完了 | 3回目のランデブーを成立させる | 操作結果が `YIELD` となり、連続回数が0へ戻る。待機相手は先行READYタスクの後ろへ登録され、次の実dispatchは先行タスクを選ぶ。全タスクの公平性と実時間応答上限は対象外である | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md), `GOTCHA-SCHED-01`, {Challenge_CspHandoffStarvation} |
+| TEST-COOS-07 | 連続ハンドオフ上限後のスケジューラ復帰 | `max_handoffs=2` とし、2タスク間で2回の直接ハンドオフを完了 | 3回目のランデブーを成立させる | 操作結果が `YIELD` となり、連続回数が0へ戻る。待機相手は先行READYタスクの後ろへ登録され、次の実dispatchは先行タスクを選ぶ。全タスクの公平性と実時間応答上限は対象外である | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md), `GOTCHA-SCHED-01` |
 | TEST-COOS-08 | 割り込み通知を協調境界で処理して待機タスクを起床する | vSoCランタイムタスクが`vector_id`待ち | 固定5ワードの`interrupt-event`を`notify_interrupt`へ渡し、スケジューラにイベントを処理させる | 通知イベントが協調境界で処理され、5ワードを対応する待機タスクへ引き渡したうえでREADYとなって再開する | 直交表 ケース8, `{GLOBAL_InterruptWakeup}` |
 | TEST-COOS-09 | 割り込みイベントFIFO満杯時のドロップ | 容量`FB_CONF_INTERRUPT_QUEUE_SIZE`のFIFOが満杯 | 原因レコードを追加で`notify_interrupt` | `false`を返し、既存のFIFO順序と再スケジュール世代を変えずにドロップカウンタだけを1増やす | `os_scheduler.md` `notify-interrupt`, `coos_concept.py` `` |
 | TEST-COOS-10 | READYタスクと保留イベントを処理した後のアイドル検出 | READYタスク、または最後のタスクが通知した未処理イベントがある | スケジューラをidleまで実行し、タスク順とイベントFIFOを観測する | READYタスクを先に実行し、保留イベントを処理した後にだけidle hookを呼ぶ | `os_coos.md` §4.1, pysim `` |
@@ -44,8 +44,8 @@
 | TEST-COOS-12 | ブロックタスク終了時の待機登録解除 | タスクがselect受信待ち、割り込み待ち、または現在実行中 | `task_killed`を呼び、select対象チャネルと割り込みイベントを処理する | selectグループ内の全チャネル登録とIRQ登録が解除され、タスクは`TERMINATED`のまま再起床しない。コルーチン参照も破棄される。未登録IDおよび終了済みタスクへの要求は`false`を返し、現在実行中のタスクはアサーションで拒否する | `os_coos.md` §4.3, pysim `` |
 | TEST-COOS-13 | 原因レコードのFIFO順序保持 | 複数の`interrupt-event`を同一FIFOへ投入 | 異なる`cause_code`とpayloadを順に投入してドレイン | 受付順と同じ順序でイベントが観測され、5ワードが欠落・混在しない | `{GLOBAL_InterruptWakeup}` |
 | TEST-COOS-14 | 未登録待機先のイベントドロップ | `vector_id`に対応する待機タスクなし | 原因レコードを投入してドレイン | ゲストや無関係なタスクを起床せず、イベントをドロップして診断カウンタだけを更新する | `{GLOBAL_InterruptWakeup}` |
-| TEST-COOS-15 | 割り込み再スケジュール世代の一巡 | READYタスクが複数存在し、割り込みイベントを受け付ける | スケジューラを協調境界まで進める | 同一保留バーストのイベントは一世代へ集約され、対象タスクは各一回だけ世代を観測してから通常のREADY巡回へ戻る | `{ADR_InterruptRescheduleGeneration}` |
-| TEST-COOS-16 | 世代保留中のCSP追加ハンドオフ停止 | `reschedule_pending=true`でCSPランデブーが成立する | `channel_send`/`channel_recv`後の所有権、遷移先の世代観測、追加連鎖を観測する | 所有権移譲と成立に必要な直接遷移は完了する。遷移先の世代観測後に追加連鎖が止まり、スケジューラへ制御が戻る | `GOTCHA-SCHED-02`, `{ADR_InterruptRescheduleGeneration}` |
+| TEST-COOS-15 | 割り込み再スケジュール世代の一巡 | READYタスクが複数存在し、割り込みイベントを受け付ける | スケジューラを協調境界まで進める | 同一保留バーストのイベントは一世代へ集約され、対象タスクは各一回だけ世代を観測してから通常のREADY巡回へ戻る | |
+| TEST-COOS-16 | 世代保留中のCSP追加ハンドオフ停止 | `reschedule_pending=true`でCSPランデブーが成立する | `channel_send`/`channel_recv`後の所有権、遷移先の世代観測、追加連鎖を観測する | 所有権移譲と成立に必要な直接遷移は完了する。遷移先の世代観測後に追加連鎖が止まり、スケジューラへ制御が戻る | `GOTCHA-SCHED-02` |
 
 ### 2.3 形式検証の確認項目
 
@@ -66,7 +66,7 @@
 
 | GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-COOS-01 | チャネル自身が送信値を保持しないこと | 送信側がブロック中 | フィールド名の有無だけで判定せず、送信・受信前後の値の保持先を観測する | チャネルに送信値が存在せず、値は送信側フレームにのみ保持される。受信側が到着すると直接移譲される。 | [`os_coos.md`](docs/components/tier1_core/os_coos.md), `{ADR_RendezvousChannel}` |
+| GOTCHA-COOS-01 | チャネル自身が送信値を保持しないこと | 送信側がブロック中 | フィールド名の有無だけで判定せず、送信・受信前後の値の保持先を観測する | チャネルに送信値が存在せず、値は送信側フレームにのみ保持される。受信側が到着すると直接移譲される。 | [`os_coos.md`](docs/components/tier1_core/os_coos.md) |
 | GOTCHA-COOS-02 | 1チャネル1待機者の強制（多重待機はプログラミングエラー） | チャネルに既に送信側Aが待機中 | 別タスクBが同チャネルへ送信を試行 | 実行時アサーションで違反を検出する。 | [`os_coos.md`](docs/components/tier1_core/os_coos.md) |
 | GOTCHA-COOS-03 | ISR コンテキストとスケジューラ境界の分離 | タスクが IRQ 待ちでブロック中 | ISR 模擬ルーチンから `notify_interrupt` を呼び、スケジューラにイベントを処理させる | notify直後は対象タスクの状態とREADY列が不変である。イベントドレイン後、登録済みの待機タスクだけがREADYへ戻る | [`os_coos.md`](docs/components/tier1_core/os_coos.md) |
 
@@ -83,7 +83,6 @@
 - 対象ソース: [`scheduler.py`](experiments/pysim/tier1_core/scheduler.py)。
 - 環境: Linux、プロジェクトのuv環境。
 - 結果: 成功15件、失敗0件、skip 0件、xfail 0件。
-
 
 ## 4. 未検証・スコープ外
 

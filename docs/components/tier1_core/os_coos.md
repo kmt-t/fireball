@@ -8,7 +8,7 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {CSPCommunication} {EliminateDataRace} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} {GLOBAL_InterruptWakeup} {NotRTOS} {ADR_InterruptRescheduleGeneration} -->
+<!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {CSPCommunication} {EliminateDataRace} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} {GLOBAL_InterruptWakeup} {NotRTOS} -->
 COOSは、シングルスレッド環境向けのホーアCSPベースのグリーンスレッドOSである。C++20コルーチン（および静的配列と `fireball::flat_map_view` 等、C++23の静的確保に適合させたコンテナ語彙）を活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。CSPメッセージで所有権を移譲する共有リソースは一時点で単一タスクだけが所有する。所有者から派生したビューやポインタを移譲後も使わないことは、呼出し側が別途守る。
 
 ## 2. アーキテクチャ分類
@@ -26,9 +26,9 @@ COOSはTier 2ロガーに依存しない。タスク容量超過や割り込みF
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} {ADR_InterruptRescheduleGeneration} -->
+<!-- traceability: {GLOBAL_Policy_Memory} -->
 - **`channel`**: **バッファを持たない**純粋同期ランデブーオブジェクト。値はチャネルに滞留せず、送信側タスクから受信側タスクへランデブー成立の瞬間に直接移譲される。
-- **`shared_block`**: `{ADR_SharedBlockRaii}` が定義するムーブ専用 RAII 共有メモリブロック。静的プールから切り出され、右辺値参照（`&&`）によって単一所有権を保証する。
+- **`shared_block`**: ムーブ専用の RAII 共有メモリブロック。静的プールから切り出され、右辺値参照（`&&`）によって単一所有権を保証する。
 - **`coos_context`**: スケジューラ、CSP状態、メモリ情報、および割り込み時の再スケジュール要求世代を集約したグローバルコンテキスト。
 
 ### 3.2 内部ブロック図
@@ -53,7 +53,7 @@ graph TD
 <!-- traceability: {GLOBAL_Policy_Memory} -->
 
 #### CSPチャネル（channel）
-<!-- traceability: {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} {IPC_ZeroCopy} {OwnershipTransfer} {ADR_SharedBlockRaii} -->
+<!-- traceability: {GLOBAL_Policy_Memory} {IPC_ZeroCopy} {OwnershipTransfer} -->
 チャネル（{CSPCommunication}）は、タスク間の同期と通信を仲介するデータ構造である。ホーア CSP の定義どおり、**チャネル自身は値を保持しない**。送信側は相手が現れるまで、自身のフレーム上に転送リソースを保持する。対象には `shared_block` 等のムーブ専用オブジェクトを用いる。ランデブー成立時に、所有権を受信側へ移す。 <!-- definition: {CSPCommunication} -->
 
 有界で安全なメモリ管理方針に従い、リソースには共有メモリアリーナから事前割り当てした実体（共有メモリスライス等）を用いる。所有権は右辺値ムーブ（`&&`）によってのみ移譲する。これはゼロコピー所有権移譲である。参照実装はチャネル生成時に転送モード（借用値またはムーブ専用値）を固定する。受信時にペイロードの実行時属性から転送方式を推測してはならない。
@@ -82,9 +82,8 @@ Fireball はサービス URI とロールベースの直交設計により、「
 
 形式検証するのは、この制御復帰とモデル内の既存 READY タスクのディスパッチである。全タスクの公平性や有界な実時間応答は保証しない。
 
-
 #### 同期ランデブー通信プロトコル（責務シーケンス図）
-<!-- traceability: {CSP_Handoff} {OwnershipTransfer} {ADR_RendezvousChannel} -->
+<!-- traceability: {CSP_Handoff} {OwnershipTransfer} -->
 値スロット不在・直接手渡しの対称ハンドオフにおける、Sender、COOS Channel、Receiver、COOS Scheduler の相互作用と責務分離を示す。
 
 ```mermaid
@@ -132,7 +131,7 @@ sequenceDiagram
 ```
 
 #### ISR 遅延起床アルゴリズム（手順アクティビティ図）
-<!-- traceability: {GLOBAL_InterruptWakeup} {ADR_InterruptRescheduleGeneration} -->
+<!-- traceability: {GLOBAL_InterruptWakeup} -->
 ハードウェア割り込み発生から、非ブロッキング ISR キューイング、およびスケジューラ yield 境界での安全な遅延起床までの決定論的手順を示す {ISR_Safety}。 <!-- definition: {ISR_Safety} -->
 
 ```mermaid
@@ -167,7 +166,7 @@ CSP送受信のコンセプトコードは [`coos_concept.py`](docs/components/t
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {GLOBAL_InterruptWakeup} {ADR_InterruptRescheduleGeneration} -->
+<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {GLOBAL_InterruptWakeup} -->
 
 COOS の動的スケジューリングおよび同期通信の基本アルゴリズムを以下に定義する。
 
@@ -267,7 +266,6 @@ stateDiagram-v2
   - **Wait Interrupt**: 汎用`interrupt-event`（ISRによる`notify_interrupt`）を待機。
 - **Terminated**: タスクが実行対象から外れ、待機登録とコルーチンが破棄された状態。自然終了に加え、`Blocked` または `SUSPENDED_CSP` のタスクを `task_killed` で終了できる。終了時はチャネルおよびselectグループの待機登録、割り込み待機登録を解除する。未登録IDまたは終了済みタスクへの要求は `false` を返し、現在実行中など対象条件を満たさない状態はアサーションで拒否する。
 
-
 ## 5. インターフェース定義
 
 ### 5.1 インターフェース設計
@@ -292,14 +290,13 @@ COOSが直接利用する3つの依存型だけを `coos_harness` に集約す�
 
 型の結線形を `coos_harness<Scheduler, CspEngine, MemoryManager>`、COOS側の受け取り形を `Coos<Harness>` とする。これは静的注入の型関係を示す概念表記である。テストでは同じ契約を満たす別のハーネス型をコンパイル時に選ぶ。
 
-
 #### 5.1.2 サブコンポーネント・インターフェース (C++23)
 <!-- traceability: {META_StaticDI} -->
 
 C++23/20 コルーチンおよび静的アロケーションを前提とした、サブコンポーネントのC++ API定義を示す。
 
 ##### 1. 所有権管理 `shared_block` (RAII ムーブセマンティクス)
-<!-- traceability: {ADR_SharedBlockRaii} {GLOBAL_Policy_Memory} {IPC_ZeroCopy} {OwnershipTransfer} -->
+<!-- traceability: {GLOBAL_Policy_Memory} {IPC_ZeroCopy} {OwnershipTransfer} -->
 タスク間で受け渡す共有メモリブロックは、動的ヒープを使用せず、ムーブ専用 RAII 型 `shared_block` で所有する。コピーコンストラクタとコピー代入演算子を削除し、CSPチャネルの送受信で右辺値参照（`&&`）を要求すると、同じ所有ハンドルを複製する誤りをコンパイル時に防げる。これはC++実装が満たす目標API契約である。ムーブ元から取得済みのビューやポインタの寿命までは型だけで制約できないため、移譲後のアクセス禁止も契約に含める。
 
 ```cpp
@@ -334,20 +331,18 @@ class shared_block {
 | コンポーネント | C++ API プロトタイプ定義 | 説明 |
 | :--- | :--- | :--- |
 | `scheduler` | `auto spawn(void(*task_entry)(void*), void* arg) -> result<task_id_t, scheduler_error>;`<br>`auto yield() -> void;`<br>`auto exit() -> void;`<br>`auto set_idle_hook(void(*hook)()) -> void;`<br>`auto wake_up_direct(task_id_t task) -> void;`<br>`auto notify_interrupt(interrupt_event event) -> void;` | タスクの生成・一時譲渡・終了およびアイドル時コールバックの設定。`wake_up_direct` はCSP Handoffによる即時起床用、`notify_interrupt` はISRコンテキストから固定長FIFOへ汎用原因レコードを投函する用。動的確保は行わず、静的プールからTCBスロットを割り当てる。 |
-| `csp` | `template <typename T = shared_block>`<br>`auto send(channel_id_t chan, T&& val) -> coos::task_coroutine;`<br>`template <typename T = shared_block>`<br>`auto receive(channel_id_t chan) -> coos::task_coroutine_recv<T>;` | チャネル経由の同期メッセージ送受信。右辺値参照（`&&`）による完全なムーブセマンティクス（ゼロコピー所有権移譲、`{IPC_ZeroCopy}` `{OwnershipTransfer}`）を行う。具象型としては `shared_block`（`{ADR_SharedBlockRaii}`）や `ipc_message` を渡す。 |
+| `csp` | `template <typename T = shared_block>`<br>`auto send(channel_id_t chan, T&& val) -> coos::task_coroutine;`<br>`template <typename T = shared_block>`<br>`auto receive(channel_id_t chan) -> coos::task_coroutine_recv<T>;` | チャネル経由の同期メッセージ送受信。右辺値参照（`&&`）による完全なムーブセマンティクス（ゼロコピー所有権移譲、`{IPC_ZeroCopy}` `{OwnershipTransfer}`）を行う。具象型としては `shared_block`や `ipc_message` を渡す。 |
 | `memory` | `auto acquire_task_heap() -> result<partition_slice, memory_error>;`<br>`auto release_task_heap() -> result<void, memory_error>;`<br>`template <class T> auto acquire_slot() -> result<pool_ref<T>, memory_error>;`<br>`template <class T> auto release_slot(pool_ref<T> ref) noexcept -> void;` | COOS がスケジューラの実行中タスクへ貸与する、タスク固有の静的メモリパーティション（タスクヒープ）の貸与・返却。**汎用ヒープ API ではない**: 任意サイズ確保も汎用ポインタも提供せず、コンパイル時に確定した固定長パーティションと型付きプールスロットのみを扱う。`partition_slice` は基点アドレス・サイズ・所有タスクを持つ非所有ビュー相当、`pool_ref<T>` は静的プール内スロットへの型付きハンドルである。 `{GLOBAL_Policy_Memory}` `{META_NoStdVector}` |
-
 
 ## 6. 制約達成の方策
 
 COOSは固定容量のタスク・チャネル資源を使い、実行時の動的確保を行わない。協調境界を持たないタスクの強制プリエンプションや実時間応答上限は保証しない。容量の正本は [system_config.md](docs/components/tier1_core/system_config.md) と要求仕様である。
 
-
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 検証対象の不変条件
 
-<!-- traceability: {CSP_Handoff} {GLOBAL_UseCpp20Coroutine} {Challenge_CspHandoffStarvation} -->
+<!-- traceability: {CSP_Handoff} {GLOBAL_UseCpp20Coroutine} -->
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
@@ -359,7 +354,7 @@ COOSは固定容量のタスク・チャネル資源を使い、実行時の動�
 | **状態一貫性** | タスク状態 (READY/BLOCKED/SUSPENDED) が各操作後も整合していること。 | 直交表（ケース1-8） |
 
 ### 7.2 直交表: CSP通信と状態遷移
-<!-- traceability: {CSP_Handoff} {ADR_RendezvousChannel} {GLOBAL_InterruptWakeup} -->
+<!-- traceability: {CSP_Handoff} {GLOBAL_InterruptWakeup} -->
 
 チャネル通信時のタスク状態とスケジューラの挙動を検証する。チャネル通信はバッファを持たない同期ランデブー方式であるため、状態は「待機者なし / 送信待機 / 受信待機」の3値のみを取り、バッファ満杯（Full）ケースは存在しない。割り込み通知はイベント駆動型として扱われる。
 

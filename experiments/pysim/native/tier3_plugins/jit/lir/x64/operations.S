@@ -347,9 +347,6 @@ FB_STENCIL_BEGIN \name
 .endm
 
 FB_RUNTIME_API_STENCIL fb_stencil_runtime_api, 12
-FB_RUNTIME_API_STENCIL fb_stencil_runtime_api_immediate_one, 16
-FB_RUNTIME_API_STENCIL fb_stencil_runtime_api_immediate_two, 20
-FB_RUNTIME_API_STENCIL fb_stencil_runtime_api_immediate_three, 24
 
 /* Tail-call one Interpreter CPS call handler through the borrowed function table. */
 FB_STENCIL_BEGIN fb_stencil_cps_call

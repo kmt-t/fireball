@@ -9,10 +9,10 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {RuntimeEventSink} {ZeroRuntimeOverhead} -->
+<!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} -->
 
 本契約は Runtime の意味上のイベントを C++ で記録し、停止点で Python へ渡す契約を定める。C++ と Python
-で同じイベント型やメモリ配置を共有せず、境界で明示的に変換する。Runtime Event Sink は
+で同じイベント型やメモリ配置を共有せず、境界で明示的に変換する。Runtime Event Sink（`{RuntimeEventSink}`）は <!-- definition: {RuntimeEventSink} -->
 Guest Profiler 向けの関数・実行境界イベントだけを記録する。
 
 この分割により、Interpreter と JIT のホットパスは C++ 内で完結させる。通常のイベント経路は
@@ -26,7 +26,7 @@ JIT拡張のホットスポット履歴とカード状態はRuntime Event Sink�
 Profiler は受け取ったデータを読み取るだけであり、実行状態を変更しない。Debugger の停止・再開・ステップ制御は独立した実行制御契約に置く。
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {RuntimeEventSink} -->
+<!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} -->
 
 本契約は Tier 2 Runtime が所有する観測契約である。C++ 内のイベント生成境界と Python へ公開する転送
 ABI を定める。集計ポリシーおよび表示は Tier 3 の Profiler が担い、Python 側イベント API は
@@ -257,7 +257,7 @@ Python の sink/consumer はイベントまたは集計レコードを受け取�
 経路は提供しない。Python callback が必要な場合は ABI 読出し完了後に Adapter が呼び出す。
 
 ## 6. 制約達成の方策
-<!-- traceability: {ZeroRuntimeOverhead} {LowOverhead} {GLOBAL_Policy_Memory} -->
+<!-- traceability: {LowOverhead} {GLOBAL_Policy_Memory} -->
 
 ### 6.1 性能制約と方策
 
@@ -325,7 +325,6 @@ Runtime Event Sink の比較は「Sink 無効」「Sink 有効」の具象 Runti
 6. Event Sink 有効・無効の具象 Runtime を同一プログラムで生成できる。
 
 ### 8.1 満杯時の履歴保持
-<!-- traceability: {ADR_RuntimeEventRetention} {RuntimeEventSink} -->
 
 - **ステータス**: 採用。本書の保持順序と欠落時の扱いに従う。
 - **背景**: 固定容量ではすべての履歴を保持できない。停止点に近い動作を調べるため、保持する履歴の範囲を選ぶ必要がある。

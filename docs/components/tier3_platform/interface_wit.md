@@ -7,13 +7,12 @@
      test: docs/qa/tier3_platform/interface_wit_test_spec.md
 -->
 
-
 ## 1. コンセプト
 
 ### 1.1 目的
 
-<!-- traceability: {WIT_Interface_Purpose} {WIT_First} {WIT_Common_Types} {URIAbstraction} -->
-本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびハードウェア抽象化層（HAL）のインターフェース仕様を定義する。ゲスト側のWASI互換アダプタはTier 3に属し、本書はその依存先となる公開WIT契約を定義する。WITは、低レベルホストコールを [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit)、HALの型とURI Resolverを [`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit) に分割して定義する。
+<!-- traceability: {WIT_Common_Types} {URIAbstraction} -->
+本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびハードウェア抽象化層（HAL）のインターフェース仕様を定義する（`{WIT_Interface_Purpose}`）。 <!-- definition: {WIT_Interface_Purpose} -->ゲスト側のWASI互換アダプタはTier 3に属し、本書はその依存先となる公開WIT契約を定義する。WITは、低レベルホストコールを [`fireball_hostcall_contract.wit`](docs/components/tier3_platform/wit/fireball_hostcall_contract.wit)、HALの型とURI Resolverを [`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit) に分割して定義する。
 
 **HAL は WASI 0.3 Preview（WASI 0.3p / Component Model）と親和性のある抽象 IF である。** 個別の GPIO、タイマー、バス通信、ストリーム、コンソール出力用に専用の WIT リソース型を定義しない。
 
@@ -21,25 +20,23 @@
 
 デバイスや HAL ごとの振る舞いは IPC コマンド ID で決定する。URI 命名規則とコマンド仕様の正本は [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) である。レガシーな WASI 0.1p（`wasi_snapshot_preview1`）ABI は、これらの公開 IF を呼び出す Tier 3 ゲストアダプタとして提供する。
 
-
 ## 2. アーキテクチャ分類
 
 ### 2.1 アーキテクチャ原則
 
-<!-- traceability: {CleanArchitecture} {META_SpecificationFirst} {META_Risk_Tiering} {URIAbstraction} -->
+<!-- traceability: {META_SpecificationFirst} {META_Risk_Tiering} {URIAbstraction} -->
 - **URI Resolver メソッド**: `resolver.get-interface(uri: string)` により、URI 文字列からインターフェースハンドルを取得可能とする。個別デバイスの WIT リソース型は存在しない——ハンドルに対する操作はすべて IPC コマンドID経由で行う。
 - **HALバッファプール（vMMIO/DYNAMIC）ゼロコピー I/O**: デバイス通信のデータ送受信は、ゲストがI/O開始時に`map-buffer`で選択し、完了時に`unmap-buffer`で解除する固定スロット（vMMIO/DYNAMIC 領域の `hal-buffer-slice`）を通じてゼロコピー／極低レイテンシで実行される。 `{META_RestrictedPhysicalAccess}`
 - **IPC 宛先 URI と階層命名規則**: URI は、`fireball://hal/<type>/<instance>`（例: `fireball://hal/uart/0`, `fireball://hal/gpio/0`, `fireball://hal/timer/0`, `fireball://hal/i2c/0`, `fireball://hal/stdout/0`）の**階層型 URI 命名規則**に従い、**IPC ルータ（`ipc_router`）でHALサブシステムと通信するための宛先 URI** として機能する。
 - **WASI 0.1p 互換ラッパー (Adapter Pattern)**: WASI Preview 1 の標準出力とログ出力は、Tier 3ゲストアダプタが上記の URI Resolver + HALバッファプール機構へ変換する。その他の Preview 1 操作は Tier 3 の uvwasi ドライバへ委譲し、`proc_exit` は Fireball host call でランタイムへ通知する。
 - **Stateless Interface**: リソースハンドルを通じた操作を行い、ホスト側で状態を管理する。
 
-
 ## 3. 静的モデル
 
 ### 3.1 共通データ構造
 
 #### 3.1.1 基礎インターフェース & IPC URI Resolver
-<!-- traceability: {CooperativeMultitasking} {Asynchronous_Notification} {URIAbstraction} {META_RestrictedPhysicalAccess} {WIT_First} {WIT_Interface_Spec} {HAL_Interface} {IPC_ZeroCopy} -->
+<!-- traceability: {CooperativeMultitasking} {Asynchronous_Notification} {URIAbstraction} {META_RestrictedPhysicalAccess} {WIT_Interface_Spec} {HAL_Interface} {IPC_ZeroCopy} -->
 以下の基礎コンポーネントのみを提供する。個別デバイス/HAL向けの WIT リソース型は定義しない。
 
 - `resolver`: 階層型 IPC 宛先 URI（`fireball://hal/<type>/<instance>`）から通信ハンドルを取得し、HALが常時保持する固定バッファスロットのビューを提供するリゾルバ。
@@ -62,7 +59,7 @@ flowchart TD
 ```
 
 #### 3.1.2 リカバリー戦略とエラーハンドリング
-<!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} {WIT_First} {WIT_Common_Types} -->
+<!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} {WIT_Common_Types} -->
 
 本プロジェクトでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクション（リトライ/諦める）を取れるようにする。低レイヤー（Syscall）の `errno` は、ゲスト側の `libfireball` でこの戦略に変換される。
 ※なお、ホスト内部で各デバイスドライバと通信する低レイヤーの IPC コマンドプロトコルおよび RSP デバッグ仕様は、Tier 2/3 の HAL コンポーネント設計書（[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) / [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md)）を正本とする。
@@ -84,18 +81,16 @@ flowchart TD
 - **実装詳細の分離**: `hardware-error`や`timeout`は実装の内部状態であり、クリーンアーキテクチャの内側が知るべきではない。
 - **アクション指向**: リカバリー戦略により、呼び出し側は具体的なアクション（リトライ/エラーログ出力して諦める）を決定できる。
 - **リトライ上限到達時の段階的エスカレーション (Retry Exhaustion Escalation)**: `retry` 戦略の上限は `system_config.md` が定める `FB_CONF_RETRY_MAX_ATTEMPTS` とする。上限到達後は `restart`（タスクコンテキスト再初期化・再起動）へエスカレーションする。再起動後もエラーが回復不能な場合は最終的に `panic` へエスカレーションし、システム安全性を担保する。
-- **IPC は所有権ロールバックを必要としない**: IPC ルータ（`ipc_router.md`）はバッファなし同期 CSP チャネル（`{ADR_RendezvousChannel}`）であり、宛先ごとの有界キューを持たない。したがって `ERR_QUEUE_FULL` のような一時的な資源競合は原理的に発生せず、`Revoke` 後の所有権ロールバックという回復処理も存在しない——送信は相手タスクの到達を待つのみで、失敗して差し戻る経路がない。
+- **IPC は所有権ロールバックを必要としない**: IPC ルータ（`ipc_router.md`）はバッファなし同期 CSP チャネルであり、宛先ごとの有界キューを持たない。したがって `ERR_QUEUE_FULL` のような一時的な資源競合は原理的に発生せず、`Revoke` 後の所有権ロールバックという回復処理も存在しない——送信は相手タスクの到達を待つのみで、失敗して差し戻る経路がない。
 - **デバッグ情報の分離**: 失敗の詳細理由はログシステムで確認する。インターフェースには含めない。
-
 
 ## 4. 動的モデル
 
 ### 4.1 非同期通知メカニズム
-<!-- traceability: {Asynchronous_Notification} {WASI_Async_Bridge} {WIT_First} {HAL_Interface} -->
+<!-- traceability: {Asynchronous_Notification} {WASI_Async_Bridge} {HAL_Interface} -->
 WASIでは割り込みベクタを直接扱わず、汎用ポーリングコマンドによる操作完了待機としてモデル化する。専用の `pollable` リソース型は設けず、購読操作が返す単一のpollableハンドルでready状態の確認、待機、および解放を行う。公開操作の型は [`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit)、IPCコマンドへの対応は [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) を正本とする。vMMIOのvIRQ原因付き階層ディスパッチは、COOSの汎用割り込みイベント契約とCOOS協調境界での配送で処理し、WASI契約には追加しない。
 
 - **操作完了通知**: 物理デバイスの完了状態は、GPIOエッジ購読、タイマー満了購読、バス受信購読等のIPCコマンドが返す`u32`ポーリングハンドルに対する`POLL_CHECK`/`POLL_WAIT`で確認する。これはvIRQの原因レコード配送とは別の経路である。
-
 
 ## 5. インターフェース定義
 
@@ -104,7 +99,7 @@ WASIでは割り込みベクタを直接扱わず、汎用ポーリングコマ�
 WASI標準には存在しない、Fireball固有の高速 host call である。実体は `../tier2_runtime/runtime_syscall.md` で定義される `fireball::fireball_call` である。WASM import がこの host call を直接ホストディスパッチへ接続し、SYSCTL／VDMAの vMMIO レジスタは経由しない。
 
 #### 5.1.1. `fireball:host/trap` の定義
-<!-- traceability: {Syscall_Mapping} {WIT_First} {WIT_Interface_Spec} -->
+<!-- traceability: {Syscall_Mapping} {WIT_Interface_Spec} -->
 WIT内では `fireball-call` という kebab-case 名で定義される。
 C++バインディングおよび公開APIでは、名前空間 `fireball` 内の `fireball_call`（snake_case）としてマッピングされる。
 これはhost call として公開される。
@@ -186,7 +181,6 @@ WASI仕様と HAL の乖離および考慮点は以下の通り：
 2. **リアルタイム性**: WASI 0.3p のポーリングモデルは非同期イベントの集約に利用できるが、極めて高速なリアルタイム応答が必要な場合、`fireball_call` (Trap) を併用する方が効率的である可能性がある。
 3. **リソース管理のオーバーヘッド**: 専用 WIT リソース型（ハンドル管理）を廃したことで、単純な `u32` ID渡しとIPCコマンドIDを使う構成となり、ホスト側の管理状態を抑える。
 
-
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 検証対象の不変条件
@@ -204,7 +198,6 @@ vIRQの活性は、登録とシグネチャの検査を通り、FIFOが受理し
 
 ### 7.4 既知の制限・対象外
 ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
-
 
 ## 8. 設計判断と参考実装
 

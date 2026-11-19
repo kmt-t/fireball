@@ -10,7 +10,7 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {LowLatencyJIT} {MemoryIsolation} {META_FaultIsolation} {EnvironmentPointer} {OneRuntimeOneGuest} {Runtime_BumpAllocator} {WasmFCSubset} {VDMA} -->
+<!-- traceability: {MemoryIsolation} {META_FaultIsolation} {EnvironmentPointer} {OneRuntimeOneGuest} {Runtime_BumpAllocator} {WasmFCSubset} {VDMA} -->
 vSoC (Virtual System-on-Chip) は WASM 実行環境の統合マネージャである。Loader、Interpreter、vMMIO、Debugger を統括して実行制御を行う。JITはInterpreter dispatcherへ任意接続する実行拡張であり、vSoCの独立した実行器ではない。
 各サブコンポーネントを統合する環境としての役割を担う。`execution_context` 内のリニアメモリ情報やグローバル変数テーブル（`vsoc_runtime` 領域）を介して実行環境を提供する。
 本システムは **1ランタイム1ゲストの直交分離原則** を採用する。各 vSoC インスタンスは厳密に 1 つのゲストモジュールのみを担当する。
@@ -104,13 +104,13 @@ vSoCは実行コンテキストとモジュール実行情報を組み合わせ�
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| リニアメモリ基点 | リニアメモリ実体の借用ホスト基点。ゲスト論理アドレスとは区別する | 非所有ポインタ | x86-64では `execution_context` の `+0x78` |
-| リニアメモリ有効サイズ | 境界検査対象の有効バイト数。ゲスト論理アドレス幅とは区別する | 64bit符号なし | x86-64では `execution_context` の `+0x80` |
+| リニアメモリ基点 | リニアメモリ実体の借用ホスト基点。ゲスト論理アドレスとは区別する | 非所有ポインタ | `execution_context` 内の配置は [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) を正本とする |
+| リニアメモリ有効サイズ | 境界検査対象の有効バイト数。ゲスト論理アドレス幅とは区別する | 64bit符号なし | `execution_context` 内の配置は [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) を正本とする |
 | グローバル値と幅 | WASM `global` の値配列と型幅 | モジュール実行情報への非所有ビュー | `execution_context` へ重複配置しない |
 
-確認済みx86-64の `execution_context` は144バイトである。フィールド順とオフセットは [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) を正本とする。物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のPIC契約に従う。 `{PositionIndependentCode}`
+`execution_context` の全体サイズとフィールド配置は [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) を正本とし、物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のPIC契約に従う。 `{PositionIndependentCode}`
 
-オペランド領域とローカル値領域は、それぞれ独立した固定容量の値領域である。呼出し元へ戻る情報は固定容量のCallStack記述子配列に保持し、制御ブロックごとの実行時領域は持たない。各値領域の位置と容量はInterpreterが管理する（[interpreter.md](docs/components/tier2_runtime/interpreter.md#adr-interp-03-制御状態の実行時配列を廃止)）。
+オペランド領域とローカル値領域およびCallStack記述子配列の構成は [`interpreter.md`](docs/components/tier2_runtime/interpreter.md) を正本とする。
 
 > [!NOTE]
 > **構造体の役割分離**:
@@ -133,7 +133,7 @@ vSoCの動作パラメータを定義する。
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {ContextPointerRegister} {GLOBAL_InterruptWakeup} {JIT_AssemblyStencilCodegen} {JIT_BackedgeYield} {OneRuntimeOneGuest} {ThreadedInterpreter} {JIT_LazyChaining} {DebuggerInterpreterComposition} {Runtime_BumpAllocator} -->
+<!-- traceability: {ContextPointerRegister} {GLOBAL_InterruptWakeup} {JIT_BackedgeYield} {OneRuntimeOneGuest} {ThreadedInterpreter} {Runtime_BumpAllocator} -->
 
 vSoC コアエンジンの実行委譲、協調イールド、および外部介入制御の基本アルゴリズムを以下に定義する。
 
@@ -153,9 +153,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
   ゲスト実行終了後もロード済みモジュールのメタデータはランタイム内に保持する。ランタイム破棄時にJIT キャッシュを無効化（3-Bank Flush）し、データバンプアロケータとJITコードアロケータのアリーナを $O(1)$ で一括リセットして返還する。
   個別の `free()` や複雑なデストラクタ走査は一切行わない。これにより動的メモリ断片化や他モジュールからのダングリング参照を原理的に根絶する。
 - **C++実行dispatcherと3論理引数契約 (`{GOTCHA-VSOC-01}`)**: <!-- definition: {GOTCHA-VSOC-01} -->
-  実行状態は `(ctx, ip*, sp*)` の3論理引数で表す。opcode handlerとInterpreter Runtime APIは、定数プール位置を表す`rel*`を継続引数として受け取る。Runtime APIは`ip`、`sp`、ローカル基点、`rel`を参照で更新する。ローカル基点は`ctx.local_base`、スタック頂点値は共有オペランドスタックから取得する。物理呼出し規約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) のx64定義に従い、ARMv8-Mの物理配置はTBDとする。
-  C++ Interpreter dispatcherは記録の枠番号から常駐trace entryを得て、dispatcher自身が呼び出す。常駐traceがない場合はC++ Interpreter handlerを実行する。yield・trap・完了などの境界でRuntimeEngineへstatusを返し、Interpreterが所有するしきい値に達するまではC++側に留まる。vSoCへ命令ごとに戻らず、RuntimeEngineはしきい値を保持しない。
-  共通コード領域のchain dispatcherは別の機械語経路である。直線traceの末尾からdispatcherへ移り、headerのtarget bodyへtail-jumpする。C++ handler後に実行拡張が次の本体を選ぶ遷移はchainではない。
+  実行状態 `(ctx, ip*, sp*)` と継続引数 `rel*` の物理呼出し規約、およびtrace入口・chain dispatcherのABI契約は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を正本とする（ARMv8-MはTBD）。C++ Interpreter dispatcherは記録の枠番号から常駐trace entryを得て呼び出し、常駐traceがない場合はC++ Interpreter handlerを実行する。yield・trap・完了などの境界でRuntimeEngineへstatusを返し、Interpreterが所有するしきい値に達するまではC++側に留まる（vSoCへ命令ごとに戻らない）。C++ handler後に実行拡張が次の本体を選ぶ遷移はchainではない。
 #### ランタイム生成と破棄のライフサイクル（責務シーケンス図）
 <!-- traceability: {OneRuntimeOneGuest} {Runtime_BumpAllocator} {META_FaultIsolation} -->
 COOS Scheduler、vSoC Engine、Platform MemoryManager、WASM Loader、WASM Module 間の生成・ストレージ確保と、$O(1)$ 一括解放手順を示す。
@@ -199,9 +197,8 @@ sequenceDiagram
     vSoC-->>Sched: Teardown Complete (Zero Fragmentation)
 ```
 
-
 #### C++実行dispatcherとLOOP後方分岐yield（責務シーケンス図）
-<!-- traceability: {GOTCHA-VSOC-01} {GOTCHA-VSOC-02} {ADR_LoopBackedgeYield} {ThreadedInterpreter} {JIT_AssemblyStencilCodegen} -->
+<!-- traceability: {GOTCHA-VSOC-01} {GOTCHA-VSOC-02} {ADR_LoopBackedgeYield} {ThreadedInterpreter} -->
 COOS Scheduler、System、RuntimeEngine、C++ Interpreter handlerおよびJIT trace間の継続を示す。
 
 ```mermaid
@@ -244,7 +241,7 @@ sequenceDiagram
 ```
 
 ### 4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)
-<!-- traceability: {DebuggerInterpreterComposition} {JIT_AssemblyStencilCodegen} {JIT_BackedgeYield} {ThreadedInterpreter} -->
+<!-- traceability: {JIT_BackedgeYield} {ThreadedInterpreter} -->
 
 vSoC Engine の実行制御と JIT/Interpreter 切り替えの状態遷移を以下に示す。 {VSOC_Lifecycle} <!-- definition: {VSOC_Lifecycle} -->
 
@@ -315,7 +312,7 @@ stateDiagram-v2
 - **LOOP後方分岐yield {ADR_LoopBackedgeYield}**: InterpreterとJITは取得後方辺を共通contextへ記録する。各実行経路はInterpreterが所有するしきい値到達まで処理する。到達時だけRuntimeEngineへstatusを返し、SystemがCOOSへの協調yieldを行う。 <!-- definition: {ADR_LoopBackedgeYield} -->
 
 ### 4.2.1 LOOP後方分岐とJIT chain
-<!-- traceability: {JIT_BackedgeYield} {Challenge_JITCacheEfficiency} {DebuggerInterpreterComposition} {JIT_LazyChaining} -->
+<!-- traceability: {JIT_BackedgeYield} -->
 
 制御命令の各実行経路は同じWASM意味論を保つ。JIT生成コードとJIT Runtime APIでも制御命令を処理できる。取得したLOOP後方辺は共通contextで数える。協調yield回数しきい値はInterpreter構成で指定する。
 
@@ -342,13 +339,13 @@ ARMv8-Mのchain構成、命令列、header、枠表の方式、保護方式、�
 ```
 
 #### JITキャッシュ管理への委譲
-<!-- traceability: {Challenge_JITCacheEfficiency} {LowLatencyJIT} {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} -->
+
 JITキャッシュの状態、検索、バンク回転、昇格、および破棄は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) を正本とする。対象ABIの物理配置は [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) を参照する。
 
 Interpreter dispatcherは接続済みネイティブ実行拡張を呼び出す。RuntimeEngineはInterpreterをscheduler境界まで進める。vSoCは境界結果に従ってyieldを行い、キャッシュの内部状態や回転契機を扱わない。ARMv8-Mの物理容量と配置はTBDである。
 
 #### Debugger と JIT の構成排他
-<!-- traceability: {DebuggerInterpreterComposition} {Debug_Integrated} -->
+<!-- traceability: {Debug_Integrated} -->
 
 デバッグ実行とJIT実行は同一Interpreterへ同時に接続しない。Interpreterは次の条件を `assert` で検査する。
 
@@ -361,10 +358,10 @@ Interpreter dispatcherは接続済みネイティブ実行拡張を呼び出す�
 本節で述べたLOOP後方分岐yieldとキャッシュ一貫性の性質は、検証対象の不変条件表に列挙したプロパティとして形式検証されている。個々のモデルファイルとプロパティ名の対応は **[検証対象の不変条件](#71-検証対象の不変条件)** を正本とする。
 
 ### 4.3 内部シーケンス
-<!-- traceability: {ThreadedInterpreter} {JIT_AssemblyStencilCodegen} {JIT_BackedgeYield} {DebuggerInterpreterComposition} -->
+<!-- traceability: {ThreadedInterpreter} {JIT_BackedgeYield} -->
 #### WASM実行およびJIT遷移シーケンス
 
-<!-- traceability: {JIT_AssemblyStencilCodegen} {Interpreter_LazyJITSwitch} {Challenge_JITCacheEfficiency} -->
+<!-- traceability: {Interpreter_LazyJITSwitch} -->
 ```mermaid
 sequenceDiagram
     participant S as Scheduler
@@ -551,7 +548,7 @@ sequenceDiagram
 | 不変条件 | 不正な端点ではコピーを開始せず、メモリを部分変更しない。`len == 0`でも端点を検査する。 |
 
 ### 5.2 ホストAPIエクスポート
-<!-- traceability: {NativeAPI_Export} {Syscall_Mapping} {WIT_Interface_Spec} {WIT_First} {VDMA} {GLOBAL_InterruptWakeup} {WASI_Implementation} {HAL_Interface} -->
+<!-- traceability: {NativeAPI_Export} {Syscall_Mapping} {WIT_Interface_Spec} {VDMA} {GLOBAL_InterruptWakeup} {WASI_Implementation} {HAL_Interface} -->
 
 WASMゲストからホストサービスを呼び出すための最小限のインターフェースを提供する。
 
@@ -584,16 +581,15 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 | **Wasm Loader** | モジュールロードと `module_view` の管理 | `loader`, `module_view` |
 | **Debugger** | デバッグコマンドの処理と実行状態の同期 | `debugger`, `debug_command_queue` |
 
-
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
-<!-- traceability: {LowLatencyJIT} {ThreadedInterpreter} -->
+<!-- traceability: {ThreadedInterpreter} -->
 - **目標**: WAMRインタープリタを上回る実行速度を実現する。
 - **方策**: assembly stencilから構成したJIT traceの実行と、未コンパイル区間を処理するスレッドインタープリタを組み合わせる。
 
 ### 6.2 メモリ制約と方策
-<!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_IndependentHeap} {WasmPageAlignment} -->
+<!-- traceability: {GLOBAL_IndependentHeap} {WasmPageAlignment} -->
 - **目標**: 構成で定めるメモリ上限内で動作させる。ARMv8-Mの物理容量適合性はTBDとする。
 - **方策**: x64参照構成は構成で定めるJITコード領域を使う。容量とバンク分割は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) に従う。ARMv8-Mの容量と物理配置はTBDとする。
 - **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。
@@ -611,7 +607,7 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 
 ### 7.1 検証対象の不変条件
 
-<!-- traceability: {JIT_BackedgeYield} {Challenge_JITCacheEfficiency} {DebuggerInterpreterComposition} {GLOBAL_InterruptWakeup} -->
+<!-- traceability: {JIT_BackedgeYield} {GLOBAL_InterruptWakeup} -->
 
 各不変条件は、下表のモデルファイル内の**プロパティ名で特定できる形**で証明されている。すべてのプロパティは `build_model(guards=False)` による変異検査を伴い、「ガードを外すと違反状態が到達可能になる」ことを示すことで、空虚な真（vacuous truth）でないことを保証する。
 
@@ -662,7 +658,6 @@ Fireballでは、標準WASIのゲスト側アダプタを `libfireball` とし�
 
 - **時間応答の上限**: LOOP後方分岐の回数しきい値は壁時計時間ではない。実時間の応答上限はCPU速度、分岐間の処理量、COOSの実行状況に依存する。
 - **複数コアでのメモリ可視性**: シングルコア仮定。マルチコアではメモリバリア追加が必要。
-
 
 ## 8. 設計判断と参考実装
 

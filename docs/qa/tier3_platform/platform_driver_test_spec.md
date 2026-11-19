@@ -35,8 +35,6 @@
 ### pysimの固定スロットとstdoutの観測
 <!-- traceability: {GOTCHA-HAL-01} -->
 
-
-
 因子は別slotの同時map、負値と上限外ID、負のoffset/長さ、末尾外offset、末尾超過、257 byte、未mapのhandleと誤ったunmap対象である。
 各拒否後に、選択slotのマッピング、全slotの全byte、他slotの未登録状態を保存する。
 拒否後の末尾slice書込みは同じHAL実体へ届き、元slotをunmapした後は別slotの正常I/Oを開始できる。
@@ -45,7 +43,6 @@
 - 対象ソース: [`dispatch.py`](experiments/pysim/tier2_runtime/hal/dispatch.py)。
 - 環境: Linux、プロジェクトのuv環境。
 - 結果: 成功23件、失敗0件、skip 0件、xfail 0件。
-
 
 ## 4. 未検証・スコープ外
 

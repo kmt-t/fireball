@@ -250,7 +250,7 @@ line/branch coverageは、抜けた経路を探す診断情報として記録す
 | TEST-VSOC-53 | 原因レコードの階層伝播 | root/category/deviceに登録済み関数 | `PASS_THROUGH`を返すイベントを配送 | `root → 分類 → デバイス → ゲスト関数`の順に1回ずつ呼ばれる | `runtime_vsoc.md` `dispatch-interrupt-event` |
 | TEST-VSOC-54 | HANDLEDとREJECTの終端 | root・分類・deviceの3階層それぞれが終端結果を返す | 各階層で`HANDLED`と`REJECT`の計6組を実行する | 呼出し列とlast_pathが終端階層で止まる。HANDLEDは診断なしで終わり、REJECTはその階層の診断原因で終了する。FAULTへ再帰配送しない | `runtime_vsoc.md` `dispatch-interrupt-event` |
 | TEST-VSOC-55 | WASIポーリングとの分離 | vIRQイベントとHALポーリングハンドルが同時に存在 | 両経路を独立して処理 | vIRQ配送が`poll-check`/`poll-wait`を起動せず、ポーリングがvIRQ登録を変更しない | [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md) のポーリング契約 |
-| TEST-VSOC-56 | 再スケジュール世代境界でのCOOS再開可能実行 | C++ dispatch中にCOOSの再スケジュール世代が更新され、LOOP後方分岐yieldしきい値にも達する | `System.run_guest()`をCOOSタスクとして実行し、別タスクの実行後にゲストを再開する | 再スケジュール世代はhandlerごとに読まず、後方分岐しきい値でC++ dispatchが戻った後にCOOS境界で観測する。同じ実行コンテキストから再開して結果を保持し、別タスクはゲスト完了前に実行される | `{ADR_InterruptRescheduleGeneration}` `{ADR_LoopBackedgeYield}` |
+| TEST-VSOC-56 | 再スケジュール世代境界でのCOOS再開可能実行 | C++ dispatch中にCOOSの再スケジュール世代が更新され、LOOP後方分岐yieldしきい値にも達する | `System.run_guest`をCOOSタスクとして実行し、別タスクの実行後にゲストを再開する | 再スケジュール世代はhandlerごとに読まず、後方分岐しきい値でC++ dispatchが戻った後にCOOS境界で観測する。同じ実行コンテキストから再開して結果を保持し、別タスクはゲスト完了前に実行される | `{ADR_LoopBackedgeYield}` |
 | TEST-VSOC-25 | ブレークポイントヒットでDebugging状態へ | 任意の実行状態 | ブレークポイント到達 | `(any)→Debugging` | - |
 | TEST-VSOC-26 | resume(interp)でインタープリタ実行を継続 | Debugging状態 | `resume(interp)`を呼ぶ | PCを保持したままInterpreterRunへ遷移し、JITキャッシュ操作を行わない | `{VSOC_Lifecycle}` |
 
@@ -330,7 +330,6 @@ aliasには3つの固定例も置く。
 有限探索から、全byte列と全履歴の網羅を主張しない。
 
 Linux x86-64・CPython 3.14.6で次を実行した。
-
 
 結果は240件成功、失敗0件、skip 0件である。
 隔離したPythonプロセスで、転送元と先の取り違え、末尾1byteの転送漏れ、read/write許可ゲートの欠落を個別に注入した。

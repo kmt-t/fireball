@@ -100,7 +100,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 
 ### 2.3 Tier 契約の WIT 化と配置規則
 
-各 Tier の外部公開契約は、Markdown だけで定義せず、対応する Tier の `wit/` 配下に WIT ファイルを置く。Markdown のコンポーネント設計書は、WIT の型・関数・リソースが表現できない設計意図、事前条件、事後条件、依存関係、検証方法を補足する。契約のシグネチャと型語彙の正本は WIT とする。
+各 Tier の外部公開契約は、Markdown だけで定義せず、対応する Tier の `wit/` 配下に WIT ファイルを置く（`{WIT_Interface_Spec}`）。 <!-- definition: {WIT_Interface_Spec} --> Markdown のコンポーネント設計書は、WIT の型・関数・リソースが表現できない設計意図、事前条件、事後条件、依存関係、検証方法を補足する。契約のシグネチャと型語彙の正本は WIT とする（`{WIT_Common_Types}`）。 <!-- definition: {WIT_Common_Types} -->
 
 | Tier | WIT 契約の対象 | 配置例 |
 | :--- | :--- | :--- |

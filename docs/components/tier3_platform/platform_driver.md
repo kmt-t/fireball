@@ -14,7 +14,7 @@
 ゲスト標準エラーは辞書レコードではないため、`write_raw`で生バイトを同じ物理出力先へ渡す。レコード種別をバイト列から推測しない。
 
 ## 1. コンセプト
-<!-- traceability: {Challenge_InterruptSafety} {TaskPollInterruptEvent} {RSPMinimalSet} {Fast_Path_GPIO} -->
+<!-- traceability: {TaskPollInterruptEvent} {RSPMinimalSet} {Fast_Path_GPIO} -->
 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が定義する `hal_task` コマンドディスパッチ契約を実現するため、UART・SEGGER RTT・GPIO・I2C・SPI・Timer の物理レジスタ操作ドライバ群を実装する。物理割り込み発生時、ISRは原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長ロックフリーFIFOへ投函する。GDB Remote Serial Protocol (RSP) のパケット解析とデバッグコマンド生成は Tier 3 debugger が担当する。
 
 ## 2. アーキテクチャ分類
@@ -181,7 +181,7 @@ UART および SEGGER RTT は同一のRaw RSPバイトトランスポート契�
 - **方策**: バッファ数とサイズをコンパイル時に固定し、**vMMIOの動的領域 (`DYNAMIC`)** に配置する。
 
 ### 6.2 安全性制約と方策
-<!-- traceability: {Challenge_InterruptSafety} -->
+
 - **目標**: 割り込みによる実行コンテキストの破壊を防止する。
 - **方策**: 割り込みハンドラ内ではフラグセットのみを行い、実際のデータ処理はタスクのコンテキストで実行する。
 

@@ -9,12 +9,9 @@
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {URIAbstraction} {TypeSafeMessaging} {IPC_ZeroCopy} -->
-HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタスク（`hal_task`）として常駐する。
+HAL (Hardware Abstraction Layer) は、COOS 上で稼働するサービスタスク（`hal_task`）として常駐する。
 物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化して提供する。
-デバイスインスタンス 1 つにつき `hal_task` インスタンス 1 つが対応する。
-1 タスクは正確に 1 つの物理ドライバのみを所有する。
-`Role` はデバイス種別だけを表す。
-インスタンスは階層型URI（`fireball://hal/<driver-type>/<instance-id>`）で識別する。
+`Role` はデバイス種別を表し、インスタンスは階層型URI（`fireball://hal/<driver-type>/<instance-id>`）で識別する。
 上位層（Runtime, Debugger, Guest 等）からの直接関数呼び出しは行わない。
 通信はすべて IPC ルータ（`ipc_router`）を介した CSP rendezvous メッセージパッシングによって行われる。
 
@@ -62,12 +59,12 @@ flowchart TD
 
 #### HAL サーバタスク（hal_task）
 <!-- traceability: {META_3TierSeparation} {IPCRouter} -->
-COOS 上で独立して実行される協調タスク。**1 タスクインスタンスにつき 1 物理ドライバインスタンスのみを所有する**契約であり、複数デバイスをまたぐ URI ベースのディスパッチテーブルを内部に持たない。上位層からの直接関数呼び出しを禁止し、IPC ルータ（URIのサービスハンドルで選択されたインスタンスチャネル）経由で CSP rendezvous 受信ループ（`ipc.recv`）を実行してコマンドをディスパッチする契約。ドライバから物理ハードウェアへのアクセスは通常のメソッド呼び出しであり、二段目の IPC は発生しない。
+COOS 上で実行される協調タスク。上位層からの直接関数呼び出しを禁止し、IPC ルータ経由で CSP rendezvous 受信ループ（`ipc.recv`）を実行してコマンドをディスパッチする契約。ドライバから物理ハードウェアへのアクセスは通常のメソッド呼び出しであり、二段目の IPC は発生しない。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| タスクコルーチン | COOS スケジューラ上で、自インスタンス宛ての IPC 受信を待機・処理する実行体 | コルーチン | 1 デバイス／HALインスタンスにつき 1 タスクスロット |
-| 所有ドライバ | このタスクが専有する単一の物理ドライバインスタンス（Tier 3 の [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) を正本とする） | ドライバインスタンス | 1 タスク = 1 ドライバ（1:1） |
+| タスクコルーチン | COOS スケジューラ上で、IPC 受信を待機・処理する実行体 | コルーチン | 構成に応じて1または複数ドライバを担当可能 |
+| 所有ドライバ | このタスクが管理する物理ドライバインスタンス（Tier 3 の [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) を正本とする） | ドライバインスタンス | 構成により1:1または集約配置を選択 |
 | セキュリティロール | IPC ルータで検証されるデバイス種別の権限ロール | ロール | `Role.HAL_*`（インスタンスIDはURIで識別。例: `Role.HAL_UART`, `Role.HAL_GPIO`） |
 
 #### HAL構成（hal_config、契約レベル定数）
@@ -93,9 +90,9 @@ HAL全体の制限値を定義する。物理値は Tier 3 で確定される。
 ## 5. インターフェース定義
 
 ### 5.1 公開 API（WASI親和性のある契約）
-<!-- traceability: {HAL_Interface} {IPC_ZeroCopy} {WIT_First} {WIT_Interface_Spec} {Asynchronous_Notification} {WASI_Async_Bridge} {CooperativeMultitasking} -->
+<!-- traceability: {HAL_Interface} {IPC_ZeroCopy} {WIT_Interface_Spec} {Asynchronous_Notification} {CooperativeMultitasking} -->
 
-HAL の公開境界は、WASI 0.3p の interface / stream / pollable に対応しやすい汎用操作で構成する。ゲスト側の Preview1 API への変換は Tier 3 のゲストアダプタが担当し、HAL はその変換後の契約だけを受け取る。
+HAL の公開境界は、WASI 0.3p の interface / stream / pollable に対応しやすい汎用操作で構成する（`{WASI_Async_Bridge}`）。 <!-- definition: {WASI_Async_Bridge} --> ゲスト側の Preview1 API への変換は Tier 3 のゲストアダプタが担当し、HAL はその変換後の契約だけを受け取る。
 
 ゲストへ公開するresource・functionのシグネチャはTier 3 Platformの[`fireball_hal_contract.wit`](docs/components/tier3_platform/wit/fireball_hal_contract.wit)を正本とする。本書はTier 2 HALが受け取る内部操作の適用条件、URI解決、IPCコマンドへの対応を定める。WIT宣言をTier 2の内部IPC契約として扱わない。
 

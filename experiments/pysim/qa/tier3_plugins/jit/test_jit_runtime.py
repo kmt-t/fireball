@@ -59,7 +59,6 @@ from qa.shared.helpers import wat_to_wasm
 from qa.shared.jit_abi import (
     NativeBlockVisitHistory,
     NativeDispatchSnapshot,
-    attach_admission_records,
     make_qa_jit_dispatch_entry,
 )
 from qa.shared.jit_cache import (
@@ -338,7 +337,6 @@ def test_hotspot_04_3bank_cache_hits_preserve_residency():
     # A hit runs the trace's own code: the block writes local 0 to 7 in every bank.
     for trace in (t1, t2, t3):
         context = ExecutionContext()
-        attach_admission_records(context)
         extended = context.local_stack.extend((0,))
         assert extended
         context.local_base = context.local_stack.value_ptr(0).value
@@ -648,7 +646,6 @@ _SIDE_EFFECT_BODY = "(block i32.const 7 local.set 0) "
 def _run_for_local0(trace: JITTrace) -> int:
     """Execute a trace's own code and return local 0, which the block writes."""
     context = ExecutionContext()
-    attach_admission_records(context)
     extended = context.local_stack.extend((0,))
     assert extended
     context.local_base = context.local_stack.value_ptr(0).value
@@ -722,7 +719,6 @@ def test_jitr_chained_successor_trap_stops_at_its_body_after_the_source_ran():
 
     code = bytes(module.source)
     context = ExecutionContext()
-    attach_admission_records(context)
     extended_locals = context.local_stack.extend((0,))
     assert extended_locals
     context.local_base = context.local_stack.value_ptr(0).value
@@ -1018,7 +1014,6 @@ def test_jitr_native_header_chain_executes_successor_body_once(entry_name: str):
     assert raw_target == target.raw_addr
 
     context = ExecutionContext()
-    attach_admission_records(context)
     assert_result_14 = context.local_stack.extend((0,))
     assert assert_result_14
     if entry_name == "execute":
@@ -3729,7 +3724,6 @@ def _chain_stress_run(cache: JitRuntimeBoundary, module, start: JITTrace) -> Non
         assert successor is not None
         walked = successor
     context = ExecutionContext()
-    attach_admission_records(context)
     assert_result_24 = context.local_stack.extend((0,))
     assert assert_result_24
     context.local_base = context.local_stack.value_ptr(0).value
@@ -5729,158 +5723,6 @@ def test_jitr_107_every_loader_accepted_opcode_compiles_and_matches_the_interpre
     assert engine.stat_jit_invocations > invocations, f"{opcode_name} ran outside the trace"
 
 
-_ADMISSION_WAT = (
-    '(module (func (export "f") (param i32) (result i32)'
-    " local.get 0 i32.const 1 i32.add i32.const 2 i32.mul i32.const 3 i32.sub))"
-)
-_ADMISSION_NO_HISTORY = 0xA0
-
-
-def _admission_engine():
-    """Load the admission module and return (engine, module, manager, block index, block)."""
-    engine = make_runtime_engine()
-    module = engine.load_wasm(bytes(wasmtime.wat2wasm(_ADMISSION_WAT)))
-    engine.register_module_blocks(module)
-    block = max(instruction_blocks(module), key=lambda candidate: candidate.byte_span)
-    index = next(
-        i for i, candidate in enumerate(module.blocks) if candidate.head_pc == block.head_pc
-    )
-    return engine, module, engine.jit_runtime, index, block
-
-
-def _admission_record(manager, index: int) -> int:
-    return native_abi.ADMISSION_RECORD(manager._native.pointer, index)
-
-
-def _strikes(record: int) -> int:
-    return record >> 5
-
-
-def _lifetime(record: int) -> int:
-    return record & 0x1F
-
-
-def _call_admission(engine, module, count: int) -> None:
-    function_index = module.export_func_index("f")
-    for _ in range(count):
-        # (5 + 1) * 2 - 3
-        assert list(engine.call(Interpreter(module), function_index, [5]).unwrap()) == [9]
-
-
-def test_jitr_108_root_entries_count_once_per_lookup_and_no_history_is_the_initial_record():
-    """TEST-JITR-108: the record starts without history, and each root entry counts one entry.
-
-    The lifetime count is the entries since the current install. It rises by one per root entry, and the record keeps the no-history strike until the first eviction.
-    """
-    engine, module, manager, index, block = _admission_engine()
-    assert _admission_record(manager, index) == _ADMISSION_NO_HISTORY
-    _call_admission(engine, module, 3)
-    engine.idle_hook()
-    assert manager.bitmap.get_state(block.head_pc) == CardState.COMPILED
-    before = _lifetime(_admission_record(manager, index))
-    _call_admission(engine, module, 4)
-    assert _lifetime(_admission_record(manager, index)) == before + 4
-    assert _strikes(_admission_record(manager, index)) == 5
-
-
-def _make_resident(engine, module, manager, block) -> None:
-    for _ in range(8):
-        if manager.bitmap.get_state(block.head_pc) == CardState.COMPILED:
-            return
-        _call_admission(engine, module, 1)
-        engine.idle_hook()
-    assert manager.bitmap.get_state(block.head_pc) == CardState.COMPILED
-
-
-def _admission_window(manager) -> tuple[int, int, int]:
-    output = (ctypes.c_uint32 * 3)()
-    native_abi.ADMISSION_WINDOW(manager._native.pointer, output)
-    return output[0], output[1], output[2]
-
-
-def test_jitr_134_lifetime_saturates_at_its_maximum_without_a_carry_into_the_strikes():
-    """TEST-JITR-134: the stencil counts root entries in 5 bits, and the count stops at 31.
-
-    Forty root entries after the install take the lifetime to 31 and keep the strike value. A carry
-    out of the lifetime bits would clear the lifetime and raise the strike to the stage-rejection
-    value, so the strike check tells the two cases apart.
-    """
-    engine, module, manager, index, block = _admission_engine()
-    _make_resident(engine, module, manager, block)
-    strikes = _strikes(_admission_record(manager, index))
-    _call_admission(engine, module, 40)
-    record = _admission_record(manager, index)
-    assert _lifetime(record) == 31
-    assert _strikes(record) == strikes
-
-
-def test_jitr_109_eviction_takes_a_strike_below_the_short_lifetime_and_resets_above_it():
-    """TEST-JITR-109: a short lifetime takes a strike, and a lifetime of K or more resets it.
-
-    The lifetime at eviction is kept in the record until the next install. The strike rises from
-    the no-history value to 1 at the first short eviction, and falls to 0 after a long one.
-    """
-    engine, module, manager, index, block = _admission_engine()
-    _make_resident(engine, module, manager, block)
-    _call_admission(engine, module, 2)
-    short_lifetime = _lifetime(_admission_record(manager, index))
-    assert 0 < short_lifetime < 10
-    for _ in range(3):
-        manager.cache.rotate()
-    assert manager.bitmap.get_state(block.head_pc) == CardState.UNEXECUTED
-    record = _admission_record(manager, index)
-    assert _strikes(record) == 1
-    assert _lifetime(record) == short_lifetime
-
-    _make_resident(engine, module, manager, block)
-    _call_admission(engine, module, 12)
-    assert _lifetime(_admission_record(manager, index)) >= 10
-    for _ in range(3):
-        manager.cache.rotate()
-    assert _strikes(_admission_record(manager, index)) == 0
-
-
-def test_jitr_110_the_eviction_window_closes_after_eight_rotations():
-    """TEST-JITR-110: the window counts the evictions of one group of eight rotations.
-
-    The group closes at the eighth rotation. Its evictions become the previous group, and the
-    current group starts from zero. One resident trace evicted in the group gives a previous
-    count of one.
-    """
-    engine, module, manager, index, block = _admission_engine()
-    while _admission_window(manager)[2] != 0:
-        manager.cache.rotate()
-    _make_resident(engine, module, manager, block)
-    for _ in range(8):
-        manager.cache.rotate()
-    evictions, previous, rotations = _admission_window(manager)
-    assert rotations == 0
-    assert evictions == 0
-    assert previous == 1
-
-
-def test_jitr_111_a_block_at_its_stage_limit_is_rejected_by_its_next_decision():
-    """TEST-JITR-111: a block whose strikes reach the stage limit is rejected, and never compiles.
-
-    Four short evictions take the strikes to 4, which is the limit of the first stage. The next
-    decision rejects the block: its card is no longer a candidate, no trace is installed, and the
-    strikes take the stage-rejection value 6.
-    """
-    engine, module, manager, index, block = _admission_engine()
-    for _ in range(4):
-        _make_resident(engine, module, manager, block)
-        _call_admission(engine, module, 1)
-        for _ in range(3):
-            manager.cache.rotate()
-    assert _strikes(_admission_record(manager, index)) == 4
-    _call_admission(engine, module, 8)
-    engine.idle_hook()
-    assert manager.bitmap.get_state(block.head_pc) != CardState.COMPILED
-    assert not manager.is_trackable(block.head_pc)
-    # The stage rejection is marked by the strike value 6 (jit_runtime.md 8.2).
-    assert _strikes(_admission_record(manager, index)) == 6
-
-
 def test_jitr_112_a_candidate_above_the_score_threshold_compiles():
     """TEST-JITR-112: a block whose score reaches the candidate threshold compiles.
 
@@ -5901,210 +5743,6 @@ def test_jitr_112_a_candidate_above_the_score_threshold_compiles():
     engine.idle_hook()
     assert manager.bitmap.get_state(block.head_pc) == CardState.COMPILED
     assert block.head_pc in manager.compilation_pcs
-
-
-_RECOVERY_BURST_FUNCTIONS = 20
-
-
-def _recovery_module_wat() -> str:
-    """A target block and a burst of functions that all share the same admission group."""
-    functions = "".join(
-        f'(func (export "g{index}") (param i32) (result i32) local.get 0 i32.const {index} i32.add)'
-        for index in range(_RECOVERY_BURST_FUNCTIONS)
-    )
-    return (
-        f'(module (func (export "target") (param i32) (result i32)'
-        " local.get 0 i32.const 1 i32.add i32.const 2 i32.mul i32.const 3 i32.sub)"
-        f" {functions})"
-    )
-
-
-def test_jitr_113_stage_relaxation_restores_a_rejected_candidate_with_zero_strikes():
-    """TEST-JITR-113: a relaxed stage restores the candidates rejected by strikes, with zero strikes.
-
-    A burst of 20 evictions in one group tightens the stage to S = 3. The target takes one strike
-    at each eviction, so its third strike rejects it at the next decision. A group without
-    evictions then relaxes the stage to S = 4, which restores the target's trackable bit and
-    resets its strikes. The next decision compiles it.
-    """
-    wat = _recovery_module_wat()
-    engine = make_runtime_engine()
-    interpreter = None
-    module = engine.load_wasm(bytes(wasmtime.wat2wasm(wat)))
-    engine.register_module_blocks(module)
-    manager = engine.jit_runtime
-    target = next(
-        block
-        for block in instruction_blocks(module)
-        if block.head_pc == module.function_pc_offset(0)
-    )
-    target_index = next(
-        i for i, block in enumerate(module.blocks) if block.head_pc == target.head_pc
-    )
-    interpreter = Interpreter(module)
-    functions = [
-        module.export_func_index(f"g{index}") for index in range(_RECOVERY_BURST_FUNCTIONS)
-    ]
-    target_function = module.export_func_index("target")
-
-    def burst_and_rotate() -> None:
-        for _ in range(3):
-            for function_index in (*functions, target_function):
-                assert engine.call(interpreter, function_index, [5]).unwrap()
-        engine.idle_hook()
-        for _ in range(_ADMISSION_GROUP_ROTATIONS):
-            manager.cache.rotate()
-
-    while _admission_window(manager)[2] != 0:
-        manager.cache.rotate()
-    for _ in range(3):
-        burst_and_rotate()
-    assert _admission_window(manager)[1] >= 16
-    # Cycle four: the third strike rejects the target at its decision.
-    for _ in range(3):
-        for function_index in (*functions, target_function):
-            engine.call(interpreter, function_index, [5]).unwrap()
-    engine.idle_hook()
-    rejected = _admission_record(manager, target_index)
-    assert _strikes(rejected) == 6
-    assert not manager.is_trackable(target.head_pc)
-    for _ in range(_ADMISSION_GROUP_ROTATIONS):
-        manager.cache.rotate()
-    restored = _admission_record(manager, target_index)
-    assert _strikes(restored) == 0
-    assert manager.is_trackable(target.head_pc)
-    for _ in range(3):
-        engine.call(interpreter, target_function, [5]).unwrap()
-    engine.idle_hook()
-    assert manager.bitmap.get_state(target.head_pc) == CardState.COMPILED
-
-
-def test_jitr_124_restored_card_marks_its_trace_free_block_observed():
-    """TEST-JITR-124: the block record follows the card's trackable bit through rejection and restore.
-
-    The setup is that of TEST-JITR-113. A rejected card's trace-free block carries the not-observed
-    value, and the stage relaxation that restores the card sets the observed value.
-    """
-    from tier2_runtime.wasm.module import NO_TRACE_OBSERVED, NO_TRACE_UNOBSERVED
-
-    wat = _recovery_module_wat()
-    engine = make_runtime_engine()
-    module = engine.load_wasm(bytes(wasmtime.wat2wasm(wat)))
-    engine.register_module_blocks(module)
-    manager = engine.jit_runtime
-    target = next(
-        block
-        for block in instruction_blocks(module)
-        if block.head_pc == module.function_pc_offset(0)
-    )
-    target_index = next(
-        i for i, block in enumerate(module.blocks) if block.head_pc == target.head_pc
-    )
-    interpreter = Interpreter(module)
-    functions = [
-        module.export_func_index(f"g{index}") for index in range(_RECOVERY_BURST_FUNCTIONS)
-    ]
-    target_function = module.export_func_index("target")
-
-    def burst_and_rotate() -> None:
-        for _ in range(3):
-            for function_index in (*functions, target_function):
-                assert engine.call(interpreter, function_index, [5]).unwrap()
-        engine.idle_hook()
-        for _ in range(_ADMISSION_GROUP_ROTATIONS):
-            manager.cache.rotate()
-
-    while _admission_window(manager)[2] != 0:
-        manager.cache.rotate()
-    for _ in range(3):
-        burst_and_rotate()
-    assert _admission_window(manager)[1] >= 16
-    for _ in range(3):
-        for function_index in (*functions, target_function):
-            engine.call(interpreter, function_index, [5]).unwrap()
-    engine.idle_hook()
-    assert not manager.is_trackable(target.head_pc)
-    assert module.blocks[target_index].jit_cache_reference == NO_TRACE_UNOBSERVED
-    for _ in range(_ADMISSION_GROUP_ROTATIONS):
-        manager.cache.rotate()
-    assert manager.is_trackable(target.head_pc)
-    assert module.blocks[target_index].jit_cache_reference == NO_TRACE_OBSERVED
-
-
-_ADMISSION_GROUP_ROTATIONS = 8
-
-
-def test_jitr_114_stage_relaxation_keeps_a_block_below_the_limit():
-    """TEST-JITR-114: a relaxed stage restores only the stage-rejected blocks.
-
-    The setup is that of TEST-JITR-113, but the rejecting cycle decides only the target. The
-    bystander g0 stays below the stage limit, so the relaxation leaves its strikes, trackable bit,
-    record, and card state unchanged.
-    """
-    wat = _recovery_module_wat()
-    engine = make_runtime_engine()
-    module = engine.load_wasm(bytes(wasmtime.wat2wasm(wat)))
-    engine.register_module_blocks(module)
-    manager = engine.jit_runtime
-    target = next(
-        block
-        for block in instruction_blocks(module)
-        if block.head_pc == module.function_pc_offset(0)
-    )
-    target_index = next(
-        i for i, block in enumerate(module.blocks) if block.head_pc == target.head_pc
-    )
-    bystander_function = module.export_func_index("g0")
-    bystander = next(
-        block for block in instruction_blocks(module) if block.func_index == bystander_function
-    )
-    bystander_index = next(
-        i for i, block in enumerate(module.blocks) if block.head_pc == bystander.head_pc
-    )
-    interpreter = Interpreter(module)
-    functions = [
-        module.export_func_index(f"g{index}") for index in range(_RECOVERY_BURST_FUNCTIONS)
-    ]
-    target_function = module.export_func_index("target")
-
-    def bystander_state() -> tuple[int, bool, int, int]:
-        return (
-            _strikes(_admission_record(manager, bystander_index)),
-            manager.is_trackable(bystander.head_pc),
-            module.blocks[bystander_index].jit_cache_reference,
-            manager.bitmap.get_state(bystander.head_pc),
-        )
-
-    def burst_and_rotate() -> None:
-        for _ in range(3):
-            for function_index in (*functions, target_function):
-                assert engine.call(interpreter, function_index, [5]).unwrap()
-        engine.idle_hook()
-        for _ in range(_ADMISSION_GROUP_ROTATIONS):
-            manager.cache.rotate()
-
-    while _admission_window(manager)[2] != 0:
-        manager.cache.rotate()
-    for _ in range(3):
-        burst_and_rotate()
-    assert _admission_window(manager)[1] >= 16
-    # The rejecting cycle decides only the target: its third strike rejects it.
-    for _ in range(3):
-        engine.call(interpreter, target_function, [5]).unwrap()
-    engine.idle_hook()
-    assert _strikes(_admission_record(manager, target_index)) == 6
-    assert not manager.is_trackable(target.head_pc)
-    assert module.blocks[target_index].jit_cache_reference == _NO_TRACE_UNOBSERVED
-    # Below the stage limit, the bystander keeps the values it had before the relaxation.
-    before = bystander_state()
-    assert before[0] == 3 and before[1] and before[2] == _NO_TRACE_OBSERVED
-    for _ in range(_ADMISSION_GROUP_ROTATIONS):
-        manager.cache.rotate()
-    # Only the stage-rejected target is restored.
-    assert _strikes(_admission_record(manager, target_index)) == 0
-    assert manager.is_trackable(target.head_pc)
-    assert module.blocks[target_index].jit_cache_reference == _NO_TRACE_OBSERVED
-    assert bystander_state() == before
 
 
 _STRUCTURAL_BLOCK_WORKER = """

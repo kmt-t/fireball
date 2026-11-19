@@ -5,14 +5,14 @@
 正本: [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md)
 参考実装: [`scheduler_concept.py`](docs/components/tier1_core/concepts/scheduler_concept.py)
 
-純粋協調型ラウンドロビンスケジューラ（`{ADR_CoosPureRoundRobin}`）の、タスクライフサイクル・READYキュー・イベント駆動起床（`{ADR_EventDrivenWakeQueue}`）に関する振る舞いを定義する。CSPランデブーと値の所有権移譲は対象外とする。実装上の注意点はコンポーネント仕様書を参照し、本書では対応する検証条件を扱う。
+純粋協調型ラウンドロビンスケジューラの、タスクライフサイクル・READYキュー・イベント駆動起床に関する振る舞いを定義する。CSPランデブーと値の所有権移譲は対象外とする。実装上の注意点はコンポーネント仕様書を参照し、本書では対応する検証条件を扱う。
 
 ## 2. テストケース一覧
-<!-- traceability: {ADR_EventDrivenWakeQueue} {GLOBAL_IdleDetection} {GOTCHA-SCHED-03} {TaskSliceDurationLog} -->
+<!-- traceability: {GLOBAL_IdleDetection} {GOTCHA-SCHED-03} {TaskSliceDurationLog} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-SCHED-01 | yieldしたタスクのFIFOディスパッチ | タスクA・Bをspawnし、両タスクが各実行後にyieldする | A→yield→B→yield→A(継続)→B(継続) の順で実行 | READYキューの順にディスパッチされ、優先度による割り込みは発生しない。このケースはyieldしないタスクを含む全タスクの公平性を検証しない | `{ADR_CoosPureRoundRobin}` |
+| TEST-SCHED-01 | yieldしたタスクのFIFOディスパッチ | タスクA・Bをspawnし、両タスクが各実行後にyieldする | A→yield→B→yield→A(継続)→B(継続) の順で実行 | READYキューの順にディスパッチされ、優先度による割り込みは発生しない。このケースはyieldしないタスクを含む全タスクの公平性を検証しない | |
 | TEST-SCHED-02 | spawn直後はREADYキュー末尾 | タスクA実行中に新規タスクCをspawn | Cのspawn後、現在のRUNNING(A)がyield | 次に実行されるのはREADYキューの先頭（Cがその時点で末尾にいた場合は他のREADYタスクが先） | `os_scheduler.md` 実行可能列 |
 | TEST-SCHED-03 | yield はREADYキュー末尾へ移動 | 単一タスクが2回yield | yieldごとに状態を観測 | yield直後はREADY、次サイクルで再度RUNNINGに戻る | `os_scheduler.md` 状態遷移図 |
 | TEST-SCHED-04 | block/unblockサイクル | タスクがBLOCKされる原因(reason)付きでblock | block直後にunblock_taskを呼ぶ | BLOCKED→READYに遷移し、READYキュー末尾に追加される | `os_scheduler.md` 状態遷移図 |
@@ -24,10 +24,10 @@
 | TEST-SCHED-10 | 重複task_idの拒否 | 既存のtask_idを再度spawn | 同一IDでspawn | 拒否される | scheduler_concept.py `assert task_id not in self.tasks` |
 | TEST-SCHED-11 | 割り込み未通知タスクのアイドル時観測 | 割り込み通知を待つタスクがあり、通知元も保留イベントもない | `run_until_idle`を実行する | この条件では呼出しが戻り、タスクはBLOCKEDのまま、READYキューと割り込みイベントFIFOは空で、idle hookが呼ばれている | `os_scheduler.md`「アイドル検出」 |
 | TEST-SCHED-12 | 原因レコードの順序と未登録ドロップ | FIFOに複数イベント、待機先が一部未登録 | `notify_interrupt`とドレインを実行 | 登録済みの待機先だけが受付順に起床し、未登録イベントはドロップされる | `{GLOBAL_InterruptWakeup}` |
-| TEST-SCHED-13 | READY循環リストの両端操作と定員境界 | 容量4のREADYキューを用意する | 先頭取り出し、末尾追加、先頭追加、任意タスクの除去を行う | FIFO順と循環する前後リンクを保つ。満杯時は追加を拒否し、既存タスクの順序を変えない。各リンク操作はキュー長に依存しない | `{ADR_IntrusiveTcbList}` |
-| TEST-SCHED-14 | 割り込み再スケジュール世代の一巡 | READYタスクA・Bが存在し、割り込み通知を1回以上受け付ける | FIFOをドレインし、A・Bを順にディスパッチする | `reschedule_generation`は保留バーストごとに1回だけ進み、各対象タスクの`last_seen_generation`が一度ずつ更新される。全対象の観測後に`reschedule_pending`が解除される | `{ADR_InterruptRescheduleGeneration}` |
-| TEST-SCHED-15 | 一巡中に生成されたタスクの対象外化 | 世代要求が保留中にタスクCをspawnする | 現在世代の対象マスクを確定してCをディスパッチする | Cは現在世代の`round_target_mask`に含まれず、C自身の通常の協調実行を開始する。既存対象の観測完了を待つ | `{ADR_InterruptRescheduleGeneration}` |
-| TEST-SCHED-16 | 終了タスクのTCBスロット返却とID再利用 | TCBが満杯で一部が終了済み、または全タスクが生存している。終了タスクには待機登録と所有資源がある | 生成・終了を固定幅ID空間を超える回数反復する | 終了済みの最古スロットを返却し、生存タスクを保持する。終了タスクの待機登録と資源を解放してからIDを再利用する。生存IDは重複せず、待機マスクは構成範囲内である。全タスク生存時は容量超過で停止する | `{CooperativeMultitasking}`、`{ADR_TaskIdLifetime}` |
+| TEST-SCHED-13 | READY循環リストの両端操作と定員境界 | 容量4のREADYキューを用意する | 先頭取り出し、末尾追加、先頭追加、任意タスクの除去を行う | FIFO順と循環する前後リンクを保つ。満杯時は追加を拒否し、既存タスクの順序を変えない。各リンク操作はキュー長に依存しない | |
+| TEST-SCHED-14 | 割り込み再スケジュール世代の一巡 | READYタスクA・Bが存在し、割り込み通知を1回以上受け付ける | FIFOをドレインし、A・Bを順にディスパッチする | `reschedule_generation`は保留バーストごとに1回だけ進み、各対象タスクの`last_seen_generation`が一度ずつ更新される。全対象の観測後に`reschedule_pending`が解除される | |
+| TEST-SCHED-15 | 一巡中に生成されたタスクの対象外化 | 世代要求が保留中にタスクCをspawnする | 現在世代の対象マスクを確定してCをディスパッチする | Cは現在世代の`round_target_mask`に含まれず、C自身の通常の協調実行を開始する。既存対象の観測完了を待つ | |
+| TEST-SCHED-16 | 終了タスクのTCBスロット返却とID再利用 | TCBが満杯で一部が終了済み、または全タスクが生存している。終了タスクには待機登録と所有資源がある | 生成・終了を固定幅ID空間を超える回数反復する | 終了済みの最古スロットを返却し、生存タスクを保持する。終了タスクの待機登録と資源を解放してからIDを再利用する。生存IDは重複せず、待機マスクは構成範囲内である。全タスク生存時は容量超過で停止する | `{CooperativeMultitasking}` |
 | TEST-SCHED-17 | 割り込みFIFOのロックフリー性と容量境界 | ISR producerとCOOS consumerが同一の固定長SPSC FIFOを使用 | producerが満杯まで投入し、consumerが順に取り出し、空きスロットへ再投入する | mutex／スピンロックなしでFIFO順序を保ち、満杯時は既存イベントを上書きせず`false`を返し、consumer後に再利用できる | `{GLOBAL_InterruptWakeup}` |
 | TEST-SCHED-18 | 時刻待機中の他タスク実行・アイドルフック・期限起床 | 時刻待機タスクとREADYタスクが各1つ存在し、単調時計を制御できる | 待機タスクが未来期限を登録して`BLOCKED_TIMER`へ移る | READYタスクが時刻を進める前に実行される。READYキューが空になった時点でアイドルフックを呼び、その後に次回期限まで待つ。待機タスクは期限到達後にREADYキュー末尾へ戻って完了する | `{GLOBAL_IdleDetection}` |
 | TEST-SCHED-19 | タイマー待ちタスク終了時の期限解除 | 異なる未来期限を持つ`BLOCKED_TIMER`タスクが2つある | 早い期限のタスクを`task_killed`し、残るタスクを実行する | 終了タスクは期限到達で再開せず、残るタスクは自身の期限で一度だけ再開する。取り消した期限で余分な起床・待機周期を発生させない | pysim ``, `GOTCHA-SCHED-03` |
@@ -40,8 +40,8 @@
 
 | GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-SCHED-01 | 連続直接ハンドオフ上限後のスケジューラ復帰 | 2つのタスクが CSP Rendezvous でピンポン通信し、連続ハンドオフ数が設定上限に達している | 上限到達後にさらにランデブーを成立させる | 直接遷移せず `YIELD` でスケジューラへ制御を戻し、連続回数を0に戻す。上限は全タスクの公平性や実時間応答上限を保証しない。**pysim実装テストの観測範囲**: `TEST-COOS-07` は `YIELD`、カウンタリセット、先行READYタスクの後ろへの登録、および次の実ディスパッチで先行タスクが選ばれることを検証する | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md), `{Challenge_CspHandoffStarvation}` |
-| GOTCHA-SCHED-02 | 割り込み保留中の追加ハンドオフ連鎖停止 | CSPランデブー成立時に`reschedule_pending=true` | ランデブーを成立させ、遷移先の世代観測と追加連鎖を観測する | 所有権移譲と成立に必要な直接遷移は完了する。遷移先が世代を観測した後、追加の直接ハンドオフ連鎖を停止してスケジューラへ制御を戻す | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md), `{ADR_InterruptRescheduleGeneration}` |
+| GOTCHA-SCHED-01 | 連続直接ハンドオフ上限後のスケジューラ復帰 | 2つのタスクが CSP Rendezvous でピンポン通信し、連続ハンドオフ数が設定上限に達している | 上限到達後にさらにランデブーを成立させる | 直接遷移せず `YIELD` でスケジューラへ制御を戻し、連続回数を0に戻す。上限は全タスクの公平性や実時間応答上限を保証しない。**pysim実装テストの観測範囲**: `TEST-COOS-07` は `YIELD`、カウンタリセット、先行READYタスクの後ろへの登録、および次の実ディスパッチで先行タスクが選ばれることを検証する | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) |
+| GOTCHA-SCHED-02 | 割り込み保留中の追加ハンドオフ連鎖停止 | CSPランデブー成立時に`reschedule_pending=true` | ランデブーを成立させ、遷移先の世代観測と追加連鎖を観測する | 所有権移譲と成立に必要な直接遷移は完了する。遷移先が世代を観測した後、追加の直接ハンドオフ連鎖を停止してスケジューラへ制御を戻す | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) |
 | GOTCHA-SCHED-03 | 最早タイマー期限の取消し後に最小期限を再計算 | 異なる未来期限を持つ`BLOCKED_TIMER`タスクが2つある | 最早期限のタスクを終了させる | 期限キャッシュは残るタスクの最小期限へ更新され、終了した期限で不要なアイドル待機サイクルや起床を発生させない | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md), `TEST-SCHED-19` |
 
 ## 3. テスト検証実績と網羅状況
@@ -72,7 +72,6 @@
 2026-10-01にLinux・CPython 3.14.6・uv環境で局所スイートを実行した。
 実行コマンドを示す。
 
-
 18件成功、0件失敗、0件skipである。
 この実行件数はpytestの収集件数であり、仕様ケースの全項目達成を表さない。
 隔離コピーでspawnをREADY末尾追加から先頭追加へ変える変異を作り、TEST-SCHED-02が失敗することも確認した。
@@ -84,7 +83,6 @@
 2026-10-16にLinux・CPython 3.13.15・uv環境でTier 1 Coreを実行した。
 `experiments/pysim/qa/tier1_core`の78件が成功し、失敗とskipはなかった。
 追加した`TEST-SCHED-20`..`TEST-SCHED-22`は、閾値境界、タスクIDとナノ秒値を含む単一printkイベント、出力失敗時の実行順・状態・結果を直接確認した。
-
 
 TEST-SCHED-08, TEST-SCHED-13の追加ケースは、QA側の`Task`派生クラスで前後リンクへの読み書きを数える。
 各操作は読出し8回以下、書込み8回以下とする。

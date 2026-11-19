@@ -95,8 +95,6 @@ struct fb_native_jit_provider {
   // slot lies at code_base + trace_offsets[slot]. The table is written only by the JIT.
   std::uintptr_t code_base;
   const std::uint16_t *trace_offsets;
-  // Per-block root-entry counts (5 bits, saturating). The common trace entry counts each root entry.
-  std::uint8_t *admission_records;
 };
 
 struct fb_native_dispatch_call {

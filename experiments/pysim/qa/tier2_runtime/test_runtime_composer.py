@@ -339,7 +339,6 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
     trace_entry_byte = ctypes.c_uint8(0xC3)
     trace_entry_address = ctypes.addressof(trace_entry_byte)
     offsets = (ctypes.c_uint16 * 1)()
-    admission = (ctypes.c_uint8 * 1)()
     provider = NativeJitProvider(
         owner=123,
         observe_block=ctypes.cast(observe_callback, ctypes.c_void_p),
@@ -347,7 +346,6 @@ def test_native_execution_plugin_can_be_replaced_without_jit_knowledge(collect_s
         trace_entry_address=trace_entry_address,
         code_base=trace_entry_address,
         trace_offsets=ctypes.addressof(offsets),
-        admission_records=ctypes.addressof(admission),
     )
     provider_address = ctypes.addressof(provider)
 

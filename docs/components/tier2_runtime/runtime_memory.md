@@ -8,32 +8,31 @@
 本コンポーネントは、Tier 1 Interface の抽象契約 [`system_memory.md`](docs/components/tier1_interface/system_memory.md)（`co_mem` インターフェース、パーティション貸与ポリシー、独立ヒープ不変条件）の物理実装である。契約と実装の記述に食い違いがあれば `system_memory.md` を正とする（`{META_ContractImplSplit}` 契約/実装分割パターン）。
 
 ## 1. コンセプト
-<!-- traceability: {System_Allocator} {Shm_Allocator} {ConsolidatedHeap} {Runtime_BumpAllocator} {JIT_MultiBuffer_Cache} -->
-[`system_memory.md`](docs/components/tier1_interface/system_memory.md) が定義する5プール契約のうち、ホスト用ヒープ、タスクヒープ、共有メモリ用ヒープの3プールを直接実装する。システム用アロケータ（`system_allocator`）は、システムコンテナの動的確保・個別解放を担当する。タスク起動時には固定長パーティションを貸与する。SHM用アロケータ（`shm_allocator`）は、共有メモリ用の固定長プールから可変長バッファを切り出す。両アロケータは dlmalloc（`create_mspace_with_base`）により運用する。残る2プール（ランタイム用バンプアロケータ、JITキャッシュアロケータ）は、[`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) および [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が実現する。本書が定義するのはソフトウェア上の割当・所有権契約であり、ARMv8-Mの物理メモリ配置と保護方式はTBDとする。
+<!-- traceability: {System_Allocator} {Shm_Allocator} {ConsolidatedHeap} {Runtime_BumpAllocator} -->
+[`system_memory.md`](docs/components/tier1_interface/system_memory.md) が定義する5プール契約のうち、ホスト用ヒープ、タスクヒープ、共有メモリ用ヒープの3プールを直接実装する。システム用アロケータ（`system_allocator`）は、システムコンテナの動的確保・個別解放を担当する。タスク起動時には固定長パーティションを貸与する。SHM用アロケータ（`shm_allocator`）は、共有メモリ用の固定長プールから可変長バッファを切り出す。両アロケータは事前確保された固定長アリーナ上で個別解放・合体可能な方式により運用する。残る2プール（ランタイム用バンプアロケータ、JITキャッシュアロケータ）は、[`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) および [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が実現する。本書が定義するのはソフトウェア上の割当・所有権契約であり、ARMv8-Mの物理メモリ配置と保護方式はTBDとする。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
 本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。
-Tier 1 Interface の `system_memory.md` 契約を、dlmalloc ベースのアロケータ群として物理実装する。
+Tier 1 Interface の `system_memory.md` 契約を、固定長アリーナベースのアロケータ群として物理実装する。
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-- **`system_allocator`**: dlmalloc（`create_mspace_with_base`）を基盤とする固定長システムヒープアリーナ管理アロケータである。システムコンテナストレージの動的割り当てと個別解放を担当する。
-- **`shm_allocator`**: dlmalloc（`create_mspace_with_base`）を基盤とする共有メモリ用アリーナ管理アロケータである。可変長共有ブロック（`shared_block`）の切り出しと、RAII 解放時の自動合体を担当する。
+- **`system_allocator`**: 固定長システムヒープアリーナを管理するアロケータである（`{System_Allocator}`）。 <!-- definition: {System_Allocator} --> システムコンテナストレージの動的割り当てと個別解放を担当する。
+- **`shm_allocator`**: 共有メモリ用固定長アリーナを管理するアロケータである（`{Shm_Allocator}`）。 <!-- definition: {Shm_Allocator} --> 可変長共有ブロック（`shared_block`）の切り出しと、RAII 解放時の返却・再利用を担当する。
 
 ### 3.2 内部ブロック図
 ```mermaid
 flowchart TD
     Contract["tier1_interface/system_memory.md (Tier1 契約: co_mem)"] -.->|realizes| Impl[runtime_memory: MemoryManagerImpl]
-    Impl --> SysAlloc[system_allocator: dlmalloc mspace]
-    Impl --> ShmAlloc[shm_allocator: dlmalloc mspace]
+    Impl --> SysAlloc[system_allocator: 固定長アリーナ]
+    Impl --> ShmAlloc[shm_allocator: 固定長アリーナ]
     SysAlloc --> KernelPool["Kernel Pool / Heap"]
     ShmAlloc --> SharedRegion["Shared Memory Pool"]
     Impl -.->|確保ロジックは委譲| RuntimeArena["runtime_loader.md: bump allocator"]
     Impl -.->|確保ロジックは委譲| JitCache["jit_runtime.md: 3-Bank JIT cache"]
 ```
-
 
 ## 4. 動的モデル
 
@@ -83,19 +82,17 @@ flowchart TD
 この境界により、TOCTOU競合と不正アクセスを構造的に排除する。遮断の具体的な実装（PTEアンマップ・TLB即時フラッシュ）は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) を正本とする。 <!-- definition: {GOTCHA-MEM-03} -->
 - **障害時回復**: Rendezvous中に通信が中断された場合、`rollback_transfer(original_sender_id, shm_id)` により送信元タスクへ所有権を復元し、リソースのダングリングを防止する。物理的なマッピング復元手順は `runtime_vmmio.md` を正本とする。
 
-
 ## 5. インターフェース定義
 
 ### 5.1 インターフェース実装
 [`system_memory.md`](docs/components/tier1_interface/system_memory.md) のインターフェース設計節で定義された公開APIを、以下のアロケータ群を用いて実現する。
 
-- 起動時初期化: `system_allocator`/`shm_allocator` それぞれに対応する `create_mspace_with_base` を実行する（`system_config.md` の `FB_CONF_*` 静的構成に基づく）。
-- `host-alloc`/`host-free`: `system_allocator` の mspace 上で有界レイテンシの動的確保・個別解放を行う（ホスト用ヒープ）。
-- `acquire-task-heap`/`release-task-heap`/`acquire_slot`/`release_slot`: `system_allocator` の mspace 上で固定長パーティション・型付きスロットを貸与・返却する（タスクヒープ）。
-- `allocate-shared`/`claim`/`release`: `shm_allocator` の mspace 上で可変長 `shared_block` を切り出し、RAII 解放時に `mspace_free` へ返却・自動合体する（共有メモリ用ヒープ）。
+- 起動時初期化: `system_allocator`/`shm_allocator` それぞれに対応する固定長プールを初期化する（`system_config.md` の `FB_CONF_*` 静的構成に基づく）。
+- `host-alloc`/`host-free`: `system_allocator` 上で有界レイテンシの動的確保・個別解放を行う（ホスト用ヒープ）。
+- `acquire-task-heap`/`release-task-heap`/`acquire_slot`/`release_slot`: `system_allocator` 上で固定長パーティション・型付きスロットを貸与・返却する（タスクヒープ）。
+- `allocate-shared`/`claim`/`release`: `shm_allocator` 上で可変長 `shared_block` を切り出し、RAII 解放時にプールへ返却・再利用する（共有メモリ用ヒープ）。
 - `acquire-runtime-arena`/`bump-alloc`/`reset-runtime-arena`/`release-runtime-arena`: `{Runtime_BumpAllocator}`（[`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) 正本）へ委譲する（ランタイム用バンプアロケータ）。
-- `acquire-jit-cache`: 対象プラットフォームのコードキャッシュ領域へ対応する固定長ハンドル（ARMv8-Mの物理割当とMPU方式はTBD）を返す。バンク分割・世代交代は `{JIT_MultiBuffer_Cache}`（[`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) 正本）が管轄する（JITキャッシュアロケータ）。
-
+- `acquire-jit-cache`: 対象プラットフォームのコードキャッシュ領域へ対応する固定長ハンドル（ARMv8-Mの物理割当とMPU方式はTBD）を返す。バンク分割・世代交代は [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) が管轄する（JITキャッシュアロケータ）。
 
 ## 6. 制約達成の方策
 
@@ -127,12 +124,11 @@ flowchart TD
   - : 非所有タスクからの操作をソフトウェア契約で拒絶する。物理的なアクセス遮断機構はプラットフォーム仕様が確定するまで定めない。
 
 ### 6.4 ハードウェアメモリ保護とW^Xの物理実装（ARMv8-M: TBD）
-<!-- traceability: {META_FaultIsolation} {LowLatencyJIT} -->
+<!-- traceability: {META_FaultIsolation} -->
 
 ARMv8-Mで用いるメモリ保護機構、物理領域数・配置・属性、コードキャッシュ領域の物理アドレス、パッチ中と実行中の保護属性、命令キャッシュ同期、必要なメモリバリアはすべてTBDとする。
 
 W^Xの抽象不変条件は別途定義する。x64参照構成はRWXを初期設定するため、この不変条件への適合を主張しない。ARMv8-Mで採用する保護方策と実機での達成方法は対象確定後に設計する。
-
 
 ## 7. 形式検証・テスト仕様との対応
 
@@ -152,11 +148,10 @@ W^Xの抽象不変条件は別途定義する。x64参照構成はRWXを初期�
 
 検証手順と期待結果は[`runtime_memory_test_spec.md`](docs/qa/tier2_runtime/runtime_memory_test_spec.md)に記載する。同書では、本書で定義する実装上の注意点を検証する。
 
-
 ## 8. 設計判断と参考実装
 
 ### 8.1 設計判断 (ADR)
-<!-- traceability: {ADR_MemoryManagerMinimalSurface} {ADR_SharedBlockRaii} -->
+
 このコンポーネントはページ権限分離ADRに従う。公開API設計に関する `ADR_SharedBlockRaii` / `ADR_MemoryManagerMinimalSurface` は契約側 [`system_memory.md`](docs/components/tier1_interface/system_memory.md) を正本とする。
 
 - **決定事項**: (2026-09-02)

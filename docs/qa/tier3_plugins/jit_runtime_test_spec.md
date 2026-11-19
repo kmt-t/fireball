@@ -32,7 +32,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-JITR-10 | 検出と通常コンパイルの遅延、および満杯時の即時drain | カードがHOTになる | 通常時とキュー満杯時を分けて実行 | 通常時はyield/idleまでコンパイルせず、キュー満杯時だけその場でLIFO drainしてキューを空ける。キュー容量を超えて保持しない | jit_compiler.md ADR_SafeQueuingOnHotMiss, `{JIT_ReverseCompilationOrder}` |
 | TEST-JITR-12 | LIFO順でのバッチコンパイル | 直線後続がA→B→Cとなる適格なブロックをA、B、Cの順にキューへ投入済み | `idle_hook`を実行する | C、B、Aの順にコンパイルされる。Aのinstall時にはBが常駐済みで、共通chain dispatcherを経由する後続chainが成立する | {JIT_ReverseCompilationOrder} |
-| TEST-JITR-13 | 常駐トレース再確認とカード状態の整合 | コンパイル要求PCがキューに重複登録済み、またはキャッシュ常駐済み | idle_hookを実行 | 常駐済みなら再コンパイルせず`COMPILED`へ同期する。全キャッシュmissはコンパイル要求として扱い、eviction後のPCを`COMPILED`のまま放置しない | `{ADR_SafeQueuingOnHotMiss}` |
+| TEST-JITR-13 | 常駐トレース再確認とカード状態の整合 | コンパイル要求PCがキューに重複登録済み、またはキャッシュ常駐済み | idle_hookを実行 | 常駐済みなら再コンパイルせず`COMPILED`へ同期する。全キャッシュmissはコンパイル要求として扱い、eviction後のPCを`COMPILED`のまま放置しない | |
 | TEST-JITR-14 | コンパイル失敗時の恒久的候補除外 | C++コンパイラが失敗を返す | idle_hookを実行 | Trackable Maskの対象ビットだけを解除し、カードを`COMPILED`へ設定しない。同一モジュール内で再履歴・再キュー・再コンパイルを行わない | `{TrackableBlockMask}` |
 | TEST-JITR-15 | eviction／明示的flush後の再計測 | 常駐トレースがevictまたはJIT cache flushされる | そのPCを再実行 | キャッシュ参照はInterpreterへ戻り、カードは`UNEXECUTED`からhotnessを再計測する。候補性は維持される | `TEST-JITR-04`, `{TrackableBlockMask}` |
 | TEST-JITR-16 | エイジングスイープは`EXECUTED`カードだけを`UNEXECUTED`へ戻す | コード領域内に`EXECUTED`が複数枚、`HOT`が1枚、`COMPILED`が1枚のカードがある | dirtyカードを含む表を一周以上スイープする | `EXECUTED`カードだけが`UNEXECUTED`になる。`HOT`と`COMPILED`は変化しない。減衰後に1回touchしたカードは`EXECUTED`であり`HOT`にならない。 | `GOTCHA-JITR-09`, `JIT_CardAgingSweep`, `` |
@@ -42,7 +42,7 @@
 
 ### JIT拡張ホットスポット履歴
 
-<!-- traceability: {HistoryBuffer} {RuntimeHotspotProfiler} {LowLatencyJIT} -->
+<!-- traceability: {HistoryBuffer} {RuntimeHotspotProfiler} -->
 
 Interpreter境界で記録する履歴と、Tier 3 JIT拡張による実行区間終了時の一括分析を検証する。形式モデルは[`jit_hotspot_model.py`](docs/components/tier3_plugins/formal/jit_hotspot_model.py)を参照する。
 
@@ -60,7 +60,7 @@ Interpreter境界で記録する履歴と、Tier 3 JIT拡張による実行区�
 判定では履歴レコード列、カード遷移列、compile request、実行結果、上書き数、具象型構成、およびROM/RAM量を直接比較する。Runtime Event Sinkの有効・無効がHotspot履歴へ影響した場合、またはJIT-only区間で記録・分析が発生した場合は不合格とする。
 
 ### BasicBlock先行検索・3面キャッシュ 直交表マトリクス
-<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} {ADR_SafeQueuingOnHotMiss} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} -->
 
 JITトレース検索時の内部状態と期待される挙動を検証する組み合わせ直交表マトリクス。3面バンク（Active / Warm / Oldest）を独立した列として扱う。
 
@@ -153,9 +153,9 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-65 | QA snapshotの常駐状態への追従 | 未コンパイル候補blockと常駐traceを持つQA専用JITハーネス | trace挿入前後のQA snapshotとnative実行を確認する | QA snapshotは常駐状態の変更を反映する。製品実行はJIT拡張の本体実行入口を使い、snapshotを供給しない。候補マスクのQA観測は既存ストレージを借用する | QA専用fixtureの検査、pysim `` |
 | TEST-JITR-66 | 診断カウンタを無効にしたRuntimeの意味保存 | 診断カウンタなしで後方分岐yieldを行うC++ Interpreter構成 | 関数を実行し、結果・yieldと統計値を確認する | 結果とyield境界は変わらず、製品Runtimeは検査用APIと累積カウンタを持たない。QA専用ハーネスでJIT body、handler、trace遷移を計測する | `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」 |
 | TEST-JITR-67 | frame深度をまたぐLOOP後方分岐のCPS処理 | 内側`block`から外側`loop`へ戻る合法な`br_if` sourceと、常駐target traceを用意する | 分岐成立・不成立時の条件値、stack、frame、PC、取得辺数とyieldを確認する | source/targetのframe深度に関わらず分岐opcodeはtraceに含めず、Interpreter CPS handlerが遷移を処理する。Interpreter単独実行と同じ結果になり、取得辺を一度だけ数える。判定点で取得辺を履歴に記録する。しきい値到達時にyieldする | `{JIT_BackedgeYield}`、pysim `` |
-| TEST-JITR-68 | JIT有効時の関数呼出しとhotspot観測 | 定義済み関数の呼出しを含むJIT適格関数とhotspot収集 | 同じ入力を実行し、結果、JIT trace実行件数、実行境界復帰数を確認する | JIT固有のtrace観測はJIT Runtime契約に従う。関数呼出しとyieldの意味論はInterpreter仕様を正本とする | `{RuntimeHotspotProfiler}`、`{LowLatencyJIT}`、[`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
+| TEST-JITR-68 | JIT有効時の関数呼出しとhotspot観測 | 定義済み関数の呼出しを含むJIT適格関数とhotspot収集 | 同じ入力を実行し、結果、JIT trace実行件数、実行境界復帰数を確認する | JIT固有のtrace観測はJIT Runtime契約に従う。関数呼出しとyieldの意味論はInterpreter仕様を正本とする | `{RuntimeHotspotProfiler}`、、[`interpreter.md`](docs/components/tier2_runtime/interpreter.md) |
 | TEST-JITR-69 | 静的前方`BR`後のnesting metadata整合 | 40回繰り返すLOOP内で、内側BLOCKから値を残さず前方`BR`で抜ける関数 | 3実行系の結果、source/target headerの静的frame depth、source traceの連結先があることを確認する | 結果が一致する。前方brのtraceはtargetへnative chainし、出口のPCとblock indexは静的なtargetを持つ。後方辺の計数とyield契約を守る。実行時制御スタックは持たない | `{JIT_BackedgeYield}`、`{PositionIndependentCode}`、pysim `` |
-| TEST-JITR-70 | 空のyield境界でのJIT制御処理省略 | コンパイル待ち作業と候補履歴がなく、後方分岐yieldを繰り返す関数 | 実行結果、yield回数、コンパイル処理と履歴引渡しの呼出しを確認する | 関数結果とyield条件を保つ。空キューのコンパイル処理と空履歴の引渡しを行わない | `{LowLatencyJIT}`、`{RuntimeHotspotProfiler}`、pysim `` |
+| TEST-JITR-70 | 空のyield境界でのJIT制御処理省略 | コンパイル待ち作業と候補履歴がなく、後方分岐yieldを繰り返す関数 | 実行結果、yield回数、コンパイル処理と履歴引渡しの呼出しを確認する | 関数結果とyield条件を保つ。空キューのコンパイル処理と空履歴の引渡しを行わない | `{RuntimeHotspotProfiler}`、pysim `` |
 | TEST-JITR-72 | LIFOキューから元WASMコードをコンパイルする | 2つ以上の適格blockが`HOT`になり、元のWASMコードがLoader領域にある | Tier 3 JIT拡張のidle hookで逆順に処理する。Python opcodeの再構築経路を禁止する | C++ compilerは元のWASMコードを直接読み、trace本体を生成する。成功したtraceだけがcacheへ入る | `jit_runtime.md`「オンデマンドコンパイルキュー」、pysim `` |
 | TEST-JITR-73 | trace終端の`if`／`br`／`br_if`のInterpreter CPS処理 | 条件成立・不成立の両方を通る`br_if`とresident source traceを用意する | Interpreter dispatcherから実行し、結果、source traceのchain target、CPS handler回数とtrace exitを確認する 分岐opcodeをRuntime APIで実行せず、traceを完了してからInterpreter CPS handlerで一度だけ処理する。source traceを未接続のまま保持し、結果をInterpreterと一致させる。source traceの実行回数は2（2回の呼出しがそれぞれbr_ifの手前までbodyを実行し、trace body実行ごとに1回数える） `jit_runtime.md`「トレース実行時の分岐解決とインタープリタ復帰」、pysim `` |
 | TEST-JITR-74 | terminal `call_indirect` stencilからCPS handlerへの接続 | 一致する型、不一致の型、table範囲外を含むtyped table fixture | Interpreter単独とJIT有効を比較し、結果、trap、memory、副作用、stack、復帰`ip`、trace metadataを確認する | `call_indirect`はtraceの最後のoperationであり、専用slotからTier 2 CPS handlerへtail-callする。traceに関数の絶対アドレスを埋め込まない。関数選択とtrapの意味論はInterpreter仕様に従う | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)、TEST-INTP-78 |
@@ -178,13 +178,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-105 | operand値の上限に達するblockのコンパイル | 64個のi64定数を積み、呼出しで消費するblockがあり、その語数は値スタック容量に等しい | blockをコンパイルする | traceが得られる。深さの検査はこの境界で拒否しない | `jit_compiler.md`「1トレースは」の共有stack深さ |
 | TEST-JITR-106 | 到達不能blockは同じcardが HOT でも待ち列に入らない | `unreachable` 相当の `br` の後ろに短い到達不能blockがあり、実行されるblockと同じcardを共有する | 実行を3回行い、idle hookを呼ぶ | 実行されたblockだけがコンパイルされ、到達不能blockのtraceは存在しない | `jit_compiler.md`「コンパイラが受け取るのは実行された block だけである」 |
 | TEST-JITR-107 | 受理されるopcodeの1命令blockのコンパイルと実行 | Loaderの受理集合（dispatch表）から、制御・構造・call命令を除いたopcodeを1つずつ、その命令を含む関数にする | 実行を3回行い、idle hookでコンパイルし、同じ引数で再実行する | blockがコンパイル済みで、trace の実行結果が interpreter と一致する | `jit_compiler.md`「コンパイラが受け取るのは実行された block だけである」 |
-| TEST-JITR-108 | 採否記録の初期値と根の入口の計数 | 設置後の block を、根の入口で4回実行する | 計数が、4回の根の入口の分だけ増える。ストライクは履歴なし（5）のまま | 計数は根の入口と同じ数え方で、1回の根の入口に 1 を加える | `jit_runtime.md`「採否記録」 |
-| TEST-JITR-109 | 破棄時のストライク更新 | 寿命が K 未満の trace を破棄し、次に K 以上の寿命の trace を破棄する | 1回目はストライク 1 で寿命を保つ。2回目はストライク 0 に戻る | 破棄時の寿命でストライクを更新し、寿命は次の設置まで残る | `jit_runtime.md`「ストライク」 |
-| TEST-JITR-110 | 8 回転の区切りの破棄数 | 区切りの先頭から、常駐 trace 1 件を含めて 8 回転する | 8 回転目に、直前の区切りの破棄数が 1 になり、現在の区切りは 0 に戻る | 段階は直前に終わった区切りの破棄数で決まる | `jit_runtime.md`「段階」 |
-| TEST-JITR-111 | 段階の上限に達した block の却下 | 4回の短命な破棄で、ストライクを段階の上限 4 に達させる | 次の採否で却下され、コンパイルされず、トラッカブルマスクが解除される | 却下は採否の判定で行う（ルール（iii））。ストライクは段階の却下の値 6 になる | `jit_runtime.md`「採否」 |
-| TEST-JITR-112 | 点数が閾値以上の候補のコンパイル | 制御命令と命令を持つ block が、bind の候補として記録 OBSERVED を持つ（QA の印は使わない） | 実行を5回行い、idle hookを呼ぶ | block は採否の判定を経てコンパイルされる。点数が閾値未満の block は採否の判定に届かない（判定の前提、試験の対象外） | `jit_runtime.md`「採否」（ルール（ii）と判定の前提） 採否の契約（点数が閾値以上）に反する状態は、製品の bind の経路からは作れないため、その assert が働く試験は作らない。 |
-| TEST-JITR-113 | 段階が緩くなったときの却下の回復 | 20 個の破棄で段階を厳しくし、対象の block を段階の上限で却下させ、空の区切りで段階を緩める | 対象の候補マスクが戻り、ストライクが 0 になり、次の採否でコンパイルされる | 回復は段階が緩くなった区切りだけで起きる（ルール「回復」） | `jit_runtime.md`「回復」 |
-| TEST-JITR-114 | 段階の緩和は上限で却下された block だけを戻す | 113 の段階の変化の中で、却下の循環では目標だけを呼び、上限未満の g0 を残す | 目標の却下の後と緩和の後で、目標と g0 のストライク、trackable、印、カードの状態を読む | 段階の緩和は、段階の上限で却下された block だけを戻す。上限未満の block のストライク、trackable、カードの状態は変えない。目標は、ストライク 0、trackable、印 OBSERVED に戻る | `test_jit_runtime.py::test_jitr_114_stage_relaxation_keeps_a_block_below_the_limit`、`jit_runtime.md`「回復」 |
+| TEST-JITR-112 | 点数が閾値以上の候補のコンパイル | 制御命令と命令を持つ block が、bind の候補として記録 OBSERVED を持つ（QA の印は使わない） | 実行を5回行い、idle hookを呼ぶ | block は閾値判定を経てコンパイルされる。点数が閾値未満の block は候補待ち列に届かない | `test_jit_runtime.py::test_jitr_112_a_candidate_above_the_score_threshold_compiles` |
 | TEST-JITR-116 | providerの共通trace entryと配置 | JIT runtimeを接続し、providerを読む | providerの`trace_entry_address`を、共通コード領域の入口と比べる。`fb_native_jit_provider`の大きさと各欄のoffsetを、C++側のoffsetofと照合する。ブロック記録の印の2値を、C++側の値と照合する | `trace_entry_address`が共通コード領域の入口のaddressと一致する。ctypesの大きさと各欄のoffsetがC++側と一致し、印の2値がC++側と一致する。ずれると試験が失敗する | `test_jit_runtime.py::test_jitr_provider_carries_the_one_common_trace_entry`、[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)「JITランタイム呼出し契約」 |
 | TEST-JITR-117 | trace終了位置の制御opcodeを境界metadataへ記録する | 終了位置が`br_if`の直前、後続が通常opcode、ブロックの終端の3つのblock | blockをコンパイルし、headerの`exit_kind`と境界metadataの`interpreter_terminator_pending`を読む | 直前が`br_if`なら`exit_kind`は2、metadataは1。通常opcodeまたは終端なら`exit_kind`は0、metadataは0となる。Interpreterは終了位置のbyteを比べず、この値を読む | `test_jit_runtime.py::test_jitr_117_trace_exit_flags_an_interpreter_terminator`、[`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)「トレース境界metadata」 |
 | TEST-JITR-118 | 観測されるのは trackable な block の先頭だけである | 6 個の block を並べた関数を 1 回呼ぶ。card を全て trackable にする場合と、全て trackable でない場合の 2 通り | 呼出し後の QA 計数（printk）を読む | 全て trackable の場合は `jit.interpreter_block_entries` が 0 より大きい。全て非 trackable の場合は 0 となる（記録が UNOBSERVED の先頭では観測を呼ばない） | `test_jit_runtime.py::test_jitr_118_only_trackable_heads_are_observed` |
@@ -193,7 +187,6 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | TEST-JITR-121 | 常駐 trace のある block への移りは trace に入る | 関数を5回呼び、idle hook で trace を設置する | 次の呼出しで trace 実行数を読む | trace 実行数が増え、記録に trace の参照（NO_TRACE 以外）がある | `test_jit_runtime.py::test_jitr_121_block_transfer_into_a_resident_trace_enters_the_trace`、[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 | TEST-JITR-122 | card の trackable の解除で、trace のない block の印が UNOBSERVED になる | 呼出し後、先頭 PC の card を解除する | 同じ card の block の記録を読む | 同じ card の block の印は Loader の未観測の値（UNOBSERVED）になり、他の card の印は変わらない | `test_jit_runtime.py::test_jitr_122_block_marker_follows_the_card_trackable_bit`、[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 | TEST-JITR-123 | 常駐 trace は card の解除で参照を保ち、破棄すると印が UNOBSERVED になる | 5 回呼んで trace を設置し、先頭 PC の card を解除し、全 trace を破棄する | 破棄後に、その block の記録を読む | 解除の直後は trace の参照を保ち、破棄後は UNOBSERVED になる | `test_jit_runtime.py::test_jitr_123_discarded_trace_restores_the_card_marker`、[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
-| TEST-JITR-124 | 段階の緩和で card が戻ると、trace のない block の印が OBSERVED になる | TEST-JITR-113 と同じ 段階の変化で card を却下し、緩和で戻す | 却下の後は UNOBSERVED、戻した後は OBSERVED を読む | 印は card の trackable に従う | `test_jit_runtime.py::test_jitr_124_restored_card_marks_its_trace_free_block_observed`、[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 | TEST-JITR-125 | JIT を使わない dispatch は、trace の参照を持つ module を流れの中で完了する | JIT 付きで5回呼んで trace を設置し、JIT なしの dispatch で同じ module を呼ぶ | 結果と trace 実行数を読む | 結果は Interpreter の値と一致し、trace は実行されない | `test_jit_runtime.py::test_jitr_125_no_jit_dispatch_on_a_jit_bound_module_completes_in_the_interpreter`、[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 | TEST-JITR-126 | JIT を閉じると、全 block の記録は Loader の既定値（UNOBSERVED）に戻る | JIT を付けて関数を実行し、trace を設置した後に閉じる | 閉じた後の全 block の記録を読み、名前のある定数（Loader の既定値）と比べる | 全記録が既定値に戻る。JIT を外した module は既定値の印で流れを抜けない | `test_jit_runtime.py::test_native_product_plugin_close_clears_borrowed_block_references`、[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) |
 
@@ -213,7 +206,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 
 ### QA専用計測構成のトレース実行回数
 
-<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} {Challenge_JITCacheEfficiency} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestExecuteOnly} -->
 
 この節はQA専用の計測型を合成した構成だけに適用する。計測契約の正本は[`jit_runtime_bench_spec.md`](docs/components/tier3_plugins/benchmarks/jit_runtime_bench_spec.md)とする。製品構成は`void`を選び、計測状態、時計読取り、実行後のchain走査、および統計リセットAPIを持たない。
 
@@ -230,18 +223,15 @@ QA計数の定義（根の入口の分類と trace 終端の計数）: trace 終
 | TEST-JITR-131 | 除算・剰余の後に CPS 呼出しが続く trace は、解釈器・Wasmtime と同じ結果または同じ trap 符号を返す | `div_s`、`div_u`、`rem_s`、`rem_u` のそれぞれを、ループの中で call の引数に使う。ループが熱くなった後に、0 による除算と `INT_MIN / -1` の trap を起こす（`rem_s` は `INT_MIN % -1 = 0` で継続） | 非 trap の結果を Wasmtime・解釈器・JIT で比べる。0 除算の trap（符号 15）を解釈器と JIT で比べる。`div_s` の `INT_MIN / -1` の trap（符号 16）と、`rem_s` の `INT_MIN % -1 = 0` を比べる | 値は Wasmtime、解釈器、JIT で一致する。trap 符号は解釈器と JIT で一致し、0 除算は 15、符号あふれは 16 である。JIT の trace が実行されたことを確認する | `test_jit_differential.py::test_jitr_131_division_before_a_cps_call_matches_the_interpreter_and_wasmtime` |
 | TEST-JITR-132 | JIT の trace の末尾の call から、先頭 block に常駐 trace を持つ関数を呼ぶと、呼出し先の入口の判定で、その trace に入る | ループ先頭の block が `call $f` を含み、trace を持つ。`$f` の先頭 block（関数全体）にも trace を持つ | `main(50)` を 1 回呼ぶ | 結果は 1275 である。`$f` の先頭 block の trace の入口計数は 50（呼出し 50 回ごと） | 呼出し先の先頭 block の記録（参照あり）で CPS を抜け、根の入口の判定（lookup）を経て trace に入る。JIT の呼出しの経路でも、解釈の呼出しの経路と同じ判定を行う（interpreter.md の呼出し先の入口の判定） | `test_jit_runtime.py::test_jitr_132_call_exit_from_a_trace_enters_the_callee_trace` |
 | TEST-JITR-133 | 解釈の block を挟んだ後に dispatch が判定した block への移りは、trace 終端として数える | 先頭 block は trace として常駐し、後続 block は解釈器だけが実行する。ループ先頭は trace として常駐し、dispatch が判定する | 1回呼び出す（`f()`、ループを 3 反復する） | 先頭の根の入口は dispatch 開始として1回。ループ先頭への根の入口は3回で、そのうち1回目は `jit.root_entry.trace_end_other`（`jit.root_entry_op.trace_end_other.end`）、後方辺の2回は `jit.root_entry.trace_end_loop`。`jit.root_entry.interpreter` は0回。移りは3回。最後の trace 出口は関数の終わりへ抜けるので、観測されない trace 終端は1回 | 持ち越しが起きる形での定義の確認（QA 計数）。製品の機械語は変えない。`test_jit_runtime.py::test_jitr_133_trace_end_is_counted_at_the_next_judged_block_across_an_interpreted_block` |
-| TEST-JITR-134 | 根の入口の寿命は5 bitで止まり、上位のストライクへ繰り上がらない | 常駐traceがあり、設置の後に根の入口が続く | 先頭 block の根の入口を40回行う | 寿命は31で止まり、ストライクは設置の時の値のまま変わらない（繰り上がると寿命は0になり、ストライクは却下の値になる） | 共通入口の寿命の計数（機械語の飽和）。`test_jit_runtime.py::test_jitr_134_lifetime_saturates_at_its_maximum_without_a_carry_into_the_strikes` |
 | TEST-JITR-135 | 前方brの積み替えは、遷移先の基点へ結果語を移し、解釈器と一致する | 結果0〜2語、基点が0または被演算子より上、目的の block が後続にある5形の関数を、40回の反復で呼ぶ | 3実行系（Tier 2、解釈器、JIT）で結果を比べ、JIT の実行を確認する | 3実行系の結果が一致し、JIT の実行数が正である。前方brのtraceは遷移先のsuccessorへ連結する | `test_jit_differential.py::test_jitr_135_forward_br_moves_the_stack_and_matches_the_interpreter` |
 | TEST-JITR-136 | 後方brが閾値未満では、traceが両方の後方辺を数えてInterpreterのbr handlerを実行しない | 2回の後方辺を持つ`count(3)`。ループ先頭とbrを持つblockを常駐させ、しきい値を3にする。比較として、br traceを常駐させない実行を行う | Interpreterで実行し、yieldの有無、`loop_jump_count`、結果を確かめる。br traceの有無で、ハンドラ境界の回数とJIT実行の回数を比べる | yieldは起きない。`loop_jump_count`は2、結果は`[3]`となる。br traceを常駐させた実行は、常駐させない実行よりハンドラ境界が2回少なく、JIT実行が2回多い | `test_jit_runtime.py::test_jitr_136_backward_br_just_below_threshold_is_run_by_the_trace` |
 | TEST-JITR-137 | 後方brが閾値ちょうどでは、traceが閾値の手前で止まり、handlerが1回数えてyieldする | 同じ`count(3)`。しきい値を2にする | Interpreterで実行し、yieldの有無、停止位置、yield時のループ変数、結果を確かめる | 1回目の後方辺はtraceが数え、2回目の後方辺は閾値に達するためbrの位置へ戻してhandlerが数える。yieldは後方brの遷移先で起き、yield時のループ変数は2（2回目の後方辺で止まる）となる。結果は`[3]`となる | `test_jit_runtime.py::test_jitr_137_backward_br_at_threshold_is_counted_once_by_the_handler_and_yields` |
 | TEST-JITR-78 | QAの退役記録と新traceの計数寿命 | 実行済みと未実行のtrace、および収集先がある | QAハーネスでlookup、rotate、置換、flush前後の常駐状態を比較する | lookupでは記録せず値を保持する。脱落したtraceのPCと操作前に保存した回数を一度通知する。未実行の0も通知する。同じPCの新traceは0から始まる | `` |
 | TEST-JITR-79 | 無効な静的metadataで実行されないtraceの除外 | 常駐traceの`frame_depth` metadataが無効値である | Runtimeから関数を実行する | Interpreterで正しい結果を得て、metadata検査によりtrace実行を辞退し、traceの回数は0のままとなる | `` |
 
-
 形式モデルは[`jit_trace_execution_model.py`](docs/components/tier3_plugins/formal/jit_trace_execution_model.py)を参照する。dispatcher外の低水準直接呼出しは計数対象外である。製品の計測状態の有無をこのモデルから要求しない。
 
 ### コンパイル候補の待ち列処理
-<!-- traceability: {ADR_JitCompileScheduling} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -250,10 +240,7 @@ QA計数の定義（根の入口の分類と trace 終端の計数）: trace 終
 
 ## 3. テスト検証実績と網羅状況
 
-
 実行コマンドは次のとおりである。
-
-
 
 - 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 

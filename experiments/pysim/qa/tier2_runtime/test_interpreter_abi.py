@@ -28,7 +28,7 @@ def _resolve_two_result_block(start: int) -> tuple[bool, int, int, int]:
 
 
 def test_native_layout_matches_x64_jit_context():
-    assert ctypes.sizeof(ExecutionContextABI) == 152
+    assert ctypes.sizeof(ExecutionContextABI) == 144
     assert ExecutionContextABI.ip.offset == 0x00
     assert ExecutionContextABI.stack_base.offset == 0x08
     assert ExecutionContextABI.stack_pointer.offset == 0x10
@@ -49,7 +49,6 @@ def test_native_layout_matches_x64_jit_context():
     assert ExecutionContextABI.local_base.offset == 0x78
     assert ExecutionContextABI.rel.offset == 0x80
     assert ExecutionContextABI.current_block_index.offset == 0x88
-    assert ExecutionContextABI.admission_records.offset == 0x90
     assert ctypes.sizeof(CallFrameNative) == 40
     assert CallFrameNative.return_block_index.offset == 36
     assert ctypes.sizeof(CallStackNative) == 1288

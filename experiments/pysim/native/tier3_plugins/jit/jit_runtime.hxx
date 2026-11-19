@@ -98,56 +98,9 @@ struct jit_cache_state {
   executable_memory code_memory{};
 };
 
-// The admission record of a block is one byte: the upper three bits hold the strike value and the
-// lower five bits hold the lifetime count. jit_runtime.md 8.2 defines the uses of the count by
-// time.
-inline constexpr std::uint8_t kAdmissionLifetimeMax = kAdmissionLifetimeMask;
-// Strike values above the strikes are the markers of the record (jit_runtime.md 8.2).
-inline constexpr std::uint8_t kAdmissionNoHistory = 5;
-inline constexpr std::uint8_t kAdmissionStageRejected = 6;
-inline constexpr std::uint8_t kAdmissionShortLifetime = FB_CONF_JIT_ADMISSION_SHORT_LIFETIME;
-inline constexpr std::uint8_t kAdmissionRotationGroup = FB_CONF_JIT_ADMISSION_ROTATION_GROUP;
-// The record holds the strikes, the no-history value and the stage-rejection value in three bits.
-static_assert(FB_CONF_JIT_ADMISSION_LIMIT_RELAXED < kAdmissionNoHistory);
-static_assert(kAdmissionStageRejected < (1u << (8u - kAdmissionStrikeShift)));
-static_assert(kAdmissionLifetimeMax == 31u);
-
-/** @brief 段階。直前に終わった区切りの破棄数 w から、f = w ÷ 区切り を求めて決まる。 */
-enum class admission_stage : std::uint8_t { strict, middle, relaxed };
-constexpr admission_stage admission_stage_of(std::uint32_t previous_evictions) {
-  const auto rate = previous_evictions / kAdmissionRotationGroup;
-  if (rate >= FB_CONF_JIT_ADMISSION_RATE_STRICT) {
-    return admission_stage::strict;
-  }
-  return rate >= FB_CONF_JIT_ADMISSION_RATE_MIDDLE ? admission_stage::middle
-                                                   : admission_stage::relaxed;
-}
-/** @brief 段階のストライク上限 S。 */
-constexpr std::uint8_t admission_stage_limit(admission_stage stage) {
-  switch (stage) {
-  case admission_stage::strict:
-    return FB_CONF_JIT_ADMISSION_LIMIT_STRICT;
-  case admission_stage::middle:
-    return FB_CONF_JIT_ADMISSION_LIMIT_MIDDLE;
-  case admission_stage::relaxed:
-    return FB_CONF_JIT_ADMISSION_LIMIT_RELAXED;
-  }
-  return FB_CONF_JIT_ADMISSION_LIMIT_RELAXED;
-}
-
-/** @brief 8 回転ごとの破棄数の区切り。直前に終わった区切りの破棄数が段階を決める。 */
-struct jit_admission_window {
-  std::uint8_t rotations = 0;
-  std::uint16_t evictions = 0;
-  std::uint16_t previous_evictions = 0;
-};
-
 /** @brief 借用カード領域と、所有する履歴・候補キューを保持する。 */
 template <class Profile> struct jit_hotspot_state {
   std::uint8_t *card_states = nullptr;
-  // One admission record per block, borrowed from the plugin region with the card workspace.
-  std::uint8_t *admission_records = nullptr;
-  jit_admission_window admission_window{};
   std::uint8_t *dirty_cards = nullptr;
   card_index_t card_count = 0;
   std::uint32_t dirty_mask_bytes = 0;
@@ -268,14 +221,6 @@ public:
   void set_chain_target(jit_cache_entry source, const jit_cache_entry *target);
   /** @brief Active/Warmの後続へ連結する。Oldestへは既存の連結だけを維持する。 */
   void link_resident_successor(jit_cache_entry source);
-  /** @brief 設置の時点で、block の計数を0に戻す。 */
-  void record_install(block_index_t block_index);
-  /** @brief 破棄の時点で、寿命からストライクを更新し、破棄数を数える。 */
-  void record_eviction(block_index_t block_index);
-  /** @brief 回転の時点で、8 回転の区切りを進める。段階が緩くなったら却下を戻す。 */
-  void advance_admission_window();
-  /** @brief 段階の却下の block の候補マスクを戻し、ストライクを 0 に戻す。 */
-  void restore_stage_rejections();
   /** @brief カードの2ビット状態を読み出す。 */
   std::uint32_t card_state(std::uint32_t card) const;
   /** @brief カードの2ビット状態を更新する。 */

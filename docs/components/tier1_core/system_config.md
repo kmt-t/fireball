@@ -5,7 +5,7 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {META_ConfigurableSystem} {META_Static_Resolution} {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {GLOBAL_StaticScalability} {RoleBasedAccessControl} {FastAddressCheck} {vMMIO_Isolation} {META_RestrictedPhysicalAccess} {Challenge_DebuggerResource} {ZeroRuntimeOverhead} -->
+<!-- traceability: {META_ConfigurableSystem} {META_Static_Resolution} {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {GLOBAL_StaticScalability} {RoleBasedAccessControl} {vMMIO_Isolation} {META_RestrictedPhysicalAccess} -->
 Fireballハイパーバイザは、リソース制約の厳しい組み込み環境で動作するため、メモリサイズや最大リソース数をコンパイル時に固定する設計を採用する。設定はヘッダファイル形式のコンフィグファイル（`inc/fireball_config.hxx`）内のマクロ定義および `constexpr` 定数によって行われ、実行時オーバーヘッドを完全に排除する（ゼロコスト抽象化）。
 
 ## 2. アーキテクチャ分類
@@ -35,7 +35,7 @@ graph TD
 ### 3.3 コンフィグマクロ一覧・定義
 
 #### 3.3.1 メモリ管理
-<!-- traceability: {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {ContextPointerRegister} {GLOBAL_StaticScalability} {IPC_ZeroCopy} -->
+<!-- traceability: {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {GLOBAL_StaticScalability} {IPC_ZeroCopy} -->
 本表は製品のネイティブ構成項目を定義する。要求で定まる制約は [`requirement_list.md`](docs/requires/requirement_list.md) を正本とし、対象構成で値が確定していない項目はTBDとする。シミュレータの初期値やメモリ集計を製品の既定値として扱わない。
 
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
@@ -59,7 +59,7 @@ graph TD
 ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式、領域数・属性・配置、JITコードキャッシュの物理配置と実装時の資源使用量はTBDとする。要求のRAM/ROM容量条件は [`requirement_list.md`](docs/requires/requirement_list.md) に従う。
 
 #### 3.3.2 IPCルータ
-<!-- traceability: {META_ConfigurableSystem} {IPC_ZeroCopy} {RoleBasedAccessControl} {WIT_First} {WIT_Common_Types} {Challenge_CspHandoffStarvation} -->
+<!-- traceability: {META_ConfigurableSystem} {IPC_ZeroCopy} {RoleBasedAccessControl} {WIT_Common_Types} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_IPC_MAX_SERVICES` | 登録可能な最大サービス数 | `16` | |
@@ -79,7 +79,7 @@ ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式�
 | `FB_CONF_HAL_MAX_BUFFERS` | デバイス通信用バッファの最大数 | `4` | |
 
 #### 3.3.4 vSoC / vMMIO
-<!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_StrictMemoryLimit} {vMMIO_Isolation} {META_ConfigurableSystem} {META_RestrictedPhysicalAccess} {META_FlatMapIndexed} {GLOBAL_StaticScalability} -->
+<!-- traceability: {GLOBAL_StrictMemoryLimit} {vMMIO_Isolation} {META_ConfigurableSystem} {META_RestrictedPhysicalAccess} {META_FlatMapIndexed} {GLOBAL_StaticScalability} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_WASM_PAGE_SIZE` | WASM標準論理ページサイズ | `65536` | |
@@ -88,10 +88,10 @@ ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式�
 | `FB_CONF_JIT_COMMON_CODE_SIZE` | 相対ジャンプ等の非エビクション共通コード領域 | `2048` | |
 | `FB_CONF_JIT_BANK_SIZE` | 各エビクション対象バンクのサイズ | `2048` | |
 | `FB_CONF_JIT_CACHE_SIZE` | 連続JIT領域 | `8192` | |
-| `FB_CONF_JIT_NUM_BUFFERS` | JITキャッシュバッファ面数 | `3` | `{JIT_OldestExecuteOnly}` |
+| `FB_CONF_JIT_NUM_BUFFERS` | JITキャッシュバッファ面数 | `3` | `jit_runtime.md` |
 | `FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY` | JITキャッシュ1面の常駐trace記述枠数 | `24` (x64参照構成) | |
 | `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` | 全JITキャッシュ面の常駐trace記述枠数 | `FB_CONF_JIT_NUM_BUFFERS × FB_CONF_JIT_CACHE_BANK_ENTRY_CAPACITY` (`72`、x64参照構成) | |
-| `FB_CONF_JIT_MAX_INBOUND_CHAINS_PER_BANK` | 単一キャッシュバンクの最大被チェインエントリ数 | `32` | `{JIT_LazyChaining}` |
+| `FB_CONF_JIT_MAX_INBOUND_CHAINS_PER_BANK` | 単一キャッシュバンクの最大被チェインエントリ数 | `32` | `jit_runtime.md` |
 | `FB_CONF_JIT_INBOUND_BUCKET_COUNT` | 常駐traceの後続PCを索引する被チェイン逆引き表のバケット数 | `64` | |
 | `FB_CONF_JIT_MAX_TRACE_INSTRUCTIONS` | 1 traceに含める最大WASM命令数 | `64` (x64参照構成) | |
 | `FB_CONF_JIT_MAX_BODY_BYTES` | trace bodyと末尾定数poolを合わせた最大出力バイト数 | `1536` (x64参照構成) | |
@@ -101,13 +101,6 @@ ARMv8-Mの対象ボード、SRAM/ROM/周辺アドレス、メモリ保護方式�
 | `FB_CONF_INTERPRETER_YIELD_THRESHOLD` | Interpreterが協調yieldするまでに取得するLOOP後方分岐数。C++ Interpreter単独とHybrid JITに適用する。100 MHz STM32 Cortex-M33で約300 µs（30,000サイクル / 約469サイクル/後方分岐）を狙う初期値であり、実機・実ワークロードで校正する | `64` | |
 | `FB_CONF_JIT_AGING_STEP_UNITS` | 3面キャッシュのローテーション1回ごとに処理する関数更新表の非ゼロバイト数（1バイト = 8関数）。0は aging を行わない構成を表す。 | `2` | |
 | `FB_CONF_JIT_AGING_STEP_SCAN_BYTES` | 3面キャッシュのローテーション1回ごとに走査する関数更新表のバイト数の上限（値が0のバイトも数える） | `8` | |
-| `FB_CONF_JIT_ADMISSION_SHORT_LIFETIME` | 設置後の入口回数（寿命）がこの値未満で破棄された trace は、ストライクを 1 増やす（採否の K） | `10` | 破棄の寿命の分布の測定による 10 回境界（測定記録はリポジトリ外） |
-| `FB_CONF_JIT_ADMISSION_ROTATION_GROUP` | 破棄数を数える回転の区切り（回転数） | `8` | 直近 8 回転の破棄頻度 f の定義（handoff の 3） |
-| `FB_CONF_JIT_ADMISSION_LIMIT_STRICT` | f ≥ `RATE_STRICT` の段階のストライク上限 S（見逃す回数） | `2` | 段階の表（handoff の 3） |
-| `FB_CONF_JIT_ADMISSION_LIMIT_MIDDLE` | `RATE_MIDDLE` ≤ f < `RATE_STRICT` の段階の S | `3` | 段階の表（handoff の 3） |
-| `FB_CONF_JIT_ADMISSION_LIMIT_RELAXED` | f < `RATE_MIDDLE` の段階の S | `4` | 段階の表（handoff の 3） |
-| `FB_CONF_JIT_ADMISSION_RATE_STRICT` | 厳しい段階の境界 f（破棄数 ÷ 区切り） | `6` | 段階の表（handoff の 3） |
-| `FB_CONF_JIT_ADMISSION_RATE_MIDDLE` | 中間の段階の境界 f | `2` | 段階の表（handoff の 3） |
 
 | `FB_CONF_GUEST_RAM_BASE` | ゲストRAMの開始アドレス（64KB境界配置） | `0x00000000` | |
 | `FB_CONF_GUEST_RAM_SIZE` | vMMIO Stage 1アドレス窓の境界判定サイズ。WASMリニアメモリのページ数とは別の設定である | 対象構成で定義 | |
@@ -130,7 +123,7 @@ JITの有効・無効も個別のビルド定義では切り替えない。Inter
 vMMIO Stage 1アドレス窓へのアクセスは、有効サイズとの比較で保護する（`FastAddressCheck`）。境界外アドレスはトラップし、マスクで折り返して実行を継続しない。この判定は窓サイズが2の冪であることを要求しない。WASMリニアメモリは独立したページ数契約に従う。
 
 #### 3.3.5 ロギング・デバッガ
-<!-- traceability: {BufferedLogging} {Challenge_DebuggerResource} {Debug_Integrated} -->
+<!-- traceability: {BufferedLogging} {Debug_Integrated} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_LOG_BUFFER_SIZE` | ログメッセージ保持用のバッファサイズ (Bytes) | `512` | |
@@ -163,7 +156,7 @@ assert FB_CONF_MAX_TASKS <= 254, "FB_CONF_MAX_TASKS must be <= 254"
 ```
 
 #### 3.3.8 リカバリー戦略
-<!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->
+<!-- traceability: {META_RecoveryStrategy} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_RETRY_BACKOFF_MS` | `retry` 戦略の再試行間ウェイト（ミリ秒） | `10` | |
@@ -172,7 +165,7 @@ assert FB_CONF_MAX_TASKS <= 254, "FB_CONF_MAX_TASKS must be <= 254"
 `retry` を実装するすべてのコンポーネントはこの2値を共有する。個別のコンポーネント文書で異なる待機時間・回数を独自に定義しないこと。
 
 #### 3.3.9 WASMローダー・Interpreter
-<!-- traceability: {META_ConfigurableSystem} {LightweightVerifier} {Wasm32Only} -->
+<!-- traceability: {META_ConfigurableSystem} {Wasm32Only} -->
 WASMモジュールの件数上限とInterpreterの固定容量上限を定める。表の値はPySimの`config.py`とLoader概念コードの現行値であり、対応する仕様の上限として扱う。`FB_CONF_RUNTIME_BUMP_ARENA_BYTES`はPySim固有の計測用容量であり、ターゲットRAM予算やネイティブ構成値を定めない。
 
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
@@ -207,11 +200,9 @@ WASMモジュールの件数上限とInterpreterの固定容量上限を定め�
 <!-- traceability: {META_Static_Resolution} -->
 本コンポーネントは静的な定義のみを提供し、すべての値はコンパイル時に確定する。
 
-
 ## 5. インターフェース定義
 
 実行時の公開APIは提供しない。構成値はコンパイル時定数として定義し、各コンポーネントの利用契約は本書の静的モデルと対応するコンポーネント仕様に従う。
-
 
 ## 6. 制約達成の方策
 
@@ -222,7 +213,6 @@ WASMモジュールの件数上限とInterpreterの固定容量上限を定め�
 ### 6.2 安全性制約と方策
 <!-- traceability: {META_ConfigurableSystem} -->
 - **方策**: システム構成定数はすべて `constexpr` / `const` として ROM / Flash（`.rodata`）に静的配置され、実行時の不正な書き換えから保護される。
-
 
 ## 7. 形式検証・テスト仕様との対応
 

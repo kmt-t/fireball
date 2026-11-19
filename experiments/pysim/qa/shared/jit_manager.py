@@ -204,8 +204,6 @@ class JITRuntimeManager(NativeJITRuntimeManager):
         if module_id is not None:
             assert 0 <= module_id <= 0xFFFF_FFFF
             self.module_id = module_id
-        # The JIT reads the original bytecode, so native views must not use the expression copy.
-        module.drop_native_code_copies()
         if module.block_storage is None:
             module.build_basic_block_index()
         self.module = module

@@ -17,7 +17,6 @@ class NativeJitProvider(ctypes.Structure):
         ("trace_entry_address", ctypes.c_size_t),
         ("code_base", ctypes.c_size_t),
         ("trace_offsets", ctypes.c_void_p),
-        ("admission_records", ctypes.c_void_p),
     )
 
 
@@ -28,5 +27,4 @@ FIELD_NAMES = (
     "trace_entry_address",
     "code_base",
     "trace_offsets",
-    "admission_records",
 )

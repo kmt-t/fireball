@@ -23,7 +23,6 @@ Runtimeの関数入退出イベントからプロファイルログへの変換�
 
 ## 3. テストコードと形式検証
 
-
 形式検証は [`guest_profiler_model.py`](docs/components/tier3_plugins/formal/guest_profiler_model.py) を参照する。辞書ID・引数数・tick符号化と入退出順序をCTLで検査し、`guards=False`で変異を検出する。
 
 ## 4. 既知の制限・スコープ外

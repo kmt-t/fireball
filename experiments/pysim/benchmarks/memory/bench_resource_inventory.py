@@ -203,10 +203,7 @@ def compiler_stack_frames() -> dict[str, int]:
                     "-fno-rtti",
                     "-fstack-usage",
                     "-I",
-                    str(
-                        Path(__file__).resolve().parents[2]
-                        / "build/native/jit-stencils"
-                    ),
+                    str(Path(__file__).resolve().parents[2] / "build/native/jit-stencils"),
                     *(f"-D{name}={value}" for name, value in definitions.items()),
                     "-c",
                     str(source),

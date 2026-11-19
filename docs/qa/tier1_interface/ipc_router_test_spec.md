@@ -5,7 +5,7 @@
 正本: [`ipc_router.md`](docs/components/tier1_interface/ipc_router.md)
 参考実装: [`ipc_router_concept.py`](docs/components/tier1_interface/concepts/ipc_router_concept.py)（`flat_view_concept.py`のFlatMapViewを利用）
 
-URIベースのサービス検索（3段パイプライン）、デバイス種別だけを表すロールとURIインスタンスの分離、ロールベースアクセス制御、ゼロコピー要求・応答（Request Revoke→Rendezvous→Grant→Response、バッファなし同期CSPハンドオフ）、Schedulerによる送信元TCB IDの認証、および受信側のガード付き外部選択（select、複数の許可された送信元エッジを同時に待ち受ける）を検証する。本APIはCOOSのCSPチャネル（`{ADR_RendezvousChannel}`）そのものであり、有界キューやDrop Handlerは存在しない。
+URIベースのサービス検索（3段パイプライン）、デバイス種別だけを表すロールとURIインスタンスの分離、ロールベースアクセス制御、ゼロコピー要求・応答（Request Revoke→Rendezvous→Grant→Response、バッファなし同期CSPハンドオフ）、Schedulerによる送信元TCB IDの認証、および受信側のガード付き外部選択（select、複数の許可された送信元エッジを同時に待ち受ける）を検証する。本APIはCOOSのCSPチャネルそのものであり、有界キューやDrop Handlerは存在しない。
 
 ## 2. テストケース一覧
 <!-- traceability: {IPCRouter} {IPCRegistry} {RoleBasedAccessControl} -->
@@ -41,7 +41,7 @@ URIベースのサービス検索（3段パイプライン）、デバイス種�
 | TEST-IPCR-13 | kv_pair型スコープのビット構成 | メッセージペイロードを構築 | 型スコープ上位3bit（Functional/Dictionary/Resource）と下位5bit（型）を設定 | 正しくエンコード・デコードされる | kv_pair |
 | TEST-IPCR-14 | メッセージの8要素固定長制限 | 送信側が9要素のメッセージを所有する | `send`で拒否を確認し、8要素に修正して同じメッセージを再送する | 9要素では`ERR_MSG_TOO_LARGE`を返す。Revoke、状態変更、rollbackは発生しない。8要素では要求待機へ進む。 | `route_message`、`` |
 | TEST-IPCR-15 | DENYエッジへの送信 | RBACマトリックス上でDENYの`(sender_role, target_role)`エッジ | `lookup(uri)` または非認可チャネルへの `send(channel, msg)` | 対応するCSPチャネルが存在しない（`None`）またはTCBロール不一致のため`ERR_PERMISSION_DENIED`を返す | route_message |
-| TEST-IPCR-16 | CSPチャネルとの同一性 | - | ドキュメント上の記述を確認 | 本APIは`{ADR_RendezvousChannel}`が定めるバッファなし同期ランデブーそのものであり、`{CSP_Handoff}`を主張することを実装が正しく反映している（キューを介した別機構ではない） | 「COOSのCSPチャネルと同一の機構」 |
+| TEST-IPCR-16 | CSPチャネルとの同一性 | - | ドキュメント上の記述を確認 | 本APIは[`os_coos.md`](docs/components/tier1_core/os_coos.md)が定めるバッファなし同期ランデブーそのものであり、`{CSP_Handoff}`を主張することを実装が正しく反映している（キューを介した別機構ではない） | 「COOSのCSPチャネルと同一の機構」 |
 | TEST-IPCR-17 | 受信側のガード付き外部選択（select）: 複数エッジからの受信 | `CORE_SERVICE`は`RUNTIME`と`DEBUGGER`の双方からALLOW（RBACマトリックス） | 受信側を先にブロックさせた後、`DEBUGGER`から送信 | `receive()` を呼ぶだけで `DEBUGGER` からのメッセージを受信できる（送信元ロールやURIの事前指定不要） | 「Rendezvous」, 「receive_message」, ipc_router_concept.py ``, [`scheduler.py`](experiments/pysim/tier1_core/scheduler.py) `channel_select_recv` |
 | TEST-IPCR-18 | select解決後の敗退エッジの解除（1チャネル1待機者の維持） | TEST-IPCR-17の状態で`DEBUGGER`エッジが成立した直後 | 成立しなかった`RUNTIME`→`CORE_SERVICE`エッジの状態を確認し、続けて新規の受信側・送信側でそのエッジを使用する | 敗退エッジの待機者登録が解除されており（`waiter_dir == NONE`）、後続の`RUNTIME`→`CORE_SERVICE`ランデブーが独立して正常に成立する（stale waiterとして残らない） | [`scheduler.py`](experiments/pysim/tier1_core/scheduler.py) `channel_send`のSelectGroup解除処理, `` |
 | TEST-IPCR-19 | メッセージ配列データ所有権とビュー提供 | エントリ配列構築 | メッセージ構築と所有権状態別のアクセスを実行する | IPCメッセージはキー・バリュー対のソート配列を所有し、非所有ビューでペイロードを提供する。`IN_FLIGHT`中はエントリへアクセスできない。 | 「IPCメッセージ」、``。直接借用と失効は第3.3節の実行ケースで検査する。 |
@@ -50,7 +50,7 @@ URIベースのサービス検索（3段パイプライン）、デバイス種�
 | TEST-IPCR-22 | 応答コードのpending境界 | 受信直後のメッセージ | `response_code`を確認し、受信側がコードを設定して`reply`する | 受信直後は`0xffffffff`、reply後は設定値となり、pendingのままreplyできない | `{OwnershipTransfer}` |
 | TEST-IPCR-23 | エコー応答 | 受信側がKVを変更しない | `reply(message, code)`を実行する | 送信側は同じメッセージオブジェクトを受け取り、要求KVと応答コードを取得する | `{IPC_ZeroCopy}` |
 | TEST-IPCR-24 | 追加データ付き応答 | 受信側が`RECEIVER_OWNS` | 受信側がKVを追加して`reply`する | 送信側は追加KVを含む同じメッセージを取得する。物理コピーは発生しない | `{IPC_ZeroCopy}` |
-| TEST-IPCR-25 | 応答前の送信側ブロック | 要求のRendezvousが成立し、受信側が処理中 | 受信側がreplyする前のScheduler状態を確認する | 送信元TCBは応答待ちで起床せず、reply後にだけREADYへ戻る | `{ADR_RendezvousChannel}` |
+| TEST-IPCR-25 | 応答前の送信側ブロック | 要求のRendezvousが成立し、受信側が処理中 | 受信側がreplyする前のScheduler状態を確認する | 送信元TCBは応答待ちで起床せず、reply後にだけREADYへ戻る | |
 | TEST-IPCR-26 | 内部KVバッチの構築契約 | 一意なu32 KV、最大8要素、実体容量内 | 正常生成例と重複・容量外・u32外のバッチを書き込む | 正常例はソート済み実体から検索できる。契約違反は書込み前にassertし、全共有バイトを保存する | ``、`` |
 | TEST-IPCR-27 | KVエントリのu64 wire配置 | keyとvalueに異なる32bitパターンを使う | SharedBlockのwriterとreaderを別々に実行する | u64上位32bitはkey、下位32bitはvalueである。writerの全byte列を独立した既知値と比較する。readerには規定byte列を直接入力する。隣接領域を保存する | `ipc_router.md`「IPCメッセージ」、``、`` |
 
@@ -59,9 +59,8 @@ URIベースのサービス検索（3段パイプライン）、デバイス種�
 
 | GOTCHA参照 | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| GOTCHA-IPCR-01 | 単一要求・応答トランザクションとキュー完全不在 | 同一 CSP エッジへ要求を送信し、応答待ち状態にする | 同一エッジへさらに `send` を試行 | `ERR_QUEUE_FULL` のような差し戻しエラーではなく、即座にアサーション違反（プログラミングエラー）で停止する。 | [`ipc_router.md`](docs/components/tier1_interface/ipc_router.md), `{ADR_RendezvousChannel}` |
+| GOTCHA-IPCR-01 | 単一要求・応答トランザクションとキュー完全不在 | 同一 CSP エッジへ要求を送信し、応答待ち状態にする | 同一エッジへさらに `send` を試行 | `ERR_QUEUE_FULL` のような差し戻しエラーではなく、即座にアサーション違反（プログラミングエラー）で停止する。 | [`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) |
 | GOTCHA-IPCR-02 | Preflight Rejection による所有権保全 | RBAC 拒否エッジまたは未登録 URI 宛のメッセージ送信 | `send` を実行 | 権限・URI・サイズ検証がメッセージ Revoke（所有権剥奪）の前に先行して行われ、エラー時は所有権が `SENDER_OWNS` のまま1ミリも動かない。 | [`ipc_router.md`](docs/components/tier1_interface/ipc_router.md), `{OwnershipTransfer}` |
-
 
 ## 3. テスト検証実績と網羅状況
 
@@ -84,7 +83,6 @@ URIベースのサービス検索（3段パイプライン）、デバイス種�
 | TEST-IPCR-17, TEST-IPCR-18 | `` | 複数エッジの外部選択、敗退エッジ解除、後続の独立ランデブー |
 | `TEST-IPCR-19` | `` | ソート済みKVの検索、所有権状態によるアクセス拒否。 |
 
-
 ### 3.2 局所実行結果
 
 - 実行日: 2026-10-01。
@@ -95,7 +93,6 @@ URIベースのサービス検索（3段パイプライン）、デバイス種�
 - 参考実装、形式モデル、ベンチマークはこの局所実行に含めない。
 
 実行コマンド:
-
 
 ### 3.3 直接借用と所有権の証拠
 

@@ -522,6 +522,19 @@ inline FIREBALL_CPS_CALL void h_rpn_expr(execution_context *context,
   [[clang::musttail]] return rpn_next<WithJit>(context, instruction_ip, sp, rel + distance);
 }
 
+// Non-debug local.get checks the annotation's RPN ext field without rewriting ROM bytecode.
+template <bool WithJit>
+inline FIREBALL_CPS_CALL void h_local_get(execution_context *context,
+                                          const std::uint8_t *instruction_ip, std::uint32_t *sp,
+                                          const std::uint8_t *rel) {
+  const std::uint8_t *cursor = rel + 4; // width, offset (u16), slot width precede the ext
+  if (read_u16(cursor) != 0) {
+    [[clang::musttail]] return h_rpn_expr<WithJit>(context, instruction_ip, sp, rel);
+  }
+  [[clang::musttail]] return runtime_api_handler<void, WithJit, &runtime_local_get>(
+      context, instruction_ip, sp, rel);
+}
+
 template <typename Debugger, bool WithJit> constexpr auto make_opcode_handlers() {
   // Interpreter-only dispatch (no JIT, no debugger) continues through control transfers.
   constexpr bool kDirect = !WithJit && std::is_void_v<Debugger>;
@@ -543,10 +556,10 @@ template <typename Debugger, bool WithJit> constexpr auto make_opcode_handlers()
       runtime_api_handler<Debugger, WithJit, &runtime_call<true, kDirect>>; // call_indirect
   handlers[0x1A] = runtime_api_handler<Debugger, WithJit, &runtime_drop>;
   handlers[0x1B] = runtime_api_handler<Debugger, WithJit, &runtime_select>;
-  handlers[0x20] = runtime_api_handler<Debugger, WithJit, &runtime_local_get>;
+  handlers[0x20] = std::is_void_v<Debugger>
+                       ? &h_local_get<WithJit>
+                       : runtime_api_handler<Debugger, WithJit, &runtime_local_get>;
   handlers[0x21] = runtime_api_handler<Debugger, WithJit, &runtime_local_set>;
-  handlers[kNativeLocalGetW1] = runtime_api_handler<Debugger, WithJit, &runtime_local_get_w1>;
-  handlers[kNativeLocalSetW1] = runtime_api_handler<Debugger, WithJit, &runtime_local_set_w1>;
   handlers[0x22] = runtime_api_handler<Debugger, WithJit, &runtime_local_tee>;
   handlers[0x23] = runtime_api_handler<Debugger, WithJit, &runtime_global_get>;
   handlers[0x24] = runtime_api_handler<Debugger, WithJit, &runtime_global_set>;
@@ -937,11 +950,6 @@ template <typename Debugger, bool WithJit> constexpr auto make_opcode_handlers()
       runtime_api_handler<Debugger, WithJit,
                           &runtime_i64_unary<&opcode_extend32_signed, false>>; // i64.extend32_s
   handlers[kOpcodeFcPrefix] = &h_fc_dispatch<Debugger, WithJit>;
-  if constexpr (std::is_void_v<Debugger>) {
-    handlers[kRpnExprHead] = &h_rpn_expr<WithJit>;
-  } else {
-    handlers[kRpnExprHead] = runtime_api_handler<Debugger, WithJit, &runtime_local_get>;
-  }
   return handlers;
 }
 
@@ -1074,10 +1082,6 @@ inline void prepare_native_dispatch(
   context.code = function.code;
   context.code_size = function.code_size;
   context.local_base = frame.local_base;
-  if constexpr (WithJit) {
-    // The common trace entry counts root entries in this record array (jit_runtime.md 8.2).
-    context.admission_records = state.jit_provider->admission_records;
-  }
 }
 
 template <bool CollectStats, bool WithExtension, typename ResultType>
@@ -1266,7 +1270,7 @@ int run_native_dispatch_abi(const dispatch_input_t<WithExtension> *input, Result
     assert(jit_provider != nullptr && jit_provider->owner != 0);
     assert(jit_provider->observe_block != nullptr && jit_provider->finish_boundary != nullptr &&
            jit_provider->trace_entry_address != 0 && jit_provider->code_base != 0 &&
-           jit_provider->trace_offsets != nullptr && jit_provider->admission_records != nullptr);
+           jit_provider->trace_offsets != nullptr);
   } else {
     assert(jit_provider == nullptr);
   }

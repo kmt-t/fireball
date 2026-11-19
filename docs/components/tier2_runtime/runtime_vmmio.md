@@ -6,7 +6,7 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {Fast_Path_GPIO} {META_FlatMapIndexed} {META_NoStdVector} {GLOBAL_Policy_Memory} -->
+<!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {Fast_Path_GPIO} {META_FlatMapIndexed} {META_NoStdVector} {GLOBAL_Policy_Memory} -->
 vMMIO（Virtual Memory-Mapped I/O）は、ホストが仲介するリソースへのアクセスを統一的に扱う層である。対象には物理レジスタ（GPIO 等）、共有メモリ、システムコール用バッファがある。
 
 ホストとゲストの境界を越え、vMMIO アドレス空間（Bit 31 == 1、Stage 2 / 3）を経由するアクセスは、この層が仲介する。ゲスト専用 RAM（Stage 1: Bit 31 == 0）は vMMIO の管理対象外である。ゲスト専用 RAM には、境界検査だけで完結する高速バイパス経路を設ける。詳細は後述する。
@@ -17,7 +17,7 @@ WASM ゲストのリニアメモリは標準仕様に従い、`FB_CONF_WASM_PAGE
 
 標準の `std::flat_map` を素のまま用いない理由: C++23 の `std::flat_map` はコンテナアダプタであり、既定の下位コンテナが `std::vector` である。そのままでは動的再確保に伴うレイテンシ揺らぎとメモリ断片化の排除原則に抵触する。本プロジェクトでは表の実体を静的配列から確保し、`fireball::flat_map_view` で引く設計とする。
 
-FlatMap 単体での探索は $O(\log N)$ である。本アーキテクチャでは手前に **ダイレクトマップ方式のソフトウェアTLB（`FB_CONF_VMMIO_TLB_ENTRIES` エントリ、$O(1)$ キャッシュ）** を配置する。JIT 実行やホットな共有メモリ操作のクリティカルパスでは、大半のアクセス（目標 90% 以上）が TLB キャッシュヒット（$O(1)$）で高速解決される。FlatMap 化に伴うテーブル探索の遅延は十分に吸収される。
+FlatMap 単体での探索は $O(\log N)$ である。本アーキテクチャでは手前に **ダイレクトマップ方式のソフトウェアTLB（`FB_CONF_VMMIO_TLB_ENTRIES` エントリ、$O(1)$ キャッシュ）**（`{vMMIO_TLB}`）を配置する。 <!-- definition: {vMMIO_TLB} --> JIT 実行やホットな共有メモリ操作のクリティカルパスでは、大半のアクセス（目標 90% 以上）が TLB キャッシュヒット（$O(1)$）で高速解決される。FlatMap 化に伴うテーブル探索の遅延は十分に吸収される。
 
 1. **リニアアドレス空間フィルタ（高速バイパス & 境界チェック）**:
    32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Stage 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。
@@ -28,14 +28,13 @@ FlatMap 単体での探索は $O(\log N)$ である。本アーキテクチャ�
    - 動的 SHM ページや物理パススルーページをフラットに登録・管理できる。
 3. **ダイレクトマップ方式ソフトウェアTLB（完全O(1)キャッシュ）**:
    ホットパス高速化のため、一発でインデックスが決まるダイレクトマッピング（ハッシュ方式、`FB_CONF_VMMIO_TLB_ENTRIES` エントリ固定サイズ）を採用する。
-   - 仮想ページ番号（20-bit: `vpn = raw >> 12`）を 20→10→5 bit と2回の XORで折りたたみ、`temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); tlb_idx = temp & (FB_CONF_VMMIO_TLB_ENTRIES - 1)` を算出してTLBに一撃でアクセスする。エントリ数は2の冪とする。ヒット時は権限チェックを通過した後に即時実行する。
-  - **全ビット拡散**: FC[19:15] から下位ページ番号ビットまでの VPN 全20ビットが 5-bit 幅へ折り畳まれるため、FC 間やページ番号の変動に対して TLB スロットが均等に分散する。
+   - 仮想ページ番号（`vpn = raw >> 12`）からハッシュ関数で `tlb_idx`（`0 .. FB_CONF_VMMIO_TLB_ENTRIES - 1`）を算出してTLBに直接アクセスする。エントリ数は2の冪とする。ヒット時は権限チェックを通過した後に即時実行する。
 
-vMMIO領域（Stage 2/3）のセキュリティモデルは**PTEに埋め込まれた権限フィールドがゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。ゲストRAM（Stage 1）はPTEを経由せず、`FastAddressCheck` による境界チェックのみをゲートとする別経路である。アクセス特性に応じてセキュリティゲートを以下の3段階に階層化する。
+vMMIO領域（Stage 2/3）のセキュリティモデルは**PTEに埋め込まれた権限フィールドがゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。ゲストRAM（Stage 1）はPTEを経由せず、`FastAddressCheck`（`{FastAddressCheck}`）による境界チェックのみをゲートとする別経路である。 <!-- definition: {FastAddressCheck} --> アクセス特性に応じてセキュリティゲートを以下の3段階に階層化する。
 
 1. **Stage 1 (ゲストRAMバイパス)**: ゲスト専用RAM領域（Bit 31 == 0、FC=0..7）。`addr >= guest_ram_size` による比較ベースの単一の高速境界チェック（FastAddressCheck）を行い、境界外は即座にトラップする。
 2. **Stage 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（IPCR、vIRQ等）。システムコールと VDMA の host call はこのアドレス空間を経由しない。
-3. **Stage 3 (動的vMMIO, FC=13-15)**: HAL DYNAMIC（FC=13, `0xD000_0000`）、SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。DYNAMIC はマルチゲスト構成でも同時にマップできるゲストを1つに限定する。
+3. **Stage 3 (動的vMMIO, FC=13-15)**: HAL DYNAMIC（FC=13, `0xD000_0000`）、SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。
 
 単一のロード、ストア、バルク転送、VDMA転送が触れる範囲は、解決した1つの仮想ページとPTEのマッピング範囲内に収める。FC=14 SHMでは `mapping_size` も上限とし、開始アドレスだけが有効でも範囲末尾が上限を越える場合は `OUT_OF_BOUNDS` とする。本層はページ境界をまたぐ要求を自動分割しない。呼び出し側はページごとに別要求を行い、それぞれ独立した権限検査を受ける。
 
@@ -171,7 +170,6 @@ vMMIO SHM領域の先頭 `FB_CONF_MAX_SHM_PAGES` ページは `FB_PAGE_SIZE` 単
 | `VmmioPteStore` | `std::array<pte_entry, FB_CONF_VMMIO_MAX_PTES>` | 固定長配列 | コンパイル時に静的確保されるPTE実体ストレージ（動的確保ゼロ）。容量超過は `assert` で停止 |
 | `VmmioPteView` | `fireball::flat_map_view<uint32_t, uint32_t>` | ビュー | 二分探索索引を提供する軽量ゼロコピービュー |
 
-
 #### ハンドラ定義
 読み書きアクセス発生時に呼び出される関数の共通インターフェース。
 
@@ -198,7 +196,7 @@ flowchart TD
     CalcRAM --> DirectAccess(["Direct O(1) Memory Access (Zero MMU Overhead)"])
 
     CheckBit31 -- "No (Bit 31 == 1)" --> ExtractVPN["Extract 20-bit VPN (raw >> 12) & Offset (raw & 0xFFF)"]
-    ExtractVPN --> FoldingXOR["GOTCHA-VMMIO-02: temp = VPN ^ (VPN >> 10); temp = temp ^ (temp >> 5); Hash = temp & (FB_CONF_VMMIO_TLB_ENTRIES - 1)"]
+    ExtractVPN --> FoldingXOR["GOTCHA-VMMIO-02: Hash = tlb_hash(VPN) & (FB_CONF_VMMIO_TLB_ENTRIES - 1)"]
     FoldingXOR --> ProbeTLB["Probe Direct-Mapped TLB at index [Hash]"]
 
     ProbeTLB --> TLBHit{"TLB Entry.vpn == VPN?"}
@@ -541,7 +539,7 @@ Stage 3 アクセス（FC=14/15）では、毎回 FlatMap の二分探索を走�
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
-<!-- traceability: {META_ConfigurableSystem} {FastAddressCheck} {vMMIO_TLB} -->
+<!-- traceability: {META_ConfigurableSystem} {vMMIO_TLB} -->
 - **目標**: MMIOアクセスのオーバーヘッドを最小化する。
 - **方策1**: vMMIOデバイス（IPCR等）をFC=12に配置し、配列/ハッシュ参照のみで即時解決できるようにする。SYSCTL／VDMAのhost callはこの経路を使用しない。
 - **方策2**: アドレス空間を RAM Bypass（最上位ビット=0）と vMMIO領域（最上位ビット=1）に分割し、探索とデコードのホットパス探索コストを削減する。
@@ -570,7 +568,6 @@ Stage 3 アクセス（FC=14/15）では、毎回 FlatMap の二分探索を走�
 
 ### 7.4 既知の制限・対象外
 ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
-
 
 ## 8. 設計判断と参考実装
 

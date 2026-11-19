@@ -483,7 +483,6 @@ extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_native_provider_layout(std::uint32_t *
   output[4] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, trace_entry_address));
   output[5] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, code_base));
   output[6] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, trace_offsets));
-  output[7] = static_cast<std::uint32_t>(offsetof(fb_native_jit_provider, admission_records));
 }
 
 // Block-record marks as the native code defines them; the QA test checks the Python mirror.
@@ -647,21 +646,4 @@ extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_resident_record(const qa_jit_runtime *r
 
 extern "C" FB_PYSIM_ABI_EXPORT int fb_jit_runtime_age(qa_jit_runtime *runtime) {
   return runtime->age_hotspot_cards();
-}
-
-// Admission record of one block (upper three bits strikes, lower five bits lifetime).
-extern "C" FB_PYSIM_ABI_EXPORT int fb_qa_admission_record(const qa_jit_runtime *runtime,
-                                                          std::uint32_t block_index) {
-  assert(runtime != nullptr && block_index < runtime->module_view->block_count);
-  return runtime->hotspots.admission_records[block_index];
-}
-
-// Evictions counted in the current group of rotations, and the previous completed group.
-extern "C" FB_PYSIM_ABI_EXPORT void fb_qa_admission_window(const qa_jit_runtime *runtime,
-                                                           std::uint32_t *output) {
-  assert(runtime != nullptr && output != nullptr);
-  const auto &window = runtime->hotspots.admission_window;
-  output[0] = window.evictions;
-  output[1] = window.previous_evictions;
-  output[2] = window.rotations;
 }

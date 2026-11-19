@@ -1,7 +1,7 @@
 # WITインターフェース / リカバリー戦略 テスト仕様書 (Test Specification)
 
 ## 1. 目的と対象範囲
-<!-- traceability: {WIT_Interface_Spec} {WIT_First} -->
+<!-- traceability: {WIT_Interface_Spec} -->
 正本: [`interface_wit.md`](docs/components/tier3_platform/interface_wit.md)
 参考実装: [`libfireball.py`](experiments/pysim/tier3_platform/libfireball.py) と専用host-callの参照モデルを用いる。WIT宣言とホスト側の契約適合を検査し、ゲストC/C++ライブラリの静的リンクは対象外とする。
 
@@ -20,7 +20,7 @@
 | TEST-WIT-05 | `panic`の選択基準 | MPU違反・二重解放・デッドロック検知 | 該当操作を発生させる | 全タスク停止、クラッシュダンプ出力、フェイルセーフ停止 | 表、``はpanic通知と追加操作なしだけを検査する |
 
 ### 低レベル・トラップインターフェース
-<!-- traceability: {WIT_Interface_Spec} {WIT_First} {Syscall_Mapping} -->
+<!-- traceability: {WIT_Interface_Spec} {Syscall_Mapping} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -44,7 +44,7 @@
 | TEST-WIT-22 | WASI_FD_WRITE→コンソール出力経路への自動ルーティング | ゲストの`print`/`eprint` | `libfireball` が `fireball_call(WASI_FD_WRITE,...)`を発行 | `fireball://hal/stdout/0`を解決し、HALの`stream-write`へ変換される | `libfireball_test_spec.md` |
 
 ### HAL公開契約
-<!-- traceability: {WIT_Interface_Spec} {WIT_First} {HAL_Interface} {Asynchronous_Notification} -->
+<!-- traceability: {WIT_Interface_Spec} {HAL_Interface} {Asynchronous_Notification} -->
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -52,16 +52,14 @@
 | TEST-WIT-23 | WASI親和性のあるHAL汎用操作 | `resolver` が公開されている | `stream-read/write`、`stream-flush/close`、`clock-get-now/resolution/subscribe`、`poll-check/wait/drop`の型を確認 | 購読は`u64`の待ち時間を受けて単一`u32`ハンドルを返す。check/waitは真偽値、dropは操作結果を返す | `hal_dispatch.md`、`` |
 
 ## 3. テスト検証実績と網羅状況
-<!-- traceability: {WIT_Interface_Spec} {WIT_First} {HAL_Interface} {Asynchronous_Notification} {META_RecoveryStrategy} {Syscall_Mapping} {GLOBAL_InterruptWakeup} {VDMA} -->
+<!-- traceability: {WIT_Interface_Spec} {HAL_Interface} {Asynchronous_Notification} {META_RecoveryStrategy} {Syscall_Mapping} {GLOBAL_InterruptWakeup} {VDMA} -->
 リカバリーの実行コマンドを示す。
-
 
 8ケースでTEST-WIT-01..TEST-WIT-05の戦略選択、既定10msの待機値、3回上限、reset・panic通知順序を検査する。待機はspyで記録し、実時間を待たない。最大3回の初期操作とresetを区別する。reset成功後に元要求を再実行せず、元のエラーとRESTART戦略を返す。`TEST-RECOVERY-*`と存在しない`system_recovery_spec`への旧参照を、本書のTEST-WIT IDへ置き換えた。
 
 TEST-WIT-12, TEST-WIT-13は専用ホスト入口の転送と状態を検査する。TEST-WIT-14はホスト側のCore Wasm名解決を検査する。TEST-WIT-15はコメントを除いたworld宣言のimport/export方向を検査する。TEST-WIT-23のpollable操作はコメントを除いたHAL WITの関数宣言を検査する。WITの構文検査と機能適合を区別する。
 
 実行コマンドを示す。
-
 
 ## 4. 未検証・スコープ外
 

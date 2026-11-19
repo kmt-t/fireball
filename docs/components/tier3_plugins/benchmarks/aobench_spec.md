@@ -1,7 +1,7 @@
 # 3D レイトレーシング (AO-Bench) ベンチマーク仕様書 (AO-Bench Specification)
 
 ## 1. 目的と対象範囲
-<!-- traceability: {Wasm32Only} {LowLatencyJIT} {ThreadedInterpreter} {JIT_AssemblyStencilCodegen} -->
+<!-- traceability: {Wasm32Only} {ThreadedInterpreter} {JIT_AssemblyStencilCodegen} -->
 
 正本: [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md), [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
 参考実装: [`bench_aobench.py`](experiments/pysim/benchmarks/aobench/bench_aobench.py)
@@ -17,5 +17,5 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **BENCHMARK-AO-01** | プライマリレイと球・平面の交差判定 | 交差数, ms/frame | 球との交差を272画素分検出する | [`bench_aobench.py`](experiments/pysim/benchmarks/aobench/bench_aobench.py) |
 | **BENCHMARK-AO-02** | 半球サンプリングと遮蔽積分 | 総レイトレース数 | 固定小数点誤差の蓄積を防ぐ | {Wasm32Only} |
-| **BENCHMARK-AO-03** | レンダリング出力の差分検証 | byte, B | Tier 2とTier 3の出力が528 byteで完全一致し、NULを含まない | {LowLatencyJIT} |
+| **BENCHMARK-AO-03** | レンダリング出力の差分検証 | byte, B | Tier 2とTier 3の出力が528 byteで完全一致し、NULを含まない | |
 | **BENCHMARK-AO-04** | フレーム描画スループット | ms/frame, Rays/sec | インタープリタとJITの双方で安定して完了する | {ThreadedInterpreter} |

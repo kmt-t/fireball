@@ -38,7 +38,6 @@ from qa.shared.common_code import (
 )
 from qa.shared.helpers import make_native_interpreter as Interpreter
 from qa.shared.helpers import wat_to_wasm
-from qa.shared.jit_abi import attach_admission_records
 from qa.shared.jit_cache import JITTrace
 from qa.shared.runtime_support import (
     compile_module_block,
@@ -128,7 +127,6 @@ def _assert_trace_uses_common_chain_dispatcher(trace: JITTrace) -> None:
 def test_x64_wide_arithmetic_uses_native_stencils():
     """Wide arithmetic executes through the compiled stencil and Runtime API paths."""
     ctx = ExecutionContext()
-    attach_admission_records(ctx)
 
     def run_i64(op: str, left: int, right: int, expected: int) -> None:
         ctx.stack.set_size(0)
@@ -192,7 +190,6 @@ def test_trace_compiler_cps_4arg_and_pic():
     locals_arr = (ctypes.c_uint32 * 8)()
     locals_arr[0] = 5
     context = ExecutionContextABI()
-    attach_admission_records(context)
     stack_words = (ctypes.c_uint32 * 8)()
     _call_trace(trace, context, locals_arr, stack_words)
     # The precomputed offset of the second i32 local is raw word 1.
@@ -211,7 +208,6 @@ def test_x64_division_and_remainder_use_runtime_api_stencils() -> None:
             f"(i32.const {left}) (i32.const {right}) ({operation})", "i32"
         )
         ctx = ExecutionContext()
-        attach_admission_records(ctx)
         _invoke_loader_block(module, block, trace, ctx)
         assert ctx.stack[0] == expected, (operation, ctx.stack[0], expected)
 
@@ -226,7 +222,6 @@ def test_trace_compiler_bitwise_and_shifts_pic():
         locals_decl="(local i32 i32)",
     )
     ctx = ExecutionContext()
-    attach_admission_records(ctx)
     assert_result_1 = ctx.local_stack.extend((15, 7, 0, 0))
     assert assert_result_1
     _invoke_loader_block(module, block, trace, ctx)
@@ -379,7 +374,6 @@ def test_trace_local_addressing_uses_precomputed_compact_offsets():
         expected = list(locals_arr)
         expected[layout.offset(2)] = expected[layout.offset(0)]
         context = ExecutionContextABI()
-        attach_admission_records(context)
         stack_words = (ctypes.c_uint32 * 8)()
         _call_trace(trace, context, locals_arr, stack_words)
         assert list(locals_arr) == expected, f"types {types}: all untouched words must survive"
@@ -393,7 +387,6 @@ def test_trace_local_layout_is_fixed_during_compilation():
     module, block, get_trace = _loader_block("(local.get 0)", result="i64", params="(param i64)")
     assert get_trace is not None
     context = ExecutionContext()
-    attach_admission_records(context)
     assert_result_2 = context.local_stack.extend(words)
     assert assert_result_2
     _invoke_loader_block(module, block, get_trace, context)
@@ -407,7 +400,6 @@ def test_trace_local_layout_is_fixed_during_compilation():
     )
     assert add_trace is not None
     context = ExecutionContext()
-    attach_admission_records(context)
     assert_result_3 = context.local_stack.extend(words)
     assert assert_result_3
     _invoke_loader_block(module, block, add_trace, context)
@@ -425,7 +417,6 @@ def test_trace_local_layout_is_fixed_during_compilation():
         )
         assert trace is not None
         context = ExecutionContext()
-        attach_admission_records(context)
         assert_result_7 = context.local_stack.extend((0, 0))
         assert assert_result_7
         _invoke_loader_block(module, block, trace, context)
@@ -455,7 +446,6 @@ def test_i32_const_local_store_preserves_existing_stack():
         )
         assert trace is not None
         context = ExecutionContext()
-        attach_admission_records(context)
         assert_result_8 = context.local_stack.extend((0,))
         assert assert_result_8
         _invoke_loader_block(module, block, trace, context)
@@ -475,7 +465,6 @@ def test_local_offsets_without_index_cap():
     )
     assert store_trace is not None
     context = ExecutionContext()
-    attach_admission_records(context)
     assert_result_4 = context.local_stack.extend((0,) * 16)
     assert assert_result_4
     _invoke_loader_block(module, block, store_trace, context)
@@ -487,7 +476,6 @@ def test_local_offsets_without_index_cap():
     )
     assert pair_trace is not None
     context = ExecutionContext()
-    attach_admission_records(context)
     assert_result_6 = context.local_stack.extend((0,) * 8 + (17, 25) + (0,) * 6)
     assert assert_result_6
     _invoke_loader_block(module, block, pair_trace, context)
@@ -513,7 +501,6 @@ def test_local_stencils_encode_each_compact_offset_into_the_trace():
         )
         assert trace is not None
         context = ExecutionContext()
-        attach_admission_records(context)
         values = tuple(range(32))
         assert_result_10 = context.local_stack.extend(values)
         assert assert_result_10
@@ -529,7 +516,6 @@ def test_local_stencils_encode_each_compact_offset_into_the_trace():
     )
     assert far_local is not None
     context = ExecutionContext()
-    attach_admission_records(context)
     extended = context.local_stack.extend(tuple(range(64)))
     assert extended
     _invoke_loader_block(module, block, far_local, context)
@@ -664,7 +650,6 @@ def _run_spill_trace(program, locals_values, sp_index: int, total: int = 96):
     words = (ctypes.c_uint32 * total)(*([_SENTINEL] * total))
     locals_arr = (ctypes.c_uint32 * len(locals_values))(*locals_values)
     context = ExecutionContextABI()
-    attach_admission_records(context)
     _call_trace(trace, context, locals_arr, words, sp_index)
     return trace, words
 

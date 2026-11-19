@@ -124,8 +124,6 @@
 | TEST-SYS-83, TEST-SYS-85 | 単調時計と乱数データの搬送 | 単調時計は呼出前後の参照値で64bit値を囲む。乱数は既存参照バックエンドのentropy入力を既知16バイトに固定し、要求長・全バイト・範囲外の保存を照合する |
 | GOTCHA-SYS-03 | 後半iovecの境界違反 | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md)、実stdout HALを結線する。拒否後に全メモリ、出力なし、HAL処理件数0を照合する |
 
-
-
 結果は成功52件、失敗0件、skip 0件である。所要時間は0.33秒である。
 この結果は本書の全契約や実機動作の網羅を意味しない。vDMAのguest結線と外部サービス境界は [`runtime_vsoc_test_spec.md`](docs/qa/tier2_runtime/runtime_vsoc_test_spec.md) で検証する。
 

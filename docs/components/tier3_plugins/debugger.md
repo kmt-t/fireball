@@ -5,14 +5,14 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {RSPMinimalSet} {DebuggerInterpreterComposition} {MemoryIsolation} {Debug_Standard_Env} {RSP_Transport_Selectable} -->
+<!-- traceability: {MemoryIsolation} {Debug_Standard_Env} {RSP_Transport_Selectable} -->
 デバッガと GDB Server は、COOS 上の**独立した協調タスク（`gdbserver_task`）**として常駐する。これにより VSCode 等の外部ツールからデバッグできる。実行制御は GDB Remote Serial Protocol（RSP）に基づき、非同期かつ協調的に行う。標準環境として VSCode、UART、J-Link をサポートする。
 
-RSP パケットの送受信待ちでは、COOS スケジューラへ `yield` する。ゲストタスクや HAL タスクの実行を阻害しない。デバッグ実行のランタイム構成は、起動時にインタープリタとデバッガへ固定する。アタッチ中は常にインタープリタだけを実行し、デバッガは JIT キャッシュを管理しない。
+RSP パケットの送受信待ちでは、COOS スケジューラへ `yield` する。ゲストタスクや HAL タスクの実行を阻害しない。デバッグ実行のランタイム構成は、起動時にインタープリタとデバッガへ固定する（`{DebuggerInterpreterComposition}`）。 <!-- definition: {DebuggerInterpreterComposition} --> アタッチ中は常にインタープリタだけを実行し、デバッガは JIT キャッシュを管理しない。
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {META_3TierSeparation} {RSPMinimalSet} -->
-本コンポーネントは **Tier 3 (プラグイン・リーフコンポーネント: Plugin Leaf Component)** に属し、Tier 2 の `ExecutionControl` 契約を実装する。デバッグ状態制御、ブレークポイント管理、および COOS 協調タスクとして稼働する GDB RSP 通信・コマンドディスパッチを担当する。RSPの物理バイト転送は、Tier 3 platform が提供する注入可能な `DebuggerSink`へ委譲する。具象的なプロトコル仕様は [gdb_rsp_protocol.md](docs/specs/gdb_rsp_protocol.md) を正本とする。
+<!-- traceability: {META_3TierSeparation} -->
+本コンポーネントは **Tier 3 (プラグイン・リーフコンポーネント: Plugin Leaf Component)** に属し、Tier 2 の `ExecutionControl` 契約を実装する。デバッグ状態制御、ブレークポイント管理、および COOS 協調タスクとして稼働する GDB RSP 通信・コマンドディスパッチを担当する（`{RSPMinimalSet}`）。 <!-- definition: {RSPMinimalSet} --> RSPの物理バイト転送は、Tier 3 platform が提供する注入可能な `DebuggerSink`へ委譲する。具象的なプロトコル仕様は [gdb_rsp_protocol.md](docs/specs/gdb_rsp_protocol.md) を正本とする。
 
 ## 3. 静的モデル
 
@@ -52,7 +52,7 @@ graph TD
 ### 3.3 主要なクラス・構造体・配列・定数
 
 #### デバッガ（Debugger）クラス
-<!-- traceability: {FlatViewNarrowing} {META_NoStdVector} {RSPMinimalSet} -->
+<!-- traceability: {FlatViewNarrowing} {META_NoStdVector} -->
 依存関係（実行コンテキスト、HAL）と内部状態（ブレークポイント、現在状態）をカプセル化する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -66,7 +66,7 @@ graph TD
 | `last_stop_reason` | 直近の停止要因。 | ID値 | 信号番号等 |
 
 #### 仮想レジスタセット（virtual_register_set）
-<!-- traceability: {RSPMinimalSet} {WasmCodeSectionPC} -->
+<!-- traceability: {WasmCodeSectionPC} -->
 GDB等の外部クライアントに提示する WASM 仮想レジスタ番号マッピング（`0: pc`, `1: sp`, `2: fp`, `3: tos`, `4..19: local0..15`）は [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md) を正本とする。
 
 PCレジスタと`Z0`/`z0`アドレスは、現在のWASMモジュールのCode section payload相対オフセットである。命令位置は命令先頭バイトで表す。Code section payload内の関数数、body size、locals宣言を含み、Code sectionより前のファイル位置は含めない。
@@ -74,7 +74,7 @@ PCレジスタと`Z0`/`z0`アドレスは、現在のWASMモジュールのCode 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {DebuggerInterpreterComposition} {RSPMinimalSet} -->
+
 1. **コマンド取得とチェックサム照合 ({GOTCHA-DBG-03})**: <!-- definition: {GOTCHA-DBG-03} -->
    - GDBServerが注入されたRaw Sinkから完全な`$`〜`#`フレームを組み立て、Debugger側RSP parserでチェックサムを検証する。一致時だけACK (`+`)を返してコマンドを実行し、不一致時はNAK (`-`)を返して破棄する。
    **設計理由と不変条件**: GDB RSP はシリアル通信等の低信頼通信路での利用を想定しているため、パケット末尾の 2 桁の 16 進チェックサムを厳格に照合する。破損した書込みコマンドを解釈すると、意図しないアドレスやレジスタ値で対象状態を変更するおそれがある。万一チェックサムが不一致であった場合は一切のコマンド解釈・実行を行わず、直ちに NAK（`-`）を返信してホスト側の GDB クライアントへ再送を要求する。
@@ -93,7 +93,6 @@ PCレジスタと`Z0`/`z0`アドレスは、現在のWASMモジュールのCode 
 #### デバッガ・インタープリタ結合コンセプトコード (`concepts/debugger_concept.py`)
 デバッガとインタープリタの結合を示す概念コードである。旧来の4レジスタ表現と簡略化したパケット処理を含み、現行の20レジスタ配置やRSPチェックサムの検証証拠には使用しない。プロトコルの期待値と実行テストは`debugger_test_spec.md`を正本とする。
 [`debugger_concept.py`](docs/components/tier3_plugins/concepts/debugger_concept.py)
-
 
 #### GDB メモリ書き換え（責務シーケンス図）
 <!-- traceability: {MemoryBoundaryCheck} {GOTCHA-DBG-03} {RSPChecksumVerify} -->
@@ -170,7 +169,7 @@ sequenceDiagram
 
 #### コマンド処理 (`poll_commands`)
 
-<!-- traceability: {RSPMinimalSet} {WasmCodeSectionPC} -->
+<!-- traceability: {WasmCodeSectionPC} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -194,7 +193,7 @@ sequenceDiagram
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
-<!-- traceability: {DebuggerInterpreterComposition} -->
+
 - **目標**: デバッグ実行中の命令意味論をインタープリタへ固定し、通常実行のJITホットパスへデバッグ分岐を追加しない。
 - **方策**: デバッグ構成は `Interpreter + Debugger` として静的に合成する。通常構成はデバッガを含まず、アタッチ時のJIT切替やハンドラテーブル切替を行わない。
 

@@ -30,21 +30,21 @@ ROM 上の索引構築（ModuleView）も担当する。
 - **`WasmLoader`**: WASMバイナリのパース、検証、およびロード済みモジュールの管理を一括して行う主要クラス。
 - **`module_view`**: ROM上のバイナリデータへの参照と、構築された索引群を保持する読み取り専用の構造体。
 - **`module_registry`**: ロード済みの `module_view` を名前で管理するための内部リスト。
-<!-- traceability: {ZeroCopyIndexing} {META_BumpAllocator} {Runtime_BumpAllocator} {WasmCodeSectionPC} -->
-- **`ModuleView`**: ROM上のバイナリをゼロコピーで参照するための不変インデックス構造体。
+<!-- traceability: {META_BumpAllocator} {Runtime_BumpAllocator} -->
+- **`ModuleView`**: ROM上のバイナリをゼロコピーで参照するための不変インデックス構造体（`{ZeroCopyIndexing}`）。 <!-- definition: {ZeroCopyIndexing} -->
 - **`BinaryStream`**: ROMデータをバイト境界・LEB128ガード付きで読み進めるストリームリーダ。
-- **`code_section_payload_file_offset`**: `ModuleView` が保持するCode section payloadの先頭ファイル位置（section IDとpayload lengthの後）。命令のファイル位置からこの値を引いた差分をCode section相対PCとする。
+- **`code_section_payload_file_offset`**: `ModuleView` が保持するCode section payloadの先頭ファイル位置（section IDとpayload lengthの後）。命令のファイル位置からこの値を引いた差分をCode section相対PC（`{WasmCodeSectionPC}`）とする。 <!-- definition: {WasmCodeSectionPC} -->
 - **`entity_offset_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
 - **`import_storage` / `export_storage` (`ReadOnlyRadixBinaryTreeStorage`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。検索時だけviewを借用する。
-- **`module.blocks`と`block_storage`**: `module.blocks`はコード順の全BasicBlock metadataを保持する。Python参照実装の`block_storage`と`Module.get_block()`はPython側からのPC検索に使う。Native ModuleExecutionViewにはPC→block検索行とradix表を転送しない。Native dispatchは現在のblock indexとLoader注釈の次block indexで遷移し、indexを使う境界でPC一致をassertする。BasicBlockは`br`・`br_if`・`br_table`・`return`で分割する。`call`・`call_indirect`は復帰継続位置から次のBasicBlockを始める。`if`・`else`の各本体は、それぞれの命令の次から始める。`loop`命令の制御ブロックから本体先頭へ遷移する。`block`・`if`の`end`で分割する。`block`の開始命令と`0xFC`接頭辞命令では分割しない。`loop`の`end`は同じBasicBlock内で実行する。関数末尾の`end`は関数終了境界とする。`0xFC`命令がRuntimeへ処理を引き渡す場合は、命令を消費した位置から同じBasicBlock内で再開する。各BasicBlockの`entry_stack_words`（`_reserved0`の欄を改名した、u16の欄。値は u8 の範囲）は、そのブロックの先頭で制御が届くときのオペランドスタックの語数である。WASMの検証規則が語数を静的に定めるため、ローダーの型解析（`stack_words_before_instructions`）が各ブロック先頭の値として確定する。値の幅は記録しない。入口の値を消費する命令は、自分の幅（演算は opcode、local は局所の型、global は`global_widths`、drop・select は注釈）で語を消費する。デバッガのブロック単位ステップ実行は、`is_requested_block_boundary`が指定停止PCと実行中PCを比較して停止位置を決める。JIT trace境界metadataはblock indexとPCを保持する。
+- **`module.blocks`と`block_storage`**: `module.blocks`はコード順の全BasicBlock metadataを保持する。Python参照実装の`block_storage`と`Module.get_block()`はPython側からのPC検索に使う。Native ModuleExecutionViewにはPC→block検索行とradix表を転送しない。Native dispatchは現在のblock indexとLoader注釈の次block indexで遷移し、indexを使う境界でPC一致をassertする。BasicBlockは`br`・`br_if`・`br_table`・`return`で分割する。`call`・`call_indirect`は復帰継続位置から次のBasicBlockを始める。`if`・`else`の各本体は、それぞれの命令の次から始める。`loop`命令の制御ブロックから本体先頭へ遷移する。`block`・`if`の`end`で分割する。`block`の開始命令と`0xFC`接頭辞命令では分割しない。`loop`の`end`は同じBasicBlock内で実行する。関数末尾の`end`は関数終了境界とする。`0xFC`命令がRuntimeへ処理を引き渡す場合は、命令を消費した位置から同じBasicBlock内で再開する。各BasicBlockの`entry_stack_words`（u16、値は u8 の範囲）は、そのブロックの先頭で制御が届くときのオペランドスタックの語数である。WASMの検証規則が語数を静的に定めるため、ローダーの型解析（`stack_words_before_instructions`）が各ブロック先頭の値として確定する。値の幅は記録しない。入口の値を消費する命令は、自分の幅（演算は opcode、local は局所の型、global は`global_widths`、drop・select は注釈）で語を消費する。デバッガのブロック単位ステップ実行は、`is_requested_block_boundary`が指定停止PCと実行中PCを比較して停止位置を決める。JIT trace境界metadataはblock indexとPCを保持する。
 
 `head_pc`と`next_pc`はCode section payload内の命令先頭オフセットである。PCはsection IDとpayload lengthの直後を0として数え、payload内の関数数・body size・locals宣言を含む。各エントリは関数所有情報と関数先頭PCを持つ。`BasicBlock`はデコード済み命令列を持たず、ローダーは各ブロックのコード範囲を個別にパースする。Loaderは各ブロックの導出値を関数所有の注釈プール領域へブロック順に連結する。注釈の値の種類と幅は[`interpreter.md`](docs/components/tier2_runtime/interpreter.md)の注釈プールの記述を正本とする。各ブロックはプール先頭からのbyte offsetを開始位置として保持する。`jit_cache_reference`はJITキャッシュ上の位置を示す8bitの可変ヒントであり、trace がない値の意味は[`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)の正本に従い、Loader は未観測の値で初期化する。JITキャッシュの挿入・昇格・退避・flushで参照を更新または無効化する。その他のブロック境界・制御情報はロード後不変である。Native実行は現在のblock indexと注釈に保持した遷移先indexを使い、PC→block検索表を持たない。Python参照実装は`block_storage`を`Module.get_block()`で使う。indexで遷移する際はPCも照合する。JITのcache keyもPCのままとし、境界metadataではblock indexとPCを照合する。JIT常駐エントリ索引は独立した `FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY` 件以下のソート配列であり、JIT用Radix表は設けない。 `{Loader_BasicBlockIndex}` <!-- definition: {Loader_BasicBlockIndex} --> `{GOTCHA-LOAD-04}` <!-- definition: {GOTCHA-LOAD-04} -->
 - **`control_map`**: Python参照経路が使う疎な制御delimiter、else継続先、branch edgeとstack復元値をロード時に保持する。Native側は同じ制御遷移を注釈poolから実行し、dense per-byte `NativeControlMapEntry`を確保しない。
 
-スタック型検証のopcode対応表は、実装に属する読み取り専用の表である。Python参照実装は構築完了時に不変列へ凍結し、可変の登録表を残さない。WASM原本のコード、型バイト列と名前は原本への借用範囲とする。ロード時に計算するローカル配置とデコード済み定数はモジュールのメタデータアリーナへ確保し、実行中の可変スタックやJIT参照と責務を分ける。 <!-- traceability: {ROMParsing} {ZeroCopyIndexing} {META_BumpAllocator} -->
+スタック型検証のopcode対応表は、実装に属する読み取り専用の表である。Python参照実装は構築完了時に不変列へ凍結し、可変の登録表を残さない。WASM原本のコード、型バイト列と名前は原本への借用範囲とする。ロード時に計算するローカル配置とデコード済み定数はモジュールのメタデータアリーナへ確保し、実行中の可変スタックやJIT参照と責務を分ける。 <!-- traceability: {ROMParsing} {META_BumpAllocator} -->
 
 ### 3.2 内部ブロック図
-<!-- traceability: {ZeroCopyIndexing} {META_BumpAllocator} {Runtime_BumpAllocator} -->
+<!-- traceability: {META_BumpAllocator} {Runtime_BumpAllocator} -->
 ```mermaid
 flowchart TD
     subgraph WasmLoader_Component
@@ -124,8 +124,8 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
 | `get_init_expr_stream` | 初期化定数式のバイトコードストリーム | デコードメソッド |
 
 #### 検証結果（verification_result）
-<!-- traceability: {LightweightVerifier} -->
-バイナリ検証の結果と、不備があった場合の情報を保持する。
+
+バイナリ検証（`{LightweightVerifier}`）の結果と、不備があった場合の情報を保持する。 <!-- definition: {LightweightVerifier} -->
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -135,7 +135,7 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {META_AccessDictionary} {META_BinarySearch} {META_BumpAllocator} {MultiModule_Support} {OneRuntimeOneGuest} {ROMParsing} {ZeroCopyIndexing} -->
+<!-- traceability: {META_AccessDictionary} {META_BinarySearch} {META_BumpAllocator} {MultiModule_Support} {OneRuntimeOneGuest} {ROMParsing} -->
 - **バイナリパース & トランザクション保護 (`GOTCHA-LOAD-02`)**:
   - ROM 上のデータを `BinaryStream` でラップする。
   - `read_leb128` などで境界を検査しながら順次読み取る。読み取りガードは最大5バイトまたは10バイトである。
@@ -153,7 +153,7 @@ ROM上の読み取り専用バイト列ビューをラップし、カレント�
     - `load`は同じセクションを再走査し、Elementの関数番号をテーブルへ書き込み、Dataのバイト範囲をリニアメモリへコピーする。各エントリは適用callbackへ直接渡す。
     - `global.get`を使うオフセットは、`prepare`で参照先の制約を検証し、`load`で確定したグローバル値を用いて解決する。
 - **パースイベントと保持領域の分離**: セクションパーサはROMの読み取りと形式検証を担当し、定義の登録・保持方法はパースイベントコールバックへ分離する。通常の固定長メタデータは2パスで確定した容量へ登録し、Element/Dataの初期化定義はイベントとしてストリーミングする。
-- **ランタイム所有アリーナへの2パス割り当て (`{Runtime_BumpAllocator}`)**: ローダは親ランタイムが所有する専用 `bump_allocator` を借用する。第1パスで各セクションの件数を読み、第2パスでその件数と同じ容量の `StaticVector` をアリーナから確保して定義を登録する。エクスポート件数には独立した上限を設けず、全メタデータの合計がアリーナに収まる範囲で受理する。確保に失敗したロードだけを開始時の watermark までロールバックする。成功したモジュールのメタデータはランタイム破棄まで保持し、個別アンロードは提供しない。
+- **ランタイム所有アリーナへの2パス割り当て (`{Runtime_BumpAllocator}`)**: <!-- definition: {Runtime_BumpAllocator} --> ローダは親ランタイムが所有する専用 `bump_allocator` を借用する。第1パスで各セクションの件数を読み、第2パスでその件数と同じ容量の `StaticVector` をアリーナから確保して定義を登録する。エクスポート件数には独立した上限を設けず、全メタデータの合計がアリーナに収まる範囲で受理する。確保に失敗したロードだけを開始時の watermark までロールバックする。成功したモジュールのメタデータはランタイム破棄まで保持し、個別アンロードは提供しない。
 - **シンボル検索とハッシュ衝突完全排除 (`GOTCHA-LOAD-01`, `META_BinarySearch`)**: {GOTCHA-LOAD-01} <!-- definition: {GOTCHA-LOAD-01} -->
   シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_storage`から借用した`radix_binary_tree_view`を、粗索引 $O(1)$ と狭い区間の二分探索 $O(\log n)$ の組み合わせで探索する。候補が得られた後はROM上の元の名前を照合するため、照合込みの worst-case は $O(1) + O(\log n) + O(L)$（$L$ は名前長）である。
   **設計理由と不変条件**: 32-bit ハッシュ値による探索のみで関数解決を完了させると、万一のハッシュ衝突発生時に誤った関数がディスパッチされ、壊滅的な誤動作を引き起こす。そのため、ハッシュ探索で候補エントリがヒットした際は必ず ROM 上の元のシンボル名文字列と 1 回完全一致照合を行い、ハッシュ衝突によるシンボル誤認を完全に排除する。
@@ -166,26 +166,15 @@ JIT の候補選択と命令別利得評価は Tier 3 の [`jit_runtime.md`](doc
 
 #### 関数本体の検証と実行索引の構築
 <!-- traceability: {Loader_BasicBlockIndex} -->
-関数の命令ストリームは、ロード時に9回走査する。ここで $B$ はローカル宣言の直後から関数末尾の `end` までの命令バイト数である。命令は一件ずつ復号し、命令列全体は保持しない。走査順と領域上限を次に示す。
+ローダはロード時に各関数の命令ストリームを検証し、実行用メタデータ（制御対応表、基本ブロック範囲、注釈プール、`drop`/`select` 幅）を確定する。ここで $B$ はローカル宣言の直後から関数末尾の `end` までの命令バイト数である。
 
-| 順序 | 走査と目的 | 読み取る情報と確定・出力 | 一時領域の上限 |
-| :--- | :--- | :--- | :--- |
-| 1 | 入力検査と制御深さ・ブロック数の事前計数 | 命令と即値を読み、対応する命令形式、基本ブロック数、最大制御深さを確定する。 | 復号中の命令一件と、開いている `block`・`loop`・`if` の記録 `FB_CONF_MAX_NESTING_DEPTH` 件。 |
-| 2 | オペランドスタックの型検証 | 命令、即値、関数型、ローカル型を読み、型整合、最大スタック語数、`drop`・`select` の幅、分岐先のスタック復元情報を確定する。 | 値型 `FB_CONF_MAX_VALUE_STACK` 件（同時に積む値がこの件数を超える WASM は不正な WASM として拒否する）、制御枠 `FB_CONF_MAX_NESTING_DEPTH + 1` 件以下、ローカル型 `FB_CONF_MAX_LOCALS + FB_CONF_MAX_FUNCTION_ARGUMENTS` 件以下を使う。`drop`、`select`、分岐配置の各作業列はそれぞれ最大 $B$ 件である。`br_table` の深度列と変換先配置はそれぞれ最大 $B$ 件である。 |
-| 3 | 制御対応表の容量計数 | 命令を読み、制御ブロック開始数と分岐命令数を数える。 | 復号中の命令一件と件数用のスカラー値。 |
-| 4 | 制御対応表の構築 | 命令、即値、手順2の分岐配置を読み、開始・終端・`else` の対応、分岐先、スタック復元値を確定する。 | 制御ブロック・分岐・`else` の各作業列はそれぞれ最大 $B$ 件。開いた制御枠は `FB_CONF_MAX_NESTING_DEPTH` 件。`br_table` の一時ターゲット列は最大 $B$ 件である。 |
-| 5 | モジュール全体のブロック容量計数 | 各関数の命令を読み直し、全関数分の基本ブロック数を合計する。 | 復号中の命令一件と、開いている制御枠 `FB_CONF_MAX_NESTING_DEPTH` 件。合計数は最大65,535件である。 |
-| 6 | 関数ごとのブロック容量再計数 | 各関数の命令を読み直し、抽出結果を格納するブロック容量を確定する。 | 復号中の命令一件と、開いている制御枠 `FB_CONF_MAX_NESTING_DEPTH` 件。 |
-| 7 | 基本ブロック範囲の抽出 | 命令と手順4の制御対応表を読み、各ブロックの先頭、継続先、ループ先、制御深さ、命令範囲を確定する。 | 開いている制御枠 `FB_CONF_MAX_NESTING_DEPTH` 件と、関数内ブロック数 $K$ 以下の抽出列。$K \le B$ である。 |
-| 8 | 注釈プール容量の計数 | 各ブロックの命令範囲と即値を読み、実行用導出値に必要な総バイト数を数える。ブロック範囲を合わせると関数本体を一度走査する。 | 復号中の命令一件と、合計バイト数のスカラー値。 |
-| 9 | 注釈プールの書き込み | 各ブロックの命令、即値、制御対応表、型検証結果を読み、導出値とブロックごとの開始位置を書き込む。ブロック範囲を合わせると関数本体を一度走査する。 | 復号中の命令一件、ブロック先頭列と注釈開始位置列は各 $K$ 件以下。注釈プールは計数済み容量を確保し、上限は `FB_CONF_INTERP_ANNOTATION_POOL_BYTES_PER_BODY_BYTE × B` バイトである。 |
-
-手順1のセクション事前計数では、命令走査に先立ってローカル宣言を一度読む。関数記録の作成時にはローカル数の計数と型の展開のため、ローカル宣言を二度読む。ローカル宣言は命令ストリームの9回には含めない。ローカル型の保持数は `FB_CONF_MAX_LOCALS` 件以下であり、関数パラメータを含む型列は `FB_CONF_MAX_LOCALS + FB_CONF_MAX_FUNCTION_ARGUMENTS` 件以下である。
-
-手順4で確定した制御対応表、手順7で確定した基本ブロック、手順9で書いた注釈プールは実行用メタデータとして保持する。手順2の`drop`・`select`幅は実行用に保持する。手順2の分岐配置と走査中の作業列は、後続の構築が終わると破棄する。`end`がloop末尾か他の制御ブロック末尾かは、各走査の現在の制御深さと開いている開始命令から判定する。 {Loader_BasicBlockIndex}
+- **入力・構文検証**: 命令と即値を復号し、対応する命令形式と最大制御ネスト深さ（`FB_CONF_MAX_NESTING_DEPTH` 以下）を検証する。
+- **オペランドスタック型検証**: 関数型・ローカル型・命令ごとの型整合性、最大スタック語数（`FB_CONF_MAX_VALUE_STACK` 以下）、`drop`・`select` の幅、および分岐先のスタック復元情報を確定する。
+- **制御対応表と基本ブロック抽出**: 制御ブロック（`block`・`loop`・`if`・`else`・`end`）および分岐命令の対応と、モジュール全体で65,535件以下の基本ブロック境界を確定する。
+- **注釈プールの構築**: 各ブロックの導出値を注釈プール（上限 `FB_CONF_INTERP_ANNOTATION_POOL_BYTES_PER_BODY_BYTE × B` バイト）へ書き込み、ブロックごとの開始位置を設定する。検証中に使う一時作業列は構築完了後に破棄する。`end` が loop 末尾か他の制御ブロック末尾かは現在の制御深さと開いている開始命令から判定する。 {Loader_BasicBlockIndex}
 
 #### トランザクション的パース & ロールバック手順（手順アクティビティ図）
-<!-- traceability: {GOTCHA-LOAD-02} {LightweightVerifier} {META_BumpAllocator} -->
+<!-- traceability: {GOTCHA-LOAD-02} {META_BumpAllocator} -->
 WASM バイナリパース中の軽量検証（V1-V6）判定と、エラー発生時のバンプアロケータ完全ロールバックによるメモリリーク防止手順を示す。
 
 ```mermaid
@@ -246,7 +235,7 @@ flowchart TD
 | エクスポート数/モジュール | 個別上限なし | 規定しない | 第1パスで実数を数え、第2パスで同数の `StaticVector` を確保する。受理数は全モジュールが共有するランタイムアリーナ容量で決まる |
 
 ### 4.3 軽量検証スコープ
-<!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} -->
+<!-- traceability: {META_AccessDictionary} {META_ConfigurableSystem} -->
 以下の項目をロード時に検証する。これ以上の検証（型システムの完全検証、命令の妥当性検証等）は TODO(未決): WASM完全検証の要否評価 で検討。
 
 | # | 検証項目 | 判定基準 | 失敗時 |
@@ -259,7 +248,7 @@ flowchart TD
 | V6 | 初期リニアメモリページ数 | 初期ページ数が`FB_CONF_MAX_WASM_PAGES`以下であること。ARMv8-Mの物理容量・配置はTBD | reject |
 
 ### 4.4 状態遷移図
-<!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} {LightweightVerifier} -->
+<!-- traceability: {META_AccessDictionary} {META_ConfigurableSystem} -->
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
@@ -273,7 +262,7 @@ stateDiagram-v2
 `Ready` になったモジュールはランタイムの寿命中保持される。ランタイム破棄はローダ状態遷移ではなく、親ランタイムが所有アリーナとローダをまとめて破棄する。形式検証モデルの状態との対応は、`Idle` = `s_rom_unparsed`、`Parsing` = `s_parsing`/`s_parsed_unverified`、`Verifying` = `s_verifying`、`Ready` = `s_verified_ok`/`s_executable`、`Error` = `s_verified_bad`/`s_rollback_done` である。`s_executing_unverified`、`s_stuck_verifying`、`s_leaked_bump` は `guards=False` でのみ到達する違反状態として、図の正常系には含めない。
 
 ### 4.5 内部シーケンス
-<!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} {LightweightVerifier} -->
+<!-- traceability: {META_AccessDictionary} {META_ConfigurableSystem} -->
 #### モジュールロードシーケンス
 ```mermaid
 sequenceDiagram
@@ -401,7 +390,7 @@ sequenceDiagram
 - **方策**: バンプアロケータを使用し、断片化を防止しつつ、固定長配列による索引管理を行う。
 
 ### 6.3 安全性制約と方策
-<!-- traceability: {LightweightVerifier} {Wasm32Only} -->
+<!-- traceability: {Wasm32Only} -->
 - **目標**: 不正なWASMバイナリによるクラッシュを防止する。
 - **方策**: ロード時にマジック値、バージョン、セクション境界の整合性を検証し、不正なバイナリを拒否する。
 
@@ -421,7 +410,6 @@ sequenceDiagram
 ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
 
 JIT候補スコアとopcode loweringは [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md) と [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md) が定める。候補スコアはcompile優先度の便益評価である。Loaderが受理したopcodeは直接stencilまたはJIT Runtime API経路で処理する。スコア値は対象CPUの実測で校正する。
-
 
 ## 8. 設計判断と参考実装
 

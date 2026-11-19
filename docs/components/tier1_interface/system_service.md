@@ -56,10 +56,10 @@ flowchart TD
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {META_FaultIsolation} {IPCRouter} {SelfReboot_via_Event} {ServiceSelfReboot} {FaultTolerant} -->
+<!-- traceability: {META_FaultIsolation} {IPCRouter} {ServiceSelfReboot} {FaultTolerant} -->
 - **サービス分離**: 各サービスは WASM 上で実行される独立した常駐タスクとして動作し、IPCルータを介してゼロコピーで通信する。タスク単位の障害局所化と自己再起動を組み合わせることで、単一サービスの異常終了が他サービスへ波及せず、かつ自律的に復旧するフォールトトレラント設計を実現する。
 - **WASI呼び出し**: ゲストからのWASIシステムコールを、HALサブシステムのIPCコマンドへ変換して転送する。
-- **自己再起動**: 異常終了したサービスは、IPCルータまたは上位マネージャからの障害イベント通知を契機として自律的に初期化・再起動される。TCBスロットの状態をリセットし、当該サービスのみを再初期化する（他サービスやシステム全体への波及はない）。
+- **自己再起動**: 異常終了したサービスは、IPCルータまたは上位マネージャからの障害イベント通知を契機として自律的に初期化・再起動される（`{SelfReboot_via_Event}`）。 <!-- definition: {SelfReboot_via_Event} --> TCBスロットの状態をリセットし、当該サービスのみを再初期化する（他サービスやシステム全体への波及はない）。
 
 ### 4.2 状態遷移図
 <!-- traceability: {META_FaultIsolation} {IPCRouter} -->
@@ -154,7 +154,7 @@ enum class service_load_result_t : uint32_t {
 サービスロード処理において `IGNORE` は非適用（ロード失敗を無視して未初期化のまま続行することは許容されない）であり、`SUCCESS` または 3 つのエラーリカバリー戦略（`RETRY`, `RESTART`, `PANIC`）のいずれかを返却する。各ステータスに応じて、呼び出し側（システムマネージャなど）は本書のリカバリー戦略ポリシーに従うアクションを決定し、実行する。 `{META_RecoveryStrategy}`
 
 ### 5.3 URI/IPCインターフェース
-<!-- traceability: {META_RecoveryStrategy} {URIAbstraction} {TypeSafeMessaging} {ADR_RendezvousChannel} {OwnershipTransfer} {WIT_First} {WIT_Common_Types} -->
+<!-- traceability: {META_RecoveryStrategy} {URIAbstraction} {TypeSafeMessaging} {OwnershipTransfer} {WIT_Common_Types} -->
 サービスの名前解決と要求・応答は [`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) のURI・IPC契約に従う。メッセージの型は [`ipc_router_contract.wit`](docs/components/tier1_interface/wit/ipc_router_contract.wit) の `types` を正本とする。本書では共通ヘッダ、Key-Value表現、およびHAL内部コマンドIDを再定義しない。
 
 サービスは受信した要求を処理し、同じIPCメッセージへ応答を設定する。サービスの回復判断は本書のリカバリー戦略ポリシーに従う。
@@ -177,7 +177,7 @@ enum class service_load_result_t : uint32_t {
 - **方策**: サービスを独立した実行コンテキスト（タスク）で実行し、メモリパーティションを用いて不正アクセスやクラッシュを領域的に隔離する。
 
 ### 障害確認後の要求処理
-<!-- traceability: {SelfReboot_via_Event} {META_FaultIsolation} -->
+<!-- traceability: {META_FaultIsolation} -->
 障害確認後の再初期化は、対象サービスの実行状態を初期化する。
 再初期化の成功を、障害時に処理中だった要求の成功へ読み替えない。
 処理中だった要求は自動再実行しない。
@@ -196,7 +196,6 @@ enum class service_load_result_t : uint32_t {
 
 ### 7.4 既知の制限・対象外
 ホスト実機依存の挙動、未実装アーキテクチャ、およびテスト仕様が明示する対象外条件は未検証として扱う。
-
 
 ## 8. 設計判断と参考実装
 

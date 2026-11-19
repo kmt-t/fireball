@@ -37,7 +37,6 @@
 ### 3.2 依存関係 (Zero-cost DI)
 - `initialize` メソッドにより、管理対象の物理メモリプールの基点アドレスとサイズを受け取る。実装側は `runtime_memory.md` の各アロケータによりこれを具体化する。
 
-
 ## 4. 動的モデル
 
 ### 4.1 所有権追跡と共有メモリライフサイクル
@@ -81,21 +80,19 @@ Tier 1 は、共有メモリ予約の外部マッピング管理者がライフ�
 
 `on_owner_changed` はメモリマネージャが所有者台帳を更新した後に一度だけ発火し、登録側は旧マッピングをアンマップする。新しい所有ビューは、所有権確立後の `on_map_page`（`claim` または `rollback_transfer`）で明示的に再登録する。コールバックの呼び出し側が task-id を引数で自己申告することはない。
 
-
 ## 5. インターフェース定義
 
 ### 5.1 インターフェース設計
-<!-- traceability: {System_Allocator} {Shm_Allocator} {Runtime_BumpAllocator} {JIT_MultiBuffer_Cache} -->
 
 <!-- traceability: {GLOBAL_Policy_Memory} {META_StaticDI} {META_ContractImplSplit} {META_ConfigurableSystem} {WIT_Interface_Spec} -->
 本コンポーネントの公開APIは `{META_StaticDI}` が定義する `co_mem` インターフェース契約そのものである。実装側（`runtime_memory.md`）は本契約をそのまま実現し、契約自体（メソッド名・引数・戻り値の意味）に食い違いがあれば本節を正とする。
 
 WIT インターフェース名は kebab-case で定義する。C++ の公開 API バインディングは、`fireball` 名前空間の下で `snake_case` として実装・公開する（例: `fireball::co_mem::host_alloc`）。
 
-各シグネチャは [`system_memory_contract.wit`](docs/components/tier1_interface/wit/system_memory_contract.wit) の `interface memory` を正本として引用する。プールの基点アドレスとサイズの静的構成は、[`system_config.md`](docs/components/tier1_core/system_config.md) が定める `FB_CONF_*` 定数群を正本とする。各プールの契約は `{System_Allocator}`、`{Shm_Allocator}`、`{Runtime_BumpAllocator}`、`{JIT_MultiBuffer_Cache}` に紐付く。具体的な割当て方式は Tier 2 実装の [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) を参照する。本契約は実行時初期化 API を持たない。製品ソースコード規模を抑える方針に基づき、起動時の静的構成だけで要件を満たすためである。
+各シグネチャは [`system_memory_contract.wit`](docs/components/tier1_interface/wit/system_memory_contract.wit) の `interface memory` を正本として引用する。プールの基点アドレスとサイズの静的構成は、[`system_config.md`](docs/components/tier1_core/system_config.md) が定める `FB_CONF_*` 定数群を正本とする。具体的な割当て方式は Tier 2 実装の [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) 等を参照する。本契約は実行時初期化 API を持たない。製品ソースコード規模を抑える方針に基づき、起動時の静的構成だけで要件を満たすためである。
 
 #### 5.1.1 ホスト用ヒープ（`host-heap`）
-<!-- traceability: {GLOBAL_Policy_Memory} {System_Allocator} -->
+<!-- traceability: {GLOBAL_Policy_Memory} -->
 システムコンテナ（IPCレジストリ、カーネルプール、サブシステムバッファ等）が必要とする、動的サイズ・個別解放可能な確保領域。**汎用アプリケーションヒープではない**: システム内部の静的コンテナ実装専用であり、ゲストやタスクの動的メモリ確保用途には使用されない。
 
 | 項目 | 内容 |
@@ -145,7 +142,7 @@ WIT インターフェース名は kebab-case で定義する。C++ の公開 AP
 | 戻り値 | 成功時は `pool_ref<T>`（静的プール内スロットへの型付きハンドル） |
 
 #### 5.1.3 共有メモリ用ヒープ（`shared-memory-heap`）
-<!-- traceability: {ADR_SharedBlockRaii} {OwnershipTransfer} {Shm_Allocator} -->
+<!-- traceability: {OwnershipTransfer} -->
 共有メモリブロックの確保は、上記のタスクヒープ/型付きスロットとは別のライフサイクルを持つ。実装側（`runtime_memory.md`）の `shm_allocator` を介して、指定されたバイト数（`size`）の可変長バッファを切り出す。WITの`shm-handle`はABI境界で受け渡す通常のレコードであり、それ自体は線形・move-only所有権を表現しない。C++側の`shared_block`はこのレコードを包むmove-only RAII所有ラッパーであり、レコードを複製しても所有権やアクセス権は複製されない。`release()`の成功時はラッパーを移譲済みとして無効化し、`claim()`の成功時は新しい所有タスク側のラッパーを返す。所有ラッパーのdropは`release(handle)`を呼び出してプールへ返す。所有権移譲の物理的な執行手段はTier 2の実装詳細であり、本契約はそれを規定しない。
 
 | 項目 | 内容 |
@@ -161,7 +158,7 @@ WIT インターフェース名は kebab-case で定義する。C++ の公開 AP
 | :--- | :--- |
 | 機能概要 | 移譲済み共有メモリハンドルから、実行中タスクの所有権を確立する。 |
 | シグネチャ | `claim(handle: address) -> result<shm-handle, memory-error>` |
-| 引数 | `handle`: 共有メモリハンドル値（`{Syscall_Mapping}` / `system_memory_contract.wit` の `shm-handle.handle` と同一の `(page_idx << 8) \| slot_idx` 形式。慣用的に `shm-id` とも呼ぶ） |
+| 引数 | `handle`: 共有メモリハンドル値（`system_memory_contract.wit` の `shm-handle.handle` と同一の `(page_idx << 8) \| slot_idx` 形式。慣用的に `shm-id` とも呼ぶ） |
 | 戻り値 | 成功時は `shm-handle`（C++ 実装は `shared_block` ラッパーとして返す） |
 | 事前条件 | 対象ハンドルが移譲済みで、実行中タスクへの所有権確立が許可されていること |
 
@@ -175,7 +172,7 @@ WIT インターフェース名は kebab-case で定義する。C++ の公開 AP
 | 補足 | 通常は `shared-block` のデストラクタ（RAII drop）を通じて暗黙に呼び出され、明示呼び出しを必要としない。 |
 
 #### 5.1.4 ランタイム用バンプアロケータ（`runtime-bump-allocator`）
-<!-- traceability: {Runtime_BumpAllocator} {OneRuntimeOneGuest} -->
+<!-- traceability: {OneRuntimeOneGuest} -->
 1ランタイム1ゲストの直交分離原則に従い、各ランタイムは専用のバンプアロケータアリーナを所有する。アリーナはランタイムごとに独立する。WASM モジュールのロード時に使うシステムコンテナストレージ（`module_view`、シンボルテーブル等）は、このアリーナから一括確保する。モジュールのメタデータはランタイム破棄まで保持する。ランタイム破棄時は個別モジュールの解放を行わず、$O(1)$ で決定論的に一括解放する。
 
 | 項目 | 内容 |
@@ -204,7 +201,7 @@ WIT インターフェース名は kebab-case で定義する。C++ の公開 AP
 | シグネチャ | `release-runtime-arena(arena: runtime-arena) -> void`<br>(C++マッピング: `fireball::co_mem::release_runtime_arena`) |
 
 #### 5.1.5 JITキャッシュアロケータ（`jit-cache-allocator`）
-<!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_StrictMemoryLimit} -->
+<!-- traceability: {GLOBAL_StrictMemoryLimit} -->
 JITコード生成専用に予約された連続固定長リージョン（`FB_CONF_JIT_CACHE_SIZE`）の貸与を契約する。領域は `FB_CONF_JIT_CACHE_PAGE_SIZE` の物理ページで構成し、共通コード領域に `FB_CONF_JIT_COMMON_CODE_SIZE`、可変バンクに `FB_CONF_JIT_BANK_SIZE` を割り当てる。バンク面数は `FB_CONF_JIT_NUM_BUFFERS` とし、`system_config.md`を正本とする。JITサブシステム（`jit_runtime.md`）は可変バンクの世代交代を担当し、共通コード領域をエビクションしない。
 
 | 項目 | 内容 |
@@ -214,7 +211,6 @@ JITコード生成専用に予約された連続固定長リージョン（`FB_C
 | 戻り値 | 成功時は `jit-cache-region`（固定長 `FB_CONF_JIT_CACHE_SIZE`、物理ページ数 `FB_CONF_JIT_CACHE_SIZE / FB_CONF_JIT_CACHE_PAGE_SIZE` の実行可能メモリ領域ハンドル） |
 | 事前条件 | システム起動時に1度のみ呼び出される（動的な複数リージョン確保は想定しない） |
 | 補足 | x64参照構成の初期RWX設定は `jit_runtime.md` を正本とする。ARMv8-Mの保護属性と切替方式は Tier 2 の実装詳細（`runtime_memory.md`）で決定する。 |
-
 
 ## 6. 制約達成の方策
 
@@ -236,7 +232,6 @@ JITコード生成専用に予約された連続固定長リージョン（`FB_C
 - **目標**: 不正アクセス・二重解放の完全排除。
 - **方策**: 所有者以外からの操作を無効とする契約を課す。ハードウェア（MPU等）による具体的な執行方式は `runtime_memory.md` を正本とする。
 
-
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 形式検証との対応
@@ -246,7 +241,7 @@ JITコード生成専用に予約された連続固定長リージョン（`FB_C
 ## 8. 設計判断と参考実装
 
 ### 8.1 設計判断 (ADR)
-<!-- traceability: {ADR_MemoryManagerMinimalSurface} {ADR_SharedBlockRaii} -->
+
 この節では共有メモリ契約の公開面と所有権規則を定める。ページテーブルとTLBの物理操作は本契約に含めない。
 
 - **決定事項**: (2026-02-17)

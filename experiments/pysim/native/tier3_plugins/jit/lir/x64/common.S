@@ -45,12 +45,6 @@
 #ifndef FB_TRACE_BLOCK_INDEX_OFFSET
 #error "FB_TRACE_BLOCK_INDEX_OFFSET must come from the production C++ ABI probe"
 #endif
-#ifndef FB_CONTEXT_ADMISSION_OFFSET
-#error "FB_CONTEXT_ADMISSION_OFFSET must come from the production C++ ABI probe"
-#endif
-#ifndef FB_ADMISSION_LIFETIME_MASK
-#error "FB_ADMISSION_LIFETIME_MASK must come from the production C++ ABI probe"
-#endif
 
 .intel_syntax noprefix
 .text
@@ -111,19 +105,8 @@ fb_common_trace_entry:
   sub rsp, 8
   mov r12, FB_ENTRY_CTX_REG
   mov qword ptr [FB_CTX_REG + FB_CONTEXT_REL_OFFSET], FB_REL_REG
-  /* Only a root entry reaches this prologue: a chain edge enters at fb_common_trace_call. The
-   * block's admission lifetime counts the entry. The lifetime saturates: a carry out of the lifetime
-   * bits (the lifetime was at its maximum) is not written back. */
   movsxd rax, dword ptr [FB_REL_REG]
   lea rax, [FB_REL_REG + rax]
-  movzx r11d, word ptr [rax + FB_TRACE_BLOCK_INDEX_OFFSET]
-  add r11, qword ptr [FB_CTX_REG + FB_CONTEXT_ADMISSION_OFFSET]
-  movzx r10d, byte ptr [r11]
-  add r10d, 1
-  test r10b, FB_ADMISSION_LIFETIME_MASK
-  jz .Ladmission_saturated
-  mov byte ptr [r11], r10b
-.Ladmission_saturated:
   lea rax, [rax + FB_TRACE_HEADER_BYTES]
   add FB_REL_REG, 4
 fb_common_trace_call:

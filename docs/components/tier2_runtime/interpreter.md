@@ -45,7 +45,7 @@ Native実装の命令意味論と固定スタック操作は`native_wasm_operati
 - **`オペランドスタック`（オペランドスタック）**: WASM のオペランド値のみを保持する固定容量スタックである。コールチェーン全体を貫く1本の連続バッファとして動作する。呼び出しを跨いでもスタックは連続して配置される。
 - **`ローカル値領域`（ローカル変数スタック）**: コールチェーン全体で共有する固定容量の、型情報を持たない32ビットワード領域である。型タグ、実行時オブジェクト、関数実行記述子を格納しない。各論理ローカルは必要な1または2ワードだけを占有し、同一フレーム内で幅を混在できる。Loaderは関数ごとにローカルのワードオフセットを表へ記録し、ワード幅は保持済みWASM型から導出する。サイズ表は保持しない。アクセス先は `local_base + local_offsets[local_index]` から得る。
 - **関数実行記述子領域**: 関数ごとの実行メタデータを保持する独立した固定容量領域である。各記述子は`ローカル値領域`内のフレーム開始位置を保持し、`ローカル値領域`にはローカル値だけを置く。
-- **Interpreter注釈プール**: LoaderがBasicBlockごとに実行時の導出値を格納する8bit列である。値の種類と幅は本書の注釈プールの記述（§1）を正本とする。branch recordはu16 target block index、u8 stack base word数、u8保持結果word数を持ち、`br_table`はu16 label countとdefault込みの4-byte record列を持つ。
+- **Interpreter注釈プール**: LoaderがBasicBlockごとに実行時の導出値を格納する8bit列である。値の種類と幅は本書の注釈プールの記述（§1）を正本とする。branch recordはu16 target block index、u8 stack base word数、u8保持結果word数を持つ。`br_table`はu16 label countとdefault込みの4-byte record列を持つ。
 - **BasicBlock注釈開始位置**: 各基本ブロックがInterpreter注釈プールのbyte offsetと、通常継続およびLOOP後方辺のBasicBlock indexを保持する。関数viewは入口BasicBlock indexを持ち、CallFrameは復帰BasicBlock indexを持つ。命令を含まない復帰PCはゼロ長メタデータであり、JIT候補選定から除外する。終端命令は確定した遷移先のbyte offsetを`rel`へ設定する。命令単位のoffsetは保持しない。
 - **`interpreter_config`**: 2本の値スタック容量と `FB_CONF_INTERPRETER_YIELD_THRESHOLD` など、Interpreterの不変な構成情報である。LOOP後方分岐の回数しきい値はInterpreterが所有し、RuntimeEngineは変更・上書きしない。
 

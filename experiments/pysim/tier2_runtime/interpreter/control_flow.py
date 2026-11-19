@@ -1037,6 +1037,20 @@ class _RpnScan:
     local directly. checkpoint is the last point where no operand is pending.
     """
 
+    __slots__ = (
+        "checkpoint",
+        "code",
+        "covered",
+        "depth_exceeded",
+        "depth_limit",
+        "elements",
+        "head_offset",
+        "last_op",
+        "local_layout",
+        "max_depth",
+        "model",
+    )
+
     def __init__(
         self, code: memoryview, local_layout: LocalLayout, head_offset: int, depth_limit: int
     ) -> None:

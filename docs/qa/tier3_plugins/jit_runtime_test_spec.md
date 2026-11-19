@@ -4,7 +4,7 @@
 
 正本: [`jit_runtime.md`](docs/components/tier3_plugins/jit_runtime.md)
 関連正本: [`jit_compiler.md`](docs/components/tier3_plugins/jit_compiler.md)（{JIT_LazyChaining}、{JIT_AssemblyStencilCodegen}はjit_runtimeと共同責務）
-本仕様は、実行コンテキストのBasicBlock indexとPC照合、BasicBlock記録の印によるJIT検索抑止、BasicBlock内JIT参照、ホットスポット昇格、3面コードキャッシュ、chain dispatcher、および実行可能メモリの初期権限を検証する。製品RuntimeはLoaderのBasicBlock参照を使い、`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY`件以下のソート済みPC索引はキャッシュ更新とchain metadataの更新に使う。x64参照構成を対象とし、ARMv8-Mの物理配置、ABI、保護方式は別途定義する。
+本仕様は、実行コンテキストのBasicBlock indexとPC照合、BasicBlock記録の印によるJIT検索抑止、BasicBlock内JIT参照を検証する。さらにホットスポット昇格、3面コードキャッシュ、chain dispatcher、実行可能メモリの初期権限も検証対象とする。製品RuntimeはLoaderのBasicBlock参照を使う。`FB_CONF_JIT_CACHE_TOTAL_ENTRY_CAPACITY`件以下のソート済みPC索引は、キャッシュ更新とchain metadataの更新に用いる。x64参照構成を対象とし、ARMv8-Mの物理配置、ABI、保護方式は別途定義する。
 
 ## 2. テストケース一覧
 

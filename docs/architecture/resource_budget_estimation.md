@@ -91,7 +91,7 @@ Interpreter注釈と座標indexは、対象入力の命令数、block数、関�
 ## 11. JIT定数pool
 
 <!-- traceability: {Resource_Estimation_Model} {GLOBAL_StrictMemoryLimit} -->
-JIT定数poolの生成量と同時常駐量は別々に見積もる。生成した全traceの累積byte数をpeak RAMとして扱わず、cache容量、occupancy、eviction、compiler stagingの同時生存量を個別に確認する。
+JIT定数poolの生成量と同時常駐量は別々に見積もる。生成した全traceの累積byte数をpeak RAMとして扱わない。cache容量、occupancy、eviction、compiler stagingの同時生存量を個別に確認する。
 
 ## 12. `br_table` metadata
 

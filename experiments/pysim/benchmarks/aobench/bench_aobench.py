@@ -22,10 +22,10 @@ from _bootstrap import configure_import_paths, reserve_native_region
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from ipc_router import FB_URI_HAL_STDOUT
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
 from qa.shared.runtime_stats import RuntimeStatsEngine
 from system import System
 from tier2_runtime.interpreter.interpreter import (
-    Interpreter,
     InterpreterBindings,
     NativeInterpreter,
 )

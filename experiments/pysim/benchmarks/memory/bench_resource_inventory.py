@@ -17,7 +17,7 @@ import pygments
 
 _ROOT = Path(__file__).resolve().parents[4]
 _PYSIM = _ROOT / "experiments/pysim"
-_REFERENCE_INTERPRETER = _PYSIM / "tier2_runtime/interpreter"
+_REFERENCE_INTERPRETER = _PYSIM / "qa/shared/reference_interpreter.py"
 sys.path.insert(0, str(_ROOT))
 from tools.source_metrics import cpp_code_lines, python_code_lines
 
@@ -249,11 +249,7 @@ def main() -> None:
     groups = [
         source_group(
             name,
-            tuple(
-                path
-                for path in (_PYSIM / name).rglob("*.py")
-                if not path.is_relative_to(_REFERENCE_INTERPRETER)
-            ),
+            tuple(path for path in (_PYSIM / name).rglob("*.py") if path != _REFERENCE_INTERPRETER),
         )
         for name in (
             "tier1_core",
@@ -266,7 +262,7 @@ def main() -> None:
     groups.append(source_group("pysim_common", (_PYSIM / "system.py", _PYSIM / "__init__.py")))
     reference_interpreter = source_group(
         "reference_python_interpreter_excluded",
-        tuple(_REFERENCE_INTERPRETER.rglob("*.py")),
+        (_REFERENCE_INTERPRETER,),
     )
     for name, roots in (
         ("product_c_cpp", (_ROOT / "src", _ROOT / "inc")),

@@ -22,10 +22,10 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 from bench_jit import JITCompilerBenchmark
 from config import FB_CONF_INTERPRETER_YIELD_THRESHOLD
 from qa.private.interpreter_native_abi import NATIVE_RUNTIME_PROFILE_STATS_AVAILABLE
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
 from qa.shared.runtime_stats import RuntimeStatsEngine
 from runtime_driver import run_runtime_call
 from tier2_runtime.interpreter.interpreter import (
-    Interpreter,
     InterpreterBindings,
     NativeInterpreter,
 )

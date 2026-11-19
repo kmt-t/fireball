@@ -23,8 +23,8 @@ from _bootstrap import configure_import_paths
 configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 import wasmtime
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
 from tier2_runtime.interpreter.interpreter import (
-    Interpreter,
     InterpreterBindings,
     NativeInterpreter,
 )

@@ -37,9 +37,9 @@ except ImportError:
     wasmtime = None
 
 from ipc_router import FB_URI_HAL_STDOUT
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
 from system import System
 from tier2_runtime.interpreter.interpreter import (
-    Interpreter,
     InterpreterBindings,
     NativeInterpreter,
 )

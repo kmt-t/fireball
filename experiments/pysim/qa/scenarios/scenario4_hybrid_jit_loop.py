@@ -17,11 +17,11 @@ and trace-boundary state synchronization are not independently asserted here.
 
 import wasmtime
 from qa.shared.jit_manager import JITRuntimeManager
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
 from qa.shared.runtime_stats import RuntimeStatsEngine as RuntimeEngine
 from qa.shared.x64_jit import TraceCompiler
 from system import System
 from tier2_runtime.interpreter.interpreter import (
-    Interpreter,
     InterpreterBindings,
     NativeInterpreter,
 )

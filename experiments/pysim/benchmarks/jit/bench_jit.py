@@ -25,6 +25,7 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 import tier2_runtime.wasm.opcodes as op
 from config import FB_CONF_INTERPRETER_YIELD_THRESHOLD
 from qa.shared.jit_cache import HotspotBitmap
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
 from qa.shared.runtime_stats import RuntimeStatsEngine
 from qa.shared.x64_jit import TraceCompiler
 from runtime_driver import run_runtime_call
@@ -35,7 +36,6 @@ from tier2_runtime.interpreter.control_flow import (
     iter_block_ops,
 )
 from tier2_runtime.interpreter.interpreter import (
-    Interpreter,
     InterpreterBindings,
     NativeInterpreter,
     WasmNumber,

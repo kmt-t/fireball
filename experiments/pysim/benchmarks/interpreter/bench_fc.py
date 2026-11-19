@@ -29,12 +29,12 @@ configure_import_paths(_PYSIM_DIR, _BENCH_DIR)
 
 from bump_allocator import BumpAllocator
 from ipc_router import Role
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
 from scheduler import Task
 from system import System
 from system_containers import StaticVector
 from tier2_runtime.hal.dispatch import HalBufferMapStatus
 from tier2_runtime.interpreter.interpreter import (
-    Interpreter,
     InterpreterBindings,
     NativeInterpreter,
     WasmNumber,

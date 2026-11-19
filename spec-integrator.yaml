@@ -149,7 +149,7 @@ llm_judge:
     jev:
       api_key_env: "OPENROUTER_API_KEY"
       endpoint: "https://openrouter.ai/api/alpha/decisions"
-      model: "typesafe/jev-1.13"
+      model: "microsoft/microsoft-decision-1.1"
     nimble:
       endpoint: "http://localhost:11434/v1/systemone"
       model: "nimble-v3:9b-q4_K_M"

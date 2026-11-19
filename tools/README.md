@@ -130,7 +130,7 @@ Core Spec SuiteはMVP互換の固定選択セットであり、WebAssembly Core�
 
 LLM監査はローカルとクラウドのどちらのバックエンドでも、ユーザーから明示指示があった場合だけ実行する。OpenRouter 経由の Jev は課金対象である。
 <code>{VERIFY_LLM}</code> の義務は <code>llm-judge</code> で記録付きで履行する。詳細なオプションは [spec-integrator のリファレンス](spec-integrator/README.md) を参照する。
-OpenRouter 経由の Jev (`typesafe/jev-1.13`) は `--backend jev` で選択する。Jevを使う場合は `OPENROUTER_API_KEY` を設定する。モデルと埋め込みAPIの設定・利用方法は [spec-integrator の仕様書](spec-integrator/docs/specification.md) と[リファレンス](spec-integrator/README.md)を参照する。
+OpenRouter 経由の Jev (`microsoft/microsoft-decision-1.1`) は `--backend jev` で選択する。Jevを使う場合は `OPENROUTER_API_KEY` を設定する。モデルと埋め込みAPIの設定・利用方法は [spec-integrator の仕様書](spec-integrator/docs/specification.md) と[リファレンス](spec-integrator/README.md)を参照する。
 
 LLM監査はユーザーから明示的な指示がある場合だけ実行する。
 

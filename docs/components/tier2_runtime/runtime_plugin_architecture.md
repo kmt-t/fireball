@@ -5,7 +5,7 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {META_StaticDI} {GLOBAL_ComponentHarness} {RuntimeEventSink} -->
+<!-- traceability: {META_3TierSeparation} {META_ContractImplSplit} {META_StaticDI} {GLOBAL_ComponentHarness} -->
 本コンポーネントは、WASM ランタイムを構成する実行エンジンと補助エンジンの交換契約を定義する。System は不変な構成情報を保持する。Runtime は構成情報から実装を静的に合成する。Tier 3 のプラグインは個別の実行方式、観測方式、物理接続を実装する。
 
 本契約は、Interpreter、Debugger、Guest Profiler、WASIバックエンドをRuntimeへ必要に応じて結線する。JIT拡張はInterpreterの任意プラグインであり、Runtimeの独立スロットにしない。無効な機能はNullオブジェクトとして実行時に保持せず、Interpreter構成時に除外する。
@@ -29,7 +29,7 @@ System と Runtime の責務は次のように分離する。
 ## 3. 静的モデル
 
 ### 3.1 構成要素
-<!-- traceability: {META_StaticDI} {GLOBAL_ComponentHarness} -->
+<!-- traceability: {META_StaticDI} {GLOBAL_ComponentHarness} {RuntimeEventSink} -->
 - **`system_config`**: 起動前に確定する不変構成である。実行時のプラグイン交換を提供しない。
 - **`runtime_composer`**: `system_config` とコンパイル時のプラグイン型から、Runtime のハーネスを構築する Tier 2 の合成ルートである。構成選択と依存の結線はコンパイル時に確定する。
 - **`runtime_harness`**: Runtimeが利用するInterpreter、Debugger、観測、WASIの契約参照をまとめた静的ハーネスである。
@@ -37,7 +37,7 @@ System と Runtime の責務は次のように分離する。
 - **`runtime_context`**: 一ゲストに専有される可変状態である。実行コンテキスト、メモリ境界、トラップ、停止理由、観測統計の所有権を保持する。
 - **`execution_strategy`**: WASM命令を実行する必須のTier 2 Interpreterである。
 - **`interpreter_execution_plugin`**: Interpreter構成時に任意接続する汎用ネイティブ実行拡張の契約である。Tier 3 JITはこの契約を実装し、ホットスポット履歴、コードキャッシュ、トレース検索、コンパイル待ち列、コンパイラを所有する。トレースentryの呼出しと実行状態の更新はInterpreter dispatcherが行う。
-- **`runtime_event_sink`**: 意味上のRuntimeイベントを固定長リングへ記録し、安全点でABIバッチとして出力する契約である。ホットスポット履歴を記録しない。
+- **`runtime_event_sink`**: 意味上のRuntimeイベントを固定長リングへ記録し、安全点でABIバッチとして出力する契約である（正本: [`runtime_observability.md`](docs/components/tier2_runtime/runtime_observability.md)）。ホットスポット履歴を記録しない。
 - **`debugger_plugin`**: 停止、再開、ブレークポイント、レジスタ・メモリ観測を担当する契約である。実行状態を変更できる唯一の補助プラグインとする。
 - **`profiler_plugin`**: Runtime 観測イベントを読み取り、関数コールグラフと実行時間を集計する契約である。実行状態を変更しない。
 - **`wasi_plugin`**: ゲストの WASI 呼出をホスト契約へ変換する契約である。WASI ABI の具体的な実装方式は Tier 3 が選択する。

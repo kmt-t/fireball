@@ -96,7 +96,7 @@
 
 ## 3. テスト検証実績と網羅状況
 
-- **TEST-JITC-01..TEST-JITC-09 (assembly stencil composition)**: build-time assembly raw stencilからのtrace composition、compact constant pool、即値とlocal offsetのtrace code埋め込み、連続trace blobを検証対象とする。あわせて実行時codegen/次opcode fetch/operation dispatchの不在、Runtime API stencilの継続、除算・剰余、共通chain dispatcher、trace上限も検証する。x64の検証対象に限定する。ARMv8-Mの実装と検証はTBDである。
+- **TEST-JITC-01..TEST-JITC-09 (assembly stencil composition)**: build-time assembly raw stencilからのtrace composition、compact constant pool、即値とlocal offsetのtrace code埋め込み、連続trace blobを検証対象とする。実行時codegenと次opcode fetch、operation dispatchが不在であることも確認する。さらにRuntime API stencilの継続、除算・剰余、共通chain dispatcher、trace上限を検証する。x64の検証対象に限定する。ARMv8-Mの実装と検証はTBDである。
 - **TEST-JITC-05の反証確認**: 実権限をRWまたはRXへ変更した場合は、OS実権限の期待値`rwx`との不一致で失敗することを確認する。
 - **TEST-JITC-10 (entry signatureと定数cursor)**: Interpreterの`(ctx, ip*, sp*)`とJITの`(ctx, ip*, sp*, rel*)`の関数型を照合する。WASM数値即値とlocal offsetはnative codeへ埋め込み、`rel`はRuntime API argument recordを読むときだけ進める。pool先頭のtrace単位4-byte referenceを`ctx.rel` anchorに保持し、chain先ではanchorからrecord cursorを再初期化する。終端recordのannotation offsetで関数のInterpreter注釈を再参照する。
 - **TEST-JITC-20..TEST-JITC-22 (x64 32バイト物理ヘッダ)**: x64の`jit_trace_header`は実行に必要なtrace targetとmetadataを保持する。header直後の`+0x20`からassembly trace entryとoperation stencilを配置し、alignment後の末尾に定数領域を置く。追加のentry adapterは置かない。ARMv8-Mの配置はTBDである。

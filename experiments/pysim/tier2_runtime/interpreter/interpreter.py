@@ -1934,27 +1934,15 @@ class NativeInterpreter(_NativeInterpreterBase):
         return self.step_native(call_state)
 
 
-# The public reference interpreter is deliberately independent from the native
-# dispatcher implementation above. It uses Python arrays for activation state
-# and a simple decode/execute loop.
-from tier2_runtime.interpreter.reference_interpreter import (
-    ReferenceCallState,
-)
-from tier2_runtime.interpreter.reference_interpreter import (
-    ReferenceInterpreter as Interpreter,
-)
-
 __all__ = (
     "CallFrame",
     "DebuggerAttachment",
     "ExecEnv",
     "ExecutionContext",
-    "Interpreter",
     "InterpreterBindings",
     "InterpreterCall",
     "NativeInterpreter",
     "NativeInterpreterBoundary",
-    "ReferenceCallState",
     "Trap",
     "TrapCode",
     "WasmHostFunction",

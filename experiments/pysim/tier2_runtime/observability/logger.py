@@ -126,7 +126,7 @@ class LogDictionary:
     and presents format strings via a non-owning ReadOnlyFlatMapView (AoS).
     """
 
-    __slots__ = ("_argument_counts", "_view", "payload", "storage")
+    __slots__ = ("_argument_counts", "_view", "storage")
 
     def __init__(
         self,
@@ -173,7 +173,10 @@ class LogDictionary:
         # Build-time metadata: one byte per existing dictionary entry, with no ID copy.
         self._argument_counts = bytes(format_argument_count(fmt) for _, fmt in self.storage.entries)
         self._view: ReadOnlyFlatMapView[int, str] = self.storage.view()
-        self.payload: ReadOnlyFlatMapView[int, str] = self._view
+
+    @property
+    def payload(self) -> ReadOnlyFlatMapView[int, str]:
+        return self._view
 
     def view(self) -> ReadOnlyFlatMapView[int, str]:
         return self._view

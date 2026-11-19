@@ -50,11 +50,11 @@ from ipc_router import (
     ScopeKind,
     pack_key32,
 )
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
 from scheduler import ChannelAction, Scheduler
 from system import System
 from system_containers import StaticVector
 from tier2_runtime.interpreter.interpreter import (
-    Interpreter,
     InterpreterBindings,
     NativeInterpreter,
 )

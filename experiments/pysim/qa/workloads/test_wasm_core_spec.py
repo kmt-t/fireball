@@ -14,7 +14,8 @@ from typing import cast
 
 import pytest
 from qa.shared.helpers import make_interpreter, make_native_interpreter
-from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterCall, Trap
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
+from tier2_runtime.interpreter.interpreter import InterpreterCall, Trap
 from tier2_runtime.wasm.module import F32, F64, I32, I64, Module
 from tier2_runtime.wasm.reader import parse_standalone
 from tier2_runtime.wasm.validation import InvalidWasm

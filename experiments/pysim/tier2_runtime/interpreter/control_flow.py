@@ -13,7 +13,7 @@ without hitting Python's recursion limit.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import IntFlag
 
@@ -23,6 +23,9 @@ from system_containers import (
     MutableBitStorage,
     ReadOnlyBitStorage,
     ReadOnlyFlatMapStorage,
+    ReadOnlyFlatMapView,
+    ReadOnlyFlatSetStorage,
+    ReadOnlyFlatSetView,
     SequenceView,
     StaticVector,
     freeze_sequence,
@@ -866,37 +869,41 @@ def _instruction_width_record_size(instruction_width: int) -> int:
     return 1
 
 
-# Operand bytes of the instructions whose annotation width depends only on the opcode.
-_LOCAL_ANNOTATION_BYTES = {
-    LOCAL_GET: 3 + 2,  # frame word offset, local width, and the RPN ext (head or terminal)
-    LOCAL_SET: 3 + 2,
-    LOCAL_TEE: 3,  # frame word offset and local width
-}
-_FIXED_OPERAND_ANNOTATION_BYTES = {
-    GLOBAL_GET: 2,  # global index
-    GLOBAL_SET: 2,
-    I32_CONST: 4,  # signed value
-    I64_CONST: 8,  # signed value
-    BR: 4,  # target block, stack base, and result width
-    BR_IF: 4,  # target block, stack base, and result width
-    IF: 4,
-    LOOP: 2,
-    ELSE: 2,
-    END: 2,
-    CALL: 4,  # function/type index and continuation block index
-    CALL_INDIRECT: 4,  # function/type index and continuation block index
-    DROP: 1,  # operand width, derived by stack type analysis
-    SELECT: 1,  # operand width, derived by stack type analysis
-}
+def _local_annotation_bytes(opcode: int) -> int | None:
+    if opcode == LOCAL_GET or opcode == LOCAL_SET:
+        return 3 + 2  # frame word offset, local width, and the RPN ext (head or terminal)
+    if opcode == LOCAL_TEE:
+        return 3  # frame word offset and local width
+    return None
+
+
+def _fixed_operand_annotation_bytes(opcode: int) -> int | None:
+    if opcode == GLOBAL_GET or opcode == GLOBAL_SET:
+        return 2  # global index
+    if opcode == I32_CONST:
+        return 4  # signed value
+    if opcode == I64_CONST:
+        return 8  # signed value
+    if opcode == BR or opcode == BR_IF or opcode == IF:
+        return 4  # target block, stack base, and result width (or IF block/else)
+    if opcode == LOOP or opcode == ELSE or opcode == END:
+        return 2
+    if opcode == CALL or opcode == CALL_INDIRECT:
+        return 4  # function/type index and continuation block index
+    if opcode == DROP or opcode == SELECT:
+        return 1  # operand width, derived by stack type analysis
+    return None
 
 
 def _operand_annotation_bytes(code: memoryview, instruction: Instr) -> int:
     """Bytes that the operand annotation of one instruction occupies in the pool."""
     opcode = instruction.opcode
-    if opcode in _LOCAL_ANNOTATION_BYTES:
-        return _LOCAL_ANNOTATION_BYTES[opcode]
-    if opcode in _FIXED_OPERAND_ANNOTATION_BYTES:
-        return _FIXED_OPERAND_ANNOTATION_BYTES[opcode]
+    local_bytes = _local_annotation_bytes(opcode)
+    if local_bytes is not None:
+        return local_bytes
+    fixed_bytes = _fixed_operand_annotation_bytes(opcode)
+    if fixed_bytes is not None:
+        return fixed_bytes
     if _MEMARG_OPCODES.at(opcode):
         return 4  # effective offset
     if opcode == BR_TABLE:
@@ -935,36 +942,27 @@ def _count_interpreter_annotation_pool_bytes(code: memoryview) -> int:
 #   END (local.set): a one-word local.set that leaves one value writes the local.
 #   END_STACK: the first instruction it does not cover ends it; the temporaries become the VM stack.
 # An expression covers at least two instructions.
-_RPN_BINOP_KIND = {
-    0x6A: 0,
-    0x6B: 1,
-    0x6C: 2,
-    0x6D: 3,
-    0x6E: 4,
-    0x6F: 5,
-    0x70: 6,
-    0x71: 7,
-    0x72: 8,
-    0x73: 9,
-    0x74: 10,
-    0x75: 11,
-    0x76: 12,
-    0x77: 13,
-    0x78: 14,
-    0x46: 15,
-    0x47: 16,
-    0x48: 17,
-    0x49: 18,
-    0x4A: 19,
-    0x4B: 20,
-    0x4C: 21,
-    0x4D: 22,
-    0x4E: 23,
-    0x4F: 24,
-}
-# div_s, div_u, rem_s, rem_u: the element carries the instruction distance for the trap position.
-_RPN_CHECKED_BINOP_KINDS = frozenset({3, 4, 5, 6})
-_RPN_UNARY_KIND = {0x45: 0, 0x67: 1, 0x68: 2, 0x69: 3}
+def _rpn_binop_kind(opcode: int) -> int | None:
+    if 0x6A <= opcode <= 0x78:
+        return opcode - 0x6A
+    if 0x46 <= opcode <= 0x4F:
+        return opcode - 0x46 + 15
+    return None
+
+
+def _is_rpn_checked_binop(kind: int) -> bool:
+    # div_s (3), div_u (4), rem_s (5), rem_u (6): carry instruction distance for trap position.
+    return 3 <= kind <= 6
+
+
+def _rpn_unary_kind(opcode: int) -> int | None:
+    if opcode == 0x45:
+        return 0
+    if 0x67 <= opcode <= 0x69:
+        return opcode - 0x66
+    return None
+
+
 _RPN_MIN_INSTRUCTIONS = 2
 _RPN_END_LOCAL_BYTES = 8  # [END][target u16][continuation i32][code_length u8]
 _RPN_END_STACK_BYTES = 6  # [END_STACK][continuation i32][code_length u8]
@@ -981,7 +979,7 @@ RPN_TERMINAL_STACK_TAIL = (
 _KIND_TEMP = 0  # an operand that is a temporary on the VM stack above the pointer
 _KIND_LOCAL = 1  # a local that has not been read yet (value: frame word offset)
 _KIND_IMM = 2  # an immediate that has not been pushed yet (value: i32 bits)
-_KIND_LETTER = {_KIND_TEMP: "T", _KIND_LOCAL: "L", _KIND_IMM: "I"}
+_KIND_LETTERS = ("T", "L", "I")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1004,28 +1002,20 @@ class RpnExpression:
 
     @property
     def writes_local(self) -> bool:
-        return self.terminal in (RPN_TERMINAL_END, RPN_TERMINAL_TAIL)
+        return self.terminal == RPN_TERMINAL_END or self.terminal == RPN_TERMINAL_TAIL
 
     @property
     def end_bytes(self) -> int:
-        if self.terminal in (RPN_TERMINAL_TAIL, RPN_TERMINAL_STACK_TAIL):
+        if self.terminal == RPN_TERMINAL_TAIL or self.terminal == RPN_TERMINAL_STACK_TAIL:
             return _RPN_TAIL_BYTES
         return _RPN_END_LOCAL_BYTES if self.terminal == RPN_TERMINAL_END else _RPN_END_STACK_BYTES
 
 
-_RPN_SPEC_CODES = {
-    form: RPN_ELEM_SPEC_BASE + index for index, form in enumerate(RPN_SPECIALISED_FORMS)
-}
-_RPN_SPEC_VM_CODES = {
-    (kind, left, right): code
-    for (kind, left, right, dest), code in _RPN_SPEC_CODES.items()
-    if dest == "V"
-}
-_RPN_SPEC_DEST_L_CODES = {
-    (kind, left, right): code
-    for (kind, left, right, dest), code in _RPN_SPEC_CODES.items()
-    if dest == "L"
-}
+def _find_rpn_spec_code(kind: int, left: str, right: str, dest: str) -> int | None:
+    for index, form in enumerate(RPN_SPECIALISED_FORMS):
+        if form == (kind, left, right, dest):
+            return RPN_ELEM_SPEC_BASE + index
+    return None
 
 
 def _rpn_operand_bytes(entry: tuple[int, int]) -> bytes:
@@ -1054,7 +1044,7 @@ class _RpnScan:
         self.local_layout = local_layout
         self.head_offset = head_offset
         self.depth_limit = depth_limit
-        self.model: list[tuple[int, int]] = []
+        self.model: StaticVector[tuple[int, int]] = StaticVector(capacity=depth_limit + 2)
         self.elements = bytearray()
         self.covered = 0
         self.max_depth = 0
@@ -1076,19 +1066,27 @@ class _RpnScan:
         if opcode == LOCAL_GET:
             if self.local_layout.size_words(instruction.operand) != 1:
                 return False
-            self.model.append((_KIND_LOCAL, self.local_layout.offset(instruction.operand)))
+            appended = self.model.push_back(
+                (_KIND_LOCAL, self.local_layout.offset(instruction.operand))
+            )
+            assert appended
         elif opcode == I32_CONST:
             value, _ = decode_signed_full(self.code, instruction.offset + 1, bits=32)
-            self.model.append((_KIND_IMM, value))
-        elif opcode in _RPN_BINOP_KIND:
-            if not self._binop(_RPN_BINOP_KIND[opcode], instruction.offset):
-                return False
-        elif opcode in _RPN_UNARY_KIND:
-            if not self.model:
-                return False
-            self._unary(_RPN_UNARY_KIND[opcode])
+            appended = self.model.push_back((_KIND_IMM, value))
+            assert appended
         else:
-            return False
+            binop_kind = _rpn_binop_kind(opcode)
+            if binop_kind is not None:
+                if not self._binop(binop_kind, instruction.offset):
+                    return False
+            else:
+                unary_kind = _rpn_unary_kind(opcode)
+                if unary_kind is not None:
+                    if not self.model:
+                        return False
+                    self._unary(unary_kind)
+                else:
+                    return False
         self.covered += 1
         self.max_depth = max(self.max_depth, len(self.model))
         if len(self.model) > self.depth_limit:
@@ -1105,8 +1103,8 @@ class _RpnScan:
             self.materialise(index)
         lhs, rhs = self.model[-2], self.model[-1]
         op_start = len(self.elements)
-        spec_code = _RPN_SPEC_CODES.get((kind, _KIND_LETTER[lhs[0]], _KIND_LETTER[rhs[0]], "T"))
-        if spec_code is not None and kind not in _RPN_CHECKED_BINOP_KINDS:
+        spec_code = _find_rpn_spec_code(kind, _KIND_LETTERS[lhs[0]], _KIND_LETTERS[rhs[0]], "T")
+        if spec_code is not None and not _is_rpn_checked_binop(kind):
             self.elements.append(spec_code)
             self.elements.extend(_rpn_operand_bytes(lhs) + _rpn_operand_bytes(rhs))
         else:
@@ -1115,11 +1113,13 @@ class _RpnScan:
             self.materialise(len(self.model) - 2)
             self.materialise(len(self.model) - 1)
             self.elements.append(RPN_ELEM_BINOP_BASE + kind)
-            if kind in _RPN_CHECKED_BINOP_KINDS:
+            if _is_rpn_checked_binop(kind):
                 self.elements.append(offset - self.head_offset)
         self.last_op = (op_start, len(self.elements), kind, lhs, rhs)
-        del self.model[-2:]
-        self.model.append((_KIND_TEMP, 0))
+        self.model.pop_back()
+        self.model.pop_back()
+        appended = self.model.push_back((_KIND_TEMP, 0))
+        assert appended
         return True
 
     def _unary(self, kind: int) -> None:
@@ -1146,7 +1146,7 @@ class _RpnScan:
         if self.last_op is None or self.last_op[1] != len(self.elements):
             return False
         op_start, _op_end, kind, lhs, rhs = self.last_op
-        dest_code = _RPN_SPEC_DEST_L_CODES.get((kind, _KIND_LETTER[lhs[0]], _KIND_LETTER[rhs[0]]))
+        dest_code = _find_rpn_spec_code(kind, _KIND_LETTERS[lhs[0]], _KIND_LETTERS[rhs[0]], "L")
         if dest_code is None:
             return False
         del self.elements[op_start:]
@@ -1160,7 +1160,7 @@ class _RpnScan:
         if self.last_op is None or self.last_op[1] != length:
             return False
         op_start, _op_end, kind, lhs, rhs = self.last_op
-        vm_code = _RPN_SPEC_VM_CODES.get((kind, _KIND_LETTER[lhs[0]], _KIND_LETTER[rhs[0]]))
+        vm_code = _find_rpn_spec_code(kind, _KIND_LETTERS[lhs[0]], _KIND_LETTERS[rhs[0]], "V")
         if vm_code is None:
             return False
         del self.elements[op_start:]
@@ -1178,7 +1178,12 @@ class _RpnScan:
         return self.checkpoint
 
 
-_RPN_OPERAND_PAYLOAD_BYTES = {"L": 2, "I": 4, "T": 0}
+def _rpn_operand_payload_bytes(letter: str) -> int:
+    if letter == "L":
+        return 2
+    if letter == "I":
+        return 4
+    return 0
 
 
 def _rpn_record_count(elements: bytes) -> int:
@@ -1189,12 +1194,12 @@ def _rpn_record_count(elements: bytes) -> int:
         code = elements[position]
         count += 1
         if code == RPN_ELEM_PUSH_LOCAL:
-            position += 1 + _RPN_OPERAND_PAYLOAD_BYTES["L"]
+            position += 1 + _rpn_operand_payload_bytes("L")
         elif code == RPN_ELEM_PUSH_IMM:
-            position += 1 + _RPN_OPERAND_PAYLOAD_BYTES["I"]
+            position += 1 + _rpn_operand_payload_bytes("I")
         elif code < RPN_ELEM_UNARY_BASE:
             # A checked binary operator carries one byte of offset after its code.
-            checked = code - RPN_ELEM_BINOP_BASE in _RPN_CHECKED_BINOP_KINDS
+            checked = _is_rpn_checked_binop(code - RPN_ELEM_BINOP_BASE)
             position += 2 if checked else 1
         elif code < RPN_ELEM_SPEC_BASE:
             position += 1
@@ -1203,8 +1208,8 @@ def _rpn_record_count(elements: bytes) -> int:
             target_bytes = 2 if dest == "L" else 0
             position += (
                 1
-                + _RPN_OPERAND_PAYLOAD_BYTES[left]
-                + _RPN_OPERAND_PAYLOAD_BYTES[right]
+                + _rpn_operand_payload_bytes(left)
+                + _rpn_operand_payload_bytes(right)
                 + target_bytes
             )
     assert position == len(elements), "element records must tile the element bytes"
@@ -1251,9 +1256,9 @@ def _rpn_set_expression(
 
 def _scan_rpn_expression(
     code: memoryview,
-    instructions: list[Instr],
+    instructions: SequenceView[Instr],
     start: int,
-    heads: set[int],
+    heads: ReadOnlyFlatSetView[int],
     local_layout: LocalLayout,
     depth_limit: int,
 ) -> tuple[RpnExpression, int] | None:
@@ -1267,7 +1272,7 @@ def _scan_rpn_expression(
     position = start
     while position < len(instructions):
         instruction = instructions[position]
-        if position > start and instruction.offset in heads:
+        if position > start and heads.contains(instruction.offset):
             break
         if instruction.opcode == LOCAL_SET:
             if not scan.local_write_ends_here(instruction):
@@ -1310,7 +1315,7 @@ def _scan_rpn_expression(
 
 def find_rpn_expressions(
     code: memoryview,
-    block_heads: list[int],
+    block_heads: SequenceView[int],
     local_layout: LocalLayout,
     stack_capacity: int,
 ) -> tuple[RpnExpression, ...]:
@@ -1320,10 +1325,14 @@ def find_rpn_expressions(
     function's operand stack capacity (RPN_MAX_DEPTH bounds it as well).
     """
 
-    heads = set(block_heads)
+    heads_storage = ReadOnlyFlatSetStorage.create(block_heads)
+    heads = heads_storage.view()
     depth_limit = min(RPN_MAX_DEPTH, stack_capacity)
-    instructions = list(iter_scan_instrs(code))
-    found: list[RpnExpression] = []
+    instructions: StaticVector[Instr] = StaticVector(capacity=len(code))
+    for instr in iter_scan_instrs(code):
+        appended = instructions.push_back(instr)
+        assert appended
+    found: StaticVector[RpnExpression] = StaticVector(capacity=len(instructions) // 2 + 1)
     index = 0
     while index < len(instructions):
         if instructions[index].opcode != LOCAL_GET:
@@ -1334,14 +1343,15 @@ def find_rpn_expressions(
             index += 1
             continue
         expression, last = scanned
-        found.append(expression)
+        appended = found.push_back(expression)
+        assert appended
         index = last + 1
-    return tuple(found)
+    return freeze_sequence(found)
 
 
 def fit_rpn_expressions(
     code: memoryview,
-    block_heads: list[int],
+    block_heads: SequenceView[int],
     local_layout: LocalLayout,
     expressions: tuple[RpnExpression, ...],
 ) -> tuple[RpnExpression, ...]:
@@ -1351,20 +1361,28 @@ def fit_rpn_expressions(
     for block_number, start in enumerate(block_heads):
         end = block_heads[block_number + 1] if block_number + 1 < len(block_heads) else len(code)
         block_bytes += _count_interpreter_annotation_pool_bytes(code[start:end])
-    kept: list[RpnExpression] = []
+    kept: StaticVector[RpnExpression] = StaticVector(capacity=len(expressions))
     cursor = block_bytes
     for expression in expressions:
         size = len(expression.elements) + expression.end_bytes
         if cursor + size > 0xFFFF:
             break
-        kept.append(expression)
+        appended = kept.push_back(expression)
+        assert appended
         cursor += size
-    return tuple(kept)
+    return freeze_sequence(kept)
 
 
-def _rpn_local_set_offsets(rpn_expressions: tuple[RpnExpression, ...]) -> set[int]:
+def _rpn_local_set_offsets(
+    rpn_expressions: tuple[RpnExpression, ...],
+) -> ReadOnlyFlatSetStorage[int]:
     """The local.set offsets that terminate an END expression."""
-    return {expression.set_offset for expression in rpn_expressions if expression.writes_local}
+    offsets: StaticVector[int] = StaticVector(capacity=len(rpn_expressions))
+    for expression in rpn_expressions:
+        if expression.writes_local:
+            appended = offsets.push_back(expression.set_offset)
+            assert appended
+    return ReadOnlyFlatSetStorage.create(offsets)
 
 
 def _append_little_endian(annotations: InterpreterAnnotationPool, value: int, width: int) -> None:
@@ -1375,8 +1393,8 @@ def _append_little_endian(annotations: InterpreterAnnotationPool, value: int, wi
 def _append_rpn_program(
     annotations: InterpreterAnnotationPool,
     expression: RpnExpression,
-    set_ends: dict[int, int],
-    instruction_starts: dict[int, int],
+    set_ends: ReadOnlyFlatMapView[int, int],
+    instruction_starts: ReadOnlyFlatMapView[int, int],
 ) -> None:
     """Append one expression program: its elements, then its terminal and code length.
 
@@ -1426,16 +1444,22 @@ def build_interpreter_annotation_pool(
         assert 0 <= start <= end <= len(code)
         total_bytes += _count_interpreter_annotation_pool_bytes(code[start:end])
 
-    program_positions: dict[int, int] = {}
-    set_offsets = _rpn_local_set_offsets(rpn_expressions)
+    program_position_entries: StaticVector[tuple[int, int]] = StaticVector(
+        capacity=len(rpn_expressions)
+    )
+    set_offsets = _rpn_local_set_offsets(rpn_expressions).view()
     cursor = total_bytes
     for expression in rpn_expressions:
-        program_positions[expression.head_offset] = cursor
+        appended = program_position_entries.push_back((expression.head_offset, cursor))
+        assert appended
         cursor += len(expression.elements) + expression.end_bytes
+    program_positions = ReadOnlyFlatMapStorage.from_sorted_static_entries(
+        program_position_entries
+    ).view()
     assert not rpn_expressions or cursor <= 0xFFFF, (
         "fit_rpn_expressions must bound the program region"
     )
-    set_ends: dict[int, int] = {}
+    set_end_entries: StaticVector[tuple[int, int]] = StaticVector(capacity=len(rpn_expressions))
     block_bytes = total_bytes
     total_bytes = cursor
 
@@ -1445,10 +1469,11 @@ def build_interpreter_annotation_pool(
     def rpn_ext_for(function_offset: int) -> int:
         # The expression head stores the distance from its own annotation start to the program, so the
         # native head needs no pool base. Other local.get store 0.
-        if function_offset not in program_positions:
+        target_position = program_positions.find(function_offset)
+        if target_position is None:
             return 0
         annotation_start = len(annotations) - 4  # width, offset (u16), slot width precede the ext
-        return program_positions[function_offset] - annotation_start
+        return target_position - annotation_start
 
     def append_u32(value: int) -> None:
         assert 0 <= value <= 0xFFFF_FFFF
@@ -1534,8 +1559,9 @@ def build_interpreter_annotation_pool(
         write_local_slot(instruction, block_code)
         function_offset = start + instruction.offset
         append_u16(0xFFFF)
-        if function_offset in set_offsets:
-            set_ends[function_offset] = len(annotations)
+        if set_offsets.contains(function_offset):
+            appended = set_end_entries.push_back((function_offset, len(annotations)))
+            assert appended
 
     def emit_local_tee(instruction: Instr, block_code: memoryview, start: int) -> None:
         write_local_slot(instruction, block_code)
@@ -1646,50 +1672,77 @@ def build_interpreter_annotation_pool(
     def emit_end(instruction: Instr, block_code: memoryview, start: int) -> None:
         append_u16(continuation_block_index_for_offset(start + instruction.end_offset))
 
-    # One procedure per opcode. The loop judges each instruction's opcode once, then the procedure
-    # writes that instruction's operands and branch targets in the original order.
-    handlers: dict[int, Callable[[Instr, memoryview, int], None]] = {
-        LOCAL_GET: emit_local_get,
-        LOCAL_SET: emit_local_set,
-        LOCAL_TEE: emit_local_tee,
-        DROP: emit_drop,
-        SELECT: emit_select,
-        GLOBAL_GET: emit_global,
-        GLOBAL_SET: emit_global,
-        I32_CONST: emit_i32_const,
-        I64_CONST: emit_i64_const,
-        BR: emit_branch,
-        BR_IF: emit_branch,
-        BR_TABLE: emit_br_table,
-        CALL: emit_call,
-        CALL_INDIRECT: emit_call_indirect,
-        FC_PREFIX: emit_fc_prefix,
-        LOOP: emit_loop,
-        IF: emit_if,
-        ELSE: emit_else,
-        END: emit_end,
-    }
-    for memarg_opcode in range(0x100):
-        if _MEMARG_OPCODES.at(memarg_opcode):
-            handlers[memarg_opcode] = emit_memarg
+    def dispatch_value_annotation(
+        opcode: int, instruction: Instr, block_code: memoryview, start: int
+    ) -> bool:
+        if opcode == LOCAL_GET:
+            emit_local_get(instruction, block_code, start)
+        elif opcode == LOCAL_SET:
+            emit_local_set(instruction, block_code, start)
+        elif opcode == LOCAL_TEE:
+            emit_local_tee(instruction, block_code, start)
+        elif opcode == DROP:
+            emit_drop(instruction, block_code, start)
+        elif opcode == SELECT:
+            emit_select(instruction, block_code, start)
+        elif opcode == GLOBAL_GET or opcode == GLOBAL_SET:
+            emit_global(instruction, block_code, start)
+        elif opcode == I32_CONST:
+            emit_i32_const(instruction, block_code, start)
+        elif opcode == I64_CONST:
+            emit_i64_const(instruction, block_code, start)
+        else:
+            return False
+        return True
+
+    def dispatch_annotation_emitter(
+        opcode: int, instruction: Instr, block_code: memoryview, start: int
+    ) -> None:
+        if dispatch_value_annotation(opcode, instruction, block_code, start):
+            return
+        if opcode == BR or opcode == BR_IF:
+            emit_branch(instruction, block_code, start)
+        elif opcode == BR_TABLE:
+            emit_br_table(instruction, block_code, start)
+        elif opcode == CALL:
+            emit_call(instruction, block_code, start)
+        elif opcode == CALL_INDIRECT:
+            emit_call_indirect(instruction, block_code, start)
+        elif opcode == FC_PREFIX:
+            emit_fc_prefix(instruction, block_code, start)
+        elif opcode == LOOP:
+            emit_loop(instruction, block_code, start)
+        elif opcode == IF:
+            emit_if(instruction, block_code, start)
+        elif opcode == ELSE:
+            emit_else(instruction, block_code, start)
+        elif opcode == END:
+            emit_end(instruction, block_code, start)
+        elif _MEMARG_OPCODES.at(opcode):
+            emit_memarg(instruction, block_code, start)
 
     # Annotation offset of each instruction, keyed by function offset: an END_STACK resumes there.
-    instruction_starts: dict[int, int] = {}
+    instruction_start_entries: StaticVector[tuple[int, int]] = StaticVector(capacity=len(code))
     for block_number, start in enumerate(block_heads):
         end = block_heads[block_number + 1] if block_number + 1 < len(block_heads) else len(code)
         appended = block_offsets.push_back(annotation_offset_t(len(annotations)))
         assert appended
         block_code = code[start:end]
         for instruction in iter_scan_instrs(block_code):
-            instruction_starts[start + instruction.offset] = len(annotations)
+            appended_start = instruction_start_entries.push_back(
+                (start + instruction.offset, len(annotations))
+            )
+            assert appended_start
             if _has_instruction_width_record(instruction.opcode):
                 append_instruction_width(
                     instruction_width_t(instruction.end_offset - instruction.offset)
                 )
-            handler = handlers.get(instruction.opcode)
-            if handler is not None:
-                handler(instruction, block_code, start)
+            dispatch_annotation_emitter(instruction.opcode, instruction, block_code, start)
     assert len(annotations) == block_bytes
+    set_ends = ReadOnlyFlatMapStorage.from_sorted_static_entries(set_end_entries).view()
+    instruction_starts = ReadOnlyFlatMapStorage.from_sorted_static_entries(
+        instruction_start_entries
+    ).view()
     for expression in rpn_expressions:
         _append_rpn_program(annotations, expression, set_ends, instruction_starts)
     return annotations, block_offsets

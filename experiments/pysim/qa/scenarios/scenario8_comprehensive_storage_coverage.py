@@ -22,9 +22,10 @@ import time
 import wasmtime
 from qa.private.debugger_support import make_debug_execution
 from qa.private.runtime_test_driver import RuntimeEngineDebugDriver
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
 from qa.shared.runtime_support import instruction_blocks
 from system import System
-from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier2_runtime.interpreter.interpreter import InterpreterBindings
 from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.wasi.context import WasiHostContext
 from tier3_plugins.debugger.debugger import DebuggerManager

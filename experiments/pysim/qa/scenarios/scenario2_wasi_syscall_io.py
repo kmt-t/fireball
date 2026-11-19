@@ -21,8 +21,9 @@ except ImportError:
 
 import tier2_runtime.wasm.opcodes as op
 from ipc_router import FB_URI_HAL_STDOUT
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
 from system import System
-from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier2_runtime.interpreter.interpreter import InterpreterBindings
 from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.hal.dummy import DummyDriver
 from tier3_platform.drivers.wasi.context import WasiHostContext

@@ -275,7 +275,7 @@ line/branch coverageは、抜けた経路を探す診断情報として記録す
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | GOTCHA-VSOC-01 | 命令handler後のディスパッチ | handlerが分岐後のPCを確定した状態 | ディスパッチの制御遷移を確認する | ディスパッチャは同じ実行区間内で次PCのtraceまたはhandlerを実行し、命令ごとにはRuntimeEngineへ戻らない | `{JIT_BackedgeYield}`, [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md) |
 | GOTCHA-VSOC-02 | Interpreter設定によるLOOP後方分岐yield条件 | Interpreter単独またはHybrid JIT経路 | 分岐回数と実行状態を確認する | 実行contextのLOOP後方分岐数がInterpreter設定のしきい値に達した時だけInterpreterがyield statusをRuntimeEngineへ返す。両経路はInterpreter設定の同じ条件で復帰する | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md)、`{ADR_LoopBackedgeYield}` |
-| GOTCHA-VSOC-03 | `execution_context` レイアウトと委譲シグネチャ | WASMスタック初期化 | コンテキストoffsetと関数ポインタ型を確認する | 確認済みx86-64 ABIでは`execution_context`は160バイトであり、リニアメモリのホスト基点は`+0x78`、64bit有効サイズは`+0x80`、ローカル基点は`+0x90`、Interpreter定数カーソルは`+0x98`に置く。値スタックとローカル値領域の基点・現在位置・上限はポインタで保持する。Interpreter handlerと`exec_trace`は4引数`(ctx, ip*, sp*, rel*)`で呼び出し、TOS値を重複して渡さない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、`{ExecutionContext_Layout}`, `{EnvironmentPointer}`, `{VsocRuntime_Layout}` |
+| GOTCHA-VSOC-03 | `execution_context` レイアウトと委譲シグネチャ | WASMスタック初期化 | コンテキストoffsetと関数ポインタ型を確認する | 確認済みx86-64 C ABIでは`execution_context`は144バイトであり、リニアメモリのホスト基点は`+0x60`、64bit有効サイズは`+0x68`、ローカル基点は`+0x78`、Interpreter注釈プール位置（`rel`）は`+0x80`に置く。値スタックとローカル値領域の基点・現在位置・上限はポインタで保持する。Interpreter handlerと`exec_trace`は4引数`(ctx, ip*, sp*, rel*)`で呼び出し、TOS値を重複して渡さない | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md)、`{ExecutionContext_Layout}`, `{EnvironmentPointer}`, `{VsocRuntime_Layout}` |
 
 ### idle hookとJIT統合動作
 

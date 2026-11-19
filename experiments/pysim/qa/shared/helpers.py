@@ -9,11 +9,11 @@ from contextlib import contextmanager
 from bump_allocator import BumpAllocator
 from config import FB_CONF_INTERPRETER_YIELD_THRESHOLD
 from ipc_router import IPCMessage
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
 from scheduler import Scheduler
 from system_containers import StaticVector
 from tier2_runtime.interpreter.execution_plugin import NativeExecutionPlugin
 from tier2_runtime.interpreter.interpreter import (
-    Interpreter,
     InterpreterBindings,
     InterpreterCall,
     NativeInterpreter,

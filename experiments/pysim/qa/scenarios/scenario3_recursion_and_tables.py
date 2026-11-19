@@ -14,8 +14,9 @@ Tests:
 """
 
 import wasmtime
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
 from system import System
-from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier2_runtime.interpreter.interpreter import InterpreterBindings
 from tier2_runtime.wasm.reader import parse_standalone
 from tier3_platform.drivers.wasi.context import WasiHostContext
 

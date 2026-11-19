@@ -1067,7 +1067,7 @@ class Module:
             function_pc_offset = self.function_pc_offset(func_idx)
             function = self.functions[idx]
             function_block_base = len(all_blocks)
-            entry_words = stack_words_before_instructions(self, func_idx)
+            entry_words = stack_words_before_instructions(self, func_idx).view()
             assert function.control_map is not None
             assert function.local_layout_cache is not None
             extracted = extract_basic_blocks(code, function.control_map, pc_base=function_pc_offset)
@@ -1079,11 +1079,11 @@ class Module:
                 block_heads.append(block[0] - function_pc_offset)
             expressions = fit_rpn_expressions(
                 code,
-                list(block_heads),
+                block_heads,
                 function.local_layout_cache,
                 find_rpn_expressions(
                     code,
-                    list(block_heads),
+                    block_heads,
                     function.local_layout_cache,
                     function.max_operand_stack_words,
                 ),

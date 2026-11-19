@@ -19,8 +19,9 @@ Tests:
 """
 
 import wasmtime
+from qa.shared.reference_interpreter import ReferenceInterpreter as Interpreter
 from scheduler import Scheduler
-from tier2_runtime.interpreter.interpreter import Interpreter, InterpreterBindings
+from tier2_runtime.interpreter.interpreter import InterpreterBindings
 from tier2_runtime.interpreter.interpreter import TrapCode as InterpreterTrapCode
 from tier2_runtime.vmmio.controller import (
     FC_STATIC_DEVICE,

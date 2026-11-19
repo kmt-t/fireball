@@ -492,7 +492,7 @@ source_verification:
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/control_flow.py
         function: extract_basic_blocks
-        line: 1848
+        line: 1869
         ccn: 37
         plan_req: REQ-042
       - group: python_pysim
@@ -504,32 +504,26 @@ source_verification:
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
         function: step_native_boundary
-        line: 1256
+        line: 1254
         ccn: 16
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
         function: _try_native_step_to_boundary
-        line: 1528
+        line: 1526
         ccn: 19
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
         function: _step
-        line: 1607
+        line: 1605
         ccn: 21
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/interpreter/interpreter.py
         function: _enter_or_resolve_call
-        line: 1704
+        line: 1702
         ccn: 22
-        plan_req: REQ-042
-      - group: python_pysim
-        file: experiments/pysim/tier2_runtime/interpreter/reference_interpreter.py
-        function: __init__
-        line: 351
-        ccn: 27
         plan_req: REQ-042
       - group: python_pysim
         file: experiments/pysim/tier2_runtime/vmmio/controller.py
